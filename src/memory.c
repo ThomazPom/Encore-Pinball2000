@@ -73,7 +73,7 @@ int memory_init(void)
         size_t sz = g_emu.rom_sizes[b];
         /* Align to page boundary */
         size_t aligned = (sz + 0xFFF) & ~0xFFFULL;
-        map_region(uc, plx_addrs[b], aligned, UC_PROT_READ | UC_PROT_WRITE,
+        map_region(uc, plx_addrs[b], aligned, UC_PROT_ALL,
                    b == 0 ? "PLX bank0" : b == 1 ? "PLX bank1" :
                    b == 2 ? "PLX bank2" : "PLX bank3");
         uc_mem_write(uc, plx_addrs[b], g_emu.rom_banks[b], sz);
@@ -116,6 +116,13 @@ int memory_init(void)
     /* 9. Panic/safety regions */
     /* 0x20000000 area — map for IVT stub targets */
     map_region(uc, 0x20000000, 0x1000, UC_PROT_ALL, "IVT stub page");
+
+    /* 10. Option ROM character display buffer region.
+     *     The PRISM option ROM computes a text display buffer address from
+     *     hardware state and stores it at [0x871E0]. The computed address
+     *     often lands in the 0x28000000-0x2A000000 range. Map a catch-all
+     *     region so character display writes don't crash. */
+    map_region(uc, 0x28000000, 0x02000000, UC_PROT_ALL, "OptROM display buf");
 
     LOG("mem", "Memory map initialized\n");
     fflush(stdout);

@@ -178,6 +178,76 @@ static void pit_write(uint16_t port, uint8_t val)
 }
 
 /* ===== UART handler (COM1) ===== */
+
+/* Apply GROM_FLASH patches + RAM patches at game code start.
+ * Triggered once when "STARTING UPDATE GAME CODE" is detected in UART.
+ * Copycat of x64 POC ports.c L250-400 (BT-82/87/100/112). */
+static void apply_sgc_patches(void)
+{
+    if (!g_emu.flash || !g_emu.uc) return;
+
+    /* Game.rom in flash starts at offset 0x91D54 (SWE1 v1.19).
+     * Guest addr X → flash offset = 0x91D54 + (X - 0x100000). */
+    #define GROM_FLASH(ga) (0x91D54u + ((ga) - 0x100000u))
+
+    /* 1. Memory detection results in flash */
+    *(uint32_t*)(g_emu.flash + GROM_FLASH(0x2F7EF8u)) = 0x01000000u; /* memtop 16MB */
+    *(uint32_t*)(g_emu.flash + GROM_FLASH(0x2F7EFCu)) = 0x01000000u; /* topfree 16MB */
+    *(uint32_t*)(g_emu.flash + GROM_FLASH(0x2F7F00u)) = 0x00100000u; /* reserved 1MB */
+    *(uint32_t*)(g_emu.flash + GROM_FLASH(0x30642Cu)) = 0x00FFFFFFu; /* maxmem 16MB-1 */
+    *(uint32_t*)(g_emu.flash + GROM_FLASH(0x345048u)) = 2;           /* bus=PCI */
+    *(uint32_t*)(g_emu.flash + GROM_FLASH(0x2E98FCu)) = 0xEA;        /* EEPROM port */
+    *(uint32_t*)(g_emu.flash + GROM_FLASH(0x2E9900u)) = 0xEB;        /* config port 2 */
+    *(uint32_t*)(g_emu.flash + GROM_FLASH(0x2C6DFCu)) = 1u;          /* SuperIOType=PC97338 */
+    LOG("sgc", "Patched flash: memtop=16MB, bus=PCI, SuperIOType=1\n");
+
+    /* 2. CMOS check at 0x24FDEC → MOV EAX,1; RET */
+    {
+        uint8_t *mt = g_emu.flash + GROM_FLASH(0x24FDECu);
+        mt[0]=0xB8; mt[1]=0x01; mt[2]=0x00; mt[3]=0x00; mt[4]=0x00; mt[5]=0xC3;
+    }
+
+    /* 3. PLX vendor = 0x10B5 (BT-100: PLX found) */
+    *(uint32_t*)(g_emu.flash + GROM_FLASH(0x2E98F8u)) = 0x10B5u;
+    LOG("sgc", "CMOS→pass, PLX vendor=0x10B5 in flash\n");
+
+    /* 4. sysinit halt at 0x22F432 → HLT+JMP (yields CPU) */
+    {
+        uint8_t *sh = g_emu.flash + GROM_FLASH(0x22F432u);
+        sh[0]=0xF4; sh[1]=0xEB; sh[2]=0xFD; /* HLT; JMP $-3 */
+    }
+    LOG("sgc", "sysinit halt@0x22F432 → HLT+JMP\n");
+
+    /* 5. pci_watchdog_bone at 0x1A4190 → RET */
+    *(g_emu.flash + GROM_FLASH(0x1A4190u)) = 0xC3;
+    LOG("sgc", "pci_watchdog_bone → RET\n");
+
+    /* 6. mem_detect at 0x22FA27: MOV EAX,0x400 → MOV EAX,0x1000 (16MB) */
+    {
+        uint8_t *mp = g_emu.flash + GROM_FLASH(0x22FA27u);
+        if (mp[0]==0xB8 && mp[1]==0x00 && mp[2]==0x04 && mp[3]==0x00 && mp[4]==0x00) {
+            mp[2] = 0x10;  /* 0x0400 → 0x1000 */
+            LOG("sgc", "mem_detect 0x22FA27: 4MB→16MB\n");
+        }
+    }
+
+    #undef GROM_FLASH
+
+    /* 7. Mirror critical patches into guest RAM (code may already be copied) */
+    uint32_t val32;
+    val32 = 0x01000000u; uc_mem_write(g_emu.uc, 0x2F7EF8, &val32, 4); /* memtop */
+    val32 = 0x01000000u; uc_mem_write(g_emu.uc, 0x2F7EFC, &val32, 4); /* topfree */
+    val32 = 0x00100000u; uc_mem_write(g_emu.uc, 0x2F7F00, &val32, 4); /* reserved */
+    val32 = 0x00FFFFFFu; uc_mem_write(g_emu.uc, 0x30642C, &val32, 4); /* maxmem */
+    val32 = 2;           uc_mem_write(g_emu.uc, 0x345048, &val32, 4); /* bus=PCI */
+    val32 = 0xEA;        uc_mem_write(g_emu.uc, 0x2E98FC, &val32, 4); /* EEPROM port */
+    val32 = 0xEB;        uc_mem_write(g_emu.uc, 0x2E9900, &val32, 4); /* config port 2 */
+    /* pci_watchdog_bone → RET in RAM */
+    uint8_t ret = 0xC3;
+    uc_mem_write(g_emu.uc, 0x1A4190, &ret, 1);
+    LOG("sgc", "Mirrored patches into guest RAM\n");
+}
+
 static void uart_write(uint16_t port, uint8_t val)
 {
     uint16_t off = port - PORT_COM1_BASE;
@@ -192,11 +262,24 @@ static void uart_write(uint16_t port, uint8_t val)
             g_emu.uart_buf[g_emu.uart_pos] = '\0';
             /* Print UART lines */
             LOG("uart", "%s", g_emu.uart_buf);
-            /* Detect key strings */
-            if (strstr(g_emu.uart_buf, "STARTING GAME CODE"))
+
+            /* Detect game code start — apply patches once */
+            if (!g_emu.game_started &&
+                (strstr(g_emu.uart_buf, "STARTING UPDATE GAME CODE") ||
+                 strstr(g_emu.uart_buf, "STARTING GAME CODE"))) {
                 g_emu.game_started = true;
+                apply_sgc_patches();
+            }
             if (strstr(g_emu.uart_buf, "XINU"))
                 g_emu.xinu_booted = true;
+
+            /* Monitor prompt: auto-inject "continue\r" (like i386/x64 POC) */
+            if (strstr(g_emu.uart_buf, "monitor>") ||
+                strstr(g_emu.uart_buf, "-> ")) {
+                /* Will be handled by UART RBR reads */
+                g_emu.monitor_active = true;
+            }
+
             g_emu.uart_pos = 0;
         }
     } else if (off < 8) {
@@ -208,9 +291,32 @@ static uint32_t uart_read(uint16_t port)
 {
     uint16_t off = port - PORT_COM1_BASE;
     switch (off) {
-    case 0: return 0;                  /* RBR — no data */
+    case 0: /* RBR — inject "continue\r" when monitor is active */
+        if (g_emu.monitor_active && g_emu.monitor_inject_pos < 10) {
+            const char *cont = "continue\r";
+            char c = cont[g_emu.monitor_inject_pos++];
+            if (c == '\0') {
+                g_emu.monitor_active = false;
+                g_emu.monitor_inject_pos = 0;
+                return 0;
+            }
+            return (uint32_t)c;
+        }
+        return 0;
     case 2: return 0x01;               /* IIR — no interrupt pending */
-    case 5: return 0x60;               /* LSR — THRE + TEMT */
+    case 5: {
+        /* LSR — THRE + TEMT, plus DR when monitor inject active */
+        uint8_t lsr = 0x60;
+        if (g_emu.monitor_active && g_emu.monitor_inject_pos < 10)
+            lsr |= 0x01; /* DR (data ready) — signal char available */
+
+        /* UART poll drain: after many LSR reads with no action, inject NUL (BT-88) */
+        g_emu.uart_lsr_count++;
+        if (g_emu.uart_lsr_count > 200) {
+            g_emu.uart_lsr_count = 0;
+        }
+        return lsr;
+    }
     case 6: return 0x30;               /* MSR — CTS + DSR */
     default: return g_emu.uart_regs[off];
     }
@@ -303,6 +409,30 @@ uint32_t io_port_read(uint16_t port, int size)
         return g_emu.lpt_status;
     case PORT_LPT_CTRL:
         return g_emu.lpt_ctrl;
+
+    /* System control port B (0x61): bit 4 toggles on read */
+    case 0x0061: {
+        static uint8_t s_port61 = 0;
+        s_port61 ^= 0x10; /* toggle bit 4 */
+        return s_port61;
+    }
+
+    /* SuperIO W83977EF (0x2E/0x2F): reg 0x20 = chip ID 0x97 */
+    case 0x002E:
+        return g_emu.superio_idx;
+    case 0x002F:
+        if (g_emu.superio_idx == 0x20) return 0x97; /* W83977EF chip ID */
+        return 0x00;
+
+    /* CC5530 EEPROM (0xEA/0xEB): chip_id=0x02, rev=0x01 */
+    case 0x00EA:
+        return g_emu.cc5530_idx;
+    case 0x00EB:
+        switch (g_emu.cc5530_idx) {
+        case 0x20: return 0x02;  /* chip ID */
+        case 0x21: return 0x01;  /* revision */
+        default:   return 0x00;
+        }
 
     /* DCS2 status — must return 0x00 (ready) */
     case PORT_DCS2_STATUS:
@@ -436,6 +566,24 @@ void io_port_write(uint16_t port, uint32_t val, int size)
     case PORT_LPT_CTRL:
         g_emu.lpt_ctrl = val;
         break;
+
+    /* System control port B (0x61) — writes ignored */
+    case 0x0061:
+        break;
+
+    /* SuperIO W83977EF (0x2E/0x2F) */
+    case 0x002E:
+        g_emu.superio_idx = val & 0xFF;
+        break;
+    case 0x002F:
+        break; /* writes to SuperIO data are ignored */
+
+    /* CC5530 EEPROM (0xEA/0xEB) */
+    case 0x00EA:
+        g_emu.cc5530_idx = val & 0xFF;
+        break;
+    case 0x00EB:
+        break; /* writes to CC5530 data are ignored */
 
     /* POST code */
     case PORT_POST:
