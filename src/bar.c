@@ -9,20 +9,208 @@
  */
 #include "encore.h"
 
-/* PLX 9050 local config registers — pre-init with sane values */
+/* ===== 93C46 SEEPROM bit-bang state machine =====
+ * Copycat of x64 POC (cpu_backend_qemu.c) + i386 POC (bar4.c).
+ * PLX 9050 CNTRL register (0x50) bit assignments:
+ *   Bit 24 = EESK  (serial clock, driven by host)
+ *   Bit 25 = EECS  (chip select, driven by host)
+ *   Bit 26 = EEDI  (data in, host→EEPROM)
+ *   Bit 27 = EEDO  (data out, EEPROM→host, read-only)
+ *   Bit 28 = EEPRESENT (read-only, always 1)
+ */
+static struct {
+    int      state;      /* 0=idle, 1=opcode, 2=address, 3=data_out, 4=data_in */
+    int      bits;       /* bit counter within current state */
+    int      opcode;     /* 2-bit opcode (10=read, 01=write) */
+    int      addr;       /* 6-bit address (0-63) */
+    uint16_t shift;      /* shift register for data I/O */
+    int      do_bit;     /* EEDO output bit (data out to host) */
+    int      last_sk;    /* previous clock state for edge detection */
+} s_ee;
+
+/* Pre-populate SEEPROM with PLX 9050 PRISM configuration.
+ * PLX 9050 serial EEPROM layout (93C46 format, 16-bit words):
+ *   Words 0-5: PCI identification
+ *   Words 6+: Local config registers (pairs: low half, high half)
+ * Values from x64 POC (proven working for plx_ee_verify). */
+static void seeprom_init_default(void)
+{
+    for (int i = 0; i < 64; i++)
+        g_emu.seeprom[i] = 0xFFFF;
+
+    g_emu.seeprom[0]  = 0x9050;       /* Device ID (PLX) */
+    g_emu.seeprom[1]  = 0x10B5;       /* Vendor ID (PLX) */
+    g_emu.seeprom[2]  = 0x0680;       /* Class code upper */
+    g_emu.seeprom[3]  = 0x0001;       /* Class/Rev */
+    g_emu.seeprom[4]  = 0x1078;       /* Subsystem vendor (Cyrix/WMS board) */
+    g_emu.seeprom[5]  = 0x0001;       /* Subsystem device (PRISM) */
+    /* Reg 0x00 (LAS0RR) = 0x0FFE0000 */
+    g_emu.seeprom[6]  = 0x0000; g_emu.seeprom[7]  = 0x0FFE;
+    /* Reg 0x04 (LAS1RR) = 0x0F800000 */
+    g_emu.seeprom[8]  = 0x0000; g_emu.seeprom[9]  = 0x0F80;
+    /* Reg 0x08 (LAS2RR) = 0x0FFF8000 */
+    g_emu.seeprom[10] = 0x8000; g_emu.seeprom[11] = 0x0FFF;
+    /* Reg 0x0C (LAS3RR) = 0x0C000008 */
+    g_emu.seeprom[12] = 0x0008; g_emu.seeprom[13] = 0x0C00;
+    /* Reg 0x10 (EROMRR) = 0x0FFF8000 */
+    g_emu.seeprom[14] = 0x8000; g_emu.seeprom[15] = 0x0FFF;
+    /* Reg 0x14 (LAS0BA) = 0x00100001 */
+    g_emu.seeprom[16] = 0x0001; g_emu.seeprom[17] = 0x0010;
+    /* Reg 0x18 (LAS1BA) = 0x01000001 */
+    g_emu.seeprom[18] = 0x0001; g_emu.seeprom[19] = 0x0100;
+    /* Reg 0x1C (LAS2BA) = 0x00000001 */
+    g_emu.seeprom[20] = 0x0001; g_emu.seeprom[21] = 0x0000;
+    /* Reg 0x20 (LAS3BA) = 0x08000001 */
+    g_emu.seeprom[22] = 0x0001; g_emu.seeprom[23] = 0x0800;
+    /* Reg 0x24 (EROMBA) = 0x08000000 */
+    g_emu.seeprom[24] = 0x0000; g_emu.seeprom[25] = 0x0800;
+    /* Reg 0x28 (CS0/MARBR) = 0x5403A1E0 */
+    g_emu.seeprom[26] = 0xA1E0; g_emu.seeprom[27] = 0x5403;
+    /* Reg 0x2C (LMISC/BTERM) = 0x5473B940 */
+    g_emu.seeprom[28] = 0xB940; g_emu.seeprom[29] = 0x5473;
+    /* Reg 0x30 = 0x4041A060 */
+    g_emu.seeprom[30] = 0xA060; g_emu.seeprom[31] = 0x4041;
+    /* Reg 0x34 = 0x54B2B8C0 */
+    g_emu.seeprom[32] = 0xB8C0; g_emu.seeprom[33] = 0x54B2;
+    /* Reg 0x38 = 0x54B2B8C0 (same as 0x34) */
+    g_emu.seeprom[34] = 0xB8C0; g_emu.seeprom[35] = 0x54B2;
+    /* Reg 0x3C (CS0 base) = 0x08800001 */
+    g_emu.seeprom[36] = 0x0001; g_emu.seeprom[37] = 0x0880;
+    /* Reg 0x40 (CS1 base) = 0x09800001 */
+    g_emu.seeprom[38] = 0x0001; g_emu.seeprom[39] = 0x0980;
+    /* Reg 0x44 (CS2 base) = 0x0A800001 */
+    g_emu.seeprom[40] = 0x0001; g_emu.seeprom[41] = 0x0A80;
+    /* Reg 0x48 (CS3 base) = 0x0B800001 */
+    g_emu.seeprom[42] = 0x0001; g_emu.seeprom[43] = 0x0B80;
+    /* Reg 0x4C (INTCSR) = 0x00000000 */
+    g_emu.seeprom[44] = 0x0000; g_emu.seeprom[45] = 0x0000;
+    /* CNTRL (reg 0x50) = 0x40789242 */
+    g_emu.seeprom[46] = 0x9242; g_emu.seeprom[47] = 0x4078;
+
+    s_ee.do_bit = 1;  /* pull-up default */
+    LOG("plx", "EEPROM pre-populated with PRISM config (48 words)\n");
+}
+
+/* Process CNTRL register write for SEEPROM bit-bang */
+static void seeprom_process_write(uint32_t cntrl_val)
+{
+    int sk = (cntrl_val >> 24) & 1;  /* EESK */
+    int cs = (cntrl_val >> 25) & 1;  /* EECS */
+    int di = (cntrl_val >> 26) & 1;  /* EEDI */
+
+    if (!cs) {
+        /* CS deasserted → reset state machine */
+        s_ee.state = 0;
+        s_ee.bits = 0;
+        s_ee.do_bit = 1;  /* float high when deselected */
+        s_ee.last_sk = sk;
+        return;
+    }
+
+    /* Process on rising edge of SK only */
+    if (sk && !s_ee.last_sk) {
+        switch (s_ee.state) {
+        case 0: /* Waiting for start bit (DI=1) */
+            if (di) {
+                s_ee.state = 1;
+                s_ee.bits = 0;
+                s_ee.opcode = 0;
+            }
+            break;
+        case 1: /* Reading 2-bit opcode */
+            s_ee.opcode = (s_ee.opcode << 1) | di;
+            s_ee.bits++;
+            if (s_ee.bits >= 2) {
+                s_ee.state = 2;
+                s_ee.bits = 0;
+                s_ee.addr = 0;
+            }
+            break;
+        case 2: /* Reading 6-bit address */
+            s_ee.addr = (s_ee.addr << 1) | di;
+            s_ee.bits++;
+            if (s_ee.bits >= 6) {
+                s_ee.addr &= 63;
+                if (s_ee.opcode == 2) { /* READ (opcode 10) */
+                    s_ee.state = 3;
+                    s_ee.bits = 0;
+                    s_ee.shift = g_emu.seeprom[s_ee.addr];
+                    s_ee.do_bit = 0;  /* dummy "0" bit before data */
+                    LOG("ee", "READ addr=%d → 0x%04x\n", s_ee.addr, s_ee.shift);
+                } else if (s_ee.opcode == 1) { /* WRITE (opcode 01) */
+                    s_ee.state = 4;
+                    s_ee.bits = 0;
+                    s_ee.shift = 0;
+                    LOG("ee", "WRITE addr=%d start\n", s_ee.addr);
+                } else {
+                    LOG("ee", "MISC op=%d addr=%d\n", s_ee.opcode, s_ee.addr);
+                    /* EWEN/EWDS/ERAL/WRAL — simplified: acknowledge */
+                    s_ee.state = 0;
+                    s_ee.do_bit = 1;
+                }
+            }
+            break;
+        case 3: /* Data out (READ) — 16 bits MSB first */
+            s_ee.do_bit = (s_ee.shift >> (15 - s_ee.bits)) & 1;
+            s_ee.bits++;
+            if (s_ee.bits >= 16) {
+                /* Auto-increment address for sequential reads */
+                s_ee.addr = (s_ee.addr + 1) & 63;
+                s_ee.shift = g_emu.seeprom[s_ee.addr];
+                s_ee.bits = 0;
+                s_ee.do_bit = (s_ee.shift >> 15) & 1;
+            }
+            break;
+        case 4: /* Data in (WRITE) — 16 bits MSB first */
+            s_ee.shift = (s_ee.shift << 1) | di;
+            s_ee.bits++;
+            if (s_ee.bits >= 16) {
+                g_emu.seeprom[s_ee.addr] = s_ee.shift;
+                LOG("ee", "WRITE addr=%d ← 0x%04x\n", s_ee.addr, s_ee.shift);
+                s_ee.state = 0;
+                s_ee.do_bit = 1;  /* ready */
+            }
+            break;
+        }
+    }
+    s_ee.last_sk = sk;
+}
+
+/* PLX 9050 local config registers — pre-init matching real PRISM hardware */
 static void plx_init(void)
 {
     uint32_t *r = g_emu.plx_regs;
-    r[0x00 >> 2] = 0x905010B5u;  /* PLX device ID */
-    r[0x04 >> 2] = 0x02800000u;
-    /* LAS0RR/LAS1RR/LAS2RR/LAS3RR — local address space range */
-    r[0x18 >> 2] = PLX_BANK0;    /* LAS0 base */
-    r[0x2C >> 2] = 0x00000000u;  /* EEPROM control */
-    /* Chip select base addresses */
-    r[0x28 >> 2] = PLX_BANK0 | 1; /* CS0 → bank0 */
-    r[0x30 >> 2] = 0x00000041u;   /* INTCSR */
-    r[0x34 >> 2] = 0x00000043u;   /* CNTRL */
-    r[0x38 >> 2] = 0x00000000u;   /* SEEPROM data */
+
+    /* Range registers (address decode masks, 16MB windows) */
+    r[0x00 >> 2] = 0xFF000000u;  /* LAS0RR */
+    r[0x04 >> 2] = 0xFF000000u;  /* LAS1RR */
+    r[0x08 >> 2] = 0xFF000000u;  /* LAS2RR */
+    r[0x0C >> 2] = 0xFF000000u;  /* LAS3RR */
+    r[0x10 >> 2] = 0x00000000u;  /* EROMRR */
+
+    /* Local address space base addresses (bit 0 = decode enable) */
+    r[0x14 >> 2] = 0x00100001u;  /* LAS0BA → 0x00100000 (DCS image window) */
+    r[0x18 >> 2] = 0x01000001u;  /* LAS1BA → 0x01000000 */
+    r[0x1C >> 2] = 0x00000001u;  /* LAS2BA → 0x00000000 */
+    r[0x20 >> 2] = 0x08000001u;  /* LAS3BA → bank0 @ 0x08000000 */
+    r[0x24 >> 2] = 0x00000000u;  /* EROMBA */
+
+    /* Bus region descriptors */
+    r[0x28 >> 2] = 0x00000000u;  /* LAS0BRD */
+    r[0x2C >> 2] = 0x00000000u;  /* LAS1BRD */
+    r[0x30 >> 2] = 0x00000000u;  /* LAS2BRD */
+    r[0x34 >> 2] = 0x00000000u;  /* LAS3BRD */
+    r[0x38 >> 2] = 0x00000000u;  /* EROMBRD */
+
+    /* Chip-select base addresses (bit 0 = enable) */
+    r[0x3C >> 2] = PLX_BANK1 | 1;   /* CS0 → bank1 @ 0x08800000 */
+    r[0x40 >> 2] = PLX_BANK2 | 1;   /* CS1 → bank2 @ 0x09800000 */
+    r[0x44 >> 2] = PLX_BANK3 | 1;   /* CS2 → bank3 @ 0x0A800000 */
+    r[0x48 >> 2] = PLX_CS3_DCS | 1; /* CS3 → DCS  @ 0x0B800000 */
+
+    /* Interrupt and control */
+    r[0x4C >> 2] = 0x00000000u;  /* INTCSR — interrupts disabled */
+    r[0x50 >> 2] = 0x00000000u;  /* CNTRL */
 }
 
 /* Flash command state (Intel 28F320) */
@@ -47,10 +235,27 @@ static uint8_t flash_read_byte(uint32_t off)
         }
     case 0x98: /* CFI */
         switch ((off >> 1) & 0xFF) {
-        case 0x10: return 'Q';
-        case 0x11: return 'R';
-        case 0x12: return 'Y';
-        case 0x27: return 0x16; /* 4MB */
+        case 0x10: return 0x51;  /* 'Q' */
+        case 0x11: return 0x52;  /* 'R' */
+        case 0x12: return 0x59;  /* 'Y' */
+        case 0x13: return 0x01;  /* primary vendor: Intel */
+        case 0x14: return 0x00;
+        case 0x15: return 0x31;  /* primary table address */
+        case 0x16: return 0x00;
+        case 0x1B: return 0x45;  /* Vcc min */
+        case 0x1C: return 0x55;  /* Vcc max */
+        case 0x1F: return 0x07;  /* typical word program timeout: 2^7=128µs */
+        case 0x21: return 0x0A;  /* typical block erase timeout: 2^10=1024ms */
+        case 0x27: return 0x16;  /* device size = 2^22 = 4MB */
+        case 0x28: return 0x02;  /* interface: x16 */
+        case 0x29: return 0x00;
+        case 0x2A: return 0x05;  /* max write buffer = 2^5 = 32 bytes */
+        case 0x2B: return 0x00;
+        case 0x2C: return 0x01;  /* 1 erase block region */
+        case 0x2D: return 0x1F;  /* 32-1=31 blocks, low byte */
+        case 0x2E: return 0x00;  /* blocks-1, high byte */
+        case 0x2F: return 0x00;  /* block size/256 = 0x200, low byte */
+        case 0x30: return 0x02;  /* block size/256, high byte */
         default: return 0;
         }
     default: return 0;
@@ -59,16 +264,28 @@ static uint8_t flash_read_byte(uint32_t off)
 
 void bar_init(void)
 {
+    seeprom_init_default();  /* pre-populate before .see file may override */
     plx_init();
     memset(g_emu.bar2_sram, 0, sizeof(g_emu.bar2_sram));
     LOG("bar", "BAR handlers initialized\n");
 }
 
+/* Re-apply SEEPROM PLX config after savedata may have loaded stale .see file */
+void bar_seeprom_reinit(void)
+{
+    seeprom_init_default();
+}
+
 /* ===== MMIO Read Hook ===== */
-void bar_mmio_read(uc_engine *uc, uint64_t addr, uint32_t size, void *user_data)
+void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int64_t value, void *user_data)
 {
     uint32_t val = 0;
     uint32_t a = (uint32_t)addr;
+    static int mmio_log_cnt = 0;
+    if (mmio_log_cnt < 20 && a >= WMS_BAR0 && a < WMS_BAR0 + 0x01000000u) {
+        mmio_log_cnt++;
+        LOG("mmio", "READ addr=0x%08x size=%d\n", a, size);
+    }
 
     if (a >= GX_BASE && a < GX_BASE + GX_BASE_SIZE) {
         /* GX_BASE MMIO */
@@ -103,16 +320,33 @@ void bar_mmio_read(uc_engine *uc, uint64_t addr, uint32_t size, void *user_data)
     }
     else if (a >= WMS_BAR0 && a < WMS_BAR0 + 0x01000000u) {
         uint32_t off = a - WMS_BAR0;
+        static int plx_rd_cnt = 0;
+        if (off < 0x60 && plx_rd_cnt < 100) {
+            plx_rd_cnt++;
+            LOG("plx", "RD off=0x%02x size=%u\n", off, size);
+        }
 
         if (off < WMS_BAR2 - WMS_BAR0) {
             /* BAR0: PLX 9050 registers */
-            if ((off >> 2) < 64)
+            if ((off >> 2) < 64) {
                 val = g_emu.plx_regs[off >> 2];
-            else
+
+                /* Special read behaviors (from i386/x64 POC) */
+                if (off == 0x4C) {
+                    /* INTCSR: force bit 2 clear, bit 5 set (PLX ready) */
+                    val = (val & ~0x04u) | 0x20u;
+                }
+                else if (off == 0x50) {
+                    /* CNTRL: replace DO bit(27) with emulated, force EE_Present(28) */
+                    val = (val & ~0x18000000u) | 0x10000000u; /* bit28=present */
+                    if (s_ee.do_bit)
+                        val |= 0x08000000u; /* bit27=EEDO */
+                }
+            } else {
                 val = 0;
+            }
         }
         else {
-            /* Shouldn't reach here — BAR2-4 have their own hooks */
             val = 0xFF;
         }
     }
@@ -166,11 +400,16 @@ void bar_mmio_read(uc_engine *uc, uint64_t addr, uint32_t size, void *user_data)
 }
 
 /* ===== MMIO Write Hook ===== */
-void bar_mmio_write(uc_engine *uc, uint64_t addr, uint32_t size,
-                    uint64_t value, void *user_data)
+void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
+                    int64_t value, void *user_data)
 {
     uint32_t a = (uint32_t)addr;
     uint32_t val = (uint32_t)value;
+    static int mmio_wr_cnt = 0;
+    if (mmio_wr_cnt < 20 && a >= WMS_BAR0 && a < WMS_BAR0 + 0x01000000u) {
+        mmio_wr_cnt++;
+        LOG("mmio", "WRITE addr=0x%08x size=%d val=0x%08x\n", a, size, val);
+    }
 
     if (a >= GX_BASE && a < GX_BASE + GX_BASE_SIZE) {
         uint32_t off = a - GX_BASE;
@@ -205,10 +444,24 @@ void bar_mmio_write(uc_engine *uc, uint64_t addr, uint32_t size,
         if ((off >> 2) < 64) {
             g_emu.plx_regs[off >> 2] = val;
 
+            /* SEEPROM bit-bang on CNTRL register (0x50) */
+            if (off == 0x50)
+                seeprom_process_write(val);
+
+            /* Track chip-select writes */
+            if (off >= 0x3C && off <= 0x48) {
+                int cs_num = (off - 0x3C) / 4;
+                uint32_t base = val & ~1u;
+                LOG("plx", "CS%d = 0x%08x (enable=%d)\n", cs_num, base, val & 1);
+            }
+            else if (off == 0x20) {
+                LOG("plx", "LAS3BA = 0x%08x (bank0)\n", val & ~1u);
+            }
+
             static int s_plx_log = 0;
-            if (s_plx_log < 30) {
+            if (s_plx_log < 40) {
                 s_plx_log++;
-                LOG("plx", "WR off=0x%03x val=0x%08x\n", off, val);
+                LOG("plx", "WR off=0x%02x val=0x%08x\n", off, val);
             }
         }
     }

@@ -97,6 +97,20 @@ static void apply_boot_assist(void)
     fflush(stdout);
 }
 
+/*
+ * Apply post-ROM-copy patches. Called AFTER option ROM is copied to 0x80000
+ * (by cpu_setup_protected_mode). These patches are in-RAM, not in ROM files.
+ */
+static void apply_ram_patches(void)
+{
+    /* Safety halt at option ROM offset 0x1F7 (0x801F7):
+     * This is garbled 16-bit PM switch code that shouldn't execute.
+     * If Init2 returns instead of jumping to game code, we catch it cleanly. */
+    uint8_t halt_loop[] = { 0xF4, 0xEB, 0xFD };  /* HLT; JMP $-3 */
+    uc_mem_write(g_emu.uc, 0x801F7, halt_loop, sizeof(halt_loop));
+    LOG("boot", "Safety halt at 0x801F7 (post-Init2 fallthrough catcher)\n");
+}
+
 /* Zero DCS presence bytes in ROM banks — prevents NonFatal from missing DCS board.
  * ROM-agnostic: same offset (0x10000) and size (4KB) in all game ROMs. */
 static void patch_dcs_presence(void)
@@ -186,14 +200,13 @@ int main(int argc, char **argv)
     LOG("init", "Game: %s | ROMs: %s | Savedata: %s\n",
         g_emu.game_prefix, g_emu.roms_dir, g_emu.savedata_dir);
 
-    /* Initialize subsystems in order */
+    /* Initialize subsystems in order:
+     * 1. ROMs (load files from disk)
+     * 2. CPU (create Unicorn engine)
+     * 3. Memory (map guest physical address space)
+     */
     if (rom_load_all() != 0) {
         fprintf(stderr, "Failed to load ROMs\n");
-        return 1;
-    }
-
-    if (memory_init() != 0) {
-        fprintf(stderr, "Failed to init memory\n");
         return 1;
     }
 
@@ -202,8 +215,16 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    if (memory_init() != 0) {
+        fprintf(stderr, "Failed to init memory\n");
+        return 1;
+    }
+
     io_init();
-    bar_init();
+    bar_init();  /* sets EEPROM defaults, but .see file already loaded by rom_init */
+
+    /* Re-apply EEPROM defaults — .see file may contain stale data from prior POC */
+    bar_seeprom_reinit();
 
     /* Boot assistance (IVT stubs, DCS presence, PRISM ROM fix) */
     apply_boot_assist();
@@ -220,6 +241,15 @@ int main(int argc, char **argv)
     if (g_emu.flash)
         uc_mem_write(g_emu.uc, WMS_BAR3, g_emu.flash, FLASH_SIZE);
 
+    /* Set up protected mode (skip BIOS, start at option ROM PM code) */
+    if (cpu_setup_protected_mode() != 0) {
+        fprintf(stderr, "Failed to setup protected mode\n");
+        return 1;
+    }
+
+    /* Apply RAM patches after ROM is in guest memory */
+    apply_ram_patches();
+
     /* Display and sound (non-fatal if they fail) */
     if (display_init() != 0)
         LOG("warn", "Display init failed — running headless\n");
@@ -231,7 +261,7 @@ int main(int argc, char **argv)
     setup_timer();
     g_emu.running = true;
 
-    LOG("cpu", "Starting from reset vector 0xFFFFFFF0...\n\n");
+    LOG("cpu", "Starting Encore in protected mode...\n\n");
     fflush(stdout);
 
     cpu_run();

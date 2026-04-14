@@ -37,11 +37,11 @@
 #define GUEST_OPTION_ROM  0x000C0000u   /* PRISM option ROM */
 #define GUEST_BIOS_SHADOW 0x000F0000u   /* BIOS shadow */
 
-#define PLX_BANK0         0x08000000u   /* PLX chip-select bank 0 */
-#define PLX_BANK1         0x08800000u
-#define PLX_BANK2         0x09000000u
-#define PLX_BANK3         0x09800000u
-#define PLX_CS3_DCS       0x0B800000u   /* DCS2 sound ROM via PLX CS3 */
+#define PLX_BANK0         0x08000000u   /* PLX chip-select bank 0 (LAS3BA) */
+#define PLX_BANK1         0x08800000u   /* CS0BASE */
+#define PLX_BANK2         0x09800000u   /* CS1BASE */
+#define PLX_BANK3         0x0A800000u   /* CS2BASE */
+#define PLX_CS3_DCS       0x0B800000u   /* CS3BASE — DCS2 sound ROM */
 
 #define WMS_BAR0          0x10000000u   /* PLX 9050 register file */
 #define WMS_BAR2          0x11000000u   /* DCS2 interface + char display */
@@ -239,11 +239,18 @@ typedef struct {
     uint8_t  uart_regs[8];
     char     uart_buf[4096];
     int      uart_pos;
+    int      uart_lsr_count;           /* LSR poll counter for drain (BT-88) */
+    bool     monitor_active;           /* XINU monitor prompt detected */
+    int      monitor_inject_pos;       /* position in "continue\r" injection */
 
     /* LPT */
     uint8_t  lpt_data;
     uint8_t  lpt_status;
     uint8_t  lpt_ctrl;
+
+    /* SuperIO / CC5530 */
+    uint8_t  superio_idx;              /* W83977EF index register (0x2E) */
+    uint8_t  cc5530_idx;               /* CC5530 EEPROM index (0xEA) */
 
     /* DCS2 sound */
     DCSCmdBuf dcs_cmds;
@@ -301,6 +308,7 @@ extern EncoreState g_emu;
  * ========================================================================= */
 /* cpu.c */
 int  cpu_init(void);
+int  cpu_setup_protected_mode(void);
 void cpu_run(void);
 void cpu_inject_interrupt(uint8_t vector);
 void cpu_timer_handler(int sig);
@@ -324,9 +332,10 @@ void     io_port_write(uint16_t port, uint32_t val, int size);
 void     io_init(void);
 
 /* bar.c */
-void bar_mmio_read(uc_engine *uc, uint64_t addr, uint32_t size, void *user_data);
-void bar_mmio_write(uc_engine *uc, uint64_t addr, uint32_t size, uint64_t value, void *user_data);
+void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int64_t value, void *user_data);
+void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int64_t value, void *user_data);
 void bar_init(void);
+void bar_seeprom_reinit(void);
 
 /* display.c */
 int  display_init(void);

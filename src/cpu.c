@@ -13,6 +13,7 @@ static uint32_t hook_insn_in_val(uc_engine *uc, uint32_t port, int size, void *u
 static void hook_insn_out(uc_engine *uc, uint32_t port, int size, uint32_t value, void *user_data);
 static bool hook_mem_invalid(uc_engine *uc, uc_mem_type type, uint64_t addr,
                              int size, int64_t value, void *user_data);
+static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *user_data);
 
 /* SIGALRM handler — sets timer flag, stops current emulation slice */
 void cpu_timer_handler(int sig)
@@ -43,24 +44,118 @@ int cpu_init(void)
     /* Hook invalid memory accesses */
     uc_hook h_inv;
     uc_hook_add(uc, &h_inv, UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED |
-                UC_HOOK_MEM_FETCH_UNMAPPED, (void*)hook_mem_invalid, NULL, 1, 0);
+                UC_HOOK_MEM_FETCH_UNMAPPED | UC_HOOK_MEM_WRITE_PROT |
+                UC_HOOK_MEM_FETCH_PROT, (void*)hook_mem_invalid, NULL, 1, 0);
 
     /* MMIO hooks for BAR regions + GX_BASE */
     uc_hook h_bar_r, h_bar_w;
-    /* BAR0-4 range: 0x10000000 - 0x14000000 */
-    uc_hook_add(uc, &h_bar_r, UC_HOOK_MEM_READ, (void*)bar_mmio_read,
-                NULL, WMS_BAR0, WMS_BAR4 + BAR4_SIZE - 1);
-    uc_hook_add(uc, &h_bar_w, UC_HOOK_MEM_WRITE, (void*)bar_mmio_write,
-                NULL, WMS_BAR0, WMS_BAR4 + BAR4_SIZE - 1);
+    uc_err e;
+    e = uc_hook_add(uc, &h_bar_r, UC_HOOK_MEM_READ, (void*)bar_mmio_read,
+                NULL, (uint64_t)WMS_BAR0, (uint64_t)(WMS_BAR4 + BAR4_SIZE - 1));
+    if (e) LOG("cpu", "BAR read hook FAILED: %s\n", uc_strerror(e));
+    e = uc_hook_add(uc, &h_bar_w, UC_HOOK_MEM_WRITE, (void*)bar_mmio_write,
+                NULL, (uint64_t)WMS_BAR0, (uint64_t)(WMS_BAR4 + BAR4_SIZE - 1));
+    if (e) LOG("cpu", "BAR write hook FAILED: %s\n", uc_strerror(e));
 
     /* GX_BASE MMIO (0x40000000 - 0x41000000) */
     uc_hook h_gx_r, h_gx_w;
-    uc_hook_add(uc, &h_gx_r, UC_HOOK_MEM_READ, (void*)bar_mmio_read,
-                NULL, GX_BASE, GX_BASE + GX_BASE_SIZE - 1);
-    uc_hook_add(uc, &h_gx_w, UC_HOOK_MEM_WRITE, (void*)bar_mmio_write,
-                NULL, GX_BASE, GX_BASE + GX_BASE_SIZE - 1);
+    e = uc_hook_add(uc, &h_gx_r, UC_HOOK_MEM_READ, (void*)bar_mmio_read,
+                NULL, (uint64_t)GX_BASE, (uint64_t)(GX_BASE + GX_BASE_SIZE - 1));
+    if (e) LOG("cpu", "GX read hook FAILED: %s\n", uc_strerror(e));
+    e = uc_hook_add(uc, &h_gx_w, UC_HOOK_MEM_WRITE, (void*)bar_mmio_write,
+                NULL, (uint64_t)GX_BASE, (uint64_t)(GX_BASE + GX_BASE_SIZE - 1));
+    if (e) LOG("cpu", "GX write hook FAILED: %s\n", uc_strerror(e));
+
+    /* Code trace hook for Init2 checkpoints (0x80000 - 0x90000)
+     * and game entry point (0x100000) */
+    uc_hook h_trace1, h_trace2;
+    uc_hook_add(uc, &h_trace1, UC_HOOK_CODE, (void*)hook_code_trace,
+                NULL, (uint64_t)0x801BF, (uint64_t)0x801F8);
+    uc_hook_add(uc, &h_trace2, UC_HOOK_CODE, (void*)hook_code_trace,
+                NULL, (uint64_t)0x808FC, (uint64_t)0x80BA0);
+    uc_hook h_trace3, h_trace4, h_trace5;
+    uc_hook_add(uc, &h_trace3, UC_HOOK_CODE, (void*)hook_code_trace,
+                NULL, (uint64_t)0x83B20, (uint64_t)0x83DE2);
+    uc_hook_add(uc, &h_trace4, UC_HOOK_CODE, (void*)hook_code_trace,
+                NULL, (uint64_t)0x100000, (uint64_t)0x100010);
+    uc_hook_add(uc, &h_trace5, UC_HOOK_CODE, (void*)hook_code_trace,
+                NULL, (uint64_t)0x88000, (uint64_t)0x8B000);
 
     LOG("cpu", "Unicorn Engine initialized (i386 mode)\n");
+    return 0;
+}
+
+/*
+ * Set up 32-bit protected mode with flat segments.
+ * Skips BIOS POST entirely — sets up what the PRISM option ROM's
+ * INT 19 handler would do after switching to protected mode.
+ */
+int cpu_setup_protected_mode(void)
+{
+    uc_engine *uc = g_emu.uc;
+    if (!uc) return -1;
+
+    /*
+     * GDT layout (from PRISM option ROM at offset 0x5BC):
+     *   [0] Null descriptor
+     *   [1] CS=0x08: flat 32-bit code (base=0, limit=4GB, DPL=0)
+     *   [2] DS=0x10: flat 32-bit data (base=0, limit=4GB, DPL=0)
+     *   [3] 16-bit code (base=0, limit=1MB, for transitions)
+     */
+    static const uint8_t gdt[] = {
+        /* [0] Null */
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        /* [1] CS=0x08: base=0, limit=FFFFF, G=1(4K pages), D=1(32-bit), type=0xF(code+conf+r+a) */
+        0xFF, 0xFF, 0x00, 0x00, 0x00, 0x9F, 0xCF, 0x00,
+        /* [2] DS=0x10: base=0, limit=FFFFF, G=1, D=1, type=0x3(data+w+a) */
+        0xFF, 0xFF, 0x00, 0x00, 0x00, 0x93, 0xCF, 0x00,
+        /* [3] 16-bit CS=0x18: base=0, limit=FFFFF, G=0, D=0, type=0xB(code+r+a) */
+        0xFF, 0xFF, 0x00, 0x00, 0x00, 0x9B, 0x0F, 0x00,
+    };
+
+    /* Write GDT to guest memory at a safe location */
+    #define GDT_ADDR 0x00001000
+    uc_mem_write(uc, GDT_ADDR, gdt, sizeof(gdt));
+
+    /* Load GDTR */
+    uc_x86_mmr gdtr = { .selector = 0, .base = GDT_ADDR,
+                        .limit = sizeof(gdt) - 1, .flags = 0 };
+    uc_reg_write(uc, UC_X86_REG_GDTR, &gdtr);
+
+    /* Set CR0: PE=1 (protected mode), ET=1 (387 present) */
+    uint32_t cr0 = 0x00000011;
+    uc_reg_write(uc, UC_X86_REG_CR0, &cr0);
+
+    /* Set segment selectors for flat 32-bit mode */
+    uint32_t cs_sel = 0x08;
+    uint32_t ds_sel = 0x10;
+    uc_reg_write(uc, UC_X86_REG_CS, &cs_sel);
+    uc_reg_write(uc, UC_X86_REG_DS, &ds_sel);
+    uc_reg_write(uc, UC_X86_REG_ES, &ds_sel);
+    uc_reg_write(uc, UC_X86_REG_SS, &ds_sel);
+    uc_reg_write(uc, UC_X86_REG_FS, &ds_sel);
+    uc_reg_write(uc, UC_X86_REG_GS, &ds_sel);
+
+    /* Set EFLAGS: only reserved bit 1 set, IF=0 */
+    uint32_t eflags = 0x00000002;
+    uc_reg_write(uc, UC_X86_REG_EFLAGS, &eflags);
+
+    /* Copy PRISM option ROM (32KB from bank0) to 0x80000 (what INT 19 handler does) */
+    uint8_t optrom[0x8000];
+    uc_mem_read(uc, PLX_BANK0, optrom, 0x8000);
+    uc_mem_write(uc, 0x80000, optrom, 0x8000);
+
+    /* Set stack pointer */
+    uint32_t esp = 0x8B000;
+    uc_reg_write(uc, UC_X86_REG_ESP, &esp);
+
+    /* EIP = 0x801D9 — PM entry point (skips real-mode call pair at 0x801BF/0x801C4) */
+    uint32_t eip = 0x801D9;
+    uc_reg_write(uc, UC_X86_REG_EIP, &eip);
+
+    LOG("cpu", "Protected mode setup: GDT at 0x%x, CS=0x%x DS=0x%x\n",
+        GDT_ADDR, cs_sel, ds_sel);
+    LOG("cpu", "Entry point: EIP=0x%08x ESP=0x%08x\n", eip, esp);
     return 0;
 }
 
@@ -158,44 +253,94 @@ static void check_and_inject_irq(void)
     }
 }
 
+/* Code hook for tracing Init2 checkpoints */
+static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *user_data)
+{
+    uint32_t eax, ebx, esp;
+    uc_reg_read(uc, UC_X86_REG_EAX, &eax);
+    uc_reg_read(uc, UC_X86_REG_EBX, &ebx);
+    uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+
+    switch ((uint32_t)addr) {
+    case 0x801BF: LOG("trace", "Entry 0x801BF (INT19 handler)\n"); break;
+    case 0x801C9: LOG("trace", "PM switch at 0x801C9\n"); break;
+    case 0x801D9: LOG("trace", "PM entry 0x801D9\n"); break;
+    case 0x801ED: LOG("trace", "Second reloc call 0x801ED\n"); break;
+    case 0x801F2: LOG("trace", "Second Init2 call 0x801F2\n"); break;
+    case 0x801F7: LOG("trace", "!!! GARBLED 0x801F7 reached !!!\n"); break;
+    case 0x808FC: LOG("trace", "Init2 enter ESP=0x%08x\n", esp); break;
+    case 0x80904: LOG("trace", "Init2 sub-calls start\n"); break;
+    case 0x80922: LOG("trace", "Pre PCI-enum push\n"); break;
+    case 0x80929: LOG("trace", "Post PCI-enum EAX=0x%08x → EBX\n", eax); break;
+    case 0x80933: LOG("trace", "Call 0x83488 (1st) EBX=%d\n", ebx); break;
+    case 0x80959: LOG("trace", "Call 0x83488 (2nd)\n"); break;
+    case 0x80981: LOG("trace", "Update check: CMP EBX(%d), 1\n", ebx); break;
+    case 0x8098A: LOG("trace", "UPDATE PATH: MOV EBX=0x12000000\n"); break;
+    case 0x809A4: LOG("trace", "Validate boot data call\n"); break;
+    case 0x809AC: LOG("trace", "Boot data result EAX=%d\n", eax); break;
+    case 0x809CF: LOG("trace", "GameID check: flash[0x3C]=0x%08x vs BAR5\n", eax); break;
+    case 0x80A56: LOG("trace", "GAME ENTRY: EAX=[EBX+0x48]=0x%08x\n", eax); break;
+    case 0x80A5E: LOG("trace", ">>> CALL EAX (game jump!) EAX=0x%08x\n", eax); break;
+    case 0x80A98: LOG("trace", "FAIL: boot data bad\n"); break;
+    case 0x80B9C: LOG("trace", "NO UPDATE path at 0x80B9C\n"); break;
+    case 0x83B20: LOG("trace", "PCI enum 0x83B20 enter\n"); break;
+    case 0x83B29: {
+        uint8_t guard;
+        uc_mem_read(uc, 0x86CB0, &guard, 1);
+        LOG("trace", "PCI enum guard=[0x86CB0]=%d\n", guard);
+        break;
+    }
+    case 0x83DC5: LOG("trace", "PCI enum success EAX=1\n"); break;
+    case 0x83DD6: LOG("trace", "PCI enum FAIL EAX=-1\n"); break;
+    case 0x100000: LOG("trace", "*** GAME CODE ENTRY at 0x100000! ***\n"); break;
+    default:
+        if (addr >= 0x88000 && addr < 0x8B000) {
+            LOG("trace", "!!! STACK EXEC addr=0x%08x ESP=0x%08x !!!\n",
+                (uint32_t)addr, esp);
+        }
+        break;
+    }
+    fflush(stdout);
+}
+
 /* Main execution loop */
 void cpu_run(void)
 {
     uc_engine *uc = g_emu.uc;
     uint32_t eip;
+    uc_reg_read(uc, UC_X86_REG_EIP, &eip);
+    LOG("cpu", "Starting execution at EIP=0x%08x\n", eip);
+
     int display_timer = 0;
     struct timespec last_time, now;
     clock_gettime(CLOCK_MONOTONIC, &last_time);
 
     while (g_emu.running) {
-        /* Run a slice of emulation */
-        uc_err err = uc_emu_start(uc, 0, 0, 0, 0);
+        /* Resume from current EIP (flat protected mode — EIP is linear address) */
+        uc_reg_read(uc, UC_X86_REG_EIP, &eip);
+        uc_err err = uc_emu_start(uc, eip, 0, 0, 0);
 
         g_emu.exec_count++;
 
-        if (err != UC_ERR_OK) {
-            uc_reg_read(uc, UC_X86_REG_EIP, &eip);
+        /* Read EIP after execution stopped */
+        uc_reg_read(uc, UC_X86_REG_EIP, &eip);
 
+        if (err != UC_ERR_OK) {
             if (err == UC_ERR_INSN_INVALID) {
-                /* Check for HLT instruction */
                 uint8_t insn;
                 uc_mem_read(uc, eip, &insn, 1);
                 if (insn == 0xF4) {
                     /* HLT — wait for interrupt */
                     if (g_emu.timer_fired) {
                         g_emu.timer_fired = false;
-                        /* Raise PIT IRQ (IRQ0) */
                         g_emu.pic[0].irr |= 0x01;
                     }
                     check_and_inject_irq();
-
-                    /* If no interrupt injected, advance past HLT */
-                    uint32_t new_eip;
-                    uc_reg_read(uc, UC_X86_REG_EIP, &new_eip);
-                    if (new_eip == eip) {
-                        new_eip = eip + 1;
-                        uc_reg_write(uc, UC_X86_REG_EIP, &new_eip);
-                    }
+                    uc_reg_read(uc, UC_X86_REG_EIP, &eip);
+                    /* If no interrupt changed EIP, skip past HLT */
+                    uint8_t check;
+                    uc_mem_read(uc, eip, &check, 1);
+                    if (check == 0xF4) eip++;
                     goto handle_display;
                 }
             }
@@ -206,37 +351,30 @@ void cpu_run(void)
                     uc_strerror(err), eip, (unsigned long)g_emu.exec_count);
             }
 
-            /* Try to skip problematic instruction */
-            uc_reg_read(uc, UC_X86_REG_EIP, &eip);
+            /* Skip problematic instruction */
             eip++;
-            uc_reg_write(uc, UC_X86_REG_EIP, &eip);
         }
 
         /* Handle timer interrupt */
         if (g_emu.timer_fired) {
             g_emu.timer_fired = false;
-
-            /* PIT IRQ0 fires at 100Hz via SIGALRM */
             g_emu.pic[0].irr |= 0x01;
             check_and_inject_irq();
+            uc_reg_read(uc, UC_X86_REG_EIP, &eip);
         }
 
 handle_display:
-        /* Display update at ~60Hz (every ~16ms) */
         display_timer++;
-        if (display_timer >= 6) {  /* 100Hz / 6 ≈ 16.6Hz initially, adjust as needed */
+        if (display_timer >= 6) {
             display_timer = 0;
 
             if (g_emu.display_ready) {
                 display_handle_events();
                 display_update();
 
-                /* VSYNC pulse in BAR2 SRAM */
                 g_emu.vsync_count++;
+                /* VSYNC flag in BAR2 SRAM offset 4 */
                 g_emu.bar2_sram[4] = 1;
-                g_emu.bar2_sram[5] = 0;
-                g_emu.bar2_sram[6] = 0;
-                g_emu.bar2_sram[7] = 0;
             }
 
             /* Heartbeat log */
@@ -244,10 +382,9 @@ handle_display:
             double elapsed = (now.tv_sec - last_time.tv_sec) +
                              (now.tv_nsec - last_time.tv_nsec) / 1e9;
             if (elapsed >= 5.0) {
-                uc_reg_read(uc, UC_X86_REG_EIP, &eip);
-                LOG("hb", "exec=%lu EIP=0x%08x post=0x%02x vsync=%u uart_pos=%d\n",
+                LOG("hb", "exec=%lu EIP=0x%08x post=0x%02x vsync=%u frames=%d\n",
                     (unsigned long)g_emu.exec_count, eip, g_emu.post_code,
-                    g_emu.vsync_count, g_emu.uart_pos);
+                    g_emu.vsync_count, g_emu.frame_count);
                 if (g_emu.uart_pos > 0) {
                     g_emu.uart_buf[g_emu.uart_pos] = '\0';
                     LOG("uart", "%s\n", g_emu.uart_buf);
@@ -283,6 +420,21 @@ static bool hook_mem_invalid(uc_engine *uc, uc_mem_type type, uint64_t addr,
 {
     static int s_inv_count = 0;
     s_inv_count++;
+
+    /* Handle write-protected and fetch-protected: upgrade permissions */
+    if (type == UC_MEM_WRITE_PROT || type == UC_MEM_FETCH_PROT) {
+        /* Upgrade the page to full access */
+        uint64_t page_start = addr & ~0xFFFULL;
+        uc_mem_protect(uc, page_start, 0x1000, UC_PROT_ALL);
+        if (s_inv_count <= 20) {
+            uint32_t eip;
+            uc_reg_read(uc, UC_X86_REG_EIP, &eip);
+            LOG("mem", "prot upgrade at 0x%08lx (EIP=0x%08x, %s)\n",
+                (unsigned long)addr, eip,
+                type == UC_MEM_WRITE_PROT ? "write-prot" : "fetch-prot");
+        }
+        return true;
+    }
 
     /* Auto-map unmapped regions to keep emulation going */
     uint64_t page_start = addr & ~0xFFFULL;
