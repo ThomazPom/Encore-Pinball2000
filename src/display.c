@@ -131,6 +131,9 @@ void display_update(void)
     uint8_t fb_row[FB_STRIDE];
     bool any_nonzero = false;
 
+    /* Flush TLB so uc_mem_read sees fresh framebuffer data */
+    uc_ctl_flush_tlb(g_emu.uc);
+
     /* Render 240 source rows → 480 output rows (double each row, Y-flip) */
     for (int src_y = 0; src_y < FB_H; src_y++) {
         int draw_y = s_y_flip ? (FB_H - 1 - src_y) : src_y;
@@ -166,9 +169,21 @@ void display_update(void)
     SDL_RenderPresent(g_emu.renderer);
 
     g_emu.frame_count++;
-    if (s_seen_nonzero_fb &&
-        (g_emu.frame_count == 1000 || g_emu.frame_count == 3000 ||
-         g_emu.frame_count == 5000 || g_emu.frame_count == 10000)) {
+    /* Periodic probe + screenshot */
+    if (g_emu.frame_count == 1000 || g_emu.frame_count == 3000) {
+        /* Probe FB data at screenshot time */
+        uint16_t nz_phys = 0, nz_gx = 0;
+        for (int py = 100; py < 140; py++) {
+            for (int px = 300; px < 340; px++) {
+                uint16_t p1 = 0, p2 = 0;
+                uc_mem_read(g_emu.uc, 0x00800000u + py * FB_STRIDE + px * 2, &p1, 2);
+                uc_mem_read(g_emu.uc, 0x40800000u + py * FB_STRIDE + px * 2, &p2, 2);
+                if (p1) nz_phys++;
+                if (p2) nz_gx++;
+            }
+        }
+        LOG("disp", "frame %d: phys=%u gx=%u nonzero, any_nonzero=%d fb_off=0x%x\n",
+            g_emu.frame_count, nz_phys, nz_gx, any_nonzero, g_emu.dc_fb_offset);
         save_screenshot("encore_auto", s_auto_snap_id++);
     }
 }

@@ -84,11 +84,6 @@ int cpu_init(void)
     uc_hook h_vsync_trace;
     uc_hook_add(uc, &h_vsync_trace, UC_HOOK_CODE, (void*)hook_code_trace,
                 NULL, (uint64_t)0x19BF60, (uint64_t)0x19BF70);
-    /* Hook at VBLANK CMP instruction to see actual DC_TIMING2 value in EAX */
-    uc_hook h_vbl_cmp;
-    uc_hook_add(uc, &h_vbl_cmp, UC_HOOK_CODE, (void*)hook_code_trace,
-                NULL, (uint64_t)0x19BFD4, (uint64_t)0x19BFD5);
-
     LOG("cpu", "Unicorn Engine initialized (i386 mode)\n");
     return 0;
 }
@@ -335,27 +330,8 @@ static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *u
     case 0x83DC5: LOG("trace", "PCI enum success EAX=1\n"); break;
     case 0x83DD6: LOG("trace", "PCI enum FAIL EAX=-1\n"); break;
     case 0x100000: LOG("trace", "*** GAME CODE ENTRY at 0x100000! ***\n"); break;
-    case 0x19BF64: {
-        static int vsync_cb_cnt = 0;
-        vsync_cb_cnt++;
-        uint32_t dt2_val = 0, en_val = 0, vbl_val = 0;
-        uc_mem_read(uc, GX_BASE + 0x8354, &dt2_val, 4);
-        uc_mem_read(uc, 0x2E8AF4, &en_val, 4);
-        uc_mem_read(uc, 0x2E8B64, &vbl_val, 4);
-        if (vsync_cb_cnt <= 10 || (vsync_cb_cnt % 200 == 0))
-            LOG("trace", "VSYNC cb#%d: dt2=%u en=0x%x vbl=%u\n",
-                vsync_cb_cnt, dt2_val, en_val, vbl_val);
+    case 0x19BF64:
         break;
-    }
-    case 0x19BFD4: {
-        /* CMP EAX, 0xF0 — EAX has DC_TIMING2 & 0x7FF */
-        static int vbl_cmp_cnt = 0;
-        vbl_cmp_cnt++;
-        if (vbl_cmp_cnt <= 10 || eax > 0xF0 || (vbl_cmp_cnt % 500 == 0))
-            LOG("trace", "VBLANK CMP #%d: EAX=%u (>0xF0=%s)\n",
-                vbl_cmp_cnt, eax, eax > 0xF0 ? "YES→VBLANK!" : "no");
-        break;
-    }
     default:
         if (addr >= 0x88000 && addr < 0x8B000) {
             LOG("trace", "!!! STACK EXEC addr=0x%08x ESP=0x%08x !!!\n",
@@ -403,13 +379,7 @@ void cpu_run(void)
                     uc_mem_write(uc, WMS_BAR2 + 4, &one, 4);
                 }
 
-                /* Drive DC_TIMING2 scanline counter in UC memory.
-                 * Unicorn TLB caches read hooks — uc_mem_write ensures
-                 * the game sees an updated value even without the hook. */
-                static uint32_t dc_row = 0;
-                dc_row++;
-                if (dc_row > 0xF3) dc_row = 0;
-                uc_mem_write(uc, GX_BASE + 0x8354, &dc_row, 4);
+                /* DC_TIMING2 now driven by read-hook in bar.c (BT-109) */
             }
         }
 
@@ -625,6 +595,22 @@ void cpu_run(void)
                 LOG("init", "Init gate + DCS2 flags set (0xC3@400000, [2C927C]=1)\n");
             }
 
+            /* --- 7b. Display pre-init (x64 POC xinu-seen stage 6c) ---
+             * Pre-set display buffer address and init flag so rendering
+             * starts immediately without waiting for PRISM reg reads. */
+            {
+                uint32_t fb_addr = 0x800000u, one = 1, zero = 0;
+                uc_mem_write(uc, 0x2935C8u, &fb_addr, 4);  /* display buffer addr */
+                uc_mem_write(uc, 0x293638u, &one, 4);       /* DISPLAY initialized */
+                uc_mem_write(uc, 0x2935B4u, &zero, 4);      /* DISPLAY layer index */
+                /* Text layer init (x64 POC stage 6b) */
+                uc_mem_write(uc, 0x294494u, &zero, 4);      /* layer index 0 */
+                uint8_t layer_active = 1;
+                uc_mem_write(uc, 0x2D31F8u, &layer_active, 1); /* layer[0].status=1 */
+                uc_mem_write(uc, 0x2D3204u, &zero, 4);      /* text-pool index=0 */
+                LOG("init", "Display pre-init: [2935C8]=0x800000 [293638]=1\n");
+            }
+
             /* --- 8. XINACMOS fake object (i386 POC BT-33) --- */
             {
                 uint8_t xor_ret[3] = { 0x31, 0xC0, 0xC3 };
@@ -731,17 +717,10 @@ void cpu_run(void)
                 LOG("init", "DC pre-init: CFG=0x303 FB_OFF=0 LINE=320\n");
             }
 
-            /* --- 13. DCS2 completion (x64 POC V1.5 stage 2) ---
-             * After initial DCS2 flags (stage 1), set completion values.
-             * The game checks [0x2797C4] != 0 before activating render pipeline. */
-            {
-                uint32_t dcs_done = 0x0000FFFFu;
-                uint32_t zero = 0;
-                uc_mem_write(uc, 0x2797C4u, &dcs_done, 4);  /* DCS2 complete (was 0) */
-                uc_mem_write(uc, 0x2AF824u, &zero, 4);      /* BAR4 wait bypass (was 1) */
-                uc_mem_write(uc, 0x279C7Cu, &zero, 4);      /* BAR4 wait bypass 2 */
-                LOG("init", "DCS2 completion: [2797C4]=0xFFFF, [2AF824]=0, [279C7C]=0\n");
-            }
+            /* --- 13. DCS2 completion — REMOVED.
+             * [0x2797C4]=0 was already set correctly in stage 7 (init gate).
+             * An earlier bug set 0xFFFF here, UNDOING the correct value and
+             * blocking the render pipeline. 0=done, 0xFFFF=pending. --- */
 
             LOG("init", "=== Post-XINU V1.19 patches complete ===\n");
         }
@@ -1022,111 +1001,25 @@ handle_display:
                     g_emu.vsync_count, g_emu.frame_count);
                 LOG("hb", "  preempt=%u nproc=%u guards=%u/%u/%u tinit=%u tcyc=%u\n",
                     preempt, nproc, guard1, guard2, gate, tinit, tick_cycle);
-                /* DM state every heartbeat */
+                /* DM state — compact */
                 {
-                    uint32_t e1=0, gxp=0, dmm=0, inb=0, fcnt=0, dt2=0;
-                    uc_mem_read(uc, 0x2E8AF4, &e1, 4);
-                    uc_mem_read(uc, 0x2E8B74, &gxp, 4);
+                    uint32_t dmm=0, gxp=0, dt2=0;
                     uc_mem_read(uc, 0x2E8E2C, &dmm, 4);
-                    uc_mem_read(uc, 0x2E8B64, &inb, 4);
-                    uc_mem_read(uc, 0x2E8AF0, &fcnt, 4);
+                    uc_mem_read(uc, 0x2E8B74, &gxp, 4);
                     uc_mem_read(uc, GX_BASE + 0x8354, &dt2, 4);
-                    uint32_t vblcnt = 0, ae4 = 0, ae8 = 0, ae0_sem = 0;
-                    uc_mem_read(uc, 0x2E8AEC, &vblcnt, 4);
-                    uc_mem_read(uc, 0x2E8AE4, &ae4, 4);
-                    uc_mem_read(uc, 0x2E8AE8, &ae8, 4);
-                    uc_mem_read(uc, 0x2E8AE0, &ae0_sem, 4);
-                    /* Also read dispmgr's wait semaphore from proctab */
-                    uint32_t dm_sem = 0;
-                    uc_mem_read(uc, 0x2FC8C4u + 128u*232u + 8u, &dm_sem, 4);
-                    LOG("hb", "  DM: en=0x%x gxp=0x%x mode=%u vbl=%u frm=%u dt2=%u vblcnt=%u ae4=%u ae8=%u sig_sem=%u dm_sem=%u\n",
-                        e1, gxp, dmm, inb, fcnt, dt2, vblcnt, ae4, ae8, ae0_sem, dm_sem);
+                    LOG("hb", "  DM: mode=%u gxp=0x%x dt2=%u\n", dmm, gxp, dt2);
                 }
-                /* One-shot process table dump (x64 POC: proctab at 0x2FC8C4, stride 232) */
+                /* One-shot process table summary */
                 static int proctab_dumped = 0;
                 if (!proctab_dumped && nproc >= 35) {
                     proctab_dumped = 1;
-                    static const char *st_names[] = {"s0  ","CURR","FREE","RDY ","SLP ","SUSP","RECV","WAIT"};
-                    int st_counts[8] = {0};
-                    LOG("hb", "[PROCTAB] base=0x2FC8C4 stride=232 nproc=%u\n", nproc);
-                    /* Hexdump dispmgr (pid 128) proctab entry */
-                    {
-                        uint8_t dm_raw[64];
-                        uc_mem_read(uc, 0x303CC4u, dm_raw, 64);
-                        LOG("hb", "  dispmgr raw: ");
-                        for (int j = 0; j < 64; j++) fprintf(stdout, "%02x", dm_raw[j]);
-                        fprintf(stdout, "\n");
-                    }
+                    int active = 0;
                     for (uint32_t pid = 0; pid < 130; pid++) {
-                        uint32_t pt = 0x2FC8C4u + pid * 232u;
-                        uint8_t  ps = 0;
-                        uint32_t pp = 0, sp = 0, sm = 0;
-                        uc_mem_read(uc, pt, &ps, 1);
-                        uc_mem_read(uc, pt + 4, &pp, 4);
-                        uc_mem_read(uc, pt + 0x24, &sp, 4);
-                        uc_mem_read(uc, pt + 0x08, &sm, 4);
-                        char pn[16] = {0};
-                        uc_mem_read(uc, pt + 0x30, pn, 15);
-                        for (int j = 0; j < 15; j++)
-                            if ((unsigned char)pn[j] < 0x20 || (unsigned char)pn[j] > 0x7E) pn[j] = 0;
-                        const char *sn = (ps < 8) ? st_names[ps] : "????";
-                        if (ps < 8) st_counts[ps]++;
-                        if (ps != 2)
-                            LOG("hb", "  pid=%3u %s pri=%3u sp=0x%08x sem=%5u  %s\n",
-                                pid, sn, pp, sp, sm, pn);
+                        uint8_t ps = 0;
+                        uc_mem_read(uc, 0x2FC8C4u + pid * 232u, &ps, 1);
+                        if (ps != 2) active++;  /* not FREE */
                     }
-                    LOG("hb", "  CURR=%d RDY=%d WAIT=%d SLP=%d SUSP=%d RECV=%d FREE=%d\n",
-                        st_counts[1], st_counts[3], st_counts[7], st_counts[4],
-                        st_counts[5], st_counts[6], st_counts[2]);
-                    /* Dump 256 bytes of code around 0x2A2500 for disassembly */
-                    {
-                        FILE *df = fopen("/tmp/vsync_cb.bin", "wb");
-                        if (df) {
-                            uint8_t code[512];
-                            uc_mem_read(uc, 0x19BF00, code, 512);
-                            fwrite(code, 1, 512, df);
-                            fclose(df);
-                            LOG("hb", "  dumped 0x19BF00-0x19C100 to /tmp/vsync_cb.bin\n");
-                        }
-                        /* Also dump display mgr key state */
-                        uint32_t e1=0, e2=0, gxp=0, dmm=0, inb=0, fb=0, fcnt=0;
-                        uc_mem_read(uc, 0x2E8AF4, &e1, 4);
-                        uc_mem_read(uc, 0x2E8AE4, &e2, 4);
-                        uc_mem_read(uc, 0x2E8B74, &gxp, 4);
-                        uc_mem_read(uc, 0x2E8E2C, &dmm, 4);
-                        uc_mem_read(uc, 0x2E8B64, &inb, 4);
-                        uc_mem_read(uc, 0x2E8AE8, &fb, 4);
-                        uc_mem_read(uc, 0x2E8AF0, &fcnt, 4);
-                        LOG("hb", "  DM: enable=%u/%u gxp=0x%x dm_mode=%u in_vblank=%u fb=%u frames=%u\n",
-                            e1, e2, gxp, dmm, inb, fb, fcnt);
-                        /* Read DC_TIMING2 from UC memory to verify timer writes */
-                        uint32_t dt2_val = 0;
-                        uc_mem_read(uc, GX_BASE + 0x8354, &dt2_val, 4);
-                        LOG("hb", "  DC_TIMING2(UC)=%u\n", dt2_val);
-                    }
-                    /* Timer callback list heads (x64 POC BT-69):
-                     * clkint walks these linked lists every tick. */
-                    static const uint32_t cb_addrs[] = {
-                        0x3358F0, 0x335920, 0x335910, 0x335960, 0x335970, 0x335900
-                    };
-                    static const char *cb_labels[] = {
-                        "ph0e", "ph1e", "ph1o", "ph3e", "ph3o", "common"
-                    };
-                    for (int ci = 0; ci < 6; ci++) {
-                        uint32_t head = 0;
-                        uc_mem_read(uc, cb_addrs[ci], &head, 4);
-                        if (head && head < 0x800000) {
-                            uint32_t fn = 0, nxt = 0, cnt = 0;
-                            uc_mem_read(uc, head, &fn, 4);
-                            uc_mem_read(uc, head + 4, &nxt, 4);
-                            uc_mem_read(uc, head + 12, &cnt, 4);
-                            LOG("hb", "  cb[%s] head=0x%x → fn=0x%x next=0x%x cnt=%u\n",
-                                cb_labels[ci], head, fn, nxt, cnt);
-                        } else {
-                            LOG("hb", "  cb[%s] head=0x%x (empty/invalid)\n",
-                                cb_labels[ci], head);
-                        }
-                    }
+                    LOG("hb", "  proctab: %u active processes\n", active);
                 }
                 if (g_emu.uart_pos > 0) {
                     g_emu.uart_buf[g_emu.uart_pos] = '\0';
