@@ -265,6 +265,7 @@ typedef struct {
     DCSRespBuf dcs_resp;
     uint16_t   dcs_latch;
     uint16_t   dcs_flags;
+    bool       dcs_active;   /* active/firmware-upload guard */
     bool       dcs_pending;  /* multi-word command in progress */
     int        dcs_remaining; /* remaining words for multi-word cmd */
     uint16_t   dcs_mixer[4]; /* multi-word accumulator */
@@ -368,6 +369,7 @@ void     io_port_write(uint16_t port, uint32_t val, int size);
 void     io_init(void);
 void     nic_dseg_init(void);  /* populate NIC LAN ROM in D-segment guest RAM */
 void     lpt_activate(void);   /* activate LPT emulated port for PinIO (BT-93) */
+void     lpt_set_host_input(uint8_t buttons, uint8_t switches);
 
 /* bar.c */
 void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int64_t value, void *user_data);
@@ -383,7 +385,13 @@ void display_cleanup(void);
 
 /* sound.c */
 int  sound_init(void);
+int  sound_is_ready(void);
+void sound_play_boot_dong(void);
 void sound_process_cmd(uint16_t cmd);
+void sound_execute_mixer(int cmd, int data1, int data2);
+void sound_set_global_volume(int vol);
+int  sound_get_global_volume(void);
+void sound_start_audio_init_thread(void);
 void sound_cleanup(void);
 
 /* =========================================================================

@@ -8,6 +8,61 @@
  */
 #include "encore.h"
 
+static int  s_coin_pulse = 0;
+static int  s_start_pulse = 0;
+static int  s_y_flip = 1;
+static bool s_seen_nonzero_fb = false;
+static int  s_snap_id = 0;
+static int  s_auto_snap_id = 0;
+
+#define PULSE_FRAMES 30
+#define SCREENSHOT_DIR "/mnt/hgfs/encore_forensic/screen_captures"
+
+static void ensure_screenshot_dir(void)
+{
+    mkdir(SCREENSHOT_DIR, 0777);
+}
+
+static void save_screenshot(const char *prefix, int id)
+{
+    if (!g_emu.display_ready) return;
+
+    ensure_screenshot_dir();
+
+    /* Save as uncompressed TGA (type 2) — no libpng dependency, widely viewable */
+    char path[256];
+    snprintf(path, sizeof(path), SCREENSHOT_DIR "/%s_%03d.tga", prefix, id);
+    FILE *f = fopen(path, "wb");
+    if (!f) return;
+
+    uint8_t hdr[18];
+    memset(hdr, 0, sizeof(hdr));
+    hdr[2]  = 2;                           /* uncompressed true-color */
+    hdr[12] = SCREEN_W & 0xFF;
+    hdr[13] = (SCREEN_W >> 8) & 0xFF;
+    hdr[14] = SCREEN_H & 0xFF;
+    hdr[15] = (SCREEN_H >> 8) & 0xFF;
+    hdr[16] = 32;                          /* 32 bpp */
+    hdr[17] = 0x20;                        /* top-left origin */
+    fwrite(hdr, 1, 18, f);
+
+    /* Write BGRA pixels (TGA native order) */
+    for (int y = 0; y < SCREEN_H; y++) {
+        for (int x = 0; x < SCREEN_W; x++) {
+            uint32_t argb = g_emu.fb_pixels[y * SCREEN_W + x];
+            uint8_t px[4] = {
+                (uint8_t)(argb),               /* B */
+                (uint8_t)(argb >> 8),          /* G */
+                (uint8_t)(argb >> 16),         /* R */
+                (uint8_t)(argb >> 24)          /* A */
+            };
+            fwrite(px, 1, 4, f);
+        }
+    }
+    fclose(f);
+    LOG("disp", "screenshot → %s\n", path);
+}
+
 int display_init(void)
 {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
@@ -70,14 +125,16 @@ void display_update(void)
 {
     if (!g_emu.display_ready || !g_emu.uc) return;
 
-    /* Read framebuffer from guest memory at GX_BASE + 0x800000 + dc_fb_offset */
-    uint32_t fb_base = GX_FB + g_emu.dc_fb_offset;
+    /* Read framebuffer from guest physical RAM at 0x800000 + dc_fb_offset.
+     * Game decompresses to phys RAM; GP BLTs also use 0x800000. */
+    uint32_t fb_base = 0x00800000u + g_emu.dc_fb_offset;
     uint8_t fb_row[FB_STRIDE];
+    bool any_nonzero = false;
 
     /* Render 240 source rows → 480 output rows (double each row, Y-flip) */
     for (int src_y = 0; src_y < FB_H; src_y++) {
-        /* Y-flip: source row 0 (bottom) → output rows 478-479 (near bottom in SDL) */
-        int dst_y = (FB_H - 1 - src_y) * 2;
+        int draw_y = s_y_flip ? (FB_H - 1 - src_y) : src_y;
+        int dst_y = draw_y * 2;
 
         /* Read one row from guest framebuffer */
         uc_err err = uc_mem_read(g_emu.uc, fb_base + src_y * FB_STRIDE, fb_row, FB_STRIDE);
@@ -88,10 +145,18 @@ void display_update(void)
         uint32_t *dst2 = &g_emu.fb_pixels[(dst_y + 1) * SCREEN_W];
 
         for (int x = 0; x < FB_W; x++) {
-            uint32_t argb = g_emu.rgb555_lut[pixels[x] & 0x7FFF];
+            uint16_t px = pixels[x] & 0x7FFF;
+            if (px) any_nonzero = true;
+            uint32_t argb = g_emu.rgb555_lut[px];
             dst1[x] = argb;
             dst2[x] = argb;
         }
+    }
+
+    if (any_nonzero && !s_seen_nonzero_fb) {
+        s_seen_nonzero_fb = true;
+        LOG("disp", "first non-zero framebuffer detected (fb_off=0x%x)\n", g_emu.dc_fb_offset);
+        save_screenshot("encore_first", 0);
     }
 
     /* Upload to GPU and present */
@@ -101,6 +166,11 @@ void display_update(void)
     SDL_RenderPresent(g_emu.renderer);
 
     g_emu.frame_count++;
+    if (s_seen_nonzero_fb &&
+        (g_emu.frame_count == 1000 || g_emu.frame_count == 3000 ||
+         g_emu.frame_count == 5000 || g_emu.frame_count == 10000)) {
+        save_screenshot("encore_auto", s_auto_snap_id++);
+    }
 }
 
 void display_handle_events(void)
@@ -123,40 +193,62 @@ void display_handle_events(void)
                 LOG("disp", "Key F1/Esc pressed — exiting\n");
                 g_emu.running = false;
                 break;
-            case SDLK_F9:
-                /* Coin insert — set LPT bit */
-                g_emu.lpt_data |= 0x01;
-                LOG("input", "Coin inserted\n");
+            case SDLK_F2:
+                s_y_flip = !s_y_flip;
+                LOG("disp", "y_flip=%d\n", s_y_flip);
                 break;
-            case SDLK_F10:
-                /* Start button */
-                g_emu.lpt_data |= 0x02;
-                LOG("input", "Start pressed\n");
+            case SDLK_F3:
+                save_screenshot("encore_snap", s_snap_id++);
                 break;
-            case SDLK_1:
-                g_emu.lpt_data |= 0x04;
-                break;
-            case SDLK_2:
-                g_emu.lpt_data |= 0x08;
-                break;
-            case SDLK_SPACE:
-                /* Flipper */
-                g_emu.lpt_data |= 0x10;
+            case SDLK_F7: {
+                int v = sound_get_global_volume();
+                v = (v + 16 > 255) ? 255 : v + 16;
+                sound_set_global_volume(v);
                 break;
             }
-            break;
-
-        case SDL_KEYUP:
-            switch (ev.key.keysym.sym) {
-            case SDLK_F9:  g_emu.lpt_data &= ~0x01; break;
-            case SDLK_F10: g_emu.lpt_data &= ~0x02; break;
-            case SDLK_1:   g_emu.lpt_data &= ~0x04; break;
-            case SDLK_2:   g_emu.lpt_data &= ~0x08; break;
-            case SDLK_SPACE: g_emu.lpt_data &= ~0x10; break;
+            case SDLK_F8: {
+                int v = sound_get_global_volume();
+                v = (v - 16 < 0) ? 0 : v - 16;
+                sound_set_global_volume(v);
+                break;
+            }
+            case SDLK_F9:
+                s_coin_pulse = PULSE_FRAMES;
+                LOG("input", "Coin pulse\n");
+                break;
+            case SDLK_F10:
+                s_start_pulse = PULSE_FRAMES;
+                LOG("input", "Start pulse\n");
+                break;
             }
             break;
         }
     }
+
+    const uint8_t *keys = SDL_GetKeyboardState(NULL);
+    uint8_t buttons = 0;
+    uint8_t switches = 0;
+
+    if (keys[SDL_SCANCODE_Z] || keys[SDL_SCANCODE_UP])    buttons |= 0x10;
+    if (keys[SDL_SCANCODE_X] || keys[SDL_SCANCODE_DOWN])  buttons |= 0x20;
+    if (keys[SDL_SCANCODE_SPACE] || keys[SDL_SCANCODE_A]) buttons |= 0x40;
+    if (keys[SDL_SCANCODE_RETURN] || keys[SDL_SCANCODE_A]) buttons |= 0x80;
+
+    if (keys[SDL_SCANCODE_5] || keys[SDL_SCANCODE_KP_5])  switches |= 0x01;
+    if (keys[SDL_SCANCODE_1] || keys[SDL_SCANCODE_KP_1])  switches |= 0x02;
+    if (keys[SDL_SCANCODE_LEFT])  switches |= 0x04;
+    if (keys[SDL_SCANCODE_RIGHT]) switches |= 0x08;
+
+    if (s_coin_pulse > 0) {
+        switches |= 0x01;
+        s_coin_pulse--;
+    }
+    if (s_start_pulse > 0) {
+        switches |= 0x02;
+        s_start_pulse--;
+    }
+
+    lpt_set_host_input(buttons, switches);
 }
 
 void display_cleanup(void)

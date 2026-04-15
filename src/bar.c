@@ -308,7 +308,8 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
         uint32_t off = a - GX_BASE;
 
         if (off >= 0x800000 && off < 0xC00000) {
-            /* Framebuffer read — pass through (already in mapped memory) */
+            /* Framebuffer read — let Unicorn return what's in GX_BASE memory.
+             * GP BLT and display_update both use GX_BASE+0x800000 directly. */
             return;
         }
 
@@ -318,12 +319,14 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
             val = g_emu.dc_fb_offset;
             break;
         case DC_TIMING2: {
-            /* VBLANK simulation: counter 0-243, guest checks (val&0x7FF)>0xF0
-             * to detect VBLANK. No extra flag bits — copycat of i386 POC (BT-109). */
-            static uint32_t s_row = 0;
-            val = s_row++;
-            if (s_row > 0xF3) s_row = 0;
-            break;
+            /* Timer in cpu.c drives DC_TIMING2 via uc_mem_write (0→243 wrap).
+             * Don't override: just log reads and return so the timer value
+             * in backing memory is what the guest sees. */
+            static uint32_t s_dt2_cnt = 0;
+            s_dt2_cnt++;
+            if (s_dt2_cnt <= 20 || (s_dt2_cnt % 5000) == 0)
+                LOG("gx", "DC_TIMING2 read #%u (hook, timer-driven)\n", s_dt2_cnt);
+            return; /* don't overwrite with val — timer value is authoritative */
         }
         case GP_BLT_STATUS:
             val = 0x300; /* pipeline idle + ready (BT-106) */
@@ -441,6 +444,71 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
     }
 }
 
+/* ===== GP (Graphics Pipeline) BLT Engine =====
+ * Reverse-engineered from P2K-driver, ported from x64 POC qemu_glue.c.
+ * GP registers at GX_BASE + 0x8100-0x820C control hardware blitter.
+ * Game writes dst/src/width/mode, then writes GP_BLT_STATUS to trigger. */
+
+static uint16_t s_gp_dst_x, s_gp_dst_y;
+static uint16_t s_gp_src_x, s_gp_src_y;
+static uint16_t s_gp_width;
+static int      s_gp_transparent;   /* bit 12 of GP_RASTER_MODE */
+static uint32_t s_gp_blt_count;
+
+#define GP_ROW_STRIDE  2048   /* bytes per row in GP address space */
+#define GP_TRANS_KEY   0x7C1F /* RGB555 magenta transparency key */
+
+/* GP blit framebuffer base — physical RAM 0x800000.
+ * Game decompresses images here; GP BLTs and display both use this address. */
+#define GP_FB_BASE     0x00800000u
+
+static void gp_execute_blt(uc_engine *uc)
+{
+    uint32_t src_off = (uint32_t)s_gp_src_x * 2 + (uint32_t)s_gp_src_y * GP_ROW_STRIDE;
+    uint32_t dst_off = (uint32_t)s_gp_dst_x * 2 + (uint32_t)s_gp_dst_y * GP_ROW_STRIDE;
+    uint32_t copy_bytes = (uint32_t)s_gp_width * 2;
+    uint32_t fb_size = 0x400000; /* 4MB framebuffer */
+
+    if (src_off + copy_bytes > fb_size || dst_off + copy_bytes > fb_size) {
+        if (s_gp_blt_count < 50)
+            LOG("gp", "BLT #%u OOB: src=0x%x dst=0x%x size=%u\n",
+                s_gp_blt_count, src_off, dst_off, copy_bytes);
+        s_gp_blt_count++;
+        return;
+    }
+
+    if (s_gp_blt_count < 20 || (s_gp_blt_count % 5000) == 0)
+        LOG("gp", "BLT #%u: src(%u,%u) dst(%u,%u) w=%u mode=%s\n",
+            s_gp_blt_count, s_gp_src_x, s_gp_src_y,
+            s_gp_dst_x, s_gp_dst_y, s_gp_width,
+            s_gp_transparent ? "transparent" : "memcpy");
+
+    uint8_t row_buf[GP_ROW_STRIDE];
+    if (uc_mem_read(uc, GP_FB_BASE + src_off, row_buf, copy_bytes) != UC_ERR_OK) {
+        s_gp_blt_count++;
+        return;
+    }
+
+    if (!s_gp_transparent) {
+        uc_mem_write(uc, GP_FB_BASE + dst_off, row_buf, copy_bytes);
+    } else {
+        uint8_t dst_buf[GP_ROW_STRIDE];
+        if (uc_mem_read(uc, GP_FB_BASE + dst_off, dst_buf, copy_bytes) != UC_ERR_OK) {
+            s_gp_blt_count++;
+            return;
+        }
+        uint16_t *src_px = (uint16_t *)row_buf;
+        uint16_t *dst_px = (uint16_t *)dst_buf;
+        for (uint16_t i = 0; i < s_gp_width; i++) {
+            if (src_px[i] != GP_TRANS_KEY)
+                dst_px[i] = src_px[i];
+        }
+        uc_mem_write(uc, GP_FB_BASE + dst_off, dst_buf, copy_bytes);
+    }
+
+    s_gp_blt_count++;
+}
+
 /* ===== MMIO Write Hook ===== */
 void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
                     int64_t value, void *user_data)
@@ -455,15 +523,22 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
 
     if (a >= GX_BASE && a < GX_BASE + GX_BASE_SIZE) {
         uint32_t off = a - GX_BASE;
+        static int gx_wr_cnt = 0;
+        if (gx_wr_cnt < 30 && off < 0x800000) {
+            gx_wr_cnt++;
+            LOG("gx", "WRITE off=0x%x val=0x%x (reg)\n", off, val);
+        }
 
         if (off >= 0x800000 && off < 0xC00000) {
-            /* Framebuffer write — pass through */
+            /* Framebuffer write — mirror to physical RAM at 0x800000.
+             * Guest CPU writes to 0x40800000, but display reads 0x800000. */
+            uint32_t phys = 0x00800000u + (off - 0x800000);
+            uc_mem_write(uc, phys, &val, size);
             return;
         }
 
         switch (off) {
         case DC_UNLOCK:
-            /* DC unlock register — game writes 0x4758 to unlock DC regs */
             break;
         case DC_FB_ST_OFFSET:
             g_emu.dc_fb_offset = val;
@@ -471,8 +546,34 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
         case DC_TIMING2:
             g_emu.dc_timing2 = val;
             break;
-        case GP_BLT_STATUS:
-            /* BLT command trigger — immediate completion */
+        /* GP register writes — follow x64 POC proven layout:
+         * 0x8100 = packed dst (x bits[15:0], y bits[31:16])
+         * 0x8104 = width (bits[15:0])
+         * 0x8108 = packed src (x bits[15:0], y bits[31:16])
+         * 0x8200 = raster mode (bit 12 = transparent blt)
+         * 0x8208 = BLT trigger (write starts blit)
+         * 0x820C = BLT status (read returns 0x300 = idle) */
+        case 0x8100: /* GP DST coords (packed) */
+            s_gp_dst_x = (uint16_t)(val & 0xFFFF);
+            s_gp_dst_y = (uint16_t)((val >> 16) & 0xFFFF);
+            g_emu.gx_regs[off >> 2] = val;
+            break;
+        case 0x8104: /* GP WIDTH */
+            s_gp_width = (uint16_t)(val & 0xFFFF);
+            g_emu.gx_regs[off >> 2] = val;
+            break;
+        case 0x8108: /* GP SRC coords (packed) */
+            s_gp_src_x = (uint16_t)(val & 0xFFFF);
+            s_gp_src_y = (uint16_t)((val >> 16) & 0xFFFF);
+            g_emu.gx_regs[off >> 2] = val;
+            break;
+        case 0x8200: /* GP_RASTER_MODE */
+            s_gp_transparent = (val >> 12) & 1;
+            g_emu.gx_regs[off >> 2] = val;
+            break;
+        case 0x8208: /* GP BLT trigger (x64 POC: write to 0x8208 executes blit) */
+            gp_execute_blt(uc);
+            g_emu.gx_regs[off >> 2] = val;
             break;
         default:
             if ((off >> 2) < 0x9000)
@@ -629,23 +730,44 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
             /* Command/data write */
             uint16_t cmd = val & 0xFFFF;
 
-            /* If in multi-word mode, accumulate */
-            if (g_emu.dcs_pending && g_emu.dcs_remaining > 0) {
+            if (g_emu.dcs_active && cmd == 0x0E) {
+                g_emu.dcs_active = false;
+                g_emu.dcs_pending = false;
+                g_emu.dcs_remaining = 0;
+                g_emu.dcs_layer = 0;
+                memset(g_emu.dcs_mixer, 0, sizeof(g_emu.dcs_mixer));
+                dcs_enqueue_response(10);
+                goto dcs_write_done;
+            }
+
+            if (g_emu.dcs_active)
+                goto dcs_write_done;
+
+            if (g_emu.dcs_pending) {
+                if (g_emu.dcs_remaining == 0) {
+                    g_emu.dcs_remaining = ((cmd >> 8) == 0x55) ? 1 : 2;
+                    g_emu.dcs_mixer[0] = cmd;
+                    g_emu.dcs_layer = 1;
+                    goto dcs_write_done;
+                }
+
                 if (g_emu.dcs_layer < 4)
                     g_emu.dcs_mixer[g_emu.dcs_layer++] = cmd;
-                g_emu.dcs_remaining--;
-                if (g_emu.dcs_remaining == 0) {
-                    /* Multi-word command complete — dispatch to sound */
-                    if (g_emu.dcs_mixer[0] == 999 || g_emu.dcs_mixer[0] == 1000) {
-                        dcs_enqueue_response(0x100);
-                        dcs_enqueue_response(0x10);
-                    } else {
-                        sound_process_cmd(g_emu.dcs_mixer[0]);
-                    }
-                    g_emu.dcs_layer = 0;
-                    g_emu.dcs_remaining = 0;
-                    memset(g_emu.dcs_mixer, 0, sizeof(g_emu.dcs_mixer));
+                if (--g_emu.dcs_remaining != 0)
+                    goto dcs_write_done;
+
+                if (g_emu.dcs_mixer[0] == 999 || g_emu.dcs_mixer[0] == 1000) {
+                    dcs_enqueue_response(0x100);
+                    dcs_enqueue_response(0x10);
+                } else {
+                    sound_execute_mixer(g_emu.dcs_mixer[0],
+                                        g_emu.dcs_layer > 1 ? g_emu.dcs_mixer[1] : 0,
+                                        g_emu.dcs_layer > 2 ? g_emu.dcs_mixer[2] : 0);
                 }
+
+                g_emu.dcs_layer = 0;
+                g_emu.dcs_remaining = 0;
+                memset(g_emu.dcs_mixer, 0, sizeof(g_emu.dcs_mixer));
                 goto dcs_write_done;
             }
 
@@ -658,16 +780,32 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
             /* Command dispatch */
             switch (cmd) {
             case 0x3A:
+                {
+                    static bool s_dong_played = false;
+                    if (!s_dong_played) {
+                        s_dong_played = true;
+                        sound_play_boot_dong();
+                    }
+                }
                 dcs_enqueue_response(0xCC01); /* board present */
+                dcs_enqueue_response(10);
                 break;
             case 0x1B:
                 dcs_enqueue_response(0xCC09);
+                dcs_enqueue_response(10);
                 break;
             case 0xAA:
+                sound_process_cmd(0x00AA);
+                sound_start_audio_init_thread();
                 dcs_enqueue_response(0xCC04);
+                dcs_enqueue_response(10);
                 break;
             case 0x0E:
+                g_emu.dcs_active = true;
                 g_emu.dcs_pending = false;
+                g_emu.dcs_remaining = 0;
+                g_emu.dcs_layer = 0;
+                memset(g_emu.dcs_mixer, 0, sizeof(g_emu.dcs_mixer));
                 break;
             case 0xACE1:
                 g_emu.dcs_pending = true;
