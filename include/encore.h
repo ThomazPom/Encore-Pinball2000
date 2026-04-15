@@ -166,15 +166,23 @@ typedef struct {
 } PITState;
 
 /* =========================================================================
- * DCS2 circular command buffer
+ * DCS2 circular command buffer + response buffer
  * ========================================================================= */
 #define DCS_CMD_BUF_SIZE  32
+#define DCS_RESP_BUF_SIZE 64
 typedef struct {
     uint16_t buf[DCS_CMD_BUF_SIZE];
     int      head;
     int      tail;
     int      count;
 } DCSCmdBuf;
+
+typedef struct {
+    uint16_t buf[DCS_RESP_BUF_SIZE];
+    int      head;
+    int      tail;
+    int      count;
+} DCSRespBuf;
 
 /* =========================================================================
  * Emulator state
@@ -200,11 +208,10 @@ typedef struct {
     /* PLX 9050 registers */
     uint32_t plx_regs[64];
 
-    /* GX_BASE DC registers */
+    /* GX_BASE register space (GP 0x8200 + DC 0x8300 + BC 0x20000) */
     uint32_t dc_fb_offset;
     uint32_t dc_timing2;
-    uint32_t dc_regs[256];
-    uint32_t gp_regs[256];
+    uint32_t gx_regs[0x9000];  /* covers offsets 0x0000-0x23FFF (>>2) */
 
     /* PCI */
     uint32_t pci_addr;
@@ -243,18 +250,25 @@ typedef struct {
     bool     monitor_active;           /* XINU monitor prompt detected */
     int      monitor_inject_pos;       /* position in "continue\r" injection */
 
-    /* LPT */
+    /* LPT — Pinball 2000 driver board interface (BT-120) */
     uint8_t  lpt_data;
     uint8_t  lpt_status;
     uint8_t  lpt_ctrl;
+    bool     lpt_active;              /* LPT emulated port activated */
 
     /* SuperIO / CC5530 */
     uint8_t  superio_idx;              /* W83977EF index register (0x2E) */
     uint8_t  cc5530_idx;               /* CC5530 EEPROM index (0xEA) */
 
     /* DCS2 sound */
-    DCSCmdBuf dcs_cmds;
-    uint16_t  dcs_latch;
+    DCSCmdBuf  dcs_cmds;
+    DCSRespBuf dcs_resp;
+    uint16_t   dcs_latch;
+    uint16_t   dcs_flags;
+    bool       dcs_pending;  /* multi-word command in progress */
+    int        dcs_remaining; /* remaining words for multi-word cmd */
+    uint16_t   dcs_mixer[4]; /* multi-word accumulator */
+    int        dcs_layer;    /* current mixer layer */
 
     /* Display */
     SDL_Window   *window;
@@ -271,7 +285,10 @@ typedef struct {
     /* Runtime flags */
     bool          running;
     bool          xinu_booted;
+    bool          xinu_ready;          /* clkint installed AND sysinit complete */
+    uint64_t      clkint_ready_exec;   /* exec_count when clkint first detected in IDT[0x20] */
     bool          game_started;
+    bool          is_v19_update;       /* running with update flash (V1.19) */
     volatile bool timer_fired;
     uint64_t      exec_count;
 
@@ -298,6 +315,25 @@ typedef struct {
 
     /* A20 gate */
     bool          a20_enabled;
+
+    /* ROM-agnostic watchdog health register address (found by scan, 0 if not
+     * yet found). cpu.c writes 0xFFFF here each exec iteration so
+     * pci_read_watchdog() always returns 0 (healthy), suppressing the
+     * pci_watchdog_bone() False Alarm Fatal. Real 200MHz hardware completes
+     * game init before the watchdog can expire; Unicorn emulation is slower. */
+    uint32_t      watchdog_flag_addr;
+
+    /* Host-driven C++ constructor calling phase (POC BT-64/BT-89).
+     * XINU's cpp_call_ctors needs the symbol table at BAR3 flash, which may
+     * fail under emulation. Host walks the ctor list at g_ctor_list_addr and
+     * calls each entry via trampoline → HLT → next. */
+    int           ctor_phase;           /* 0=pending, 1=running, 2=done */
+    uint32_t      ctor_list_addr;       /* 0x24A928 for SWE1 V1.19 */
+    int           ctor_total;
+    int           ctor_idx;
+    int           ctor_ok;
+    int           ctor_skip;
+    uint32_t      ctor_saved_eip;
 } EncoreState;
 
 /* Global emulator state */
@@ -330,6 +366,8 @@ void     pci_write(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg, uint32_t v
 uint32_t io_port_read(uint16_t port, int size);
 void     io_port_write(uint16_t port, uint32_t val, int size);
 void     io_init(void);
+void     nic_dseg_init(void);  /* populate NIC LAN ROM in D-segment guest RAM */
+void     lpt_activate(void);   /* activate LPT emulated port for PinIO (BT-93) */
 
 /* bar.c */
 void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int64_t value, void *user_data);

@@ -226,6 +226,9 @@ int main(int argc, char **argv)
     /* Re-apply EEPROM defaults — .see file may contain stale data from prior POC */
     bar_seeprom_reinit();
 
+    /* Populate NIC LAN ROM data in D-segment guest RAM (BT-131) */
+    nic_dseg_init();
+
     /* Boot assistance (IVT stubs, DCS presence, PRISM ROM fix) */
     apply_boot_assist();
     patch_dcs_presence();

@@ -42,6 +42,51 @@ static int save_file(const char *path, const void *data, size_t size)
     return (wr == size) ? 0 : -1;
 }
 
+static void copy_cstr(char *dst, size_t dst_size, const char *src)
+{
+    size_t len;
+
+    if (dst_size == 0) return;
+    if (!src) {
+        dst[0] = '\0';
+        return;
+    }
+
+    len = strlen(src);
+    if (len >= dst_size)
+        len = dst_size - 1;
+    memcpy(dst, src, len);
+    dst[len] = '\0';
+}
+
+static bool build_update_path(char *dst, size_t dst_size,
+                              const char *base_dir, const char *update_id)
+{
+    size_t need;
+
+    need = strlen(base_dir) + 1 + strlen(update_id) + 1 +
+           strlen(update_id) + strlen("_update.bin") + 1;
+    if (need > dst_size)
+        return false;
+
+    {
+        char *p = dst;
+        size_t base_len = strlen(base_dir);
+        size_t id_len = strlen(update_id);
+
+        memcpy(p, base_dir, base_len);
+        p += base_len;
+        *p++ = '/';
+        memcpy(p, update_id, id_len);
+        p += id_len;
+        *p++ = '/';
+        memcpy(p, update_id, id_len);
+        p += id_len;
+        memcpy(p, "_update.bin", sizeof("_update.bin"));
+    }
+    return true;
+}
+
 /* ===== ROM Auto-Detection ===== */
 
 #define GAME_ID_OFFSET  0x0000803Cu
@@ -83,7 +128,7 @@ int rom_detect_game(void)
         return -1;
     }
 
-    strncpy(g_emu.game_prefix, found_prefix, sizeof(g_emu.game_prefix) - 1);
+    copy_cstr(g_emu.game_prefix, sizeof(g_emu.game_prefix), found_prefix);
     LOG("rom", "Auto-detected ROM prefix: %s\n", g_emu.game_prefix);
 
     } /* end of auto-detect block */
@@ -134,7 +179,7 @@ int rom_detect_game(void)
             closedir(sd);
         }
         if (!found_id)
-            strncpy(g_emu.game_id_str, g_emu.game_prefix, sizeof(g_emu.game_id_str) - 1);
+            copy_cstr(g_emu.game_id_str, sizeof(g_emu.game_id_str), g_emu.game_prefix);
     }
     LOG("rom", "Save data ID: %s\n", g_emu.game_id_str);
 
@@ -260,17 +305,12 @@ static void rom_load_update_flash(void)
     if (g_emu.game_id == GAME_ID_RFM) game_num = 50070;
     else if (g_emu.game_id == GAME_ID_SWE1) game_num = 50069;
 
-    /* Check if flash already has valid data (from .flash savedata) */
-    if (g_emu.flash[0] != 0xFF || g_emu.flash[1] != 0xFF) {
-        /* Check if offset 0x48 has a valid game entry point */
-        uint32_t entry = *(uint32_t *)(g_emu.flash + 0x48);
-        if (entry != 0xFFFFFFFF && entry >= 0x100000 && entry < 0x1000000) {
-            LOG("flash", "Flash already has valid data (entry=0x%08x), skipping update load\n", entry);
-            return;
-        }
-    }
+    /* Always load from update ROM files — never trust the saved .flash file.
+     * The saved flash may have stale game code that fails checksum validation.
+     * We always reload from the fresh update files to ensure consistency. */
 
-    /* Strategy 1: Try pre-concatenated update.bin */
+    /* Strategy 1: Try pre-concatenated update.bin.
+     * Scan update dirs for subdirectories starting with game prefix. */
     {
         const char *upd_dirs[] = {
             "../emulator/P2K-runtime/update",
@@ -279,7 +319,9 @@ static void rom_load_update_flash(void)
         };
 
         for (int di = 0; upd_dirs[di]; di++) {
-            snprintf(path, sizeof(path), "%s/%s/%s_update.bin", upd_dirs[di], id, id);
+            /* First try exact game_id_str match */
+            if (!build_update_path(path, sizeof(path), upd_dirs[di], id))
+                continue;
             size_t sz = 0;
             uint8_t *data = load_file(path, &sz);
             if (data && sz > 0x50 && sz <= FLASH_SIZE) {
@@ -288,25 +330,85 @@ static void rom_load_update_flash(void)
                 LOG("flash", "Update loaded: %s (%lu KB, entry=0x%08x)\n",
                     path, (unsigned long)(sz >> 10), entry);
                 free(data);
+                g_emu.is_v19_update = true;
                 return;
             }
             free(data);
+
+            /* Scan for subdirectories starting with prefix (e.g., rfm_15, rfm_18) */
+            DIR *upd = opendir(upd_dirs[di]);
+            if (upd) {
+                struct dirent *de;
+                while ((de = readdir(upd)) != NULL) {
+                    if (de->d_name[0] == '.') continue;
+                    size_t plen = strlen(g_emu.game_prefix);
+                    if (strncmp(de->d_name, g_emu.game_prefix, plen) != 0) continue;
+                    /* Must be prefix or prefix_version */
+                    if (de->d_name[plen] != '\0' && de->d_name[plen] != '_') continue;
+                    if (!build_update_path(path, sizeof(path), upd_dirs[di], de->d_name))
+                        continue;
+                    sz = 0;
+                    data = load_file(path, &sz);
+                    if (data && sz > 0x50 && sz <= FLASH_SIZE) {
+                        memcpy(g_emu.flash, data, sz);
+                        uint32_t entry = *(uint32_t *)(g_emu.flash + 0x48);
+                        LOG("flash", "Update loaded: %s (%lu KB, entry=0x%08x)\n",
+                            path, (unsigned long)(sz >> 10), entry);
+                        /* Update game_id_str to match found version */
+                        copy_cstr(g_emu.game_id_str, sizeof(g_emu.game_id_str), de->d_name);
+                        free(data);
+                        closedir(upd);
+                        g_emu.is_v19_update = true;
+                        return;
+                    }
+                    free(data);
+                }
+                closedir(upd);
+            }
         }
 
-        /* Also try {prefix}_upd_{id}_update.bin in roms_dir */
-        snprintf(path, sizeof(path), "%s/%s_upd_%s_update.bin",
-                 g_emu.roms_dir, g_emu.game_prefix, id);
-        size_t sz = 0;
-        uint8_t *data = load_file(path, &sz);
-        if (data && sz > 0x50 && sz <= FLASH_SIZE) {
-            memcpy(g_emu.flash, data, sz);
-            uint32_t entry = *(uint32_t *)(g_emu.flash + 0x48);
-            LOG("flash", "Update loaded: %s (%lu KB, entry=0x%08x)\n",
-                path, (unsigned long)(sz >> 10), entry);
-            free(data);
-            return;
+        /* Also scan roms_dir for {prefix}_upd_*_update.bin */
+        {
+            DIR *rd = opendir(g_emu.roms_dir);
+            if (rd) {
+                struct dirent *de;
+                char upd_pfx[64];
+                snprintf(upd_pfx, sizeof(upd_pfx), "%s_upd_", g_emu.game_prefix);
+                size_t upd_pfx_len = strlen(upd_pfx);
+                while ((de = readdir(rd)) != NULL) {
+                    if (strncmp(de->d_name, upd_pfx, upd_pfx_len) != 0) continue;
+                    if (!strstr(de->d_name, "_update.bin")) continue;
+                    snprintf(path, sizeof(path), "%s/%s", g_emu.roms_dir, de->d_name);
+                    size_t sz = 0;
+                    uint8_t *data = load_file(path, &sz);
+                    if (data && sz > 0x50 && sz <= FLASH_SIZE) {
+                        memcpy(g_emu.flash, data, sz);
+                        uint32_t entry = *(uint32_t *)(g_emu.flash + 0x48);
+                        LOG("flash", "Update loaded: %s (%lu KB, entry=0x%08x)\n",
+                            path, (unsigned long)(sz >> 10), entry);
+                        /* Extract version ID from filename */
+                        const char *ver_start = de->d_name + upd_pfx_len;
+                        const char *ver_end = strstr(ver_start, "_update.bin");
+                        if (ver_end && ver_end > ver_start) {
+                            /* Use the full id like "rfm_15" from "rfm_upd_rfm_15_update.bin" */
+                            char full_id[32];
+                            size_t id_len = ver_end - ver_start;
+                            if (id_len < sizeof(full_id)) {
+                                memcpy(full_id, ver_start, id_len);
+                                full_id[id_len] = '\0';
+                                copy_cstr(g_emu.game_id_str, sizeof(g_emu.game_id_str), full_id);
+                            }
+                        }
+                        free(data);
+                        closedir(rd);
+                        g_emu.is_v19_update = true;
+                        return;
+                    }
+                    free(data);
+                }
+                closedir(rd);
+            }
         }
-        free(data);
     }
 
     /* Strategy 2: Concatenate individual ROM files (bootdata + im_flsh0 + game + symbols).
