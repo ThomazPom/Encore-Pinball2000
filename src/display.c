@@ -111,13 +111,16 @@ void display_handle_events(void)
     while (SDL_PollEvent(&ev)) {
         switch (ev.type) {
         case SDL_QUIT:
-            g_emu.running = false;
+            /* SDL_QUIT from window manager — log but keep running for debugging.
+             * Real exit is via F1/Escape only. */
+            LOG("disp", "SDL_QUIT received (ignored for debugging)\n");
             break;
 
         case SDL_KEYDOWN:
             switch (ev.key.keysym.sym) {
             case SDLK_ESCAPE:
             case SDLK_F1:
+                LOG("disp", "Key F1/Esc pressed — exiting\n");
                 g_emu.running = false;
                 break;
             case SDLK_F9:

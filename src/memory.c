@@ -124,6 +124,14 @@ int memory_init(void)
      *     region so character display writes don't crash. */
     map_region(uc, 0x28000000, 0x02000000, UC_PROT_ALL, "OptROM display buf");
 
+    /* 11. ROM bank0 alias at 0xFF000000 — 4MB read-only mirror (BT-108).
+     *     Some code paths reference high-address ROM aliases. Map bank0 there. */
+    if (g_emu.rom_banks[0]) {
+        size_t alias_sz = 0x00400000; /* 4MB alias window */
+        map_region(uc, 0xFF000000, alias_sz, UC_PROT_READ, "ROM bank0 alias @FF");
+        uc_mem_write(uc, 0xFF000000, g_emu.rom_banks[0], alias_sz);
+    }
+
     LOG("mem", "Memory map initialized\n");
     fflush(stdout);
     return 0;

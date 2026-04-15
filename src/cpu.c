@@ -15,13 +15,12 @@ static bool hook_mem_invalid(uc_engine *uc, uc_mem_type type, uint64_t addr,
                              int size, int64_t value, void *user_data);
 static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *user_data);
 
-/* SIGALRM handler — sets timer flag, stops current emulation slice */
+/* SIGALRM handler — sets timer flag only. We use instruction-count-based
+ * batching (not SIGALRM-based stopping) to control execution granularity. */
 void cpu_timer_handler(int sig)
 {
     (void)sig;
     g_emu.timer_fired = true;
-    if (g_emu.uc)
-        uc_emu_stop(g_emu.uc);
 }
 
 int cpu_init(void)
@@ -170,16 +169,25 @@ int cpu_setup_protected_mode(void)
 void cpu_inject_interrupt(uint8_t vector)
 {
     uc_engine *uc = g_emu.uc;
+    static int inject_ok = 0, inject_blocked = 0, inject_stub = 0;
 
-    /* Read current CPU state */
-    uint32_t eip, esp, eflags, cs;
+    /* Read current CPU state.
+     * CRITICAL: initialize to 0 before uc_reg_read.
+     * Unicorn writes int16_t (2 bytes) for CS — if cs is uninitialized,
+     * the high 2 bytes will be stack garbage → corrupted interrupt frame
+     * → GP fault on IRET inside the clkint handler. */
+    uint32_t eip = 0, esp = 0, eflags = 0, cs = 0;
     uc_reg_read(uc, UC_X86_REG_EIP, &eip);
     uc_reg_read(uc, UC_X86_REG_ESP, &esp);
     uc_reg_read(uc, UC_X86_REG_EFLAGS, &eflags);
     uc_reg_read(uc, UC_X86_REG_CS, &cs);
+    cs &= 0xFFFF;  /* Keep only the 16-bit selector */
 
     /* Check IF flag — don't inject if interrupts are disabled */
-    if (!(eflags & 0x200)) return;
+    if (!(eflags & 0x200)) {
+        inject_blocked++;
+        return;
+    }
 
     /* Read IDTR */
     uc_x86_mmr idtr;
@@ -195,11 +203,22 @@ void cpu_inject_interrupt(uint8_t vector)
     uint16_t selector  = idt_entry[2] | (idt_entry[3] << 8);
     uint16_t offset_hi = idt_entry[6] | (idt_entry[7] << 8);
     uint32_t handler   = offset_lo | (offset_hi << 16);
+    (void)selector;
 
-    /* Validate handler address */
-    if (handler == 0 || handler == 0x20000000u) return; /* IVT stub, not real handler */
+    /* Skip if handler is our stub or NULL */
+    if (handler == 0 || handler == 0x20000u || handler == 0x20000000u) {
+        inject_stub++;
+        return;
+    }
 
-    /* Push interrupt frame: EFLAGS, CS, EIP */
+    inject_ok++;
+    if (inject_ok <= 5 || (inject_ok % 100 == 0)) {
+        LOG("irq", "vec=0x%02x → handler=0x%08x EIP=0x%08x (ok=%d blk=%d stub=%d)\n",
+            vector, handler, eip, inject_ok, inject_blocked, inject_stub);
+    }
+
+    /* Push interrupt frame: EFLAGS, CS, EIP (x86 interrupt pushes from
+     * high to low: EFLAGS at highest, then CS, then EIP at lowest) */
     esp -= 4; uc_mem_write(uc, esp, &eflags, 4);
     esp -= 4;
     uint32_t cs32 = cs;
@@ -209,7 +228,7 @@ void cpu_inject_interrupt(uint8_t vector)
     /* Update registers */
     uc_reg_write(uc, UC_X86_REG_ESP, &esp);
 
-    /* Clear IF */
+    /* Clear IF (interrupt gate behavior) */
     eflags &= ~0x200u;
     uc_reg_write(uc, UC_X86_REG_EFLAGS, &eflags);
 
@@ -221,9 +240,23 @@ void cpu_inject_interrupt(uint8_t vector)
         uint32_t new_cs = selector;
         uc_reg_write(uc, UC_X86_REG_CS, &new_cs);
     }
+
+    /* Debug: verify stack frame after injection */
+    if (inject_ok <= 3) {
+        uint32_t v_eip, v_cs, v_ef;
+        uc_mem_read(uc, esp,     &v_eip, 4);
+        uc_mem_read(uc, esp + 4, &v_cs,  4);
+        uc_mem_read(uc, esp + 8, &v_ef,  4);
+        uint32_t act_eip, act_esp;
+        uc_reg_read(uc, UC_X86_REG_EIP, &act_eip);
+        uc_reg_read(uc, UC_X86_REG_ESP, &act_esp);
+        LOG("irq", "  frame: [ESP+0]=0x%08x [+4]=0x%08x [+8]=0x%08x ESP=0x%08x→handler=0x%08x\n",
+            v_eip, v_cs, v_ef, act_esp, act_eip);
+    }
 }
 
-/* Check PIC for pending interrupts and inject highest priority */
+/* Check PIC for pending interrupts and inject highest priority.
+ * Called from exec loop to handle non-timer IRQs (e.g. IRQ4 UART THRE). */
 static void check_and_inject_irq(void)
 {
     for (int pic_idx = 0; pic_idx < 2; pic_idx++) {
@@ -316,51 +349,367 @@ void cpu_run(void)
     clock_gettime(CLOCK_MONOTONIC, &last_time);
 
     while (g_emu.running) {
-        /* Resume from current EIP (flat protected mode — EIP is linear address) */
+        /* Accumulate timer events — only after XINU's clkinit() has installed
+         * the real timer handler. When timer fires, set PIC[0].IRR bit 0 to
+         * simulate hardware PIT → PIC → CPU interrupt delivery chain.
+         * check_and_inject_irq() then handles delivery respecting both IF and IMR. */
+        if (g_emu.timer_fired) {
+            g_emu.timer_fired = false;
+            if (g_emu.xinu_ready)
+                g_emu.pic[0].irr |= 0x01;  /* IRQ0 pending in PIC */
+        }
+
+        /* Detect XINU timer readiness via IDT[0x20].
+         *
+         * Two-phase approach (i386 POC BT-91):
+         * Phase 1: IDT[0x20] changes from generic trap → real clkint handler
+         *   (handler > 0x100000). Set early by clkinit() → set_evec() during sysinit().
+         * Phase 2: Wait until xinu_booted (UART "XINU: V7" seen) + 50 batches.
+         *   "XINU: V7" is printed by XINU *after* sysinit() completes, meaning the
+         *   process table, scheduler, and watchdog_bone process are all initialised.
+         *   50 batches (~10M insns) of grace gives ctxsw a chance to settle before
+         *   the first interrupt arrives. This fires well before the watchdog deadline. */
+        if (g_emu.game_started && !g_emu.xinu_ready) {
+            uc_x86_mmr idtr;
+            uc_reg_read(uc, UC_X86_REG_IDTR, &idtr);
+            if (idtr.base != 0 && idtr.limit >= 0x20 * 8 + 7) {
+                uint8_t idt_entry[8];
+                uc_err ierr = uc_mem_read(uc, idtr.base + 0x20 * 8, idt_entry, 8);
+                if (ierr == UC_ERR_OK) {
+                    uint16_t off_lo = idt_entry[0] | (idt_entry[1] << 8);
+                    uint16_t off_hi = idt_entry[6] | (idt_entry[7] << 8);
+                    uint32_t handler = off_lo | ((uint32_t)off_hi << 16);
+                    if (handler > 0x100000u) {
+                        if (g_emu.clkint_ready_exec == 0) {
+                            g_emu.clkint_ready_exec = g_emu.exec_count;
+                            uint32_t check_eip = 0;
+                            uc_reg_read(uc, UC_X86_REG_EIP, &check_eip);
+                            LOG("irq", "clkint detected: IDT[0x20]=0x%08x EIP=0x%08x exec=%u\n",
+                                handler, check_eip, (unsigned)g_emu.exec_count);
+                        }
+                        if (g_emu.xinu_booted &&
+                            g_emu.exec_count >= g_emu.clkint_ready_exec + 50) {
+                            g_emu.xinu_ready = true;
+                            uint32_t check_eip = 0;
+                            uc_reg_read(uc, UC_X86_REG_EIP, &check_eip);
+                            LOG("irq", "XINU ready: timer injection enabled EIP=0x%08x exec=%u\n",
+                                check_eip, (unsigned)g_emu.exec_count);
+                        }
+                    } else if (g_emu.exec_count % 5000 == 0) {
+                        uint32_t check_eip = 0;
+                        uc_reg_read(uc, UC_X86_REG_EIP, &check_eip);
+                        LOG("irq", "waiting for clkint: IDT[0x20]=0x%08x EIP=0x%08x exec=%u xinu_booted=%d\n",
+                            handler, check_eip, (unsigned)g_emu.exec_count, g_emu.xinu_booted);
+                    }
+                }
+            }
+        }
+
+        /* ================================================================
+         * Post-XINU initialization: comprehensive V1.19 patches from
+         * both i386 and x64 POC analysis.
+         *
+         * Critical patches (from x64 POC sgc-seed + i386 BT-85/BT-91):
+         * - Fatal/NonFatal/CMOS → safe returns
+         * - Q-table pre-init (BT-85: garbage causes insert() self-loop!)
+         * - BSS zeroing (0x33D800-0x800000)
+         * - 8 Fatal call site NOPs + 3 monitor() NOPs
+         * - Monitor auto-exit triple patch
+         * - Init gate flags + DCS2 + XINACMOS + BAR2 regs
+         * ================================================================ */
+        if (g_emu.xinu_booted && g_emu.ctor_phase == 0 &&
+            g_emu.game_started && g_emu.xinu_ready) {
+            g_emu.ctor_phase = 3;  /* one-shot */
+
+            /* --- 1. Function patches (x64 POC BT-86/BT-100) --- */
+
+            /* Fatal() at 0x22722C → INC counter + HLT for recovery */
+            {
+                uint8_t fatal_patch[] = {
+                    0xFF, 0x05, 0xF0, 0xFF, 0x2B, 0x00,  /* INC [0x2BFFF0] */
+                    0x89, 0x35, 0xF4, 0xFF, 0x2B, 0x00,  /* MOV [0x2BFFF4], ESI */
+                    0xF4,                                   /* HLT */
+                    0xEB, 0xFE                              /* JMP $ */
+                };
+                uc_mem_write(uc, 0x0022722Cu, fatal_patch, sizeof(fatal_patch));
+            }
+            /* LocMgr Fatal wrapper at 0x24743C → XOR EAX,EAX; RET (x64 POC) */
+            {
+                uint8_t xar[] = { 0x31, 0xC0, 0xC3 };
+                uc_mem_write(uc, 0x0024743Cu, xar, 3);
+            }
+            /* NonFatal at 0x24780C → XOR EAX,EAX; RET (x64 POC BT-86) */
+            {
+                uint8_t xar[] = { 0x31, 0xC0, 0xC3 };
+                uc_mem_write(uc, 0x0024780Cu, xar, 3);
+            }
+            /* CMOS mem_test at 0x24FDEC → MOV EAX,1; RET (x64 POC BT-100) */
+            {
+                uint8_t pass[] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 };
+                uc_mem_write(uc, 0x0024FDECu, pass, 6);
+            }
+            /* pci_watchdog_bone at 0x1A4190 → RET */
+            {
+                uint8_t ret = 0xC3;
+                uc_mem_write(uc, 0x001A4190u, &ret, 1);
+            }
+            LOG("init", "Function patches: Fatal@22722C NonFatal@24780C CMOS@24FDEC LocMgr@24743C watchdog@1A4190\n");
+
+            /* --- 2. Fatal call site NOPs (x64 POC sgc-seed) --- */
+            {
+                static const uint32_t fatal_sites[] = {
+                    0x22F583u, 0x22F611u, 0x22F6AFu, 0x22F6DAu,
+                    0x22F71Cu, 0x22F335u, 0x22F3A3u, 0x22F3FDu,
+                };
+                uint8_t nops[10];
+                memset(nops, 0x90, sizeof(nops));
+                for (int i = 0; i < 8; i++)
+                    uc_mem_write(uc, fatal_sites[i], nops, 10);
+                /* monitor() call site NOPs */
+                uint8_t nop5[5] = { 0x90, 0x90, 0x90, 0x90, 0x90 };
+                uc_mem_write(uc, 0x00247751u, nop5, 5);
+                uc_mem_write(uc, 0x0022A384u, nop5, 5);
+                uc_mem_write(uc, 0x0029346Fu, nop5, 5);
+                LOG("init", "NOPed 8 Fatal + 3 monitor() call sites\n");
+            }
+
+            /* --- 3. Monitor auto-exit (x64 POC sgc-seed) --- */
+            {
+                uint8_t nop2[] = { 0x90, 0x90 };
+                uc_mem_write(uc, 0x0028ED5Eu, nop2, 2);  /* eval JNE → NOP */
+                uc_mem_write(uc, 0x0028F3AAu, nop2, 2);  /* loop JNE → NOP */
+                uint8_t jmp = 0xEB;
+                uc_mem_write(uc, 0x0028F390u, &jmp, 1);  /* JE → JMP (unconditional) */
+                LOG("init", "Monitor auto-exit: eval@28ED5E loop@28F3AA jmp@28F390\n");
+            }
+
+            /* --- 4. PLX found flag (x64 POC BT-100) --- */
+            {
+                uint32_t plx_id = 0x10B5u;
+                uc_mem_write(uc, 0x002E98F8u, &plx_id, 4);
+            }
+
+            /* --- 5. BSS zeroing — SKIPPED: applied post-XINU would destroy
+             *    process stacks and XINU data. x64 POC applies this at SGC
+             *    time (before XINU). Our RAM is already zeroed at startup. --- */
+
+            /* --- 6. BT-85: Q-table pre-init — SKIPPED for same reason.
+             *    XINU's initevec/newqueue already initialized it properly.
+             *    Writing EMPTY sentinels NOW would destroy XINU's queue state. --- */
+
+            /* --- 7. Init gate flags + DCS2 + misc (i386 POC post-ctor) --- */
+            {
+                uint32_t one = 1, zero = 0;
+                uc_mem_write(uc, 0x2797C4u, &zero, 4);   /* DCS2 init complete */
+                uc_mem_write(uc, 0x2AF824u, &one, 4);     /* system init prereq */
+                uc_mem_write(uc, 0x27979Cu, &one, 4);     /* game init gate */
+                uc_mem_write(uc, 0x2AF5D4u, &one, 4);     /* DCS2 hw ready */
+                uc_mem_write(uc, 0x2AF5E0u, &one, 4);     /* DCS2 hw ready */
+                uc_mem_write(uc, 0x296AF4u, &one, 4);     /* DCS2 hw ready */
+                uc_mem_write(uc, 0x2AF81Cu, &one, 4);     /* resched ctxsw gate */
+                uc_mem_write(uc, 0x2AF6A4u, &zero, 4);    /* ISR depth = 0 */
+                uc_mem_write(uc, 0x2BDB00u, &one, 4);     /* resource table enabled */
+                uint32_t ret_stub = 0x400000u;
+                uc_mem_write(uc, 0x296AE4u, &ret_stub, 4); /* DCS2 dispatch → RET */
+                uint32_t bar0 = WMS_BAR0;
+                uc_mem_write(uc, 0x279768u, &bar0, 4);     /* PLX BAR0 ptr */
+                LOG("init", "Init gate + DCS2 flags set\n");
+            }
+
+            /* --- 8. XINACMOS fake object (i386 POC BT-33) --- */
+            {
+                uint8_t xor_ret[3] = { 0x31, 0xC0, 0xC3 };
+                uc_mem_write(uc, 0x400010u, xor_ret, 3);
+                for (int i = 0; i < 16; i++) {
+                    uint32_t stub = 0x400010u;
+                    uc_mem_write(uc, 0x400340u + i * 4, &stub, 4);
+                }
+                uint8_t obj[128];
+                memset(obj, 0, sizeof(obj));
+                *(uint32_t *)(obj + 0) = 0x400340u;
+                *(uint32_t *)(obj + 24) = 0x400010u;
+                memcpy(obj + 32, "XINACMOS", 9);
+                uc_mem_write(uc, 0x400300u, obj, sizeof(obj));
+                uint32_t obj_ptr = 0x400300u;
+                uc_mem_write(uc, 0x2C181Cu, &obj_ptr, 4);
+                LOG("init", "XINACMOS obj @0x400300\n");
+            }
+
+            /* --- 9. BAR2 DCS2 register initialization (i386 POC BT-33) --- */
+            {
+                struct { uint32_t off; uint32_t val; } bar2_regs[] = {
+                    { 0x00, 0x00002400 }, { 0x04, 0 }, { 0x08, 0x00000006 },
+                    { 0x0C, 0x00000476 }, { 0x10, 0 }, { 0x14, 0x11000050 },
+                    { 0x18, 0x00000008 }, { 0x1C, 0x00000008 },
+                    { 0x20, 0x0000011D }, { 0x24, 0 }, { 0x28, 0x11001B14 },
+                };
+                for (size_t i = 0; i < sizeof(bar2_regs)/sizeof(bar2_regs[0]); i++)
+                    uc_mem_write(uc, WMS_BAR2 + bar2_regs[i].off,
+                                 &bar2_regs[i].val, 4);
+                uint8_t zbuf[6 * 0x11D];
+                memset(zbuf, 0, sizeof(zbuf));
+                uc_mem_write(uc, WMS_BAR2 + 0x1B14u, zbuf, sizeof(zbuf));
+                uint32_t cmos_hdr = 0x11005000u, cmos_z = 0;
+                uc_mem_write(uc, WMS_BAR2 + 0x21C0u, &cmos_hdr, 4);
+                uc_mem_write(uc, WMS_BAR2 + 0x21C4u, &cmos_z, 4);
+                LOG("init", "BAR2 DCS2 regs initialized\n");
+            }
+
+            /* --- 10. Free list safety net --- */
+            {
+                uint32_t fl = 0;
+                uc_mem_read(uc, 0x2D577Cu, &fl, 4);
+                if (fl == 0 || fl >= 0x1000000u) {
+                    uint32_t fblk = 0x400000u, fblk_sz = 0xB00000u;
+                    uint32_t zero = 0;
+                    uc_mem_write(uc, fblk + 0, &zero, 4);
+                    uc_mem_write(uc, fblk + 4, &fblk_sz, 4);
+                    uc_mem_write(uc, 0x2D577Cu, &fblk, 4);
+                    LOG("init", "Free list: 0x%x sz=0x%x\n", fblk, fblk_sz);
+                }
+            }
+
+            LOG("init", "=== Post-XINU V1.19 patches complete ===\n");
+        }
+
+        /* Inject all pending PIC interrupts (timer IRQ0 + others like IRQ4 UART).
+         * check_and_inject_irq() respects both PIC IMR (hw mask) and CPU IF flag,
+         * and properly tracks ISR (in-service) for correct priority resolution.
+         * Only inject after XINU ready so IDT has real handlers. */
+        if (g_emu.xinu_ready) {
+            uint8_t pending0 = g_emu.pic[0].irr & ~g_emu.pic[0].imr;
+            uint8_t pending1 = g_emu.pic[1].irr & ~g_emu.pic[1].imr;
+            if (pending0 || pending1)
+                check_and_inject_irq();
+        }
+
+        /* Adaptive batch size: small when pending IRQ waiting for IF/IMR window,
+         * large for normal execution throughput. */
+        uint8_t any_pending = (g_emu.pic[0].irr & ~g_emu.pic[0].imr) |
+                              (g_emu.pic[1].irr & ~g_emu.pic[1].imr);
+        size_t batch = any_pending ? 500 : 200000;
+
+        /* Execute a batch of instructions */
         uc_reg_read(uc, UC_X86_REG_EIP, &eip);
-        uc_err err = uc_emu_start(uc, eip, 0, 0, 0);
+        uc_err err = uc_emu_start(uc, eip, 0, 0, batch);
 
         g_emu.exec_count++;
+
+        /* Watchdog health register: keep [watchdog_flag_addr] = 0xFFFF so
+         * pci_read_watchdog() always sees an in-range health value and returns
+         * 0 (not expired). This simulates the XINU timer regularly feeding the
+         * hardware watchdog; real 200MHz hardware completes game init before
+         * the watchdog can expire, but emulation is slower. (BT-107) */
+        if (g_emu.watchdog_flag_addr && g_emu.game_started) {
+            uint32_t healthy = 0x0000FFFFu;
+            uc_mem_write(uc, g_emu.watchdog_flag_addr, &healthy, sizeof(healthy));
+        }
+
+        /* BT-107b: pci_watchdog_bone suppression (POC 0x2E98C8).
+         * The game's watchdog_bone() countdown at 0x2E98C8 decrements each
+         * tick. When it reaches 0, Fatal fires. Keep it at 0 so the check
+         * never triggers. Separate from the health register above. */
+        if (g_emu.game_started) {
+            uint32_t zero = 0;
+            uc_mem_write(uc, 0x002E98C8u, &zero, sizeof(zero));
+        }
+
+        /* Memory-zero sentinel: interval_0_25ms() checks [0x00000000] == 0
+         * as a corruption guard. Guest code or stray DMA can corrupt address 0
+         * during normal operation. Keep it zeroed to prevent false Fatal. */
+        if (g_emu.game_started) {
+            uint32_t zero = 0;
+            uc_mem_write(uc, 0x00000000u, &zero, sizeof(zero));
+        }
+
+        /* BT-98: Display Manager render-pass watchdog suppression.
+         * Once the game reaches its post-Allegro display path, a watchdog
+         * counter at 0x002e8e30 is periodically refreshed by render_pass().
+         * Without a host render thread, the counter can expire and trip
+         * Fatal() before the game finishes printing its startup banner. */
+        if (g_emu.game_started) {
+            uint32_t dm_mode = 0;
+            if (uc_mem_read(uc, 0x002e8e2Cu, &dm_mode, sizeof(dm_mode)) == UC_ERR_OK &&
+                dm_mode == 1u) {
+                uint32_t wd_cnt = 0;
+                if (uc_mem_read(uc, 0x002e8e30u, &wd_cnt, sizeof(wd_cnt)) == UC_ERR_OK &&
+                    wd_cnt < 2500u) {
+                    uint32_t reset = 5000u;
+                    uc_mem_write(uc, 0x002e8e30u, &reset, sizeof(reset));
+                }
+            }
+        }
 
         /* Read EIP after execution stopped */
         uc_reg_read(uc, UC_X86_REG_EIP, &eip);
 
         if (err != UC_ERR_OK) {
             if (err == UC_ERR_INSN_INVALID) {
-                uint8_t insn;
-                uc_mem_read(uc, eip, &insn, 1);
-                if (insn == 0xF4) {
-                    /* HLT — wait for interrupt */
-                    if (g_emu.timer_fired) {
-                        g_emu.timer_fired = false;
-                        g_emu.pic[0].irr |= 0x01;
+                uint8_t insn[2];
+                uc_mem_read(uc, eip, insn, 2);
+                if (insn[0] == 0xF4) {
+                    /* HLT — wait for interrupt. Force IF=1 so pending timer
+                     * can be delivered on next iteration. */
+                    uint32_t efl;
+                    uc_reg_read(uc, UC_X86_REG_EFLAGS, &efl);
+                    efl |= 0x200;
+                    uc_reg_write(uc, UC_X86_REG_EFLAGS, &efl);
+
+                    /* BT-122: Fatal() / panic HLT recovery.
+                     * When Fatal/panic hits HLT, redirect to prnull idle
+                     * (0xFF0000: STI+HLT+JMP) with clean stack, matching
+                     * POC behavior. Without this, guest falls into JMP $
+                     * infinite loop after the HLT.
+                     * V1.19: Fatal() at 0x22722C → HLT at 0x227238. */
+                    if (eip == 0x227238u || eip == 0x1CF800u || eip == 0x1D96AEu) {
+                        static int s_fatal_redir = 0;
+                        if (s_fatal_redir < 20)
+                            LOG("cpu", "Fatal/panic HLT @0x%08x → prnull idle (#%d)\n",
+                                eip, ++s_fatal_redir);
+                        eip = 0xFF0000u;
+                        uint32_t safe_esp = 0xDFFFE0u;
+                        uc_reg_write(uc, UC_X86_REG_ESP, &safe_esp);
+                        goto handle_display;
                     }
-                    check_and_inject_irq();
-                    uc_reg_read(uc, UC_X86_REG_EIP, &eip);
-                    /* If no interrupt changed EIP, skip past HLT */
-                    uint8_t check;
-                    uc_mem_read(uc, eip, &check, 1);
-                    if (check == 0xF4) eip++;
+
+                    /* Normal HLT: skip if no IRQ pending */
+                    uint8_t irq_pend = g_emu.pic[0].irr & ~g_emu.pic[0].imr;
+                    if (!irq_pend) {
+                        eip++;
+                    }
                     goto handle_display;
+                }
+                /* Cyrix/MediaGX-specific opcodes — treat as NOP */
+                if (insn[0] == 0x0F) {
+                    switch (insn[1]) {
+                    case 0x3C: /* BB0_RESET — reset branch trace buffer 0 */
+                    case 0x3D: /* BB1_RESET — reset branch trace buffer 1 */
+                    case 0x36: /* RDSHR — read scratch hard register */
+                    case 0x37: /* WRSHR — write scratch hard register */
+                    case 0x38: /* SMINT — software SMI (no-op in emu) */
+                    case 0x39: /* DMINT — debug management interrupt */
+                    case 0x3F: /* ALTINP — alternate input */
+                        eip += 2;
+                        goto handle_display;
+                    default:
+                        break;
+                    }
                 }
             }
 
             /* Log error periodically */
             if (g_emu.exec_count < 20 || (g_emu.exec_count % 10000) == 0) {
+                uint8_t dump[16];
+                uc_mem_read(uc, eip, dump, 16);
                 LOG("cpu", "uc_emu_start error: %s (EIP=0x%08x, exec=%lu)\n",
                     uc_strerror(err), eip, (unsigned long)g_emu.exec_count);
+                LOG("cpu", "  bytes: %02x %02x %02x %02x %02x %02x %02x %02x\n",
+                    dump[0], dump[1], dump[2], dump[3],
+                    dump[4], dump[5], dump[6], dump[7]);
             }
 
             /* Skip problematic instruction */
             eip++;
-        }
-
-        /* Handle timer interrupt */
-        if (g_emu.timer_fired) {
-            g_emu.timer_fired = false;
-            g_emu.pic[0].irr |= 0x01;
-            check_and_inject_irq();
-            uc_reg_read(uc, UC_X86_REG_EIP, &eip);
         }
 
 handle_display:
@@ -373,8 +722,11 @@ handle_display:
                 display_update();
 
                 g_emu.vsync_count++;
-                /* VSYNC flag in BAR2 SRAM offset 4 */
+                /* VSYNC flag in BAR2 SRAM offset 4; clear offsets 5-7 (BT-108) */
                 g_emu.bar2_sram[4] = 1;
+                g_emu.bar2_sram[5] = 0;
+                g_emu.bar2_sram[6] = 0;
+                g_emu.bar2_sram[7] = 0;
             }
 
             /* Heartbeat log */

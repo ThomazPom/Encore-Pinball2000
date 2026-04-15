@@ -262,11 +262,27 @@ static uint8_t flash_read_byte(uint32_t off)
     }
 }
 
+/* Enqueue a response into the DCS2 output buffer */
+static void dcs_enqueue_response(uint16_t val)
+{
+    DCSRespBuf *rb = &g_emu.dcs_resp;
+    if (rb->count < DCS_RESP_BUF_SIZE) {
+        rb->buf[rb->tail] = val;
+        rb->tail = (rb->tail + 1) % DCS_RESP_BUF_SIZE;
+        rb->count++;
+    }
+}
+
 void bar_init(void)
 {
     seeprom_init_default();  /* pre-populate before .see file may override */
     plx_init();
     memset(g_emu.bar2_sram, 0, sizeof(g_emu.bar2_sram));
+
+    /* Seed BC_DRAM_TOP at GX_BASE+0x20000 = 0x007FFFFF (8MB-1)
+     * Matches P2K-driver at 0x8058257 — tells BIOS how much RAM is installed */
+    g_emu.gx_regs[0x20000 >> 2] = 0x007FFFFF;
+
     LOG("bar", "BAR handlers initialized\n");
 }
 
@@ -302,19 +318,19 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
             val = g_emu.dc_fb_offset;
             break;
         case DC_TIMING2: {
-            /* VBLANK simulation: scanline counter wraps at 0xF3 (243).
-             * Lines > 0xF0 (240) indicate VBLANK period. */
-            static uint16_t s_row = 0;
-            s_row = (s_row + 1) % 244;
-            val = (uint32_t)s_row | 0x00100000u;
+            /* VBLANK simulation: counter 0-243, guest checks (val&0x7FF)>0xF0
+             * to detect VBLANK. No extra flag bits — copycat of i386 POC (BT-109). */
+            static uint32_t s_row = 0;
+            val = s_row++;
+            if (s_row > 0xF3) s_row = 0;
             break;
         }
         case GP_BLT_STATUS:
-            val = 0; /* not busy */
+            val = 0x300; /* pipeline idle + ready (BT-106) */
             break;
         default:
-            if ((off >> 2) < 256)
-                val = g_emu.dc_regs[off >> 2];
+            if ((off >> 2) < 0x9000)
+                val = g_emu.gx_regs[off >> 2];
             break;
         }
     }
@@ -353,6 +369,17 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
     else if (a >= WMS_BAR2 && a < WMS_BAR2 + 0x01000000u) {
         /* BAR2: DCS2 SRAM echo */
         uint32_t off = a - WMS_BAR2;
+
+        /* Phase 3 start trigger: offset 0x21C0 DWORD read (V1.12 only) */
+        if (off == 0x21C0 && size == 4 && !g_emu.is_v19_update) {
+            static bool s_phase3_done = false;
+            if (!s_phase3_done) {
+                s_phase3_done = true;
+                LOG("bar2", "Phase 3 start (V1.12) — applying RAM patches\n");
+                /* V1.12-specific patches would go here */
+            }
+        }
+
         if (off < BAR2_SIZE) {
             if (size == 1)
                 val = g_emu.bar2_sram[off];
@@ -377,11 +404,26 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
                   (flash_read_byte(off + 2) << 16) | (flash_read_byte(off + 3) << 24);
     }
     else if (a >= WMS_BAR4 && a < WMS_BAR4 + BAR4_SIZE) {
-        /* BAR4: DCS audio — word-only reads at offsets 0 and 2 */
+        /* BAR4: DCS audio — word-only reads */
         uint32_t off = a - WMS_BAR4;
-        if (off == 0 || off == 2) {
-            /* Return command acknowledgment or status */
-            val = 0x0000; /* idle/ready */
+        if (off == 0) {
+            /* Data/command read: retrieve response from output buffer */
+            DCSRespBuf *rb = &g_emu.dcs_resp;
+            if (rb->count > 0) {
+                val = rb->buf[rb->head];
+                rb->head = (rb->head + 1) % DCS_RESP_BUF_SIZE;
+                rb->count--;
+            } else {
+                val = 0;
+            }
+        } else if (off == 2) {
+            /* Status/flags read: bit 7 = data available */
+            uint16_t f = g_emu.dcs_flags;
+            if (g_emu.dcs_resp.count > 0)
+                f |= 0x80;
+            else
+                f &= ~0x80u;
+            val = f;
         } else {
             val = 0;
         }
@@ -433,8 +475,8 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
             /* BLT command trigger — immediate completion */
             break;
         default:
-            if ((off >> 2) < 256)
-                g_emu.dc_regs[off >> 2] = val;
+            if ((off >> 2) < 0x9000)
+                g_emu.gx_regs[off >> 2] = val;
             break;
         }
     }
@@ -481,6 +523,32 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
             }
         }
 
+        /* XINU boot detection: first byte write at offset ≥ 0x1b14 = framebuffer
+         * write = XINU has booted and is rendering text. Activate LPT. */
+        if (size == 1 && off >= 0x1b14 && !g_emu.lpt_active) {
+            LOG("bar2", "XINU boot detected (first BAR2 write at off=0x%x) — activating LPT\n", off);
+            lpt_activate();
+        }
+
+        /* DCS2 Phase completion intercepts (V1.12 only) */
+        if (!g_emu.is_v19_update) {
+            /* Offset 0x50 byte write = 0xFF: auto-ack DCS2 completion */
+            if (off == 0x50 && size == 1 && (val & 0xFF) == 0xFF) {
+                g_emu.bar2_sram[0x50] = 0x00; /* auto-clear ack */
+                LOG("bar2", "DCS2 completion ack (V1.12) — patching RAM\n");
+                /* Write 0 at 0x002797C4, 1 at 0x002C927C */
+                uint32_t zero = 0, one = 1;
+                uc_mem_write(g_emu.uc, 0x002797C4, &zero, 4);
+                uc_mem_write(g_emu.uc, 0x002C927C, &one, 4);
+            }
+            /* Offset 0x1C DWORD write ≥ 8: DCS2 channel count ready */
+            if (off == 0x1C && size == 4 && val >= 8) {
+                uint32_t zero = 0;
+                uc_mem_write(g_emu.uc, 0x002797C4, &zero, 4);
+                LOG("bar2", "DCS2 channels=%u (V1.12) — patching ready\n", val);
+            }
+        }
+
         /* Text display: printable chars at SRAM offsets are char display data */
         if (size == 1 && val >= 0x20 && val < 0x7F && off >= 0x200) {
             static char s_textbuf[128];
@@ -500,56 +568,121 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
         }
     }
     else if (a >= WMS_BAR3 && a < WMS_BAR4) {
-        /* BAR3: Flash write — Intel command protocol */
+        /* BAR3: Flash write — Intel 28F320 command protocol.
+         *
+         * Key fix: ALL command writes must set flash_cmd_active=true so that
+         * subsequent reads return status (0x80 = ready) rather than raw array
+         * data (0xFF = all error bits set). Missing flash_cmd_active updates
+         * on 0x60, 0xD0, and 0x50 caused "flash_wait: device blocked" Fatals. */
         uint8_t cmd = val & 0xFF;
+        uint32_t foff = a - WMS_BAR3;
         switch (cmd) {
-        case 0xFF: flash_cmd = 0xFF; flash_cmd_active = false; break;
+        case 0xFF: /* Read array */
+            flash_cmd = 0xFF; flash_cmd_active = false; break;
         case 0x70: flash_cmd = 0x70; flash_cmd_active = true; break;
         case 0x90: flash_cmd = 0x90; flash_cmd_active = true; break;
         case 0x98: flash_cmd = 0x98; flash_cmd_active = true; break;
-        case 0x20: flash_cmd = 0x20; flash_cmd_active = true; break;
-        case 0x40: case 0x10:
+        case 0x20: /* Block erase setup */
+            flash_cmd = 0x20; flash_cmd_active = true; break;
+        case 0x40: case 0x10: /* Byte/halfword program setup */
             flash_cmd = cmd; flash_cmd_active = true; break;
-        case 0xD0:
-            /* Confirm erase/program → ready */
+        case 0x60: /* Block lock/unlock setup */
+            flash_cmd = 0x60; flash_cmd_active = true; break;
+        case 0x01: /* Lock-block confirm (after 0x60) */
+        case 0xD0: /* Unlock-block confirm OR erase/program confirm */
             flash_status = 0x80;
-            flash_cmd = 0x70;
+            flash_cmd = 0x70;   /* switch to read-status mode */
+            flash_cmd_active = true;
             break;
-        case 0x50: /* Clear status */
+        case 0x50: /* Clear status register */
             flash_status = 0x80;
+            flash_cmd = 0x70;   /* stay in status mode after clear */
+            flash_cmd_active = true;
             break;
         default:
+            /* Data write during byte/halfword program sequence */
+            if (flash_cmd_active &&
+                (flash_cmd == 0x40 || flash_cmd == 0x10)) {
+                /* Store data into flash array */
+                if (g_emu.flash && foff < FLASH_SIZE) {
+                    if (size == 1)
+                        g_emu.flash[foff] = (uint8_t)val;
+                    else if (size == 2 && foff + 1 < FLASH_SIZE)
+                        g_emu.flash[foff] = val & 0xFF,
+                        g_emu.flash[foff+1] = (val >> 8) & 0xFF;
+                    else if (foff + 3 < FLASH_SIZE)
+                        g_emu.flash[foff]   = val & 0xFF,
+                        g_emu.flash[foff+1] = (val >> 8) & 0xFF,
+                        g_emu.flash[foff+2] = (val >> 16) & 0xFF,
+                        g_emu.flash[foff+3] = (val >> 24) & 0xFF;
+                }
+                flash_status = 0x80;   /* program success */
+                /* stay in flash_cmd=0x40 status mode */
+            }
             break;
         }
     }
     else if (a >= WMS_BAR4 && a < WMS_BAR4 + BAR4_SIZE) {
-        /* BAR4: DCS audio — word-only writes at offsets 0 and 2 */
+        /* BAR4: DCS audio — word-only writes */
         uint32_t off = a - WMS_BAR4;
-        if (size == 2 || size == 1) {
-            if (off == 0) {
-                g_emu.dcs_latch = val & 0xFFFF;
-            } else if (off == 2) {
-                /* Full 16-bit command = (latch << 16) | val, but DCS uses
-                 * simple 16-bit commands written to offset 2 */
-                uint16_t cmd = val & 0xFFFF;
+        if (off == 0) {
+            /* Command/data write */
+            uint16_t cmd = val & 0xFFFF;
 
-                /* Enqueue in circular buffer */
-                DCSCmdBuf *cb = &g_emu.dcs_cmds;
-                if (cb->count < DCS_CMD_BUF_SIZE) {
-                    cb->buf[cb->tail] = cmd;
-                    cb->tail = (cb->tail + 1) % DCS_CMD_BUF_SIZE;
-                    cb->count++;
+            /* If in multi-word mode, accumulate */
+            if (g_emu.dcs_pending && g_emu.dcs_remaining > 0) {
+                if (g_emu.dcs_layer < 4)
+                    g_emu.dcs_mixer[g_emu.dcs_layer++] = cmd;
+                g_emu.dcs_remaining--;
+                if (g_emu.dcs_remaining == 0) {
+                    /* Multi-word command complete — dispatch to sound */
+                    if (g_emu.dcs_mixer[0] == 999 || g_emu.dcs_mixer[0] == 1000) {
+                        dcs_enqueue_response(0x100);
+                        dcs_enqueue_response(0x10);
+                    } else {
+                        sound_process_cmd(g_emu.dcs_mixer[0]);
+                    }
+                    g_emu.dcs_layer = 0;
+                    g_emu.dcs_remaining = 0;
+                    memset(g_emu.dcs_mixer, 0, sizeof(g_emu.dcs_mixer));
                 }
-
-                /* Process immediately */
-                sound_process_cmd(cmd);
-
-                static int s_dcs_log = 0;
-                if (s_dcs_log < 50) {
-                    s_dcs_log++;
-                    LOG("dcs", "cmd=0x%04x (latch=0x%04x)\n", cmd, g_emu.dcs_latch);
-                }
+                goto dcs_write_done;
             }
+
+            static int s_dcs_log = 0;
+            if (s_dcs_log < 80) {
+                s_dcs_log++;
+                LOG("dcs", "cmd=0x%04x\n", cmd);
+            }
+
+            /* Command dispatch */
+            switch (cmd) {
+            case 0x3A:
+                dcs_enqueue_response(0xCC01); /* board present */
+                break;
+            case 0x1B:
+                dcs_enqueue_response(0xCC09);
+                break;
+            case 0xAA:
+                dcs_enqueue_response(0xCC04);
+                break;
+            case 0x0E:
+                g_emu.dcs_pending = false;
+                break;
+            case 0xACE1:
+                g_emu.dcs_pending = true;
+                dcs_enqueue_response(0x0100);
+                dcs_enqueue_response(0x0C);
+                break;
+            default:
+                /* For unknown commands, try sound processing */
+                sound_process_cmd(cmd);
+                break;
+            }
+        } else if (off == 2) {
+            /* Flags write — store flags value */
+            g_emu.dcs_flags = val & 0xFFFF;
         }
+dcs_write_done: ;
     }
 }
