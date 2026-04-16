@@ -87,21 +87,43 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
         /* Data port */
         if (pic->init_mode) {
             switch (pic->icw_step) {
-            case 1: pic->icw2 = val & 0xF8; pic->icw_step = 2;
-                    LOG("pic", "PIC%d ICW2=0x%02x (vec base)\n", idx, pic->icw2);
-                    break;
-            case 2: pic->icw3 = val;         pic->icw_step = 3; break;
-            case 3: pic->icw4 = val;         pic->icw_step = 0;
-                    pic->init_mode = false;  break;
+            case 1: /* ICW2: vector base */
+                pic->icw2 = val & 0xF8;
+                LOG("pic", "PIC%d ICW2=0x%02x (vec base)\n", idx, pic->icw2);
+                if (pic->icw1 & 0x02) {
+                    /* SNGL=1: no ICW3, skip to ICW4 or done */
+                    if (pic->icw1 & 0x01) {
+                        pic->icw_step = 3; /* need ICW4 */
+                    } else {
+                        pic->icw_step = 0;
+                        pic->init_mode = false;
+                    }
+                } else {
+                    pic->icw_step = 2; /* need ICW3 */
+                }
+                break;
+            case 2: /* ICW3: cascade config */
+                pic->icw3 = val;
+                if (pic->icw1 & 0x01) {
+                    pic->icw_step = 3; /* need ICW4 */
+                } else {
+                    pic->icw_step = 0;
+                    pic->init_mode = false;
+                }
+                break;
+            case 3: /* ICW4: mode */
+                pic->icw4 = val;
+                pic->icw_step = 0;
+                pic->init_mode = false;
+                break;
             }
         } else {
-            /* Only log first few IMR changes to avoid flooding */
+            /* OCW1: Interrupt Mask Register */
             static int s_imr_log_cnt = 0;
-            if (pic->imr != (uint8_t)val) {
-                s_imr_log_cnt++;
-                if (s_imr_log_cnt <= 10 || (s_imr_log_cnt % 5000 == 0))
-                    LOG("pic", "PIC%d IMR=0x%02x (cnt=%d)\n", idx, val, s_imr_log_cnt);
-            }
+            s_imr_log_cnt++;
+            if (s_imr_log_cnt <= 20 || (s_imr_log_cnt % 5000 == 0))
+                LOG("pic", "PIC%d IMR=0x%02x (cnt=%d, prev=0x%02x)\n",
+                    idx, val, s_imr_log_cnt, pic->imr);
             pic->imr = val;
         }
     } else {
@@ -114,6 +136,8 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
             pic->imr = 0;
             pic->isr = 0;
             pic->irr = 0;
+            LOG("pic", "PIC%d ICW1=0x%02x (SNGL=%d IC4=%d)\n",
+                idx, val, (val >> 1) & 1, val & 1);
         } else if (val == 0x20) {
             /* Non-specific EOI */
             for (int i = 0; i < 8; i++) {
@@ -764,6 +788,12 @@ static int     s_data_bit6           = 0; /* toggle */
  *   switch_state bits 0-3: 0x01=coin 0x02=start 0x04=navL 0x08=navR */
 static uint8_t s_lpt_button_state = 0x00;
 static uint8_t s_lpt_switch_state = 0x00;
+
+void lpt_set_host_input(uint8_t buttons, uint8_t switches)
+{
+    s_lpt_button_state = buttons;
+    s_lpt_switch_state = switches;
+}
 
 /* Mirrors P2K-runtime calculateBitwiseSumBasedOnInput */
 static int calc_bitwise_sum(uint8_t val)

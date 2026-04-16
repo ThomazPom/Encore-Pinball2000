@@ -26,7 +26,7 @@ static void parse_args(int argc, char **argv)
 {
     /* Defaults: auto-detect game, standard paths */
     strncpy(g_emu.game_prefix, "auto", sizeof(g_emu.game_prefix));
-    strncpy(g_emu.roms_dir, "../deinterleaved_roms_with_update", sizeof(g_emu.roms_dir));
+    strncpy(g_emu.roms_dir, "../emulator/P2K-runtime/roms", sizeof(g_emu.roms_dir));
     strncpy(g_emu.savedata_dir, "../emulator/P2K-runtime/roms/savedata", sizeof(g_emu.savedata_dir));
 
     for (int i = 1; i < argc; i++) {

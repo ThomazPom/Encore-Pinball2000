@@ -1,8 +1,9 @@
 /*
  * rom.c — ROM loading, auto-detection, and savedata persistence.
  *
- * ROM-agnostic: scans roms_dir for *_bank0.bin files, reads game ID
- * at offset 0x803C (50069=SWE1, 50070=RFM) to auto-detect game.
+ * ROM loading follows the i386 POC path: load raw U100-U107 chip
+ * images and deinterleave them into 16 MB banks. DCS from U109/U110.
+ * No prebuilt bank file fallbacks — raw chips only.
  *
  * Savedata: loads/saves .flash, .nvram2, .see, .ems between sessions.
  */
@@ -87,6 +88,74 @@ static bool build_update_path(char *dst, size_t dst_size,
     return true;
 }
 
+/* ===== ROM interleaving ===== */
+
+static long interleave_file(uint8_t *base, int index, FILE *fp)
+{
+    uint8_t pair[2];
+    uint8_t *ptr = base + index * 2;
+    long count = 0;
+
+    while (fread(pair, 1, 2, fp) == 2) {
+        ptr[0] = pair[0];
+        ptr[1] = pair[1];
+        ptr += 4;
+        count += 2;
+    }
+
+    return count;
+}
+
+static bool try_open_variants(FILE **out_fp, char *out_path, size_t out_path_size,
+                              const char *dir, const char *prefix,
+                              int chip, bool allow_r2)
+{
+    const char *exts[] = { ".rom", ".bin", ".cpu", NULL };
+    int ei;
+
+    *out_fp = NULL;
+    out_path[0] = '\0';
+
+    if (allow_r2) {
+        for (ei = 0; exts[ei]; ei++) {
+            snprintf(out_path, out_path_size, "%s/%s_u%dr2%s",
+                     dir, prefix, chip, exts[ei]);
+            *out_fp = fopen(out_path, "rb");
+            if (*out_fp)
+                return true;
+        }
+    }
+
+    for (ei = 0; exts[ei]; ei++) {
+        snprintf(out_path, out_path_size, "%s/%s_u%d%s",
+                 dir, prefix, chip, exts[ei]);
+        *out_fp = fopen(out_path, "rb");
+        if (*out_fp)
+            return true;
+    }
+
+    if (!allow_r2) {
+        for (ei = 0; exts[ei]; ei++) {
+            snprintf(out_path, out_path_size, "%s/%s_u%dr2%s",
+                     dir, prefix, chip, exts[ei]);
+            *out_fp = fopen(out_path, "rb");
+            if (*out_fp)
+                return true;
+        }
+    }
+
+    return false;
+}
+
+static int detect_game_id_from_prefix(const char *prefix)
+{
+    if (strcmp(prefix, "swe1") == 0)
+        return 50069u;
+    if (strcmp(prefix, "rfm") == 0)
+        return 50070u;
+    return 0;
+}
+
 /* ===== ROM Auto-Detection ===== */
 
 #define GAME_ID_OFFSET  0x0000803Cu
@@ -95,13 +164,12 @@ static bool build_update_path(char *dst, size_t dst_size,
 
 int rom_detect_game(void)
 {
-    /* If user specified --game, use that — but still need game_id and game_id_str */
+    /* If user specified --game, use that. */
     if (g_emu.game_prefix[0] && strcmp(g_emu.game_prefix, "auto") != 0) {
         LOG("rom", "Game override: %s\n", g_emu.game_prefix);
-        /* Still fall through to read game_id from bank0 and detect game_id_str */
     } else {
 
-    /* Scan roms_dir for *_bank0.bin files */
+    /* Scan roms_dir for raw bank0 chip files first, then prebuilt bank files. */
     DIR *d = opendir(g_emu.roms_dir);
     if (!d) {
         fprintf(stderr, "[rom] Cannot open ROM dir: %s\n", g_emu.roms_dir);
@@ -111,7 +179,7 @@ int rom_detect_game(void)
     char found_prefix[16] = {0};
     struct dirent *ent;
     while ((ent = readdir(d)) != NULL) {
-        char *p = strstr(ent->d_name, "_bank0.bin");
+        char *p = strstr(ent->d_name, "_u100");
         if (p) {
             size_t len = p - ent->d_name;
             if (len > 0 && len < sizeof(found_prefix)) {
@@ -121,36 +189,25 @@ int rom_detect_game(void)
             }
         }
     }
-    closedir(d);
 
     if (!found_prefix[0]) {
-        fprintf(stderr, "[rom] No *_bank0.bin found in %s\n", g_emu.roms_dir);
+        fprintf(stderr, "[rom] No raw chip ROMs (*_u100*) found in %s\n", g_emu.roms_dir);
         return -1;
     }
+    closedir(d);
 
     copy_cstr(g_emu.game_prefix, sizeof(g_emu.game_prefix), found_prefix);
     LOG("rom", "Auto-detected ROM prefix: %s\n", g_emu.game_prefix);
 
     } /* end of auto-detect block */
 
-    /* Load bank0 temporarily to read game ID */
-    char path[512];
-    snprintf(path, sizeof(path), "%s/%s_bank0.bin", g_emu.roms_dir, g_emu.game_prefix);
-    FILE *f = fopen(path, "rb");
-    if (f) {
-        uint32_t gid = 0;
-        fseek(f, GAME_ID_OFFSET, SEEK_SET);
-        if (fread(&gid, 4, 1, f) == 1) {
-            g_emu.game_id = gid;
-            if (gid == GAME_ID_SWE1)
-                LOG("rom", "Game ID: %u → Star Wars Episode I\n", gid);
-            else if (gid == GAME_ID_RFM)
-                LOG("rom", "Game ID: %u → Revenge From Mars\n", gid);
-            else
-                LOG("rom", "Game ID: %u (unknown game)\n", gid);
-        }
-        fclose(f);
-    }
+    g_emu.game_id = detect_game_id_from_prefix(g_emu.game_prefix);
+    if (g_emu.game_id == GAME_ID_SWE1)
+        LOG("rom", "Game ID: %u → Star Wars Episode I\n", g_emu.game_id);
+    else if (g_emu.game_id == GAME_ID_RFM)
+        LOG("rom", "Game ID: %u → Revenge From Mars\n", g_emu.game_id);
+    else if (g_emu.game_id != 0)
+        LOG("rom", "Game ID: %u (unknown game)\n", g_emu.game_id);
 
     /* Build game_id_str for savedata naming (e.g. "swe1_14", "rfm_15").
      * Scan savedata dir for files matching prefix to get version suffix. */
@@ -189,6 +246,103 @@ int rom_detect_game(void)
 /* Forward declarations */
 static void rom_load_update_flash(void);
 
+static int load_raw_rom_banks(void)
+{
+    static const int chips[4][2] = {
+        {100, 101},
+        {102, 103},
+        {104, 105},
+        {106, 107},
+    };
+    int any = 0;
+
+    for (int b = 0; b < 4; b++) {
+        uint8_t *bank_mem = calloc(1, BANK_SIZE);
+        int loaded = 0;
+        bool prefer_r2 = (b == 0 &&
+                          strcmp(g_emu.game_prefix, "rfm") == 0 &&
+                          strstr(g_emu.game_id_str, "_15") != NULL);
+
+        if (!bank_mem)
+            return -1;
+
+        for (int c = 0; c < 2; c++) {
+            char path[512];
+            FILE *fp = NULL;
+
+            if (!try_open_variants(&fp, path, sizeof(path), g_emu.roms_dir,
+                                   g_emu.game_prefix, chips[b][c],
+                                   prefer_r2)) {
+                if (b == 0)
+                    LOG("rom", "Missing raw ROM chip: %s_u%d*\n",
+                        g_emu.game_prefix, chips[b][c]);
+                continue;
+            }
+
+            interleave_file(bank_mem, c, fp);
+            fclose(fp);
+            loaded++;
+            any++;
+            LOG("rom", "Bank %d chip u%d: %s\n", b, chips[b][c], path);
+        }
+
+        if (loaded == 2) {
+            g_emu.rom_banks[b] = bank_mem;
+            g_emu.rom_sizes[b] = BANK_SIZE;
+            if (b == 0) {
+                memset(g_emu.rom_banks[0] + DCS_PRES_OFF, 0, DCS_PRES_BYTES);
+                LOG("rom", "Bank 0 DCS presence table zeroed at load time\n");
+            }
+            LOG("rom", "Bank %d: raw interleaved load complete (%lu MB)\n",
+                b, (unsigned long)(g_emu.rom_sizes[b] >> 20));
+        } else {
+            free(bank_mem);
+            if (b == 0)
+                return -1;
+            LOG("rom", "Bank %d: incomplete raw chip set, leaving bank absent\n", b);
+        }
+    }
+
+    return any > 0 ? 0 : -1;
+}
+
+/* Prebuilt bank file loading removed — raw chip deinterleaving only (i386 POC path) */
+
+static int load_raw_dcs_rom(void)
+{
+    uint8_t *buf = calloc(1, DCS_BANK_SIZE);
+    int loaded = 0;
+
+    if (!buf)
+        return -1;
+
+    for (int c = 0; c < 2; c++) {
+        const int chip = 109 + c;
+        char path[512];
+        FILE *fp = NULL;
+
+        if (!try_open_variants(&fp, path, sizeof(path), g_emu.roms_dir,
+                               g_emu.game_prefix, chip, false))
+            continue;
+
+        interleave_file(buf, c, fp);
+        fclose(fp);
+        loaded++;
+        LOG("rom", "DCS chip u%d: %s\n", chip, path);
+    }
+
+    if (loaded == 2) {
+        g_emu.dcs_rom = buf;
+        g_emu.dcs_rom_size = DCS_BANK_SIZE;
+        return 0;
+    }
+
+    free(buf);
+    return -1;
+}
+
+/* Prebuilt DCS bank file loading removed — raw chip deinterleaving only */
+
 /* ===== ROM Loading ===== */
 
 int rom_load_all(void)
@@ -198,33 +352,17 @@ int rom_load_all(void)
     /* Auto-detect game if needed */
     if (rom_detect_game() != 0) return -1;
 
-    /* Load ROM banks 0-3 */
-    for (int b = 0; b < 4; b++) {
-        snprintf(path, sizeof(path), "%s/%s_bank%d.bin",
-                 g_emu.roms_dir, g_emu.game_prefix, b);
-        g_emu.rom_banks[b] = load_file(path, &g_emu.rom_sizes[b]);
-        if (g_emu.rom_banks[b]) {
-            LOG("rom", "Bank %d: %s (%lu MB)\n", b, path,
-                (unsigned long)(g_emu.rom_sizes[b] >> 20));
-        } else {
-            LOG("rom", "Bank %d: %s — NOT FOUND\n", b, path);
-            if (b == 0) {
-                fprintf(stderr, "[rom] Bank 0 is required!\n");
-                return -1;
-            }
-        }
+    if (load_raw_rom_banks() != 0) {
+        fprintf(stderr, "[rom] Raw chip load failed — ensure *_u100-u107 files exist in %s\n",
+                g_emu.roms_dir);
+        return -1;
     }
 
-    /* Load DCS sound ROM (bank4) */
-    snprintf(path, sizeof(path), "%s/%s_bank4_dcs.bin",
-             g_emu.roms_dir, g_emu.game_prefix);
-    g_emu.dcs_rom = load_file(path, &g_emu.dcs_rom_size);
-    if (g_emu.dcs_rom) {
-        LOG("rom", "DCS  : %s (%lu MB)\n", path,
+    if (load_raw_dcs_rom() != 0)
+        LOG("rom", "DCS  : u109/u110 not found (sound disabled)\n");
+    else
+        LOG("rom", "DCS  : raw interleaved load complete (%lu MB)\n",
             (unsigned long)(g_emu.dcs_rom_size >> 20));
-    } else {
-        LOG("rom", "DCS  : %s — not found (sound disabled)\n", path);
-    }
 
     /* Load BIOS — try multiple paths */
     const char *bios_paths[] = {
