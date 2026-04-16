@@ -216,6 +216,8 @@ static void pit_write(uint16_t port, uint8_t val)
             g_emu.pit.latch[ch] = g_emu.pit.count[ch];
             g_emu.pit.latched[ch] = true;
         }
+        LOG("pit", "CMD: ch=%d rw=%d mode=%d val=0x%02x\n",
+            ch, g_emu.pit.rw_mode[ch], g_emu.pit.mode[ch], val);
     } else {
         int ch = port - PORT_PIT_CH0;
         if (ch < 0 || ch > 2) return;
@@ -225,6 +227,11 @@ static void pit_write(uint16_t port, uint8_t val)
         } else {
             g_emu.pit.count[ch] = (g_emu.pit.count[ch] & 0x00FF) | (val << 8);
             g_emu.pit.access_lo[ch] = 0;
+            if (ch == 0) {
+                uint16_t div = g_emu.pit.count[0];
+                LOG("pit", "CH0 divisor=%u → %u Hz\n",
+                    div, div ? 1193182u / div : 0);
+            }
         }
     }
 }
