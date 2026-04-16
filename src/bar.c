@@ -319,16 +319,9 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
             val = g_emu.dc_fb_offset;
             break;
         case DC_TIMING2: {
-            /* i386 POC BT-109: counter increments on EVERY read, wraps 0→243→0.
-             * VSYNC callback at 0x19BF64 polls (val & 0x7FF) > 0xF0 to detect
-             * VBLANK and signal sem#172 to wake dispmgr for the next render. */
-            static uint32_t s_dc_row = 0;
-            static uint32_t s_dc_rd = 0;
-            val = s_dc_row++;
-            if (s_dc_row > 0xF3) s_dc_row = 0;
-            s_dc_rd++;
-            if (s_dc_rd <= 5 || (s_dc_rd % 10000) == 0)
-                LOG("gx", "DC_TIMING2 read #%u → %u\n", s_dc_rd, val);
+            /* Return cached value from timer-driven counter.
+             * VSYNC callback checks (val & 0x7FF) > 0xF0. */
+            val = g_emu.dc_timing2;
             break;
         }
         case GP_BLT_STATUS:
@@ -533,8 +526,7 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
         }
 
         if (off >= 0x800000 && off < 0xC00000) {
-            /* Framebuffer write — mirror to physical RAM at 0x800000.
-             * Guest CPU writes to 0x40800000, but display reads 0x800000. */
+            /* Framebuffer write — mirror to physical RAM at 0x800000. */
             uint32_t phys = 0x00800000u + (off - 0x800000);
             uc_mem_write(uc, phys, &val, size);
             return;
@@ -543,9 +535,15 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
         switch (off) {
         case DC_UNLOCK:
             break;
-        case DC_FB_ST_OFFSET:
+        case DC_FB_ST_OFFSET: {
+            static uint32_t prev_fb_off = 0xFFFFFFFF;
+            if (val != prev_fb_off) {
+                LOG("dc", "DC_FB_ST_OFFSET changed: 0x%x → 0x%x\n", prev_fb_off, val);
+                prev_fb_off = val;
+            }
             g_emu.dc_fb_offset = val;
             break;
+        }
         case DC_TIMING2:
             g_emu.dc_timing2 = val;
             break;

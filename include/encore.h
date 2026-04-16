@@ -307,6 +307,9 @@ typedef struct {
     /* VSYNC counter */
     uint32_t      vsync_count;
 
+    /* IRQ delivery counter (used to gate PIC enforcement) */
+    int           irq_ok_count;
+
     /* IRQ pending */
     bool          irq_pending;
     uint8_t       irq_vector;

@@ -216,6 +216,7 @@ void cpu_inject_interrupt(uint8_t vector)
     }
 
     inject_ok++;
+    g_emu.irq_ok_count = inject_ok;
     if (inject_ok <= 5 || (inject_ok % 100 == 0)) {
         LOG("irq", "vec=0x%02x → handler=0x%08x EIP=0x%08x (ok=%d blk=%d stub=%d)\n",
             vector, handler, eip, inject_ok, inject_blocked, inject_stub);
@@ -263,6 +264,11 @@ void cpu_inject_interrupt(uint8_t vector)
  * Called from exec loop to handle non-timer IRQs (e.g. IRQ4 UART THRE). */
 static void check_and_inject_irq(void)
 {
+    /* Pre-check: don't even try if IF=0 (interrupts disabled) */
+    uint32_t eflags = 0;
+    uc_reg_read(g_emu.uc, UC_X86_REG_EFLAGS, &eflags);
+    if (!(eflags & 0x200)) return;
+
     for (int pic_idx = 0; pic_idx < 2; pic_idx++) {
         PICState *pic = &g_emu.pic[pic_idx];
         uint8_t pending = pic->irr & ~pic->imr & ~pic->isr;
@@ -275,7 +281,6 @@ static void check_and_inject_irq(void)
 
                 /* If slave PIC, check cascade through master IRQ2 */
                 if (pic_idx == 1) {
-                    /* Check master allows cascade (IRQ2 not masked) */
                     if (g_emu.pic[0].imr & 0x04) continue;
                 }
 
@@ -330,8 +335,13 @@ static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *u
     case 0x83DC5: LOG("trace", "PCI enum success EAX=1\n"); break;
     case 0x83DD6: LOG("trace", "PCI enum FAIL EAX=-1\n"); break;
     case 0x100000: LOG("trace", "*** GAME CODE ENTRY at 0x100000! ***\n"); break;
-    case 0x19BF64:
+    case 0x19BF64: {
+        static uint32_t vs_call = 0;
+        vs_call++;
+        if (vs_call <= 5 || (vs_call % 500) == 0)
+            LOG("vsync", "callback #%u\n", vs_call);
         break;
+    }
     default:
         if (addr >= 0x88000 && addr < 0x8B000) {
             LOG("trace", "!!! STACK EXEC addr=0x%08x ESP=0x%08x !!!\n",
@@ -379,7 +389,24 @@ void cpu_run(void)
                     uc_mem_write(uc, WMS_BAR2 + 4, &one, 4);
                 }
 
-                /* DC_TIMING2 now driven by read-hook in bar.c (BT-109) */
+                /* DC_TIMING2: cycle through 0→243 like real hardware.
+                 * BT-109: VSYNC callback checks (val&0x7FF) > 0xF0 (240).
+                 * Values 241-243 = VBLANK active, 0-240 = active display.
+                 * i386 POC increments by 1 per READ but we can't hook reads
+                 * reliably due to TLB caching. Instead, synchronize with
+                 * vsync_ctr: set VBLANK (241) when VSYNC fires, otherwise
+                 * cycle through active lines 0-240. This gives 50Hz VBLANK. */
+                static uint32_t dc_timing2_counter = 0;
+                if (vsync_ctr == 0) {
+                    /* VSYNC just fired — set VBLANK */
+                    dc_timing2_counter = 241;
+                } else {
+                    /* Active display — cycle through 0-240 */
+                    dc_timing2_counter += 120;
+                    if (dc_timing2_counter > 240) dc_timing2_counter = 0;
+                }
+                g_emu.dc_timing2 = dc_timing2_counter;
+                uc_mem_write(uc, GX_BASE + 0x8354, &dc_timing2_counter, 4);
             }
         }
 
@@ -529,183 +556,23 @@ void cpu_run(void)
             }
             LOG("init", "Function patches: Fatal@22722C NonFatal@24780C CMOS@24FDEC LocMgr@24743C watchdog@1A4190\n");
 
-            /* --- 2. Fatal call site NOPs (x64 POC sgc-seed) --- */
+            /* --- 2. PIC base_mask fix (x64 POC BT-66/71) ---
+             * XINU's disable()/restore() use base_mask at 0x2F7CA8 to
+             * manage IMR. device_init (which we NOP'd) would call
+             * set_evec(0x20,handler) clearing bit 0 (IRQ0 unmasked).
+             * Without this, base_mask=0xFF and every restore() re-masks IRQ0.
+             * Address 0x2F7CA8 confirmed V1.19 (x64 POC + agent1264 logs). */
             {
-                static const uint32_t fatal_sites[] = {
-                    0x22F583u, 0x22F611u, 0x22F6AFu, 0x22F6DAu,
-                    0x22F71Cu, 0x22F335u, 0x22F3A3u, 0x22F3FDu,
-                };
-                uint8_t nops[10];
-                memset(nops, 0x90, sizeof(nops));
-                for (int i = 0; i < 8; i++)
-                    uc_mem_write(uc, fatal_sites[i], nops, 10);
-                /* monitor() call site NOPs */
-                uint8_t nop5[5] = { 0x90, 0x90, 0x90, 0x90, 0x90 };
-                uc_mem_write(uc, 0x00247751u, nop5, 5);
-                uc_mem_write(uc, 0x0022A384u, nop5, 5);
-                uc_mem_write(uc, 0x0029346Fu, nop5, 5);
-                LOG("init", "NOPed 8 Fatal + 3 monitor() call sites\n");
+                uint16_t base_mask;
+                uc_mem_read(uc, 0x2F7CA8u, &base_mask, 2);
+                base_mask &= ~0x0001u;  /* clear bit 0 = unmask IRQ0 */
+                base_mask &= ~0x0004u;  /* clear bit 2 = unmask cascade */
+                uc_mem_write(uc, 0x2F7CA8u, &base_mask, 2);
+                LOG("init", "PIC base_mask: [2F7CA8]=0x%04X (IRQ0+cascade unmasked)\n",
+                    base_mask);
             }
 
-            /* --- 3. Monitor auto-exit (x64 POC sgc-seed) --- */
-            {
-                uint8_t nop2[] = { 0x90, 0x90 };
-                uc_mem_write(uc, 0x0028ED5Eu, nop2, 2);  /* eval JNE → NOP */
-                uc_mem_write(uc, 0x0028F3AAu, nop2, 2);  /* loop JNE → NOP */
-                uint8_t jmp = 0xEB;
-                uc_mem_write(uc, 0x0028F390u, &jmp, 1);  /* JE → JMP (unconditional) */
-                LOG("init", "Monitor auto-exit: eval@28ED5E loop@28F3AA jmp@28F390\n");
-            }
-
-            /* --- 4. PLX found flag (x64 POC BT-100) --- */
-            {
-                uint32_t plx_id = 0x10B5u;
-                uc_mem_write(uc, 0x002E98F8u, &plx_id, 4);
-            }
-
-            /* --- 5. BSS zeroing — SKIPPED: applied post-XINU would destroy
-             *    process stacks and XINU data. x64 POC applies this at SGC
-             *    time (before XINU). Our RAM is already zeroed at startup. --- */
-
-            /* --- 6. BT-85: Q-table pre-init — SKIPPED for same reason.
-             *    XINU's initevec/newqueue already initialized it properly.
-             *    Writing EMPTY sentinels NOW would destroy XINU's queue state. --- */
-
-            /* --- 7. Init gate flags + DCS2 + misc (i386 POC post-ctor) --- */
-            {
-                uint32_t one = 1, zero = 0;
-                uc_mem_write(uc, 0x2797C4u, &zero, 4);   /* DCS2 init complete */
-                uc_mem_write(uc, 0x2AF824u, &one, 4);     /* system init prereq */
-                uc_mem_write(uc, 0x27979Cu, &one, 4);     /* game init gate */
-                uc_mem_write(uc, 0x2AF5D4u, &one, 4);     /* DCS2 hw ready */
-                uc_mem_write(uc, 0x2AF5E0u, &one, 4);     /* DCS2 hw ready */
-                uc_mem_write(uc, 0x296AF4u, &one, 4);     /* DCS2 hw ready */
-                uc_mem_write(uc, 0x2C927Cu, &one, 4);     /* DCS2 ready signal (x64 POC) */
-                uc_mem_write(uc, 0x2AF81Cu, &one, 4);     /* resched ctxsw gate */
-                uc_mem_write(uc, 0x2AF7D4u, &zero, 4);    /* preemption guard (x64 POC) */
-                uc_mem_write(uc, 0x2AF6A4u, &zero, 4);    /* ISR depth = 0 */
-                uc_mem_write(uc, 0x2BDB00u, &one, 4);     /* resource table enabled */
-                /* RET stub at 0x400000 for DCS2 dispatch (x64 POC: must be valid code!) */
-                uint8_t ret_byte = 0xC3;
-                uc_mem_write(uc, 0x400000u, &ret_byte, 1);
-                uint32_t ret_stub = 0x400000u;
-                uc_mem_write(uc, 0x296AE4u, &ret_stub, 4); /* DCS2 dispatch → RET */
-                uint32_t bar0 = WMS_BAR0;
-                uc_mem_write(uc, 0x279768u, &bar0, 4);     /* PLX BAR0 ptr */
-                LOG("init", "Init gate + DCS2 flags set (0xC3@400000, [2C927C]=1)\n");
-            }
-
-            /* --- 7b. Display pre-init (x64 POC xinu-seen stage 6c) ---
-             * Pre-set display buffer address and init flag so rendering
-             * starts immediately without waiting for PRISM reg reads. */
-            {
-                uint32_t fb_addr = 0x800000u, one = 1, zero = 0;
-                uc_mem_write(uc, 0x2935C8u, &fb_addr, 4);  /* display buffer addr */
-                uc_mem_write(uc, 0x293638u, &one, 4);       /* DISPLAY initialized */
-                uc_mem_write(uc, 0x2935B4u, &zero, 4);      /* DISPLAY layer index */
-                /* Text layer init (x64 POC stage 6b) */
-                uc_mem_write(uc, 0x294494u, &zero, 4);      /* layer index 0 */
-                uint8_t layer_active = 1;
-                uc_mem_write(uc, 0x2D31F8u, &layer_active, 1); /* layer[0].status=1 */
-                uc_mem_write(uc, 0x2D3204u, &zero, 4);      /* text-pool index=0 */
-                LOG("init", "Display pre-init: [2935C8]=0x800000 [293638]=1\n");
-            }
-
-            /* --- 8. XINACMOS fake object (i386 POC BT-33) --- */
-            {
-                uint8_t xor_ret[3] = { 0x31, 0xC0, 0xC3 };
-                uc_mem_write(uc, 0x400010u, xor_ret, 3);
-                for (int i = 0; i < 16; i++) {
-                    uint32_t stub = 0x400010u;
-                    uc_mem_write(uc, 0x400340u + i * 4, &stub, 4);
-                }
-                uint8_t obj[128];
-                memset(obj, 0, sizeof(obj));
-                *(uint32_t *)(obj + 0) = 0x400340u;
-                *(uint32_t *)(obj + 24) = 0x400010u;
-                memcpy(obj + 32, "XINACMOS", 9);
-                uc_mem_write(uc, 0x400300u, obj, sizeof(obj));
-                uint32_t obj_ptr = 0x400300u;
-                uc_mem_write(uc, 0x2C181Cu, &obj_ptr, 4);
-                LOG("init", "XINACMOS obj @0x400300\n");
-            }
-
-            /* --- 9. BAR2 DCS2 register initialization (i386 POC BT-33) --- */
-            {
-                struct { uint32_t off; uint32_t val; } bar2_regs[] = {
-                    { 0x00, 0x00002400 }, { 0x04, 0 }, { 0x08, 0x00000006 },
-                    { 0x0C, 0x00000476 }, { 0x10, 0 }, { 0x14, 0x11000050 },
-                    { 0x18, 0x00000008 }, { 0x1C, 0x00000008 },
-                    { 0x20, 0x0000011D }, { 0x24, 0 }, { 0x28, 0x11001B14 },
-                };
-                for (size_t i = 0; i < sizeof(bar2_regs)/sizeof(bar2_regs[0]); i++)
-                    uc_mem_write(uc, WMS_BAR2 + bar2_regs[i].off,
-                                 &bar2_regs[i].val, 4);
-                uint8_t zbuf[6 * 0x11D];
-                memset(zbuf, 0, sizeof(zbuf));
-                uc_mem_write(uc, WMS_BAR2 + 0x1B14u, zbuf, sizeof(zbuf));
-                uint32_t cmos_hdr = 0x11005000u, cmos_z = 0;
-                uc_mem_write(uc, WMS_BAR2 + 0x21C0u, &cmos_hdr, 4);
-                uc_mem_write(uc, WMS_BAR2 + 0x21C4u, &cmos_z, 4);
-                LOG("init", "BAR2 DCS2 regs initialized\n");
-            }
-
-            /* --- 10. Free list safety net --- */
-            {
-                uint32_t fl = 0;
-                uc_mem_read(uc, 0x2D577Cu, &fl, 4);
-                if (fl == 0 || fl >= 0x1000000u) {
-                    uint32_t fblk = 0x400000u, fblk_sz = 0xB00000u;
-                    uint32_t zero = 0;
-                    uc_mem_write(uc, fblk + 0, &zero, 4);
-                    uc_mem_write(uc, fblk + 4, &fblk_sz, 4);
-                    uc_mem_write(uc, 0x2D577Cu, &fblk, 4);
-                    LOG("init", "Free list: 0x%x sz=0x%x\n", fblk, fblk_sz);
-                }
-            }
-
-            /* --- 11. Render dispatcher NOP patches (x64 POC copycat) ---
-             * The game actively clears render guard flags [0x2C902C], [0x2C9038],
-             * [0x2D7274]. Setting them to 1 is not enough — the conditional jumps
-             * in the render dispatcher must be NOPed so rendering always runs. 
-             * Scan game code for CMP [guard_addr], 0 / JZ and NOP the JZ. */
-            {
-                uint32_t guard_addrs[] = { 0x2C902Cu, 0x2C9038u, 0x2D7274u };
-                int n_guards = 3;
-                uint8_t code[0x200000];  /* 2MB game code region */
-                if (uc_mem_read(uc, 0x100000u, code, sizeof(code)) == UC_ERR_OK) {
-                    int patched = 0;
-                    for (uint32_t i = 0; i + 12 < sizeof(code); i++) {
-                        /* CMP DWORD [addr32], imm8 = 83 3D <addr32> <imm8> (7 bytes) */
-                        if (code[i] == 0x83 && code[i+1] == 0x3D && code[i+6] == 0x00) {
-                            uint32_t cmp_addr;
-                            memcpy(&cmp_addr, code + i + 2, 4);
-                            int is_guard = 0;
-                            for (int g = 0; g < n_guards; g++)
-                                if (cmp_addr == guard_addrs[g]) { is_guard = 1; break; }
-                            if (!is_guard) continue;
-                            uint32_t j = i + 7;
-                            uint32_t vaddr = 0x100000u + j;
-                            if (code[j] == 0x74) { /* short JZ */
-                                uint8_t nop2[2] = { 0x90, 0x90 };
-                                uc_mem_write(uc, vaddr, nop2, 2);
-                                LOG("init", "NOP short JZ @0x%x (guard 0x%x)\n", vaddr, cmp_addr);
-                                patched++;
-                            } else if (code[j] == 0x0F && code[j+1] == 0x84) { /* near JZ */
-                                uint8_t nop6[6] = { 0x90,0x90,0x90,0x90,0x90,0x90 };
-                                uc_mem_write(uc, vaddr, nop6, 6);
-                                LOG("init", "NOP near JZ @0x%x (guard 0x%x)\n", vaddr, cmp_addr);
-                                patched++;
-                            }
-                        }
-                    }
-                    LOG("init", "Render guard NOP patches: %d JZ instructions patched\n", patched);
-                } else {
-                    LOG("init", "WARNING: could not read game code for render guard scan\n");
-                }
-            }
-
-            /* --- 12. DC register pre-init (x64 POC) --- */
+            /* --- 3. DC register pre-init (x64 POC) --- */
             {
                 uint32_t dc_cfg = 0x303u;  /* DFLE=1, display enabled */
                 uint32_t dc_fb_off = 0x0u;
@@ -717,10 +584,33 @@ void cpu_run(void)
                 LOG("init", "DC pre-init: CFG=0x303 FB_OFF=0 LINE=320\n");
             }
 
-            /* --- 13. DCS2 completion — REMOVED.
-             * [0x2797C4]=0 was already set correctly in stage 7 (init gate).
-             * An earlier bug set 0xFFFF here, UNDOING the correct value and
-             * blocking the render pipeline. 0=done, 0xFFFF=pending. --- */
+            /* --- 4. RET stub at 0x400000 (safe trampoline area) --- */
+            {
+                uint8_t ret_byte = 0xC3;
+                uc_mem_write(uc, 0x400000u, &ret_byte, 1);
+                /* XOR EAX,EAX; RET at 0x400010 */
+                uint8_t xor_ret[3] = { 0x31, 0xC0, 0xC3 };
+                uc_mem_write(uc, 0x400010u, xor_ret, 3);
+            }
+
+            /* NOTE: All V1.12 BSS address writes REMOVED (BT-63 / BT-91).
+             * The i386 POC proves the game boots with scheduler patches
+             * disabled ("natural flow"). Addresses like 0x2AF81C (resched
+             * gate), 0x2AF6A4 (ISR depth), 0x2AF7D4 (preempt guard),
+             * 0x2797C4 (DCS2 init), 0x2C181C (XINACMOS ptr), 0x2D577C
+             * (free list head) are V1.12 BSS locations. In V1.19 SWE1,
+             * these addresses fall within the code/data section and
+             * writing to them CORRUPTS game code — causing clkint to
+             * malfunction (preempt never decrements).
+             *
+             * XINU's sysinit() naturally initializes all scheduler state,
+             * free list, process table, and queue structures. The 48
+             * processes created confirm this works. We only need:
+             * - Function patches (Fatal/NonFatal → safe returns)
+             * - PIC base_mask fix (V1.19 address confirmed)
+             * - DC hardware register init (GX_BASE offsets)
+             * - 0F3C emulator (already installed above)
+             */
 
             LOG("init", "=== Post-XINU V1.19 patches complete ===\n");
         }
@@ -790,7 +680,7 @@ void cpu_run(void)
          * large for normal execution throughput. */
         uint8_t any_pending = (g_emu.pic[0].irr & ~g_emu.pic[0].imr) |
                               (g_emu.pic[1].irr & ~g_emu.pic[1].imr);
-        size_t batch = any_pending ? 500 : 200000;
+        size_t batch = any_pending ? 50000 : 200000;
 
         /* Execute a batch of instructions */
         uc_reg_read(uc, UC_X86_REG_EIP, &eip);
@@ -854,8 +744,14 @@ void cpu_run(void)
 
         if (err != UC_ERR_OK) {
             if (err == UC_ERR_INSN_INVALID) {
-                uint8_t insn[2];
-                uc_mem_read(uc, eip, insn, 2);
+                uint8_t insn[4];
+                uc_mem_read(uc, eip, insn, 4);
+                /* Periodic log of ALL invalid instruction encounters */
+                static int inv_cnt = 0;
+                inv_cnt++;
+                if (inv_cnt <= 30 || (inv_cnt % 10000) == 0)
+                    LOG("cpu", "INSN_INVALID #%d EIP=0x%08x bytes=%02x %02x %02x %02x\n",
+                        inv_cnt, eip, insn[0], insn[1], insn[2], insn[3]);
                 if (insn[0] == 0xF4) {
                     /* HLT — wait for interrupt. Force IF=1 so pending timer
                      * can be delivered on next iteration. */
@@ -894,19 +790,33 @@ void cpu_run(void)
                     case 0x3C: {
                         /* Cyrix scratchpad write (x64 POC BT-79):
                          * MOV [EDX], EAX; MOV [EDX+4], EBX; EDX += 8
-                         * dispmgr uses this to write GP register pairs */
+                         * dispmgr uses this to write GP register pairs.
+                         *
+                         * CRITICAL: uc_mem_write() bypasses MMIO hooks!
+                         * Must manually dispatch GX_BASE writes through
+                         * bar_mmio_write so GP BLT engine and DC register
+                         * tracking actually see the values. */
                         uint32_t eax, ebx, edx;
                         uc_reg_read(uc, UC_X86_REG_EAX, &eax);
                         uc_reg_read(uc, UC_X86_REG_EBX, &ebx);
                         uc_reg_read(uc, UC_X86_REG_EDX, &edx);
-                        uc_mem_write(uc, edx, &eax, 4);
-                        uc_mem_write(uc, edx + 4, &ebx, 4);
+
+                        uint32_t a0 = edx, a1 = edx + 4;
+                        /* Write to backing memory */
+                        uc_mem_write(uc, a0, &eax, 4);
+                        uc_mem_write(uc, a1, &ebx, 4);
+                        /* Dispatch GX_BASE MMIO writes to bar handler */
+                        if (a0 >= GX_BASE && a0 < GX_BASE + GX_BASE_SIZE)
+                            bar_mmio_write(uc, UC_MEM_WRITE, a0, 4, (int64_t)eax, NULL);
+                        if (a1 >= GX_BASE && a1 < GX_BASE + GX_BASE_SIZE)
+                            bar_mmio_write(uc, UC_MEM_WRITE, a1, 4, (int64_t)ebx, NULL);
+
                         edx += 8;
                         uc_reg_write(uc, UC_X86_REG_EDX, &edx);
                         static int cyrix_cnt = 0;
                         if (cyrix_cnt < 20)
-                            LOG("cpu", "0F3C scratchpad: [0x%x]=0x%x [0x%x]=0x%x (#%d)\n",
-                                edx - 8, eax, edx - 4, ebx, ++cyrix_cnt);
+                            LOG("cpu", "0F3C: [0x%x]=0x%x [0x%x]=0x%x (#%d)\n",
+                                a0, eax, a1, ebx, ++cyrix_cnt);
                         eip += 2;
                         goto handle_display;
                     }
@@ -946,8 +856,9 @@ handle_display:
          * this write-back, uc_reg_read at loop top would re-read the old
          * EIP and the game would re-execute the same instruction forever. */
         uc_reg_write(uc, UC_X86_REG_EIP, &eip);
+        /* i386 POC updates display every iteration. Match that cadence. */
         display_timer++;
-        if (display_timer >= 6) {
+        if (display_timer >= 1) {
             display_timer = 0;
 
             if (g_emu.display_ready) {
@@ -996,11 +907,15 @@ handle_display:
                 uint32_t tinit = 0, tick_cycle = 0;
                 uc_mem_read(uc, 0x335980u, &tinit, 4);     /* timer init flag */
                 uc_mem_read(uc, 0x3358D0u, &tick_cycle, 4); /* tick counter */
-                LOG("hb", "exec=%lu EIP=0x%08x post=0x%02x vsync=%u frames=%d\n",
+                LOG("hb", "exec=%lu EIP=0x%08x post=0x%02x vsync=%u frames=%d irq_ok=%u\n",
                     (unsigned long)g_emu.exec_count, eip, g_emu.post_code,
-                    g_emu.vsync_count, g_emu.frame_count);
+                    g_emu.vsync_count, g_emu.frame_count, g_emu.irq_ok_count);
                 LOG("hb", "  preempt=%u nproc=%u guards=%u/%u/%u tinit=%u tcyc=%u\n",
                     preempt, nproc, guard1, guard2, gate, tinit, tick_cycle);
+                /* PIC state for diagnostics */
+                LOG("hb", "  PIC0: IRR=0x%02x IMR=0x%02x ISR=0x%02x  PIC1: IRR=0x%02x IMR=0x%02x ISR=0x%02x\n",
+                    g_emu.pic[0].irr, g_emu.pic[0].imr, g_emu.pic[0].isr,
+                    g_emu.pic[1].irr, g_emu.pic[1].imr, g_emu.pic[1].isr);
                 /* DM state — compact */
                 {
                     uint32_t dmm=0, gxp=0, dt2=0;
