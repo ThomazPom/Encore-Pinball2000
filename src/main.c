@@ -175,11 +175,11 @@ static void setup_timer(void)
 
     struct itimerval itv;
     itv.it_interval.tv_sec  = 0;
-    itv.it_interval.tv_usec = 10000;  /* 10ms = 100Hz */
+    itv.it_interval.tv_usec = 10000;  /* 10ms = 100Hz — kept for HLT wakeup */
     itv.it_value.tv_sec     = 0;
     itv.it_value.tv_usec    = 10000;
     setitimer(ITIMER_REAL, &itv, NULL);
-    LOG("timer", "SIGALRM at 100Hz (10ms interval)\n");
+    LOG("timer", "SIGALRM at 100Hz (HLT wakeup only)\n");
 }
 
 static void cleanup_and_save(void)

@@ -158,9 +158,18 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
             if (++eoi_log <= 20 || (eoi_log % 200 == 0))
                 LOG("pic", "PIC%d EOI: ISR 0x%02x→0x%02x (cnt=%d)\n",
                     idx, old_isr, pic->isr, eoi_log);
+            /* Re-arm IRQ0 from tick queue after EOI clears ISR bit 0 */
+            if (idx == 0 && !(pic->isr & 0x01) && g_emu.timer_tick_queue > 0) {
+                pic->irr |= 0x01;
+                g_emu.timer_tick_queue--;
+            }
         } else if (val == 0x60) {
             /* Specific EOI for IRQ0 */
             pic->isr &= ~0x01;
+            if (idx == 0 && g_emu.timer_tick_queue > 0) {
+                pic->irr |= 0x01;
+                g_emu.timer_tick_queue--;
+            }
         } else if ((val & 0x60) == 0x60) {
             /* Specific EOI */
             pic->isr &= ~(1 << (val & 7));
