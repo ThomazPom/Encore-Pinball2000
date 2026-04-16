@@ -24,6 +24,13 @@
 /* =========================================================================
  * Physical memory map — Cyrix MediaGX + WMS PRISM
  * ========================================================================= */
+/* Direct RAM access macros — g_emu.ram is uc_mem_map_ptr backing store,
+ * so writing through it is identical to uc_mem_write but with zero API
+ * overhead.  addr MUST be < RAM_SIZE. */
+#define RAM_RD32(addr)       (*(uint32_t *)(g_emu.ram + (uint32_t)(addr)))
+#define RAM_WR32(addr, val)  do { *(uint32_t *)(g_emu.ram + (uint32_t)(addr)) = (uint32_t)(val); } while(0)
+#define RAM_RD8(addr)        (*(uint8_t  *)(g_emu.ram + (uint32_t)(addr)))
+
 #define RAM_SIZE          0x01000000u   /* 16 MB guest RAM */
 #define BIOS_SIZE         0x00010000u   /* 64 KB BIOS */
 #define PRISM_ROM_SIZE    0x00008000u   /* 32 KB option ROM */
