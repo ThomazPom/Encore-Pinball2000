@@ -41,9 +41,19 @@ int memory_init(void)
         return -1;
     }
 
-    /* 1. Main RAM: 16 MB at 0x00000000 */
-    if (map_region(uc, GUEST_RAM, RAM_SIZE, UC_PROT_ALL, "RAM") != 0) return -1;
-    uc_mem_write(uc, GUEST_RAM, g_emu.ram, RAM_SIZE);
+    /* 1. Main RAM: 16 MB at 0x00000000 — use uc_mem_map_ptr so g_emu.ram
+     *    IS the backing store. Guest CPU reads/writes go directly to g_emu.ram,
+     *    and host code can access g_emu.ram without uc_mem_read/write overhead. */
+    {
+        uc_err e = uc_mem_map_ptr(uc, GUEST_RAM, RAM_SIZE, UC_PROT_ALL, g_emu.ram);
+        if (e != UC_ERR_OK) {
+            fprintf(stderr, "[mem] Failed to map RAM with uc_mem_map_ptr: %s\n",
+                    uc_strerror(e));
+            return -1;
+        }
+        LOG("mem", "%-18s 0x%08x  %u MB (direct-mapped)\n", "RAM",
+            GUEST_RAM, RAM_SIZE >> 20);
+    }
 
     /* 2. BIOS at reset vector (0xFFFF0000) and shadow (0xF0000) */
     if (g_emu.bios && g_emu.bios_size > 0) {

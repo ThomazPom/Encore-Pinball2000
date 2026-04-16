@@ -338,7 +338,7 @@ static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *u
     case 0x19BF64: {
         static uint32_t vs_call = 0;
         vs_call++;
-        if (vs_call <= 5 || (vs_call % 500) == 0)
+        if (vs_call <= 5)
             LOG("vsync", "callback #%u\n", vs_call);
         break;
     }
@@ -360,7 +360,7 @@ void cpu_run(void)
     uc_reg_read(uc, UC_X86_REG_EIP, &eip);
     LOG("cpu", "Starting execution at EIP=0x%08x\n", eip);
 
-    int display_timer = 0;
+
     struct timespec last_time, now;
     clock_gettime(CLOCK_MONOTONIC, &last_time);
 
@@ -381,6 +381,7 @@ void cpu_run(void)
                 static int vsync_ctr = 0;
                 if (++vsync_ctr >= 2) {
                     vsync_ctr = 0;
+                    g_emu.vsync_count++;
                     g_emu.bar2_sram[4] = 1;
                     g_emu.bar2_sram[5] = 0;
                     g_emu.bar2_sram[6] = 0;
@@ -677,18 +678,20 @@ void cpu_run(void)
         }
 
         /* Adaptive batch size: small when pending IRQ waiting for IF/IMR window,
-         * large for normal execution throughput. */
+         * large for normal execution throughput.
+         * QEMU runs until SIGALRM (10ms = ~millions of instructions).
+         * Use large batches to minimize uc_emu_start overhead. */
         uint8_t any_pending = (g_emu.pic[0].irr & ~g_emu.pic[0].imr) |
                               (g_emu.pic[1].irr & ~g_emu.pic[1].imr);
-        size_t batch = any_pending ? 50000 : 200000;
+        size_t batch = any_pending ? 100000 : 500000;
 
         /* Execute a batch of instructions */
         uc_reg_read(uc, UC_X86_REG_EIP, &eip);
         /* Periodic TLB flush: Unicorn caches MMIO read hooks in translation
          * blocks.  Without flushing, DC_TIMING2 reads see stale values and
-         * the VSYNC callback never detects VBLANK.  Flush every 16 cycles
+         * the VSYNC callback never detects VBLANK.  Flush every 64 cycles
          * to balance correctness vs. performance. */
-        if ((g_emu.exec_count & 0xF) == 0)
+        if ((g_emu.exec_count & 0x3F) == 0)
             uc_ctl_flush_tlb(uc);
         uc_err err = uc_emu_start(uc, eip, 0, 0, batch);
 
@@ -856,27 +859,28 @@ handle_display:
          * this write-back, uc_reg_read at loop top would re-read the old
          * EIP and the game would re-execute the same instruction forever. */
         uc_reg_write(uc, UC_X86_REG_EIP, &eip);
-        /* i386 POC updates display every iteration. Match that cadence. */
-        display_timer++;
-        if (display_timer >= 1) {
-            display_timer = 0;
 
-            if (g_emu.display_ready) {
-                display_handle_events();
-                display_update();
-
-                g_emu.vsync_count++;
-                /* VSYNC flag in BAR2 SRAM offset 4; clear offsets 5-7 (BT-108).
-                 * Must use uc_mem_write to make it visible to guest CPU —
-                 * g_emu.bar2_sram is a host-side shadow, not Unicorn memory! */
-                g_emu.bar2_sram[4] = 1;
-                g_emu.bar2_sram[5] = 0;
-                g_emu.bar2_sram[6] = 0;
-                g_emu.bar2_sram[7] = 0;
-                uint32_t vsync_val = 0x00000001u;
-                uc_mem_write(uc, WMS_BAR2 + 4, &vsync_val, 4);
+        /* Display update at ~60 Hz using wall clock, not every iteration.
+         * i386 POC used SDL_Flip vsync throttle; we use explicit timing. */
+        {
+            static struct timespec last_display = {0, 0};
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            if (last_display.tv_sec == 0) last_display = now;
+            long disp_ms = (now.tv_sec - last_display.tv_sec) * 1000
+                         + (now.tv_nsec - last_display.tv_nsec) / 1000000;
+            if (disp_ms >= 16) {  /* ~60 Hz */
+                last_display = now;
+                if (g_emu.display_ready) {
+                    display_handle_events();
+                    display_update();
+                }
             }
+        }
 
+        /* VSYNC is driven by timer_handler (L381-389), not display loop.
+         * No duplicate VSYNC write needed here. */
+
+        {
             /* Heartbeat log */
             clock_gettime(CLOCK_MONOTONIC, &now);
             double elapsed = (now.tv_sec - last_time.tv_sec) +
