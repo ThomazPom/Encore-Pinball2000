@@ -1029,19 +1029,22 @@ static void uart_write(uint16_t port, uint8_t val)
             if (strstr(g_emu.uart_buf, "XINU")) {
                 if (!g_emu.xinu_booted) {
                     g_emu.xinu_booted = true;
-                    /* BT-76: Do NOT activate LPT here. Game expects
-                     * "PinIO failed: no printer port present" during boot.
-                     * LPT stays inactive (returning 0xFF) so PinIO probe fails
-                     * gracefully and game continues to Allegro → ez0 → Game(). */
-                    LOG("sgc", "XINU boot detected (exec=%lu) — LPT stays INACTIVE (BT-76)\n",
+                    /* BT-94: Activate emulated parallel port BEFORE PinIO probes.
+                     * PinIO runs after XINU ctors — activating here ensures port
+                     * is present when PinIO scans 0x378. Without this, PinIO
+                     * fails probe and game shows "power board not connected." */
+                    lpt_activate();
+                    LOG("sgc", "XINU boot detected (exec=%lu) — LPT activated (BT-94)\n",
                         (unsigned long)g_emu.exec_count);
                 }
             }
 
-            /* BT-76: Do NOT activate LPT on Allegro detection either.
-             * Game boots cleanly with "PinIO failed" path. */
-            if (strstr(g_emu.uart_buf, "Allegro"))
-                LOG("sgc", "Allegro detected — LPT stays inactive (BT-76)\n");
+            /* BT-93: Ensure LPT emulated port is active (backup trigger).
+             * Primary activation is on XINU detection above. */
+            if (strstr(g_emu.uart_buf, "Allegro")) {
+                lpt_activate(); /* no-op if already active */
+                LOG("sgc", "Allegro detected — LPT ensure active (BT-93)\n");
+            }
 
             /* Detect "monitor commands" and "%" monitor prompt patterns */
             if (strstr(g_emu.uart_buf, "monitor commands"))
