@@ -42,7 +42,29 @@ static void parse_args(int argc, char **argv)
                    "  --game swe1|rfm|auto  Game selection (default: auto-detect)\n"
                    "  --roms /path          ROM directory\n"
                    "  --savedata /path      Save data directory\n"
-                   "  -h, --help            Show this help\n");
+                   "  -h, --help            Show this help\n"
+                   "\n"
+                   "F-Key Controls (runtime):\n"
+                   "  F1             Quit emulator\n"
+                   "  F2             Flip display vertically\n"
+                   "  F3             Screenshot\n"
+                   "  F4             Toggle coin door open/closed\n"
+                   "  F5             Toggle service/test mode\n"
+                   "  F6             Toggle slam tilt\n"
+                   "  F7             Volume up\n"
+                   "  F8             Volume down\n"
+                   "  F9             Insert coin (pulse)\n"
+                   "  F10            Start button (pulse)\n"
+                   "\n"
+                   "Game Buttons (active while held):\n"
+                   "  Z / Up         Left flipper  (LPT bit4)\n"
+                   "  X / Down       Right flipper (LPT bit5)\n"
+                   "  Space          Left action   (LPT bit6)\n"
+                   "  Enter          Right action  (LPT bit7)\n"
+                   "  A              Both actions   (dismisses copyright)\n"
+                   "  5              Coin insert    (LPT bit0)\n"
+                   "  1              Start game     (LPT bit1)\n"
+                   "  Left / Right   Menu nav       (LPT bit2/3)\n");
             exit(0);
         }
     }
