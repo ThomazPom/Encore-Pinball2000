@@ -290,7 +290,7 @@ typedef struct {
     uint64_t      clkint_ready_exec;   /* exec_count when clkint first detected in IDT[0x20] */
     bool          game_started;
     bool          is_v19_update;       /* running with update flash (V1.19) */
-    volatile bool timer_fired;
+    volatile int timer_pending;       /* count of unprocessed SIGALRM ticks */
     uint64_t      exec_count;
 
     /* Game info (ROM-agnostic detection) */
