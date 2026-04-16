@@ -59,14 +59,19 @@ int cpu_init(void)
                 NULL, (uint64_t)WMS_BAR0, (uint64_t)(WMS_BAR4 + BAR4_SIZE - 1));
     if (e) LOG("cpu", "BAR write hook FAILED: %s\n", uc_strerror(e));
 
-    /* GX_BASE registers only (0x40000000 - 0x407FFFFF).
-     * FB at 0x40800000+ is direct-mapped — no hooks needed there. */
+    /* GX_BASE registers — narrowed to GP+DC (0x8000-0x8FFF) and BC (0x20000)
+     * ranges. The game only accesses these specific register pages:
+     *   GP BLT: 0x40008100-0x40008210
+     *   DC:     0x40008300-0x40008358
+     *   BC:     0x40020000
+     * By narrowing from 8MB to ~96KB, we eliminate millions of unnecessary
+     * TB exits for accesses to unused register ranges. */
     uc_hook h_gx_r, h_gx_w;
     e = uc_hook_add(uc, &h_gx_r, UC_HOOK_MEM_READ, (void*)bar_mmio_read,
-                NULL, (uint64_t)GX_BASE, (uint64_t)(GX_BASE + 0x800000 - 1));
+                NULL, (uint64_t)(GX_BASE + 0x8000), (uint64_t)(GX_BASE + 0x20FFF));
     if (e) LOG("cpu", "GX read hook FAILED: %s\n", uc_strerror(e));
     e = uc_hook_add(uc, &h_gx_w, UC_HOOK_MEM_WRITE, (void*)bar_mmio_write,
-                NULL, (uint64_t)GX_BASE, (uint64_t)(GX_BASE + 0x800000 - 1));
+                NULL, (uint64_t)(GX_BASE + 0x8000), (uint64_t)(GX_BASE + 0x20FFF));
     if (e) LOG("cpu", "GX write hook FAILED: %s\n", uc_strerror(e));
 
     /* Code trace hook for Init2 checkpoints (0x80000 - 0x90000)
@@ -681,55 +686,27 @@ void cpu_run(void)
 
         g_emu.exec_count++;
         prof_emu_calls++;
+        int eip_dirty = 0;  /* set when error handlers modify local eip */
 
-        /* Watchdog health register: keep [watchdog_flag_addr] = 0xFFFF so
-         * pci_read_watchdog() always sees an in-range health value and returns
-         * 0 (not expired). This simulates the XINU timer regularly feeding the
-         * hardware watchdog; real 200MHz hardware completes game init before
-         * the watchdog can expire, but emulation is slower. (BT-107)
-         * Runs every 64 iterations + uses direct RAM for zero overhead. */
-        if (g_emu.watchdog_flag_addr && g_emu.game_started
-            && (g_emu.exec_count & 0x3F) == 0) {
-            RAM_WR32(g_emu.watchdog_flag_addr, 0x0000FFFFu);
-        }
-
-        /* BT-107b: pci_watchdog_bone suppression (POC 0x2E98C8).
-         * The game's watchdog_bone() countdown at 0x2E98C8 decrements each
-         * tick. When it reaches 0, Fatal fires. Keep it at 0 so the check
-         * never triggers. Separate from the health register above. */
-        if (g_emu.game_started && (g_emu.exec_count & 0x3F) == 0) {
+        /* Periodic maintenance — every 64 iterations.
+         * Combines watchdog, sentinel, and DM watchdog suppression. */
+        if ((g_emu.exec_count & 0x3F) == 0 && g_emu.game_started) {
+            if (g_emu.watchdog_flag_addr)
+                RAM_WR32(g_emu.watchdog_flag_addr, 0x0000FFFFu);
             RAM_WR32(0x002E98C8u, 0);
-        }
-
-        /* Memory-zero sentinel: interval_0_25ms() checks [0x00000000] == 0
-         * as a corruption guard. Guest code or stray DMA can corrupt address 0
-         * during normal operation. Keep it zeroed to prevent false Fatal.
-         * MUST run every iteration (not periodic) — address 0 corruption
-         * accumulates fast in game phase. */
-        if (g_emu.game_started) {
             RAM_WR32(0, 0);
-        }
-
-        /* BT-98: Display Manager render-pass watchdog suppression.
-         * Once the game reaches its post-Allegro display path, a watchdog
-         * counter at 0x002e8e30 is periodically refreshed by render_pass().
-         * Without a host render thread, the counter can expire and trip
-         * Fatal() before the game finishes printing its startup banner. */
-        if (g_emu.game_started && (g_emu.exec_count & 0x3F) == 0) {
             uint32_t dm_mode = RAM_RD32(0x002e8e2Cu);
-            if (dm_mode == 1u) {
-                uint32_t wd_cnt = RAM_RD32(0x002e8e30u);
-                if (wd_cnt < 2500u) {
-                    RAM_WR32(0x002e8e30u, 5000u);
-                }
-            }
+            if (dm_mode == 1u && RAM_RD32(0x002e8e30u) < 2500u)
+                RAM_WR32(0x002e8e30u, 5000u);
+        } else if (g_emu.game_started) {
+            /* Zero sentinel every iteration — corruption accumulates fast */
+            RAM_WR32(0, 0);
         }
 
         /* Read EIP after execution stopped */
         uc_reg_read(uc, UC_X86_REG_EIP, &eip);
 
         if (err != UC_ERR_OK) {
-            /* Count non-0F3C, non-HLT errors separately at the end */
             if (err == UC_ERR_INSN_INVALID) {
                 uint8_t insn_buf[4];
                 uint8_t *insn;
@@ -739,7 +716,6 @@ void cpu_run(void)
                     uc_mem_read(uc, eip, insn_buf, 4);
                     insn = insn_buf;
                 }
-                /* Periodic log of ALL invalid instruction encounters */
                 static int inv_cnt = 0;
                 inv_cnt++;
                 if (inv_cnt <= 30 || (inv_cnt % 10000) == 0)
@@ -747,65 +723,45 @@ void cpu_run(void)
                         inv_cnt, eip, insn[0], insn[1], insn[2], insn[3]);
                 if (insn[0] == 0xF4) {
                     prof_hlt++;
-                    /* HLT — wait for interrupt. Force IF=1 so pending timer
-                     * can be delivered on next iteration. */
                     uint32_t efl;
                     uc_reg_read(uc, UC_X86_REG_EFLAGS, &efl);
                     efl |= 0x200;
                     uc_reg_write(uc, UC_X86_REG_EFLAGS, &efl);
 
-                    /* BT-122: Fatal() / panic HLT recovery.
-                     * When Fatal/panic hits HLT, redirect to prnull idle
-                     * (0xFF0000: STI+HLT+JMP) with clean stack, matching
-                     * POC behavior. Without this, guest falls into JMP $
-                     * infinite loop after the HLT.
-                     * V1.19: Fatal() at 0x22722C → HLT at 0x227238. */
                     if (eip == 0x227238u || eip == 0x1CF800u || eip == 0x1D96AEu) {
                         static int s_fatal_redir = 0;
                         if (s_fatal_redir < 20)
                             LOG("cpu", "Fatal/panic HLT @0x%08x → prnull idle (#%d)\n",
                                 eip, ++s_fatal_redir);
                         eip = 0xFF0000u;
+                        eip_dirty = 1;
                         uint32_t safe_esp = 0xDFFFE0u;
                         uc_reg_write(uc, UC_X86_REG_ESP, &safe_esp);
                         goto handle_display;
                     }
 
-                    /* Normal HLT: sleep until next timer tick if no IRQ pending.
-                     * Without this, the idle loop spins: HLT→emu_start(1 insn)→HLT
-                     * burning host CPU and wasting uc_emu_start overhead. */
                     uint8_t irq_pend = g_emu.pic[0].irr & ~g_emu.pic[0].imr;
                     if (!irq_pend) {
                         eip++;
-                        static const struct timespec hlt_sleep = {0, 1000000}; /* 1ms */
+                        eip_dirty = 1;
+                        static const struct timespec hlt_sleep = {0, 1000000};
                         while (!g_emu.timer_pending && g_emu.running)
                             nanosleep(&hlt_sleep, NULL);
                     }
                     goto handle_display;
                 }
-                /* Cyrix/MediaGX-specific opcodes */
                 if (insn[0] == 0x0F) {
                     switch (insn[1]) {
                     case 0x3C: {
                         prof_0f3c++;
-                        /* Cyrix scratchpad write (x64 POC BT-79):
-                         * MOV [EDX], EAX; MOV [EDX+4], EBX; EDX += 8
-                         * dispmgr uses this to write GP register pairs.
-                         *
-                         * CRITICAL: uc_mem_write() bypasses MMIO hooks!
-                         * Must manually dispatch GX_BASE writes through
-                         * bar_mmio_write so GP BLT engine and DC register
-                         * tracking actually see the values. */
                         uint32_t eax, ebx, edx;
                         uc_reg_read(uc, UC_X86_REG_EAX, &eax);
                         uc_reg_read(uc, UC_X86_REG_EBX, &ebx);
                         uc_reg_read(uc, UC_X86_REG_EDX, &edx);
 
                         uint32_t a0 = edx, a1 = edx + 4;
-                        /* Write to backing memory */
                         uc_mem_write(uc, a0, &eax, 4);
                         uc_mem_write(uc, a1, &ebx, 4);
-                        /* Dispatch GX_BASE MMIO writes to bar handler */
                         if (a0 >= GX_BASE && a0 < GX_BASE + GX_BASE_SIZE)
                             bar_mmio_write(uc, UC_MEM_WRITE, a0, 4, (int64_t)eax, NULL);
                         if (a1 >= GX_BASE && a1 < GX_BASE + GX_BASE_SIZE)
@@ -818,15 +774,13 @@ void cpu_run(void)
                             LOG("cpu", "0F3C: [0x%x]=0x%x [0x%x]=0x%x (#%d)\n",
                                 a0, eax, a1, ebx, ++cyrix_cnt);
                         eip += 2;
+                        eip_dirty = 1;
                         goto handle_display;
                     }
-                    case 0x3D: /* BB1_RESET — reset branch trace buffer 1 */
-                    case 0x36: /* RDSHR — read scratch hard register */
-                    case 0x37: /* WRSHR — write scratch hard register */
-                    case 0x38: /* SMINT — software SMI (no-op in emu) */
-                    case 0x39: /* DMINT — debug management interrupt */
-                    case 0x3F: /* ALTINP — alternate input */
+                    case 0x3D: case 0x36: case 0x37: case 0x38:
+                    case 0x39: case 0x3F:
                         eip += 2;
+                        eip_dirty = 1;
                         goto handle_display;
                     default:
                         break;
@@ -834,7 +788,6 @@ void cpu_run(void)
                 }
             }
 
-            /* Log error periodically */
             if (g_emu.exec_count < 20 || (g_emu.exec_count % 10000) == 0) {
                 uint8_t dump_buf[16] = {0};
                 uint8_t *dump;
@@ -851,31 +804,34 @@ void cpu_run(void)
                     dump[4], dump[5], dump[6], dump[7]);
             }
 
-            /* Skip problematic instruction */
             prof_other_err++;
             eip++;
+            eip_dirty = 1;
         } else {
             prof_ok++;
         }
 
 handle_display:
-        /* Write back eip to Unicorn — required because cpu_inject_interrupt()
-         * reads Unicorn's EIP (uc_reg_read) to push the return address for
-         * the interrupt frame. If we don't sync, error-handler modifications
-         * (eip += 2 for 0F3C, eip++ for HLT) won't be reflected, and IRET
-         * returns to the wrong address. */
-        uc_reg_write(uc, UC_X86_REG_EIP, &eip);
+        /* Write back eip to Unicorn ONLY when error handlers modified it.
+         * On the UC_ERR_OK path (99.99% of iterations), Unicorn already has
+         * the correct EIP — skipping uc_reg_write saves ~14M API calls/5s.
+         * cpu_inject_interrupt reads Unicorn's EIP for the interrupt frame. */
+        if (eip_dirty)
+            uc_reg_write(uc, UC_X86_REG_EIP, &eip);
 
-        /* Display update at ~60 Hz using wall clock, not every iteration.
-         * i386 POC used SDL_Flip vsync throttle; we use explicit timing. */
-        {
+        /* Display + heartbeat — check wall clock every 128 iterations.
+         * At 14M iter/5s, 128 → ~110K checks/5s (~55 µs granularity).
+         * Saves ~14M clock_gettime syscalls/5s vs checking every iteration.
+         * TLB flush also tied to this cadence for DC_TIMING2 VSYNC detection. */
+        if ((g_emu.exec_count & 0x7F) == 0) {
             static struct timespec last_display = {0, 0};
             clock_gettime(CLOCK_MONOTONIC, &now);
             if (last_display.tv_sec == 0) last_display = now;
             long disp_ms = (now.tv_sec - last_display.tv_sec) * 1000
                          + (now.tv_nsec - last_display.tv_nsec) / 1000000;
-            if (disp_ms >= 16) {  /* ~60 Hz */
+            if (disp_ms >= 16) {
                 last_display = now;
+                uc_ctl_flush_tlb(uc);
                 if (g_emu.display_ready) {
                     display_handle_events();
                     display_update();
@@ -883,11 +839,8 @@ handle_display:
             }
         }
 
-        /* VSYNC is driven by timer_handler (L381-389), not display loop.
-         * No duplicate VSYNC write needed here. */
-
-        {
-            /* Heartbeat log */
+        /* Heartbeat log — checked every 128 iterations */
+        if ((g_emu.exec_count & 0x7F) == 0) {
             clock_gettime(CLOCK_MONOTONIC, &now);
             double elapsed = (now.tv_sec - last_time.tv_sec) +
                              (now.tv_nsec - last_time.tv_nsec) / 1e9;
