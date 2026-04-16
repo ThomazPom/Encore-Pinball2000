@@ -15,18 +15,17 @@ static bool hook_mem_invalid(uc_engine *uc, uc_mem_type type, uint64_t addr,
                              int size, int64_t value, void *user_data);
 static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *user_data);
 
-/* SIGALRM handler — increment pending tick count and stop emulation so the
- * main loop processes the tick immediately. Signals don't queue in Linux,
- * so we use a counter to avoid losing ticks during long batches. */
+/* SIGALRM handler — sets timer_pending for HLT wakeup only.
+ * Does NOT call uc_emu_stop (avoids stop_request contamination).
+ * Tick injection is iteration-count based for consistent game speed. */
 static volatile unsigned long sigalrm_total = 0;
 void cpu_timer_handler(int sig)
 {
     (void)sig;
     sigalrm_total++;
     g_emu.timer_pending++;
-    if (g_emu.uc)
-        uc_emu_stop(g_emu.uc);
 }
+
 
 int cpu_init(void)
 {
@@ -95,6 +94,7 @@ int cpu_init(void)
     uc_hook h_vsync_trace;
     uc_hook_add(uc, &h_vsync_trace, UC_HOOK_CODE, (void*)hook_code_trace,
                 NULL, (uint64_t)0x19BF60, (uint64_t)0x19BF70);
+
     LOG("cpu", "Unicorn Engine initialized (i386 mode)\n");
     return 0;
 }
@@ -186,33 +186,32 @@ void cpu_inject_interrupt(uint8_t vector)
     uc_engine *uc = g_emu.uc;
     static int inject_ok = 0, inject_blocked = 0, inject_stub = 0;
 
-    /* Read current CPU state.
-     * CRITICAL: initialize to 0 before uc_reg_read.
-     * Unicorn writes int16_t (2 bytes) for CS — if cs is uninitialized,
-     * the high 2 bytes will be stack garbage → corrupted interrupt frame
-     * → GP fault on IRET inside the clkint handler. */
-    uint32_t eip = 0, esp = 0, eflags = 0, cs = 0;
-    uc_reg_read(uc, UC_X86_REG_EIP, &eip);
-    uc_reg_read(uc, UC_X86_REG_ESP, &esp);
-    uc_reg_read(uc, UC_X86_REG_EFLAGS, &eflags);
-    uc_reg_read(uc, UC_X86_REG_CS, &cs);
-    cs &= 0xFFFF;  /* Keep only the 16-bit selector */
+    /* Batched register read: EIP, ESP, EFLAGS, CS in one call */
+    uint32_t regs_val[4] = {0, 0, 0, 0};
+    int regs_ids[4] = {UC_X86_REG_EIP, UC_X86_REG_ESP, UC_X86_REG_EFLAGS, UC_X86_REG_CS};
+    void *regs_ptrs[4] = {&regs_val[0], &regs_val[1], &regs_val[2], &regs_val[3]};
+    uc_reg_read_batch(uc, regs_ids, regs_ptrs, 4);
 
-    /* Check IF flag — don't inject if interrupts are disabled */
+    uint32_t eip = regs_val[0], esp = regs_val[1];
+    uint32_t eflags = regs_val[2], cs = regs_val[3] & 0xFFFF;
+
     if (!(eflags & 0x200)) {
         inject_blocked++;
         return;
     }
 
-    /* Read IDTR */
-    uc_x86_mmr idtr;
-    uc_reg_read(uc, UC_X86_REG_IDTR, &idtr);
-
-    /* Read IDT entry (8 bytes per entry in 32-bit protected mode) */
-    uint8_t idt_entry[8];
-    uint64_t idt_addr = idtr.base + vector * 8;
-    uc_err err = uc_mem_read(uc, idt_addr, idt_entry, 8);
-    if (err != UC_ERR_OK) return;
+    /* Read IDT entry directly from RAM (IDT is always in RAM) */
+    uint32_t idt_base = g_emu.idt_base;
+    uint32_t idt_addr = idt_base + vector * 8;
+    uint8_t *idt_entry;
+    uint8_t idt_buf[8];
+    if (idt_addr + 8 <= RAM_SIZE) {
+        idt_entry = g_emu.ram + idt_addr;
+    } else {
+        uc_err err = uc_mem_read(uc, idt_addr, idt_buf, 8);
+        if (err != UC_ERR_OK) return;
+        idt_entry = idt_buf;
+    }
 
     uint16_t offset_lo = idt_entry[0] | (idt_entry[1] << 8);
     uint16_t selector  = idt_entry[2] | (idt_entry[3] << 8);
@@ -220,7 +219,6 @@ void cpu_inject_interrupt(uint8_t vector)
     uint32_t handler   = offset_lo | (offset_hi << 16);
     (void)selector;
 
-    /* Skip if handler is our stub or NULL */
     if (handler == 0 || handler == 0x20000u || handler == 0x20000000u) {
         inject_stub++;
         return;
@@ -233,25 +231,22 @@ void cpu_inject_interrupt(uint8_t vector)
             vector, handler, eip, inject_ok, inject_blocked, inject_stub);
     }
 
-    /* Push interrupt frame: EFLAGS, CS, EIP (x86 interrupt pushes from
-     * high to low: EFLAGS at highest, then CS, then EIP at lowest) */
-    esp -= 4; uc_mem_write(uc, esp, &eflags, 4);
+    /* Push interrupt frame directly to RAM (stack is always in RAM) */
+    esp -= 4;
+    if (esp < RAM_SIZE) RAM_WR32(esp, eflags); else uc_mem_write(uc, esp, &eflags, 4);
     esp -= 4;
     uint32_t cs32 = cs;
-    uc_mem_write(uc, esp, &cs32, 4);
-    esp -= 4; uc_mem_write(uc, esp, &eip, 4);
+    if (esp < RAM_SIZE) RAM_WR32(esp, cs32); else uc_mem_write(uc, esp, &cs32, 4);
+    esp -= 4;
+    if (esp < RAM_SIZE) RAM_WR32(esp, eip); else uc_mem_write(uc, esp, &eip, 4);
 
-    /* Update registers */
-    uc_reg_write(uc, UC_X86_REG_ESP, &esp);
-
-    /* Clear IF (interrupt gate behavior) */
+    /* Batched register write: ESP, EFLAGS (IF cleared), EIP */
     eflags &= ~0x200u;
-    uc_reg_write(uc, UC_X86_REG_EFLAGS, &eflags);
+    uint32_t wregs_val[3] = {esp, eflags, handler};
+    int wregs_ids[3] = {UC_X86_REG_ESP, UC_X86_REG_EFLAGS, UC_X86_REG_EIP};
+    void *wregs_ptrs[3] = {&wregs_val[0], &wregs_val[1], &wregs_val[2]};
+    uc_reg_write_batch(uc, wregs_ids, (void *const *)wregs_ptrs, 3);
 
-    /* Jump to handler */
-    uc_reg_write(uc, UC_X86_REG_EIP, &handler);
-
-    /* Set CS if needed (XINU uses flat segments, CS stays same) */
     if (selector != cs) {
         uint32_t new_cs = selector;
         uc_reg_write(uc, UC_X86_REG_CS, &new_cs);
@@ -273,12 +268,15 @@ void cpu_inject_interrupt(uint8_t vector)
 
 /* Check PIC for pending interrupts and inject highest priority.
  * Called from exec loop to handle non-timer IRQs (e.g. IRQ4 UART THRE). */
+
 static void check_and_inject_irq(void)
 {
     /* Pre-check: don't even try if IF=0 (interrupts disabled) */
     uint32_t eflags = 0;
     uc_reg_read(g_emu.uc, UC_X86_REG_EFLAGS, &eflags);
-    if (!(eflags & 0x200)) return;
+    if (!(eflags & 0x200)) {
+        return;
+    }
 
     for (int pic_idx = 0; pic_idx < 2; pic_idx++) {
         PICState *pic = &g_emu.pic[pic_idx];
@@ -381,23 +379,38 @@ void cpu_run(void)
     unsigned long prof_hlt = 0;         /* HLT returns */
     unsigned long prof_other_err = 0;   /* other errors */
     unsigned long prof_ok = 0;          /* UC_ERR_OK (batch exhausted or stopped) */
-    unsigned long prof_ticks_in = 0;    /* timer ticks received from SIGALRM */
-    unsigned long prof_irq_blocked = 0; /* IRQ injection blocked (IF=0 or ISR) */
+    unsigned long prof_ticks_fired = 0; /* ticks that successfully set IRR */
+    unsigned long prof_ticks_isr = 0;   /* ticks dropped: ISR busy */
+    unsigned long prof_ticks_irr = 0;   /* ticks dropped: IRR already set */
+    unsigned long prof_irq0_inject = 0; /* IRQ0 actually injected */
 
     /* Initial EIP read — carried across iterations to avoid double-read */
     uc_reg_read(uc, UC_X86_REG_EIP, &eip);
 
     while (g_emu.running) {
-        /* Timer tick injection — iteration-count based for consistent game speed.
-         * At ~18M iterations/5s = 3.6M/sec, one tick every 36000 iterations
-         * gives 100 ticks/sec (matching XINU's 100Hz PIT expectation).
-         * This is independent of wall-clock time, so game speed scales with
-         * CPU throughput rather than being limited by SIGALRM delivery rate
-         * (which was only ~56% of requested frequency due to signal masking). */
+        /* Timer tick injection — iteration-count based.
+         * Ticks that arrive while IRQ0 ISR is active are DROPPED (not queued).
+         * This prevents ISR saturation: without dropping, the EOI re-arm
+         * creates a perpetual ISR loop where the CPU never runs game code.
+         * The game clock runs at emulation speed, not real-time. */
         {
             static const unsigned TICK_INTERVAL = 25000;
             if (g_emu.xinu_ready && (g_emu.exec_count % TICK_INTERVAL) == 0) {
-                g_emu.timer_tick_queue++;
+
+                /* Only set IRR if IRQ0 is not in-service AND not already pending */
+                if (!(g_emu.pic[0].isr & 0x01) && !(g_emu.pic[0].irr & 0x01)) {
+                    g_emu.pic[0].irr |= 0x01;
+                    prof_ticks_fired++;
+                    /* Direct tcyc increment: the guest's deferred-clock mechanism
+                     * ([0x2f7a98] nesting counter) gates tcyc++ to only 25% of ticks.
+                     * We force tcyc to track our tick rate (emulation speed). */
+                    if (g_emu.xinu_ready)
+                        RAM_WR32(0x3358D0, RAM_RD32(0x3358D0) + 1);
+                } else if (g_emu.pic[0].isr & 0x01) {
+                    prof_ticks_isr++;
+                } else {
+                    prof_ticks_irr++;
+                }
 
                 /* VSYNC at 50Hz (every 2 ticks) */
                 static int vsync_ctr = 0;
@@ -422,15 +435,6 @@ void cpu_run(void)
                 }
                 g_emu.dc_timing2 = dc_timing2_counter;
                 uc_mem_write(uc, GX_BASE + 0x8354, &dc_timing2_counter, 4);
-                prof_ticks_in++;
-            }
-
-            /* Drain tick queue → PIC IRR when IRQ0 is not in-service */
-            if (g_emu.timer_tick_queue > 0
-                && !(g_emu.pic[0].isr & 0x01)
-                && !(g_emu.pic[0].irr & 0x01)) {
-                g_emu.pic[0].irr |= 0x01;
-                g_emu.timer_tick_queue--;
             }
 
             /* Drain SIGALRM timer_pending (used only for HLT wakeup) */
@@ -465,8 +469,12 @@ void cpu_run(void)
                     if (g_emu.xinu_booted &&
                         g_emu.exec_count >= g_emu.clkint_ready_exec + 50) {
                         g_emu.xinu_ready = true;
-                        LOG("irq", "XINU ready: timer injection enabled EIP=0x%08x exec=%u\n",
-                            eip, (unsigned)g_emu.exec_count);
+                        /* Cache IDT base for fast interrupt injection */
+                        uc_x86_mmr idtr;
+                        uc_reg_read(uc, UC_X86_REG_IDTR, &idtr);
+                        g_emu.idt_base = (uint32_t)idtr.base;
+                        LOG("irq", "XINU ready: timer injection enabled EIP=0x%08x exec=%u idt_base=0x%x\n",
+                            eip, (unsigned)g_emu.exec_count, g_emu.idt_base);
 
                         /* Install Cyrix 0F3C emulator at 0x500 and patch IDT[6]. */
                         {
@@ -624,6 +632,12 @@ void cpu_run(void)
              */
 
             LOG("init", "=== Post-XINU V1.19 patches complete ===\n");
+
+            /* NOP out the ISR's tcyc increment at 0x24c746 (inc eax → nop)
+             * We drive tcyc directly from tick injection to bypass the
+             * 75% deferred-clock gating in clkint. */
+            g_emu.ram[0x24c746] = 0x90;  /* NOP */
+            LOG("init", "Patched clkint tcyc increment at 0x24C746 (inc eax → NOP)\n");
         }
 
         /* pid2 (terminal) crash guard — x64 POC BT-98:
@@ -678,22 +692,25 @@ void cpu_run(void)
         if (g_emu.xinu_ready) {
             uint8_t pending0 = g_emu.pic[0].irr & ~g_emu.pic[0].imr;
             uint8_t pending1 = g_emu.pic[1].irr & ~g_emu.pic[1].imr;
+            int irq0_pending = (pending0 & 0x01) ? 1 : 0;
             if (pending0 || pending1)
                 check_and_inject_irq();
             /* IRQ injection modifies Unicorn's EIP — sync local copy */
             uc_reg_read(uc, UC_X86_REG_EIP, &eip);
+
+            /* Track IRQ0 injection count */
+            if (irq0_pending)
+                prof_irq0_inject++;
         }
 
-        /* Fixed batch size — keeps main loop cycling frequently for
-         * watchdog/sentinel suppression. SIGALRM still breaks long batches. */
+        /* Fixed batch size — each call runs exactly this many TBs/instructions.
+         * No uc_emu_stop from SIGALRM = no stop_request contamination.
+         * Every call does real work. */
         size_t batch = 200000;
 
         /* Execute a batch of instructions.
          * eip is carried from previous iteration (or initial read before loop). */
-        /* Periodic TLB flush: Unicorn caches MMIO read hooks in translation
-         * blocks.  Without flushing, DC_TIMING2 reads see stale values and
-         * the VSYNC callback never detects VBLANK.  Flush every 64 cycles
-         * to balance correctness vs. performance. */
+        /* TLB flush: every 64 cycles for DC_TIMING2 VSYNC detection. */
         if ((g_emu.exec_count & 0x3F) == 0)
             uc_ctl_flush_tlb(uc);
         uc_err err = uc_emu_start(uc, eip, 0, 0, batch);
@@ -702,8 +719,7 @@ void cpu_run(void)
         prof_emu_calls++;
         int eip_dirty = 0;  /* set when error handlers modify local eip */
 
-        /* Periodic maintenance — every 64 iterations.
-         * Combines watchdog, sentinel, and DM watchdog suppression. */
+        /* Periodic maintenance — every 64 iterations. */
         if ((g_emu.exec_count & 0x3F) == 0 && g_emu.game_started) {
             if (g_emu.watchdog_flag_addr)
                 RAM_WR32(g_emu.watchdog_flag_addr, 0x0000FFFFu);
@@ -713,7 +729,6 @@ void cpu_run(void)
             if (dm_mode == 1u && RAM_RD32(0x002e8e30u) < 2500u)
                 RAM_WR32(0x002e8e30u, 5000u);
         } else if (g_emu.game_started) {
-            /* Zero sentinel every iteration — corruption accumulates fast */
             RAM_WR32(0, 0);
         }
 
@@ -758,9 +773,9 @@ void cpu_run(void)
                     if (!irq_pend) {
                         eip++;
                         eip_dirty = 1;
-                        static const struct timespec hlt_sleep = {0, 1000000};
-                        while (!g_emu.timer_pending && g_emu.running)
-                            nanosleep(&hlt_sleep, NULL);
+                        static const struct timespec hlt_sleep = {0, 5000000}; /* 5ms */
+                        nanosleep(&hlt_sleep, NULL);
+                        g_emu.timer_pending = 1; /* force tick after HLT */
                     }
                     goto handle_display;
                 }
@@ -822,6 +837,43 @@ void cpu_run(void)
             eip++;
             eip_dirty = 1;
         } else {
+            /* UC_ERR_OK — execution completed normally (count exhausted or
+             * HLT). Check for HLT (0xF4) at current EIP: Unicorn raises
+             * EXCP_HLT which returns UC_ERR_OK (not INSN_INVALID), so we
+             * need to handle it here to avoid infinite HLT loops. */
+            if (eip < RAM_SIZE && g_emu.ram[eip] == 0xF4) {
+                prof_hlt++;
+                /* Enable interrupts (HLT clears IF in some contexts) */
+                uint32_t efl;
+                uc_reg_read(uc, UC_X86_REG_EFLAGS, &efl);
+                if (!(efl & 0x200)) {
+                    efl |= 0x200;
+                    uc_reg_write(uc, UC_X86_REG_EFLAGS, &efl);
+                }
+
+                /* Fatal/panic HLT → redirect to idle */
+                if (eip == 0x227238u || eip == 0x1CF800u || eip == 0x1D96AEu) {
+                    static int s_fatal_ok = 0;
+                    if (s_fatal_ok < 20)
+                        LOG("cpu", "Fatal HLT (OK path) @0x%08x (#%d)\n", eip, ++s_fatal_ok);
+                    eip = 0xFF0000u;
+                    eip_dirty = 1;
+                    uint32_t safe_esp = 0xDFFFE0u;
+                    uc_reg_write(uc, UC_X86_REG_ESP, &safe_esp);
+                    goto handle_display;
+                }
+
+                /* Normal HLT (idle loop) — sleep until interrupt pending */
+                uint8_t irq_pend = g_emu.pic[0].irr & ~g_emu.pic[0].imr;
+                if (!irq_pend) {
+                    eip++;
+                    eip_dirty = 1;
+                    static const struct timespec hlt_sleep = {0, 5000000}; /* 5ms */
+                    nanosleep(&hlt_sleep, NULL);
+                    g_emu.timer_pending = 1; /* force tick after HLT */
+                }
+                goto handle_display;
+            }
             prof_ok++;
         }
 
@@ -833,10 +885,7 @@ handle_display:
         if (eip_dirty)
             uc_reg_write(uc, UC_X86_REG_EIP, &eip);
 
-        /* Display + heartbeat — check wall clock every 128 iterations.
-         * At 14M iter/5s, 128 → ~110K checks/5s (~55 µs granularity).
-         * Saves ~14M clock_gettime syscalls/5s vs checking every iteration.
-         * TLB flush also tied to this cadence for DC_TIMING2 VSYNC detection. */
+        /* Display + heartbeat — check wall clock every 128 iterations. */
         if ((g_emu.exec_count & 0x7F) == 0) {
             static struct timespec last_display = {0, 0};
             clock_gettime(CLOCK_MONOTONIC, &now);
@@ -896,10 +945,10 @@ handle_display:
                     LOG("hb", "  DM: mode=%u gxp=0x%x dt2=%u\n", dmm, gxp, g_emu.dc_timing2);
                 }
                 /* Performance stats */
-                LOG("hb", "  PERF: calls=%lu/5s ok=%lu 0f3c=%lu hlt=%lu other=%lu tq=%d ticks=%lu sigalrm=%lu\n",
-                    prof_emu_calls, prof_ok, prof_0f3c, prof_hlt, prof_other_err,
-                    g_emu.timer_tick_queue, prof_ticks_in, sigalrm_total);
-                prof_emu_calls = prof_0f3c = prof_hlt = prof_other_err = prof_ok = prof_ticks_in = 0;
+                LOG("hb", "  PERF: calls=%lu/5s ok=%lu 0f3c=%lu hlt=%lu ticks=%lu\n",
+                    prof_emu_calls, prof_ok, prof_0f3c, prof_hlt, prof_ticks_fired);
+                prof_emu_calls = prof_0f3c = prof_hlt = prof_other_err = prof_ok = 0;
+                prof_ticks_fired = prof_ticks_isr = prof_ticks_irr = prof_irq0_inject = 0;
                 /* One-shot process table summary */
                 static int proctab_dumped = 0;
                 if (!proctab_dumped && nproc >= 35) {

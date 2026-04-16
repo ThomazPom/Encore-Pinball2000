@@ -173,13 +173,11 @@ static void setup_timer(void)
     sa.sa_flags = SA_RESTART;
     sigaction(SIGALRM, &sa, NULL);
 
-    struct itimerval itv;
-    itv.it_interval.tv_sec  = 0;
-    itv.it_interval.tv_usec = 10000;  /* 10ms = 100Hz — kept for HLT wakeup */
-    itv.it_value.tv_sec     = 0;
-    itv.it_value.tv_usec    = 10000;
-    setitimer(ITIMER_REAL, &itv, NULL);
-    LOG("timer", "SIGALRM at 100Hz (HLT wakeup only)\n");
+    /* SIGALRM disabled — tick injection is iteration-count based.
+     * SIGALRM signal delivery was interfering with Unicorn JIT execution
+     * (signal masking, cpu_exit from signal handler context).
+     * HLT wakeup handled by busy-wait with nanosleep. */
+    LOG("timer", "SIGALRM disabled — iteration-count ticks only\n");
 }
 
 static void cleanup_and_save(void)
