@@ -119,27 +119,22 @@ int display_init(void)
 
 void display_update(void)
 {
-    if (!g_emu.display_ready || !g_emu.uc) return;
+    if (!g_emu.display_ready || !g_emu.ram) return;
 
-    /* Read framebuffer from guest physical RAM at 0x800000 + dc_fb_offset.
-     * Game writes via GX mirror (0x40800000+), our hook copies to phys RAM. */
-    uint32_t fb_base = 0x00800000u + g_emu.dc_fb_offset;
-    uint8_t fb_row[FB_STRIDE];
+    /* Direct pointer to guest physical RAM framebuffer.
+     * g_emu.ram is the Unicorn backing store (uc_mem_map_ptr),
+     * so reads are zero-overhead pointer dereferences. */
+    uint32_t fb_off = g_emu.dc_fb_offset;
+    if (fb_off + FB_H * FB_STRIDE > RAM_SIZE) fb_off = 0;
+    uint8_t *guest_fb = g_emu.ram + 0x800000u + fb_off;
     bool any_nonzero = false;
-
-    /* Flush TLB so uc_mem_read sees fresh framebuffer data */
-    uc_ctl_flush_tlb(g_emu.uc);
 
     /* Render 240 source rows → 480 output rows (double each row, Y-flip) */
     for (int src_y = 0; src_y < FB_H; src_y++) {
         int draw_y = s_y_flip ? (FB_H - 1 - src_y) : src_y;
         int dst_y = draw_y * 2;
 
-        /* Read one row from guest framebuffer */
-        uc_err err = uc_mem_read(g_emu.uc, fb_base + src_y * FB_STRIDE, fb_row, FB_STRIDE);
-        if (err != UC_ERR_OK) continue;
-
-        uint16_t *pixels = (uint16_t *)fb_row;
+        uint16_t *pixels = (uint16_t *)(guest_fb + src_y * FB_STRIDE);
         uint32_t *dst1 = &g_emu.fb_pixels[dst_y * SCREEN_W];
         uint32_t *dst2 = &g_emu.fb_pixels[(dst_y + 1) * SCREEN_W];
 
@@ -154,7 +149,7 @@ void display_update(void)
 
     if (any_nonzero && !s_seen_nonzero_fb) {
         s_seen_nonzero_fb = true;
-        LOG("disp", "first non-zero framebuffer detected (fb_off=0x%x)\n", g_emu.dc_fb_offset);
+        LOG("disp", "first non-zero framebuffer detected (fb_off=0x%x)\n", fb_off);
         save_screenshot("encore_first", 0);
     }
 
@@ -165,10 +160,28 @@ void display_update(void)
     SDL_RenderPresent(g_emu.renderer);
 
     g_emu.frame_count++;
+
+    /* FPS measurement — log every 5 seconds */
+    {
+        static struct timespec s_fps_ts = {0, 0};
+        static uint32_t s_fps_frames = 0;
+        s_fps_frames++;
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        if (s_fps_ts.tv_sec == 0) s_fps_ts = now;
+        long elapsed_ms = (now.tv_sec - s_fps_ts.tv_sec) * 1000
+                        + (now.tv_nsec - s_fps_ts.tv_nsec) / 1000000;
+        if (elapsed_ms >= 5000) {
+            float fps = (float)s_fps_frames * 1000.0f / (float)elapsed_ms;
+            LOG("disp", "FPS: %.1f (%u frames / %ld ms)\n",
+                fps, s_fps_frames, elapsed_ms);
+            s_fps_frames = 0;
+            s_fps_ts = now;
+        }
+    }
+
     /* Periodic screenshot */
     if (g_emu.frame_count == 1000 || g_emu.frame_count == 3000 || g_emu.frame_count == 8000) {
-        LOG("disp", "frame %d: fb_off=0x%x any_nonzero=%d\n",
-            g_emu.frame_count, g_emu.dc_fb_offset, any_nonzero);
         save_screenshot("encore_auto", s_auto_snap_id++);
     }
 }

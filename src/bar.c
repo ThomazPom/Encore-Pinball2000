@@ -473,7 +473,7 @@ static void gp_execute_blt(uc_engine *uc)
         return;
     }
 
-    if (s_gp_blt_count < 20 || (s_gp_blt_count % 5000) == 0)
+    if (s_gp_blt_count < 20)
         LOG("gp", "BLT #%u: src(%u,%u) dst(%u,%u) w=%u mode=%s\n",
             s_gp_blt_count, s_gp_src_x, s_gp_src_y,
             s_gp_dst_x, s_gp_dst_y, s_gp_width,
@@ -526,9 +526,11 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
         }
 
         if (off >= 0x800000 && off < 0xC00000) {
-            /* Framebuffer write — mirror to physical RAM at 0x800000. */
-            uint32_t phys = 0x00800000u + (off - 0x800000);
-            uc_mem_write(uc, phys, &val, size);
+            /* Framebuffer write — mirror to physical RAM at 0x800000.
+             * Direct memcpy to g_emu.ram (backing Unicorn via uc_mem_map_ptr). */
+            uint32_t phys = (off - 0x800000);
+            if (phys + size <= RAM_SIZE - 0x800000)
+                memcpy(g_emu.ram + 0x800000u + phys, &val, size);
             return;
         }
 
@@ -537,9 +539,12 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
             break;
         case DC_FB_ST_OFFSET: {
             static uint32_t prev_fb_off = 0xFFFFFFFF;
+            static int fb_off_log_count = 0;
             if (val != prev_fb_off) {
-                LOG("dc", "DC_FB_ST_OFFSET changed: 0x%x → 0x%x\n", prev_fb_off, val);
+                if (fb_off_log_count < 20)
+                    LOG("dc", "DC_FB_ST_OFFSET changed: 0x%x → 0x%x\n", prev_fb_off, val);
                 prev_fb_off = val;
+                fb_off_log_count++;
             }
             g_emu.dc_fb_offset = val;
             break;

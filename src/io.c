@@ -121,7 +121,7 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
             /* OCW1: Interrupt Mask Register */
             static int s_imr_log_cnt = 0;
             s_imr_log_cnt++;
-            if (s_imr_log_cnt <= 20 || (s_imr_log_cnt % 5000 == 0))
+            if (s_imr_log_cnt <= 20)
                 LOG("pic", "PIC%d IMR=0x%02x (cnt=%d, prev=0x%02x)\n",
                     idx, val, s_imr_log_cnt, pic->imr);
             /* x64 POC BT-71 / i386 POC BT-130 compatibility:
