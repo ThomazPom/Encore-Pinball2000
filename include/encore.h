@@ -299,6 +299,7 @@ typedef struct {
     bool          is_v19_update;       /* running with update flash (V1.19) */
     volatile int timer_pending;       /* count of unprocessed SIGALRM ticks */
     volatile int timer_tick_queue;    /* queued IRQ0 ticks waiting for EOI */
+    uint32_t      idt_base;            /* cached IDT base address */
     uint64_t      exec_count;
 
     /* Game info (ROM-agnostic detection) */
