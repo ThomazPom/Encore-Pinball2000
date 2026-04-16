@@ -25,14 +25,8 @@ void io_init(void)
     g_emu.pit.count[1] = 0xFFFF;
     g_emu.pit.count[2] = 0xFFFF;
 
-    /* CMOS — minimal RTC data */
-    g_emu.cmos_data[0x00] = 0x00; /* seconds */
-    g_emu.cmos_data[0x02] = 0x30; /* minutes */
-    g_emu.cmos_data[0x04] = 0x12; /* hours */
-    g_emu.cmos_data[0x06] = 0x04; /* day of week */
-    g_emu.cmos_data[0x07] = 0x15; /* day */
-    g_emu.cmos_data[0x08] = 0x04; /* month */
-    g_emu.cmos_data[0x09] = 0x25; /* year (2025) */
+    /* CMOS — RTC time fields are populated dynamically on read.
+     * Only static configuration fields set here. */
     g_emu.cmos_data[0x0A] = 0x26; /* status A */
     g_emu.cmos_data[0x0B] = 0x02; /* status B (24h mode) */
     g_emu.cmos_data[0x0C] = 0x00; /* status C */
@@ -1133,9 +1127,26 @@ uint32_t io_port_read(uint16_t port, int size)
     case PORT_KBC_CMD:
         return g_emu.kbc_status;
 
-    /* CMOS/RTC */
-    case PORT_CMOS_DATA:
-        return g_emu.cmos_data[g_emu.cmos_addr & 0x7F];
+    /* CMOS/RTC — return live system time on time-register reads */
+    case PORT_CMOS_DATA: {
+        uint8_t reg = g_emu.cmos_addr & 0x7F;
+        /* Time registers 0x00-0x09: populate from host clock on each read */
+        if (reg <= 0x09 || reg == 0x32) {
+            time_t t = time(NULL);
+            struct tm *tm = localtime(&t);
+            #define BCD(v) (uint8_t)((((v)/10)<<4) | ((v)%10))
+            g_emu.cmos_data[0x00] = BCD(tm->tm_sec);
+            g_emu.cmos_data[0x02] = BCD(tm->tm_min);
+            g_emu.cmos_data[0x04] = BCD(tm->tm_hour);
+            g_emu.cmos_data[0x06] = BCD(tm->tm_wday ? tm->tm_wday : 7);
+            g_emu.cmos_data[0x07] = BCD(tm->tm_mday);
+            g_emu.cmos_data[0x08] = BCD(tm->tm_mon + 1);
+            g_emu.cmos_data[0x09] = BCD(tm->tm_year % 100);
+            g_emu.cmos_data[0x32] = BCD((tm->tm_year + 1900) / 100);
+            #undef BCD
+        }
+        return g_emu.cmos_data[reg];
+    }
 
     /* A20 gate */
     case PORT_A20:

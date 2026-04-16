@@ -391,63 +391,59 @@ void cpu_run(void)
         /* Timer tick injection — wall-clock based at guest-programmed PIT rate.
          * The guest programs PIT CH0 with a divisor (e.g. 298 → ~4003 Hz).
          * We fire IRQ0 at that rate using host clock, like QEMU's internal PIT.
-         * Ticks set IRR; if IRR already set, tick is merged (level-triggered). */
-        {
-            if (g_emu.xinu_ready) {
-                struct timespec now_ts;
-                clock_gettime(CLOCK_MONOTONIC, &now_ts);
-                uint64_t now_ns = (uint64_t)now_ts.tv_sec * 1000000000ULL + now_ts.tv_nsec;
-                static uint64_t last_tick_ns = 0;
-                if (last_tick_ns == 0) last_tick_ns = now_ns;
+         * Check every 64 iterations to reduce clock_gettime overhead. */
+        if (g_emu.xinu_ready && (g_emu.exec_count & 0x3F) == 0) {
+            struct timespec now_ts;
+            clock_gettime(CLOCK_MONOTONIC, &now_ts);
+            uint64_t now_ns = (uint64_t)now_ts.tv_sec * 1000000000ULL + now_ts.tv_nsec;
+            static uint64_t last_tick_ns = 0;
+            if (last_tick_ns == 0) last_tick_ns = now_ns;
 
-                /* PIT period in nanoseconds: 1e9 / (1193182 / divisor) */
-                uint16_t div = g_emu.pit.count[0];
-                if (div == 0) div = 0xFFFF;
-                uint64_t pit_period_ns = (uint64_t)div * 838; /* 1e9/1193182 ≈ 838 ns per PIT tick */
+            /* PIT period in nanoseconds: 1e9 / (1193182 / divisor) */
+            uint16_t div = g_emu.pit.count[0];
+            if (div == 0) div = 0xFFFF;
+            uint64_t pit_period_ns = (uint64_t)div * 838; /* 1e9/1193182 ≈ 838 ns per PIT tick */
 
-                if (now_ns - last_tick_ns >= pit_period_ns) {
-                    /* How many ticks elapsed (catch up if behind) */
-                    unsigned n_ticks = (unsigned)((now_ns - last_tick_ns) / pit_period_ns);
-                    if (n_ticks > 8) n_ticks = 8; /* cap catch-up to avoid ISR flood */
-                    last_tick_ns += (uint64_t)n_ticks * pit_period_ns;
+            if (now_ns - last_tick_ns >= pit_period_ns) {
+                unsigned n_ticks = (unsigned)((now_ns - last_tick_ns) / pit_period_ns);
+                if (n_ticks > 4) n_ticks = 4; /* cap catch-up */
+                last_tick_ns += (uint64_t)n_ticks * pit_period_ns;
 
-                    /* Set IRR bit 0 (level-triggered: just assert, don't drop) */
-                    g_emu.pic[0].irr |= 0x01;
-                    prof_ticks_fired += n_ticks;
-                }
+                /* Set IRR bit 0 (level-triggered: just assert, don't drop) */
+                g_emu.pic[0].irr |= 0x01;
+                prof_ticks_fired += n_ticks;
+            }
 
-                /* VSYNC at ~57 Hz (wall-clock based, independent of PIT rate) */
-                static uint64_t last_vsync_ns = 0;
-                if (last_vsync_ns == 0) last_vsync_ns = now_ns;
-                if (now_ns - last_vsync_ns >= 17500000ULL) { /* ~57 Hz = 17.5ms */
-                    last_vsync_ns += 17500000ULL;
-                    g_emu.vsync_count++;
-                    g_emu.bar2_sram[4] = 1;
-                    g_emu.bar2_sram[5] = 0;
-                    g_emu.bar2_sram[6] = 0;
-                    g_emu.bar2_sram[7] = 0;
-                    uint32_t one = 1;
-                    uc_mem_write(uc, WMS_BAR2 + 4, &one, 4);
+            /* VSYNC at ~57 Hz (wall-clock based, independent of PIT rate) */
+            static uint64_t last_vsync_ns = 0;
+            if (last_vsync_ns == 0) last_vsync_ns = now_ns;
+            if (now_ns - last_vsync_ns >= 17500000ULL) { /* ~57 Hz = 17.5ms */
+                last_vsync_ns += 17500000ULL;
+                g_emu.vsync_count++;
+                g_emu.bar2_sram[4] = 1;
+                g_emu.bar2_sram[5] = 0;
+                g_emu.bar2_sram[6] = 0;
+                g_emu.bar2_sram[7] = 0;
+                uint32_t one = 1;
+                uc_mem_write(uc, WMS_BAR2 + 4, &one, 4);
 
-                    /* DC_TIMING2: simulate VBLANK pulse */
-                    g_emu.dc_timing2 = 241;
-                    uint32_t vbl = 241;
-                    uc_mem_write(uc, GX_BASE + 0x8354, &vbl, 4);
-                } else {
-                    /* Active lines — cycle through line numbers */
-                    static uint32_t dc_timing2_counter = 0;
-                    dc_timing2_counter += 8;
-                    if (dc_timing2_counter > 240) dc_timing2_counter = 0;
-                    g_emu.dc_timing2 = dc_timing2_counter;
-                    uc_mem_write(uc, GX_BASE + 0x8354, &dc_timing2_counter, 4);
-                }
+                /* DC_TIMING2: simulate VBLANK pulse */
+                g_emu.dc_timing2 = 241;
+                uint32_t vbl = 241;
+                uc_mem_write(uc, GX_BASE + 0x8354, &vbl, 4);
+            } else {
+                /* Active lines — cycle through line numbers */
+                static uint32_t dc_timing2_counter = 0;
+                dc_timing2_counter += 8;
+                if (dc_timing2_counter > 240) dc_timing2_counter = 0;
+                g_emu.dc_timing2 = dc_timing2_counter;
+                uc_mem_write(uc, GX_BASE + 0x8354, &dc_timing2_counter, 4);
             }
 
             /* Drain SIGALRM timer_pending (used only for HLT wakeup) */
             if (g_emu.timer_pending > 0)
                 g_emu.timer_pending = 0;
         }
-
         /* Detect XINU timer readiness via IDT[0x20].
          *
          * Two-phase approach (i386 POC BT-91):
