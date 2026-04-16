@@ -120,8 +120,21 @@ int memory_init(void)
     map_region(uc, WMS_BAR3, 0x01000000, UC_PROT_ALL, "BAR3 MMIO");
     map_region(uc, WMS_BAR4, 0x01000000, UC_PROT_ALL, "BAR4 MMIO");
 
-    /* 8. GX_BASE MMIO (0x40000000 - 0x41000000) — config regs + framebuffer */
-    map_region(uc, GX_BASE, GX_BASE_SIZE, UC_PROT_ALL, "GX_BASE+FB");
+    /* 8. GX_BASE MMIO — split into registers (hooked) and framebuffer (direct).
+     *    0x40000000 - 0x407FFFFF: config regs (GP, DC, BC) — need MMIO hooks
+     *    0x40800000 - 0x40FFFFFF: framebuffer — direct-map to g_emu.ram+0x800000
+     *    so guest pixel writes go straight to physical RAM without hook overhead. */
+    map_region(uc, GX_BASE, 0x800000, UC_PROT_ALL, "GX regs");
+    {
+        uc_err e = uc_mem_map_ptr(uc, GX_FB, 0x800000, UC_PROT_ALL,
+                                  g_emu.ram + 0x800000);
+        if (e != UC_ERR_OK) {
+            fprintf(stderr, "[mem] Failed to direct-map GX FB: %s\n", uc_strerror(e));
+            return -1;
+        }
+        LOG("mem", "%-18s 0x%08x  %u MB (direct→RAM+0x800000)\n",
+            "GX FB", GX_FB, 8 >> 1);
+    }
 
     /* 9. Panic/safety regions */
     /* 0x20000000 area — map for IVT stub targets */

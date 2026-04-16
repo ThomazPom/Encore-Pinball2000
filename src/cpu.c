@@ -15,12 +15,15 @@ static bool hook_mem_invalid(uc_engine *uc, uc_mem_type type, uint64_t addr,
                              int size, int64_t value, void *user_data);
 static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *user_data);
 
-/* SIGALRM handler — sets timer flag only. We use instruction-count-based
- * batching (not SIGALRM-based stopping) to control execution granularity. */
+/* SIGALRM handler — increment pending tick count and stop emulation so the
+ * main loop processes the tick immediately. Signals don't queue in Linux,
+ * so we use a counter to avoid losing ticks during long batches. */
 void cpu_timer_handler(int sig)
 {
     (void)sig;
-    g_emu.timer_fired = true;
+    g_emu.timer_pending++;
+    if (g_emu.uc)
+        uc_emu_stop(g_emu.uc);
 }
 
 int cpu_init(void)
@@ -56,13 +59,14 @@ int cpu_init(void)
                 NULL, (uint64_t)WMS_BAR0, (uint64_t)(WMS_BAR4 + BAR4_SIZE - 1));
     if (e) LOG("cpu", "BAR write hook FAILED: %s\n", uc_strerror(e));
 
-    /* GX_BASE MMIO (0x40000000 - 0x41000000) */
+    /* GX_BASE registers only (0x40000000 - 0x407FFFFF).
+     * FB at 0x40800000+ is direct-mapped — no hooks needed there. */
     uc_hook h_gx_r, h_gx_w;
     e = uc_hook_add(uc, &h_gx_r, UC_HOOK_MEM_READ, (void*)bar_mmio_read,
-                NULL, (uint64_t)GX_BASE, (uint64_t)(GX_BASE + GX_BASE_SIZE - 1));
+                NULL, (uint64_t)GX_BASE, (uint64_t)(GX_BASE + 0x800000 - 1));
     if (e) LOG("cpu", "GX read hook FAILED: %s\n", uc_strerror(e));
     e = uc_hook_add(uc, &h_gx_w, UC_HOOK_MEM_WRITE, (void*)bar_mmio_write,
-                NULL, (uint64_t)GX_BASE, (uint64_t)(GX_BASE + GX_BASE_SIZE - 1));
+                NULL, (uint64_t)GX_BASE, (uint64_t)(GX_BASE + 0x800000 - 1));
     if (e) LOG("cpu", "GX write hook FAILED: %s\n", uc_strerror(e));
 
     /* Code trace hook for Init2 checkpoints (0x80000 - 0x90000)
@@ -365,19 +369,21 @@ void cpu_run(void)
     clock_gettime(CLOCK_MONOTONIC, &last_time);
 
     while (g_emu.running) {
-        /* Accumulate timer events — only after XINU's clkinit() has installed
-         * the real timer handler. When timer fires, set PIC[0].IRR bit 0 to
-         * simulate hardware PIT → PIC → CPU interrupt delivery chain.
-         * check_and_inject_irq() then handles delivery respecting both IF and IMR. */
-        if (g_emu.timer_fired) {
-            g_emu.timer_fired = false;
-            if (g_emu.xinu_ready) {
+        /* Timer tick processing — driven by SIGALRM at 100Hz.
+         * SIGALRM calls uc_emu_stop to break the current batch.
+         * If CPU is slower than real-time, ticks are naturally dropped
+         * (timer_pending is a counter but we only process up to 2 per
+         * iteration to prevent flood). */
+        {
+            int ticks = g_emu.timer_pending;
+            if (ticks > 2) ticks = 2;  /* limit catch-up */
+            g_emu.timer_pending -= ticks;
+
+            for (int t = 0; t < ticks && g_emu.xinu_ready; t++) {
                 g_emu.pic[0].irr |= 0x01;  /* IRQ0 pending in PIC */
 
-                /* Drive VSYNC signal: BAR2 SRAM[4]=1 at 50Hz.
-                 * x64 POC BT-82: timer thread writes sram[4]=1 every 2 ticks.
-                 * Game's VSYNC callback reads this to detect vertical blank,
-                 * signals sem#172 to wake dispmgr.  Game writes 0 to ack. */
+                /* VSYNC at 50Hz (every 2 ticks). BAR2 SRAM[4]=1 signals
+                 * the game's VSYNC callback to wake dispmgr. */
                 static int vsync_ctr = 0;
                 if (++vsync_ctr >= 2) {
                     vsync_ctr = 0;
@@ -390,19 +396,11 @@ void cpu_run(void)
                     uc_mem_write(uc, WMS_BAR2 + 4, &one, 4);
                 }
 
-                /* DC_TIMING2: cycle through 0→243 like real hardware.
-                 * BT-109: VSYNC callback checks (val&0x7FF) > 0xF0 (240).
-                 * Values 241-243 = VBLANK active, 0-240 = active display.
-                 * i386 POC increments by 1 per READ but we can't hook reads
-                 * reliably due to TLB caching. Instead, synchronize with
-                 * vsync_ctr: set VBLANK (241) when VSYNC fires, otherwise
-                 * cycle through active lines 0-240. This gives 50Hz VBLANK. */
+                /* DC_TIMING2: VBLANK when VSYNC fires, active lines otherwise */
                 static uint32_t dc_timing2_counter = 0;
                 if (vsync_ctr == 0) {
-                    /* VSYNC just fired — set VBLANK */
                     dc_timing2_counter = 241;
                 } else {
-                    /* Active display — cycle through 0-240 */
                     dc_timing2_counter += 120;
                     if (dc_timing2_counter > 240) dc_timing2_counter = 0;
                 }
@@ -677,13 +675,12 @@ void cpu_run(void)
                 check_and_inject_irq();
         }
 
-        /* Adaptive batch size: small when pending IRQ waiting for IF/IMR window,
-         * large for normal execution throughput.
-         * QEMU runs until SIGALRM (10ms = ~millions of instructions).
-         * Use large batches to minimize uc_emu_start overhead. */
+        /* Max batch size — SIGALRM breaks uc_emu_start early via uc_emu_stop,
+         * so actual batches are ~10ms of instructions. Use small batch when
+         * IRQs are pending to find the IF window quickly. */
         uint8_t any_pending = (g_emu.pic[0].irr & ~g_emu.pic[0].imr) |
                               (g_emu.pic[1].irr & ~g_emu.pic[1].imr);
-        size_t batch = any_pending ? 100000 : 500000;
+        size_t batch = any_pending ? 200000 : 0;  /* 0 = run until stopped */
 
         /* Execute a batch of instructions */
         uc_reg_read(uc, UC_X86_REG_EIP, &eip);
@@ -780,10 +777,16 @@ void cpu_run(void)
                         goto handle_display;
                     }
 
-                    /* Normal HLT: skip if no IRQ pending */
+                    /* Normal HLT: sleep until next timer tick if no IRQ pending.
+                     * Without this, the idle loop spins: HLT→emu_start(1 insn)→HLT
+                     * burning host CPU and wasting uc_emu_start overhead. */
                     uint8_t irq_pend = g_emu.pic[0].irr & ~g_emu.pic[0].imr;
                     if (!irq_pend) {
                         eip++;
+                        /* Yield CPU until SIGALRM arrives */
+                        static const struct timespec hlt_sleep = {0, 1000000}; /* 1ms */
+                        while (!g_emu.timer_pending && g_emu.running)
+                            nanosleep(&hlt_sleep, NULL);
                     }
                     goto handle_display;
                 }
