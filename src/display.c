@@ -213,6 +213,19 @@ void display_handle_events(void)
             case SDLK_F3:
                 save_screenshot("encore_snap", s_snap_id++);
                 break;
+            case SDLK_F4:
+                lpt_toggle_coin_door();
+                break;
+            case SDLK_F5: {
+                static int s_service = 0;
+                s_service = !s_service;
+                lpt_inject_switch(1, s_service ? 0xFE : 0xFF);
+                LOG("input", "F5 — service mode %s\n", s_service ? "ON" : "OFF");
+                break;
+            }
+            case SDLK_F6:
+                lpt_toggle_slam_tilt();
+                break;
             case SDLK_F7: {
                 int v = sound_get_global_volume();
                 v = (v + 16 > 255) ? 255 : v + 16;

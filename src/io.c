@@ -800,10 +800,33 @@ static int     s_data_bit6           = 0; /* toggle */
 static uint8_t s_lpt_button_state = 0x00;
 static uint8_t s_lpt_switch_state = 0x00;
 
+/* F-key controlled states */
+static int s_coin_door_closed = 1;  /* F4 toggles */
+static int s_slam_tilt        = 0;  /* F6 toggles */
+
 void lpt_set_host_input(uint8_t buttons, uint8_t switches)
 {
     s_lpt_button_state = buttons;
     s_lpt_switch_state = switches;
+}
+
+void lpt_toggle_coin_door(void)
+{
+    s_coin_door_closed = !s_coin_door_closed;
+    LOG("lpt", "coin door %s\n", s_coin_door_closed ? "CLOSED" : "OPEN");
+}
+
+void lpt_toggle_slam_tilt(void)
+{
+    s_slam_tilt = !s_slam_tilt;
+    LOG("lpt", "slam tilt %s\n", s_slam_tilt ? "ACTIVE" : "clear");
+}
+
+void lpt_inject_switch(int col, uint8_t data)
+{
+    if (col >= 0 && col < 8)
+        s_rendering_status[col] = data;
+    LOG("lpt", "inject col=%d data=0x%02x\n", col, data);
 }
 
 /* Mirrors P2K-runtime calculateBitwiseSumBasedOnInput */
