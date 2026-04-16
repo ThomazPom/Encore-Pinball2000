@@ -18,9 +18,11 @@ static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *u
 /* SIGALRM handler — increment pending tick count and stop emulation so the
  * main loop processes the tick immediately. Signals don't queue in Linux,
  * so we use a counter to avoid losing ticks during long batches. */
+static volatile unsigned long sigalrm_total = 0;
 void cpu_timer_handler(int sig)
 {
     (void)sig;
+    sigalrm_total++;
     g_emu.timer_pending++;
     if (g_emu.uc)
         uc_emu_stop(g_emu.uc);
@@ -379,26 +381,25 @@ void cpu_run(void)
     unsigned long prof_hlt = 0;         /* HLT returns */
     unsigned long prof_other_err = 0;   /* other errors */
     unsigned long prof_ok = 0;          /* UC_ERR_OK (batch exhausted or stopped) */
+    unsigned long prof_ticks_in = 0;    /* timer ticks received from SIGALRM */
+    unsigned long prof_irq_blocked = 0; /* IRQ injection blocked (IF=0 or ISR) */
 
     /* Initial EIP read — carried across iterations to avoid double-read */
     uc_reg_read(uc, UC_X86_REG_EIP, &eip);
 
     while (g_emu.running) {
-        /* Timer tick processing — driven by SIGALRM at 100Hz.
-         * SIGALRM calls uc_emu_stop to break the current batch.
-         * If CPU is slower than real-time, ticks are naturally dropped
-         * (timer_pending is a counter but we only process up to 2 per
-         * iteration to prevent flood). */
+        /* Timer tick injection — iteration-count based for consistent game speed.
+         * At ~18M iterations/5s = 3.6M/sec, one tick every 36000 iterations
+         * gives 100 ticks/sec (matching XINU's 100Hz PIT expectation).
+         * This is independent of wall-clock time, so game speed scales with
+         * CPU throughput rather than being limited by SIGALRM delivery rate
+         * (which was only ~56% of requested frequency due to signal masking). */
         {
-            int ticks = g_emu.timer_pending;
-            if (ticks > 2) ticks = 2;  /* limit catch-up */
-            g_emu.timer_pending -= ticks;
+            static const unsigned TICK_INTERVAL = 25000;
+            if (g_emu.xinu_ready && (g_emu.exec_count % TICK_INTERVAL) == 0) {
+                g_emu.timer_tick_queue++;
 
-            for (int t = 0; t < ticks && g_emu.xinu_ready; t++) {
-                g_emu.pic[0].irr |= 0x01;  /* IRQ0 pending in PIC */
-
-                /* VSYNC at 50Hz (every 2 ticks). BAR2 SRAM[4]=1 signals
-                 * the game's VSYNC callback to wake dispmgr. */
+                /* VSYNC at 50Hz (every 2 ticks) */
                 static int vsync_ctr = 0;
                 if (++vsync_ctr >= 2) {
                     vsync_ctr = 0;
@@ -421,7 +422,20 @@ void cpu_run(void)
                 }
                 g_emu.dc_timing2 = dc_timing2_counter;
                 uc_mem_write(uc, GX_BASE + 0x8354, &dc_timing2_counter, 4);
+                prof_ticks_in++;
             }
+
+            /* Drain tick queue → PIC IRR when IRQ0 is not in-service */
+            if (g_emu.timer_tick_queue > 0
+                && !(g_emu.pic[0].isr & 0x01)
+                && !(g_emu.pic[0].irr & 0x01)) {
+                g_emu.pic[0].irr |= 0x01;
+                g_emu.timer_tick_queue--;
+            }
+
+            /* Drain SIGALRM timer_pending (used only for HLT wakeup) */
+            if (g_emu.timer_pending > 0)
+                g_emu.timer_pending = 0;
         }
 
         /* Detect XINU timer readiness via IDT[0x20].
@@ -882,9 +896,10 @@ handle_display:
                     LOG("hb", "  DM: mode=%u gxp=0x%x dt2=%u\n", dmm, gxp, g_emu.dc_timing2);
                 }
                 /* Performance stats */
-                LOG("hb", "  PERF: calls=%lu/5s ok=%lu 0f3c=%lu hlt=%lu other=%lu\n",
-                    prof_emu_calls, prof_ok, prof_0f3c, prof_hlt, prof_other_err);
-                prof_emu_calls = prof_0f3c = prof_hlt = prof_other_err = prof_ok = 0;
+                LOG("hb", "  PERF: calls=%lu/5s ok=%lu 0f3c=%lu hlt=%lu other=%lu tq=%d ticks=%lu sigalrm=%lu\n",
+                    prof_emu_calls, prof_ok, prof_0f3c, prof_hlt, prof_other_err,
+                    g_emu.timer_tick_queue, prof_ticks_in, sigalrm_total);
+                prof_emu_calls = prof_0f3c = prof_hlt = prof_other_err = prof_ok = prof_ticks_in = 0;
                 /* One-shot process table summary */
                 static int proctab_dumped = 0;
                 if (!proctab_dumped && nproc >= 35) {
