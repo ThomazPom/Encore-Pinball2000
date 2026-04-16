@@ -124,6 +124,13 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
             if (s_imr_log_cnt <= 20 || (s_imr_log_cnt % 5000 == 0))
                 LOG("pic", "PIC%d IMR=0x%02x (cnt=%d, prev=0x%02x)\n",
                     idx, val, s_imr_log_cnt, pic->imr);
+            /* x64 POC BT-71 / i386 POC BT-130 compatibility:
+             * After XINU boots, XINU's restore() does OUT 0x21, saved|base_mask.
+             * Because we NOP'd device_init, base_mask has bit 0 set, so
+             * every restore() re-masks IRQ0.  Fix: always keep IRQ0 + cascade
+             * unmasked once XINU is ready. */
+            if (idx == 0 && g_emu.xinu_ready)
+                val &= ~0x05;  /* clear bits 0 (IRQ0) + 2 (cascade) */
             pic->imr = val;
         }
     } else {
@@ -140,12 +147,17 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
                 idx, val, (val >> 1) & 1, val & 1);
         } else if (val == 0x20) {
             /* Non-specific EOI */
+            uint8_t old_isr = pic->isr;
             for (int i = 0; i < 8; i++) {
                 if (pic->isr & (1 << i)) {
                     pic->isr &= ~(1 << i);
                     break;
                 }
             }
+            static int eoi_log = 0;
+            if (++eoi_log <= 20 || (eoi_log % 200 == 0))
+                LOG("pic", "PIC%d EOI: ISR 0x%02x→0x%02x (cnt=%d)\n",
+                    idx, old_isr, pic->isr, eoi_log);
         } else if (val == 0x60) {
             /* Specific EOI for IRQ0 */
             pic->isr &= ~0x01;
@@ -541,43 +553,41 @@ static void apply_sgc_patches(void)
     }
 
     /* === SuperIOType = PC97338 (POC: [0x2C6DFC]=1) ===
-     * The game's I/O init checks SuperIOType to decide which chip driver
-     * to use. PC97338 (value=1) is the MediaGX companion. Without this,
-     * I/O init takes a wrong branch and fails. */
-    {
+     * V1.12 BSS address. In V1.19, this address is in a different section.
+     * Only apply for V1.12; V1.19 game detects chip via I/O probing. */
+    if (!g_emu.is_v19_update) {
         uint32_t one = 1u;
         uc_mem_write(g_emu.uc, 0x002C6DFCu, &one, sizeof(one));
-        LOG("sgc", "[0x2C6DFC]=1 (SuperIOType=PC97338)\n");
+        LOG("sgc", "[0x2C6DFC]=1 (SuperIOType=PC97338, V1.12)\n");
     }
 
     /* === EARLY getstk() free list injection (POC BT-64) ===
-     * XINU's getstk() at 0x1FDA60 uses [0x2D577C] as the free-list head.
-     * Block struct: { uint32_t mnext; uint32_t msize; } at block_addr.
-     * Without a free list, create() fails → no processes → no scheduler.
-     * Inject a 12MB block at 0x300000 so XINU has heap for process stacks. */
-    {
+     * 0x2D577C is the V1.12 free-list head address. In V1.19, the free list
+     * is at a different BSS address. XINU's sysinit() correctly initializes
+     * the free list at the right address for both versions.
+     * Only inject for V1.12 to avoid corrupting V1.19 data. */
+    if (!g_emu.is_v19_update) {
         uint32_t head = 0;
         uc_mem_read(g_emu.uc, 0x002D577Cu, &head, sizeof(head));
         if (head == 0u) {
             uint32_t blk = 0x300000u;
             uint32_t sz  = 0xC00000u;  /* 12MB */
             uint32_t zero = 0u;
-            uc_mem_write(g_emu.uc, blk + 0u, &zero, sizeof(zero));  /* mnext=NULL */
-            uc_mem_write(g_emu.uc, blk + 4u, &sz, sizeof(sz));      /* msize=12MB */
-            uc_mem_write(g_emu.uc, 0x002D577Cu, &blk, sizeof(blk)); /* head→block */
-            LOG("sgc", "getstk free list: [0x2D577C]=0x%08x size=0x%x\n", blk, sz);
+            uc_mem_write(g_emu.uc, blk + 0u, &zero, sizeof(zero));
+            uc_mem_write(g_emu.uc, blk + 4u, &sz, sizeof(sz));
+            uc_mem_write(g_emu.uc, 0x002D577Cu, &blk, sizeof(blk));
+            LOG("sgc", "getstk free list: [0x2D577C]=0x%08x size=0x%x (V1.12)\n", blk, sz);
         } else {
             LOG("sgc", "getstk free list: head already set (0x%08x)\n", head);
         }
     }
 
     /* === PLX BAR0 pointer for init gate (POC: [0x279768]=WMS_BAR0) ===
-     * The init gate at 0x18377C reads [0x279768] to find PLX registers.
-     * Without it: null pointer deref → crash. */
-    {
+     * V1.12 address. In V1.19, the init gate uses a different variable. */
+    if (!g_emu.is_v19_update) {
         uint32_t bar0 = WMS_BAR0;
         uc_mem_write(g_emu.uc, 0x00279768u, &bar0, sizeof(bar0));
-        LOG("sgc", "[0x279768]=0x%08x (PLX BAR0 ptr for init gate)\n", bar0);
+        LOG("sgc", "[0x279768]=0x%08x (PLX BAR0 ptr, V1.12)\n", bar0);
     }
 
     /* === IVT null-pointer guard (POC: bar2_patch_ivt) ===

@@ -7,6 +7,7 @@
  * Y-flip: GP blit Y=0 is bottom, SDL Y=0 is top
  */
 #include "encore.h"
+#include "stb_image_write.h"
 
 static int  s_coin_pulse = 0;
 static int  s_start_pulse = 0;
@@ -29,37 +30,31 @@ static void save_screenshot(const char *prefix, int id)
 
     ensure_screenshot_dir();
 
-    /* Save as uncompressed TGA (type 2) — no libpng dependency, widely viewable */
-    char path[256];
-    snprintf(path, sizeof(path), SCREENSHOT_DIR "/%s_%03d.tga", prefix, id);
-    FILE *f = fopen(path, "wb");
-    if (!f) return;
+    /* Timestamped PNG filename for unique, viewable captures */
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    struct tm tm;
+    localtime_r(&ts.tv_sec, &tm);
 
-    uint8_t hdr[18];
-    memset(hdr, 0, sizeof(hdr));
-    hdr[2]  = 2;                           /* uncompressed true-color */
-    hdr[12] = SCREEN_W & 0xFF;
-    hdr[13] = (SCREEN_W >> 8) & 0xFF;
-    hdr[14] = SCREEN_H & 0xFF;
-    hdr[15] = (SCREEN_H >> 8) & 0xFF;
-    hdr[16] = 32;                          /* 32 bpp */
-    hdr[17] = 0x20;                        /* top-left origin */
-    fwrite(hdr, 1, 18, f);
+    char path[320];
+    snprintf(path, sizeof(path),
+             SCREENSHOT_DIR "/%s_%04d%02d%02d_%02d%02d%02d_%03ld_%03d.png",
+             prefix,
+             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+             tm.tm_hour, tm.tm_min, tm.tm_sec,
+             ts.tv_nsec / 1000000, id);
 
-    /* Write BGRA pixels (TGA native order) */
-    for (int y = 0; y < SCREEN_H; y++) {
-        for (int x = 0; x < SCREEN_W; x++) {
-            uint32_t argb = g_emu.fb_pixels[y * SCREEN_W + x];
-            uint8_t px[4] = {
-                (uint8_t)(argb),               /* B */
-                (uint8_t)(argb >> 8),          /* G */
-                (uint8_t)(argb >> 16),         /* R */
-                (uint8_t)(argb >> 24)          /* A */
-            };
-            fwrite(px, 1, 4, f);
-        }
+    /* Convert ARGB → RGBA for stb_image_write */
+    static uint8_t rgba_buf[SCREEN_W * SCREEN_H * 4];
+    for (int i = 0; i < SCREEN_W * SCREEN_H; i++) {
+        uint32_t argb = g_emu.fb_pixels[i];
+        rgba_buf[i * 4 + 0] = (argb >> 16) & 0xFF; /* R */
+        rgba_buf[i * 4 + 1] = (argb >>  8) & 0xFF; /* G */
+        rgba_buf[i * 4 + 2] = (argb      ) & 0xFF; /* B */
+        rgba_buf[i * 4 + 3] = 0xFF;                 /* A */
     }
-    fclose(f);
+
+    stbi_write_png(path, SCREEN_W, SCREEN_H, 4, rgba_buf, SCREEN_W * 4);
     LOG("disp", "screenshot → %s\n", path);
 }
 
@@ -86,10 +81,11 @@ int display_init(void)
         return -1;
     }
 
+    /* No PRESENTVSYNC — i386 POC uses uncapped SDL_Flip().
+     * Render loop controls frame timing via timer. */
     g_emu.renderer = SDL_CreateRenderer(g_emu.window, -1,
-        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+        SDL_RENDERER_ACCELERATED);
     if (!g_emu.renderer) {
-        /* Fallback to software renderer */
         g_emu.renderer = SDL_CreateRenderer(g_emu.window, -1, SDL_RENDERER_SOFTWARE);
     }
     if (!g_emu.renderer) {
@@ -126,7 +122,7 @@ void display_update(void)
     if (!g_emu.display_ready || !g_emu.uc) return;
 
     /* Read framebuffer from guest physical RAM at 0x800000 + dc_fb_offset.
-     * Game decompresses to phys RAM; GP BLTs also use 0x800000. */
+     * Game writes via GX mirror (0x40800000+), our hook copies to phys RAM. */
     uint32_t fb_base = 0x00800000u + g_emu.dc_fb_offset;
     uint8_t fb_row[FB_STRIDE];
     bool any_nonzero = false;
@@ -169,21 +165,10 @@ void display_update(void)
     SDL_RenderPresent(g_emu.renderer);
 
     g_emu.frame_count++;
-    /* Periodic probe + screenshot */
-    if (g_emu.frame_count == 1000 || g_emu.frame_count == 3000) {
-        /* Probe FB data at screenshot time */
-        uint16_t nz_phys = 0, nz_gx = 0;
-        for (int py = 100; py < 140; py++) {
-            for (int px = 300; px < 340; px++) {
-                uint16_t p1 = 0, p2 = 0;
-                uc_mem_read(g_emu.uc, 0x00800000u + py * FB_STRIDE + px * 2, &p1, 2);
-                uc_mem_read(g_emu.uc, 0x40800000u + py * FB_STRIDE + px * 2, &p2, 2);
-                if (p1) nz_phys++;
-                if (p2) nz_gx++;
-            }
-        }
-        LOG("disp", "frame %d: phys=%u gx=%u nonzero, any_nonzero=%d fb_off=0x%x\n",
-            g_emu.frame_count, nz_phys, nz_gx, any_nonzero, g_emu.dc_fb_offset);
+    /* Periodic screenshot */
+    if (g_emu.frame_count == 1000 || g_emu.frame_count == 3000 || g_emu.frame_count == 8000) {
+        LOG("disp", "frame %d: fb_off=0x%x any_nonzero=%d\n",
+            g_emu.frame_count, g_emu.dc_fb_offset, any_nonzero);
         save_screenshot("encore_auto", s_auto_snap_id++);
     }
 }

@@ -19,7 +19,8 @@ SRCS    = $(SRCDIR)/main.c   \
           $(SRCDIR)/io.c     \
           $(SRCDIR)/bar.c    \
           $(SRCDIR)/display.c \
-          $(SRCDIR)/sound.c
+          $(SRCDIR)/sound.c  \
+          $(SRCDIR)/stb_impl.c
 
 OBJS    = $(patsubst $(SRCDIR)/%.c,$(BLDDIR)/%.o,$(SRCS))
 TARGET  = $(BLDDIR)/encore
