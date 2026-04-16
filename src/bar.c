@@ -319,14 +319,17 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
             val = g_emu.dc_fb_offset;
             break;
         case DC_TIMING2: {
-            /* Timer in cpu.c drives DC_TIMING2 via uc_mem_write (0→243 wrap).
-             * Don't override: just log reads and return so the timer value
-             * in backing memory is what the guest sees. */
-            static uint32_t s_dt2_cnt = 0;
-            s_dt2_cnt++;
-            if (s_dt2_cnt <= 20 || (s_dt2_cnt % 5000) == 0)
-                LOG("gx", "DC_TIMING2 read #%u (hook, timer-driven)\n", s_dt2_cnt);
-            return; /* don't overwrite with val — timer value is authoritative */
+            /* i386 POC BT-109: counter increments on EVERY read, wraps 0→243→0.
+             * VSYNC callback at 0x19BF64 polls (val & 0x7FF) > 0xF0 to detect
+             * VBLANK and signal sem#172 to wake dispmgr for the next render. */
+            static uint32_t s_dc_row = 0;
+            static uint32_t s_dc_rd = 0;
+            val = s_dc_row++;
+            if (s_dc_row > 0xF3) s_dc_row = 0;
+            s_dc_rd++;
+            if (s_dc_rd <= 5 || (s_dc_rd % 10000) == 0)
+                LOG("gx", "DC_TIMING2 read #%u → %u\n", s_dc_rd, val);
+            break;
         }
         case GP_BLT_STATUS:
             val = 0x300; /* pipeline idle + ready (BT-106) */
