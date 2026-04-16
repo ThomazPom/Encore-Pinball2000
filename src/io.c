@@ -813,13 +813,15 @@ void lpt_set_host_input(uint8_t buttons, uint8_t switches)
 void lpt_toggle_coin_door(void)
 {
     s_coin_door_closed = !s_coin_door_closed;
-    LOG("lpt", "coin door %s\n", s_coin_door_closed ? "CLOSED" : "OPEN");
+    LOG("lpt", "coin door %s (opcode 0x00 bit1)\n",
+            s_coin_door_closed ? "CLOSED" : "OPEN");
 }
 
 void lpt_toggle_slam_tilt(void)
 {
     s_slam_tilt = !s_slam_tilt;
-    LOG("lpt", "slam tilt %s\n", s_slam_tilt ? "ACTIVE" : "clear");
+    LOG("lpt", "slam tilt %s (opcode 0x00 bit7)\n",
+            s_slam_tilt ? "ACTIVE" : "clear");
 }
 
 void lpt_inject_switch(int col, uint8_t data)
@@ -844,7 +846,15 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
 {
     uint8_t result = 0;
     switch (opcode) {
-    case 0x00: result = 0xFF; break; /* all open (no coin door error) */
+    case 0x00: {
+        /* Column 0: coin door / slam tilt switches (active-LOW).
+         * Bit 1 = 0 → coin door OPEN; bit 7 = 0 → slam tilt ACTIVE.
+         * Default 0xFF = all switches open = door closed, no tilt. */
+        result = 0xFF;
+        if (!s_coin_door_closed) result &= ~0x02; /* bit 1 clear = door open */
+        if (s_slam_tilt)         result &= ~0x80; /* bit 7 clear = slam active */
+        break;
+    }
     case 0x01: result = ~s_lpt_button_state; break; /* flipper buttons (active-LOW) */
     case 0x02: result = 0xF0; break; /* fixed upper bits */
     case 0x03: result = ~s_lpt_switch_state; break; /* coin/start/nav (active-LOW) */
