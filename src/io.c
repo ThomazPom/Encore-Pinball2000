@@ -844,7 +844,7 @@ static int calc_bitwise_sum(uint8_t val)
 
 static uint8_t retrieve_rendering_status(uint8_t opcode)
 {
-    uint8_t result = 0;
+    uint8_t result = 0xFF;
     switch (opcode) {
     case 0x00: {
         /* Column 0: coin door / slam tilt switches (active-LOW).
@@ -856,7 +856,7 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
         break;
     }
     case 0x01: result = ~s_lpt_button_state; break; /* flipper buttons (active-LOW) */
-    case 0x02: result = 0xF0; break; /* fixed upper bits */
+    case 0x02: result = 0xFF; break; /* all switches open */
     case 0x03: result = ~s_lpt_switch_state; break; /* coin/start/nav (active-LOW) */
     case 0x04: {
         int idx = calc_bitwise_sum(s_rendering_data_val);
@@ -869,7 +869,7 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
         break;
     case 0x10: case 0x11: result = s_data_bit6 ? 0x00 : 0xFF; break;
     case 0x12: case 0x13: result = 0x00; break;
-    default: result = 0x00; break;
+    default: result = 0xFF; break; /* all switches open (active-LOW) */
     }
     return result;
 }
