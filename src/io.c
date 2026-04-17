@@ -815,9 +815,9 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
     uint8_t result = 0;
     switch (opcode) {
     case 0x00: result = 0xFF; break;
-    case 0x01: result = ~s_lpt_button_state; break;
-    case 0x02: result = 0xFF; break; /* all switches open */
-    case 0x03: result = ~s_lpt_switch_state; break;
+    case 0x01: result = s_lpt_button_state; break;  /* bit=1 → pressed */
+    case 0x02: result = 0xFF; break;
+    case 0x03: result = s_lpt_switch_state; break;  /* bit=1 → pressed */
     case 0x04: result = 0xFF; break; /* playfield switches: all open */
     case 0x0F: case 0x10: case 0x11:
     case 0x12: case 0x13:
