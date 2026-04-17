@@ -864,11 +864,9 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
         break;
     }
     case 0x0F:
-        result = (s_data_flag1 << 6) | (s_data_bit6 << 7);
-        s_data_bit6 = !s_data_bit6;
-        break;
-    case 0x10: case 0x11: result = s_data_bit6 ? 0x00 : 0xFF; break;
-    case 0x12: case 0x13: result = 0x00; break;
+    case 0x10: case 0x11:
+    case 0x12: case 0x13:
+        result = 0xFF; break; /* all switches open */
     default: result = 0xFF; break; /* all switches open (active-LOW) */
     }
     return result;
