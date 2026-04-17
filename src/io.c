@@ -772,46 +772,111 @@ static uint8_t s_port61 = 0;
  *     - stores renderingFlags for gating data reads
  */
 
-/* ── i386-faithful shift register LPT model (BT-118) ──
- * 20-position shift register for lamp/solenoid OUTPUT.
- * Switch input always returns 0xFF (all open) — game output writes
- * must not corrupt switch readings.
- * LATCH (ctrl bit 2 rising edge) → position = data port value.
- * STROBE falling edge (ctrl bit 0: 1→0) → shift_reg[pos] = data port value.
- * Gate open (ctrl bits 0+3 both set) → read returns shift_reg[pos].
- * Gate closed → read returns data port echo (latch probe). */
-static uint8_t s_shift_reg[20];
-static uint8_t s_shift_pos       = 0;
-static uint32_t s_prev_latch     = 0;
-static uint32_t s_prev_strobe    = 0;
-static int      s_lpt_read_count = 0;
+/* P2K-runtime rendering/switch state machine — exact copy of i386 POC (BT-118) */
+static uint8_t s_rendering_flags     = 0;
+static uint8_t s_data_for_rendering  = 0; /* captured opcode */
+static int     s_access_mode4_prev   = 0; /* bit2 edge detect */
+static int     s_access_mode1_prev   = 0; /* bit0 edge detect */
+
+/* Switch matrix state (mirrors P2K-runtime globals) */
+static uint8_t s_rendering_status[8];
+static uint8_t s_rendering_data_val  = 0;
+static uint8_t s_data_val2           = 0;
+static uint8_t s_data_val3           = 0;
+static uint8_t s_data_val4           = 0;
+static uint8_t s_data_flag1          = 0;
+static int     s_data_flag2          = 0;
+static uint8_t s_data_flag3          = 0;
+static uint8_t s_data_flag4          = 0;
+static uint8_t s_data_flag5          = 0;
+static uint8_t s_data_flag6          = 0;
+static uint8_t s_data_flag7          = 0;
+static int     s_data_bit4           = 0;
+static int     s_data_bit6           = 0;
+
+/* Game button/switch state — active-HIGH (bit SET = pressed, 0x00 = idle) */
+static uint8_t s_lpt_button_state = 0x00;
+static uint8_t s_lpt_switch_state = 0x00;
+
+/* Mirrors P2K-runtime calculateBitwiseSumBasedOnInput */
+static int calc_bitwise_sum(uint8_t val)
+{
+    int has_bit = 0, sum = 0, pos = 0;
+    for (unsigned v = val; v != 0; v >>= 1, pos++) {
+        has_bit = 1;
+        if (v & 1) sum += pos;
+    }
+    return has_bit + sum;
+}
+
+/* i386 POC retrieve_rendering_status — verbatim copy */
+static uint8_t retrieve_rendering_status(uint8_t opcode)
+{
+    uint8_t result = 0;
+    switch (opcode) {
+    case 0x00: result = 0xFF; break;
+    case 0x01: result = ~s_lpt_button_state; break;
+    case 0x02: result = 0xFF; break; /* all switches open */
+    case 0x03: result = ~s_lpt_switch_state; break;
+    case 0x04: result = 0xFF; break; /* playfield switches: all open */
+    case 0x0F: case 0x10: case 0x11:
+    case 0x12: case 0x13:
+        result = 0xFF; break;
+    default: result = 0x00; break;
+    }
+    return result;
+}
+
+/* i386 POC process_data_command — verbatim copy */
+static void process_data_command(uint8_t opcode, uint8_t data)
+{
+    switch (opcode) {
+    case 0x05: s_rendering_data_val = data; s_data_flag1 = 1; break;
+    case 0x06: s_data_val2 = data; break;
+    case 0x07: s_data_val3 = data; break;
+    case 0x08:
+        s_data_val4 = data;
+        if (data != 0) {
+            int idx = calc_bitwise_sum(data);
+            if (idx > 0 && idx < 8) s_rendering_status[idx] = s_data_val2;
+        }
+        break;
+    case 0x09: s_data_flag3 = s_data_flag2 ? (s_data_flag3 | data) : 0; break;
+    case 0x0A: s_data_flag4 = s_data_flag2 ? (s_data_flag4 | data) : 0; break;
+    case 0x0B: s_data_flag5 = s_data_flag2 ? (s_data_flag5 | data) : 0; break;
+    case 0x0C: s_data_flag6 = s_data_flag2 ? (s_data_flag6 | data) : 0; break;
+    case 0x0D: {
+        int new_bit4 = (data & 0x10) >> 4;
+        if (new_bit4 != s_data_bit4) s_data_bit4 = new_bit4;
+        s_data_flag2 = (data & 0x20) >> 5;
+        s_data_bit6  = (data & 0x80) >> 7;
+        s_data_flag7 = s_data_flag2 ? (s_data_flag7 | (data & 0x0F)) : 0;
+        break;
+    }
+    }
+}
 
 void lpt_set_host_input(uint8_t buttons, uint8_t switches)
 {
-    (void)buttons; (void)switches;
-    /* In shift register model, host input is injected directly into
-     * s_shift_reg[] positions. TODO: map keyboard to correct positions. */
+    s_lpt_button_state = buttons;
+    s_lpt_switch_state = switches;
 }
 
 void lpt_toggle_coin_door(void)
 {
-    s_shift_reg[10] ^= 0x02; /* bit 1: coin door (0=open, 1=closed) */
-    LOG("lpt", "coin door %s (reg[10]=0x%02x)\n",
-            (s_shift_reg[10] & 0x02) ? "CLOSED" : "OPEN", s_shift_reg[10]);
+    LOG("lpt", "coin door toggle (informational)\n");
 }
 
 void lpt_toggle_slam_tilt(void)
 {
-    s_shift_reg[10] ^= 0x80; /* bit 7: slam tilt */
-    LOG("lpt", "slam tilt %s (reg[10]=0x%02x)\n",
-            (s_shift_reg[10] & 0x80) ? "clear" : "ACTIVE", s_shift_reg[10]);
+    LOG("lpt", "slam tilt toggle (informational)\n");
 }
 
 void lpt_inject_switch(int col, uint8_t data)
 {
-    if (col >= 0 && col < 20)
-        s_shift_reg[col] = data;
-    LOG("lpt", "inject reg[%d]=0x%02x\n", col, data);
+    if (col >= 0 && col < 8)
+        s_rendering_status[col] = data;
+    LOG("lpt", "inject col=%d data=0x%02x\n", col, data);
 }
 
 void lpt_activate(void)
@@ -819,81 +884,74 @@ void lpt_activate(void)
     if (g_emu.lpt_active) return;
     g_emu.lpt_active = true;
 
-    s_shift_pos    = 0;
-    s_prev_latch   = 0;
-    s_prev_strobe  = 0;
-    s_lpt_read_count = 0;
+    s_rendering_flags = 0;
+    s_data_for_rendering = 0;
+    s_access_mode4_prev = 0;
+    s_access_mode1_prev = 0;
+    s_data_flag1 = 0;
+    s_data_flag2 = 0;
+    s_data_bit4 = 0;
+    s_data_bit6 = 0;
 
-    /* All positions 0xFF = all switches open (active-LOW).
-     * Position 10 bit1 = coin door: 0 = open, cleared = 0xFD = closed.
-     * Matches i386 POC exactly. */
-    memset(s_shift_reg, 0xFF, sizeof(s_shift_reg));
-    s_shift_reg[10] = 0xFD; /* coin door closed */
+    memset(s_rendering_status, 0xFF, sizeof(s_rendering_status));
 
-    LOG("lpt", "activated — i386-faithful shift register (all 0xFF, pos10=0xFD)\n");
+    LOG("lpt", "activated — i386 POC opcode protocol (latch echo + active-low)\n");
 }
 
 static uint32_t lpt_read(uint16_t port)
 {
+    static int s_lpt_rd_cnt = 0;
     uint32_t reg = port - PORT_LPT_DATA;
 
     if (!g_emu.lpt_active) return 0xFFu;
 
     switch (reg) {
-    case 0: { /* Data port — shift register output */
-        s_lpt_read_count++;
+    case 0: { /* Data port read */
+        s_lpt_rd_cnt++;
         uint8_t val;
-        if ((g_emu.lpt_ctrl & 0x01) && (g_emu.lpt_ctrl & 0x08)) {
-            val = (s_shift_pos < 20) ? s_shift_reg[s_shift_pos] : 0xFF;
+        if ((s_rendering_flags & 0x01) && (s_rendering_flags & 0x08)) {
+            val = retrieve_rendering_status(s_data_for_rendering);
         } else {
             val = g_emu.lpt_data;
         }
-        if (s_lpt_read_count <= 30 || (s_lpt_read_count % 5000) == 0)
-            LOG("lpt", "rd data=0x%02x ctrl=0x%02x pos=%d cnt=%d\n",
-                    val, g_emu.lpt_ctrl, s_shift_pos, s_lpt_read_count);
+        if (s_lpt_rd_cnt <= 30 || (s_lpt_rd_cnt % 5000) == 0)
+            LOG("lpt", "rd col=0x%02x val=0x%02x ctrl=0x%02x cnt=%d\n",
+                    s_data_for_rendering, val, s_rendering_flags, s_lpt_rd_cnt);
         return val;
     }
-    case 1: return 0x87u; /* Status — device ID signature */
-    case 2: return 1u;    /* Control — matches i386 POC */
+    case 1: return 0x87u;
+    case 2: return (uint32_t)s_rendering_flags; /* echo control — matches i386 POC */
     default: return 0xFF;
     }
 }
 
 static void lpt_write(uint16_t port, uint8_t val)
 {
-    uint32_t reg = port - PORT_LPT_DATA;
     static int s_lpt_wr_cnt = 0;
+    uint32_t reg = port - PORT_LPT_DATA;
 
     if (!g_emu.lpt_active) return;
 
     s_lpt_wr_cnt++;
-    if (s_lpt_wr_cnt <= 60 || (s_lpt_wr_cnt % 5000) == 0)
-        LOG("lpt", "wr reg=%d val=0x%02x ctrl=0x%02x pos=%d cnt=%d\n",
-                reg, val & 0xFF, g_emu.lpt_ctrl, s_shift_pos, s_lpt_wr_cnt);
 
     switch (reg) {
-    case 0: /* Data port write */
+    case 0:
         g_emu.lpt_data = val;
         break;
-    case 2: { /* Control port — edge-detect LATCH and STROBE */
+    case 2: {
         uint8_t newctrl = val;
 
-        /* Bit 2 rising edge: LATCH — set shift position from data */
-        if (!s_prev_latch && (newctrl & 0x04)) {
-            s_shift_pos = g_emu.lpt_data;
-            if (s_lpt_wr_cnt <= 100)
-                LOG("lpt", "LATCH pos=%d\n", s_shift_pos);
-        }
+        /* Bit 2 rising edge: capture opcode */
+        if (!s_access_mode4_prev && (newctrl & 0x04))
+            s_data_for_rendering = g_emu.lpt_data;
+        s_access_mode4_prev = newctrl & 0x04;
 
-        /* Bit 0 falling edge: lamp/solenoid output — ignored for emulation.
-         * Real hardware separates input (switch matrix) from output (lamps).
-         * We don't let output writes corrupt switch read positions. */
-        if (s_prev_strobe && !(newctrl & 0x01)) {
-            /* no-op: lamp data stays in shift_reg only for debug */
-        }
+        /* Bit 0 falling edge: dispatch command */
+        if (s_access_mode1_prev && !(newctrl & 0x01))
+            process_data_command(s_data_for_rendering, g_emu.lpt_data);
+        s_access_mode1_prev = newctrl & 0x01;
 
-        s_prev_latch  = newctrl & 0x04;
-        s_prev_strobe = newctrl & 0x01;
+        s_rendering_flags = newctrl;
         g_emu.lpt_ctrl = newctrl;
         break;
     }
