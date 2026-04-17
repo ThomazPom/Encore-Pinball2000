@@ -402,6 +402,9 @@ static uint8_t flash_read_byte(uint32_t off)
     }
 }
 
+/* BAR4 DCS byte echo (SRAM/ADSP handshake) */
+static uint8_t s_bar4_echo = 0;
+
 /* Enqueue a response into the DCS2 output buffer */
 static void dcs_enqueue_response(uint16_t val)
 {
@@ -550,32 +553,40 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
                   (flash_read_byte(off + 2) << 16) | (flash_read_byte(off + 3) << 24);
     }
     else if (a >= WMS_BAR4 && a < WMS_BAR4 + BAR4_SIZE) {
-        /* BAR4: DCS audio — word-only reads */
+        /* BAR4: DCS audio */
         uint32_t off = a - WMS_BAR4;
         if (off == 0) {
-            /* Data/command read: retrieve response from output buffer */
-            DCSRespBuf *rb = &g_emu.dcs_resp;
-            if (rb->count > 0) {
-                val = rb->buf[rb->head];
-                rb->head = (rb->head + 1) % DCS_RESP_BUF_SIZE;
-                rb->count--;
+            if (size == 1) {
+                /* Byte read: echo last-written byte (SRAM/ADSP handshake) */
+                val = s_bar4_echo;
             } else {
-                val = 0;
+                /* Word read: retrieve response from output buffer */
+                DCSRespBuf *rb = &g_emu.dcs_resp;
+                if (rb->count > 0) {
+                    val = rb->buf[rb->head];
+                    rb->head = (rb->head + 1) % DCS_RESP_BUF_SIZE;
+                    rb->count--;
+                } else {
+                    val = 0;
+                }
+                static int s_dcs_rd = 0;
+                if (++s_dcs_rd <= 30)
+                    LOG("dcs", "RD off=0 val=0x%04x size=%d cnt=%d left=%d\n",
+                        val, size, s_dcs_rd, g_emu.dcs_resp.count);
             }
-            static int s_dcs_rd = 0;
-            if (++s_dcs_rd <= 200)
-                LOG("dcs", "RD off=0 val=0x%04x size=%d cnt=%d left=%d\n",
-                    val, size, s_dcs_rd, g_emu.dcs_resp.count);
         } else if (off == 2) {
-            /* Status/flags read: bit 7 = data available */
+            /* Status/flags read — match i386 POC:
+             * Bit 6 (0x40) = ready to accept commands (always set)
+             * Bit 7 (0x80) = output data available */
             uint16_t f = g_emu.dcs_flags;
+            f |= 0x40;   /* always ready to accept */
             if (g_emu.dcs_resp.count > 0)
                 f |= 0x80;
             else
                 f &= ~0x80u;
             val = f;
             static int s_dcs_flag_rd = 0;
-            if (++s_dcs_flag_rd <= 200 || (s_dcs_flag_rd % 50000 == 0))
+            if (++s_dcs_flag_rd <= 30 || (s_dcs_flag_rd % 100000 == 0))
                 LOG("dcs", "RD off=2 flags=0x%04x size=%d cnt=%d q=%d\n",
                     val, size, s_dcs_flag_rd, g_emu.dcs_resp.count);
         } else {
@@ -898,14 +909,19 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
         }
     }
     else if (a >= WMS_BAR4 && a < WMS_BAR4 + BAR4_SIZE) {
-        /* BAR4: DCS audio — word-only writes */
+        /* BAR4: DCS audio */
         uint32_t off = a - WMS_BAR4;
         if (off == 0) {
-            /* Command/data write */
+            if (size == 1) {
+                /* Byte write: store for echo (SRAM/ADSP handshake) */
+                s_bar4_echo = val & 0xFF;
+                goto dcs_write_done;
+            }
+            /* Word command write */
             uint16_t cmd = val & 0xFFFF;
 
             static int s_dcs_wr = 0;
-            if (++s_dcs_wr <= 200)
+            if (++s_dcs_wr <= 30)
                 LOG("dcs", "WR off=0 cmd=0x%04x size=%d active=%d pending=%d cnt=%d\n",
                     cmd, size, g_emu.dcs_active, g_emu.dcs_pending, s_dcs_wr);
 
@@ -958,6 +974,16 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
 
             /* Command dispatch */
             switch (cmd) {
+            case 0x5800:
+                /* DCS board reset — respond with 0x1000 ("I'm alive") */
+                dcs_enqueue_response(0x1000);
+                LOG("dcs", "RESET 0x5800 → 0x1000\n");
+                break;
+            case 0x5A00:
+                /* DCS init continue — respond with success */
+                dcs_enqueue_response(0x1000);
+                LOG("dcs", "RESET 0x5A00 → 0x1000\n");
+                break;
             case 0x3A:
                 {
                     static bool s_dong_played = false;
