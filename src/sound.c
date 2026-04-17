@@ -2,12 +2,11 @@
  * sound.c — SDL2_mixer audio for DCS2 sound.
  *
  * Follows the i386 POC path exactly:
- *   1. Load pb2k sound library ({game}_P2K-runtime.bin) — primary source
- *   2. Lazy-load from reverseEngineering/sounds/{game} dir if pb2k misses
- *   3. Synthesized fallback tone for boot dong only (debug aid, matching i386)
+ *   1. Load pb2k sound library ({game}_P2K-runtime.bin) at init
+ *   2. Pre-load ALL samples before execution loop starts
+ *   3. Synthesized 220 Hz fallback tone for boot dong (matching i386)
  */
 #include "encore.h"
-#include <dirent.h>
 #include <math.h>
 #include <pthread.h>
 
@@ -34,7 +33,6 @@ static int       s_track_pan[MAX_TRACKS];
 static int       s_track_active[MAX_TRACKS];
 static Mix_Chunk *s_sample_cache[SAMPLE_CACHE_SIZE];
 static int       s_sample_loaded[SAMPLE_CACHE_SIZE];
-static char      s_samples_dir[256];
 static uint8_t  *s_pb2k_data = NULL;
 static size_t    s_pb2k_size = 0;
 static Pb2kEntry s_pb2k_entries[PB2K_MAX_ENTRIES];
@@ -82,14 +80,6 @@ static Mix_Chunk *build_tone(int freq_hz, int duration_ms, float decay_rate)
 static int dcs_vol_to_sdl(int dcs_vol)
 {
     return (dcs_vol * MIX_MAX_VOLUME) / 255;
-}
-
-/* load_named_file removed — was only used by load_special_sample (GPT addition) */
-
-static void init_asset_paths(void)
-{
-    snprintf(s_samples_dir, sizeof(s_samples_dir),
-             "../reverseEngineering/sounds/%s", g_emu.game_prefix);
 }
 
 static void pb2k_load(const char *path)
@@ -202,33 +192,8 @@ static void pb2k_preload_samples(void)
     LOG("snd", "pb2k preloaded: ok=%d fail=%d\n", ok, fail);
 }
 
-static Mix_Chunk *load_sample_from_dir(uint16_t track_cmd)
-{
-    DIR *d = opendir(s_samples_dir);
-    if (!d) return NULL;
-
-    char prefix[8];
-    snprintf(prefix, sizeof(prefix), "S%04X", track_cmd);
-    struct dirent *de;
-    char path[512];
-    Mix_Chunk *chunk = NULL;
-
-    while ((de = readdir(d)) != NULL) {
-        if (strncmp(de->d_name, prefix, 5) != 0)
-            continue;
-        const char *ext = strrchr(de->d_name, '.');
-        if (!ext || (strcmp(ext, ".ogg") != 0 && strcmp(ext, ".wav") != 0))
-            continue;
-        snprintf(path, sizeof(path), "%s/%s", s_samples_dir, de->d_name);
-        chunk = Mix_LoadWAV(path);
-        if (chunk) break;
-    }
-    closedir(d);
-    return chunk;
-}
-
-/* load_special_sample removed — not in i386/x64 POC.
- * Boot dong comes from pb2k "dcs-bong" entry or synthetic fallback. */
+/* load_special_sample / load_sample_from_dir removed — i386 POC pre-loads
+ * all samples from pb2kslib at init. No fallback directory needed. */
 
 static Mix_Chunk *get_or_load_sample(uint16_t track_cmd)
 {
@@ -236,20 +201,17 @@ static Mix_Chunk *get_or_load_sample(uint16_t track_cmd)
     if (s_sample_loaded[track_cmd])
         return s_sample_cache[track_cmd];
 
+    /* Late-load from pb2k (backup for samples missed during pre-load) */
     s_sample_loaded[track_cmd] = 1;
-    Mix_Chunk *chunk = NULL;
-
     int idx = pb2k_find_track(track_cmd);
-    if (idx >= 0)
-        chunk = pb2k_load_track(idx);
-
-    if (!chunk)
-        chunk = load_sample_from_dir(track_cmd);
-
-    s_sample_cache[track_cmd] = chunk;
-    if (chunk)
-        LOG("snd", "loaded sample 0x%04x\n", track_cmd);
-    return chunk;
+    if (idx >= 0) {
+        Mix_Chunk *chunk = pb2k_load_track(idx);
+        s_sample_cache[track_cmd] = chunk;
+        if (chunk)
+            LOG("snd", "late-loaded sample 0x%04x\n", track_cmd);
+        return chunk;
+    }
+    return NULL;
 }
 
 void sound_set_global_volume(int vol)
@@ -355,7 +317,6 @@ int sound_init(void)
     }
 
     Mix_AllocateChannels(MAX_TRACKS);
-    init_asset_paths();
 
     char pb2k_path[512];
     snprintf(pb2k_path, sizeof(pb2k_path),
@@ -369,13 +330,12 @@ int sound_init(void)
     if (s_pb2k_bong_idx >= 0)
         s_boot_dong = pb2k_load_track(s_pb2k_bong_idx);
     if (!s_boot_dong)
-        s_boot_dong = build_tone(440, 500, 3.0f);
+        s_boot_dong = build_tone(220, 500, 3.0f);
 
     s_audio_ok = true;
     sound_set_global_volume(s_global_volume);
     g_emu.sound_ready = true;
-    LOG("snd", "SDL2_mixer ready, samples=%s pb2k=%s\n",
-        s_samples_dir, s_pb2k_data ? pb2k_path : "(none)");
+    LOG("snd", "SDL2_mixer ready, pb2k=%s\n", s_pb2k_data ? pb2k_path : "(none)");
     return 0;
 }
 
