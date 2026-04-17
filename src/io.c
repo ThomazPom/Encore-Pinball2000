@@ -809,16 +809,22 @@ static int calc_bitwise_sum(uint8_t val)
     return has_bit + sum;
 }
 
-/* i386 POC retrieve_rendering_status — verbatim copy */
+/* LPT switch matrix — mixed polarity per P2K hardware:
+ *   Col 0:  active-LOW  → 0xFF = all open, bit=0 = switch active
+ *   Col 1:  active-HIGH → 0x00 = none pressed, bit=1 = button pressed
+ *   Col 2:  status register, hardcoded 0xF0
+ *   Col 3:  active-LOW  → 0xFF = all open, bit=0 = switch active
+ *   Col 4+: active-LOW  → 0xFF = all open
+ */
 static uint8_t retrieve_rendering_status(uint8_t opcode)
 {
     uint8_t result = 0;
     switch (opcode) {
-    case 0x00: result = 0xFF; break;
-    case 0x01: result = s_lpt_button_state; break;  /* bit=1 → pressed */
-    case 0x02: result = 0xFF; break;
-    case 0x03: result = s_lpt_switch_state; break;  /* bit=1 → pressed */
-    case 0x04: result = 0xFF; break; /* playfield switches: all open */
+    case 0x00: result = 0xFF; break;                      /* active-LOW: all open */
+    case 0x01: result = s_lpt_button_state; break;        /* active-HIGH: bit=1 pressed */
+    case 0x02: result = 0xFF; break;                      /* status register */
+    case 0x03: result = 0xFF & ~s_lpt_switch_state; break;/* active-LOW: set bits → 0 */
+    case 0x04: result = 0xFF; break;                      /* playfield: all open */
     case 0x0F: case 0x10: case 0x11:
     case 0x12: case 0x13:
         result = 0xFF; break;
