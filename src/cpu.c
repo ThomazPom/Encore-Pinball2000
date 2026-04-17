@@ -90,6 +90,11 @@ int cpu_init(void)
     uc_hook_add(uc, &h_trace5, UC_HOOK_CODE, (void*)hook_code_trace,
                 NULL, (uint64_t)0x88000, (uint64_t)0x8B000);
 
+    /* NonFatal hook — log string argument before XOR EAX,EAX;RET patch runs */
+    uc_hook h_nonfatal;
+    uc_hook_add(uc, &h_nonfatal, UC_HOOK_CODE, (void*)hook_code_trace,
+                NULL, (uint64_t)0x24780C, (uint64_t)0x247810);
+
     /* VSYNC callback (0x19BF64) and clkint callback dispatcher monitor */
     uc_hook h_vsync_trace;
     uc_hook_add(uc, &h_vsync_trace, UC_HOOK_CODE, (void*)hook_code_trace,
@@ -344,6 +349,18 @@ static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *u
     case 0x83DC5: LOG("trace", "PCI enum success EAX=1\n"); break;
     case 0x83DD6: LOG("trace", "PCI enum FAIL EAX=-1\n"); break;
     case 0x100000: LOG("trace", "*** GAME CODE ENTRY at 0x100000! ***\n"); break;
+    case 0x24780C: {
+        /* NonFatal() called — read string arg from [ESP+4], caller from [ESP] */
+        uint32_t ret_addr, str_ptr;
+        uc_mem_read(uc, esp, &ret_addr, 4);
+        uc_mem_read(uc, esp + 4, &str_ptr, 4);
+        char buf[128] = {0};
+        uc_mem_read(uc, str_ptr, buf, sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+        for (int i = 0; buf[i]; i++) { if (buf[i] == '\n') { buf[i] = '\0'; break; } }
+        LOG("nonfatal", "NonFatal(\"%s\") [str@0x%08x caller@0x%08x]\n", buf, str_ptr, ret_addr);
+        break;
+    }
     case 0x19BF64: {
         static uint32_t vs_call = 0;
         vs_call++;
@@ -605,33 +622,37 @@ void cpu_run(void)
                 LOG("init", "DC pre-init: CFG=0x303 FB_OFF=0 LINE=320\n");
             }
 
-            /* --- 4. RET stub at 0x400000 (safe trampoline area) --- */
+            /* --- 4. Fake DCS2 channel object at 0x400000 (i386 POC copycat).
+             *    stub: MOV EAX,1; RET — all vtable methods return 1.
+             *    vtable: 64 entries → stub. channel: vtable ptr.
+             *    Provides a valid DCS2 dispatch target for game code. */
             {
-                uint8_t ret_byte = 0xC3;
-                uc_mem_write(uc, 0x400000u, &ret_byte, 1);
-                /* XOR EAX,EAX; RET at 0x400010 */
+                uint8_t stub[6] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 };
+                uc_mem_write(uc, 0x400000u, stub, 6);
+                uint32_t vtable[64];
+                for (int i = 0; i < 64; i++) vtable[i] = 0x00400000u;
+                uc_mem_write(uc, 0x400100u, vtable, sizeof(vtable));
+                uint32_t ch_ptr = 0x00400100u;
+                uc_mem_write(uc, 0x400200u, &ch_ptr, 4);
+                /* XOR EAX,EAX; RET at 0x400010 (secondary trampoline) */
                 uint8_t xor_ret[3] = { 0x31, 0xC0, 0xC3 };
                 uc_mem_write(uc, 0x400010u, xor_ret, 3);
+                LOG("init", "DCS2 fake obj: stub@400000 vtab@400100 ch@400200\n");
             }
 
-            /* NOTE: All V1.12 BSS address writes REMOVED (BT-63 / BT-91).
-             * The i386 POC proves the game boots with scheduler patches
-             * disabled ("natural flow"). Addresses like 0x2AF81C (resched
-             * gate), 0x2AF6A4 (ISR depth), 0x2AF7D4 (preempt guard),
-             * 0x2797C4 (DCS2 init), 0x2C181C (XINACMOS ptr), 0x2D577C
-             * (free list head) are V1.12 BSS locations. In V1.19 SWE1,
-             * these addresses fall within the code/data section and
-             * writing to them CORRUPTS game code — causing clkint to
-             * malfunction (preempt never decrements).
-             *
-             * XINU's sysinit() naturally initializes all scheduler state,
-             * free list, process table, and queue structures. The 48
-             * processes created confirm this works. We only need:
-             * - Function patches (Fatal/NonFatal → safe returns)
-             * - PIC base_mask fix (V1.19 address confirmed)
-             * - DC hardware register init (GX_BASE offsets)
-             * - 0F3C emulator (already installed above)
-             */
+            /* --- 5. Init gate flags — diagnostic read only.
+             *    The i386 POC writes to 0x2797C4/0x2AF824/0x27979C/0x279768
+             *    but those are V1.12 BSS addresses that overlap V1.19 code.
+             *    Read-only: check if XINU naturally set them. */
+            {
+                uint32_t f_dcs2, f_sysinit, f_gate, f_bar0;
+                uc_mem_read(uc, 0x2797C4u, &f_dcs2, 4);
+                uc_mem_read(uc, 0x2AF824u, &f_sysinit, 4);
+                uc_mem_read(uc, 0x27979Cu, &f_gate, 4);
+                uc_mem_read(uc, 0x279768u, &f_bar0, 4);
+                LOG("init", "Init flags (read): [2797C4]=0x%X [2AF824]=0x%X [27979C]=0x%X [279768]=0x%X\n",
+                    f_dcs2, f_sysinit, f_gate, f_bar0);
+            }
 
             LOG("init", "=== Post-XINU V1.19 patches complete ===\n");
         }
@@ -941,20 +962,33 @@ handle_display:
                     LOG("hb", "  DM: mode=%u gxp=0x%x dt2=%u\n", dmm, gxp, g_emu.dc_timing2);
                 }
                 /* Performance stats */
-                LOG("hb", "  PERF: calls=%lu/5s ok=%lu 0f3c=%lu hlt=%lu ticks=%lu\n",
-                    prof_emu_calls, prof_ok, prof_0f3c, prof_hlt, prof_ticks_fired);
+                LOG("hb", "  PERF: calls=%lu/5s ok=%lu 0f3c=%lu hlt=%lu ticks=%lu bar2wr=%u\n",
+                    prof_emu_calls, prof_ok, prof_0f3c, prof_hlt, prof_ticks_fired,
+                    g_emu.bar2_wr_count);
                 prof_emu_calls = prof_0f3c = prof_hlt = prof_other_err = prof_ok = 0;
                 prof_ticks_fired = prof_ticks_isr = prof_ticks_irr = prof_irq0_inject = 0;
-                /* One-shot process table summary */
+                /* One-shot process table dump.
+                 * XINU layout: proctab=0x2FC8C4, stride=232(0xE8),
+                 * pstate@+0, paddr@+0x28, pname@+0x30(16 chars) */
                 static int proctab_dumped = 0;
                 if (!proctab_dumped && nproc >= 35) {
                     proctab_dumped = 1;
-                    int active = 0;
-                    for (uint32_t pid = 0; pid < 130; pid++) {
-                        uint8_t ps = RAM_RD8(0x2FC8C4u + pid * 232u);
-                        if (ps != 2) active++;  /* not FREE */
+                    uint32_t currpid = RAM_RD32(0x2FC8BCu);
+                    LOG("hb", "  proctab: currpid=%u nproc=%u\n", currpid, nproc);
+                    for (uint32_t pid = 0; pid < 70; pid++) {
+                        uint32_t pe = 0x2FC8C4u + pid * 232u;
+                        uint8_t ps = RAM_RD8(pe);
+                        if (ps == 0 && pid > 0) continue; /* PRFREE */
+                        uint32_t pfn = RAM_RD32(pe + 0x28u);
+                        char pn[17];
+                        uc_mem_read(uc, pe + 0x30u, pn, 16); pn[16] = 0;
+                        for (int i = 0; i < 16; i++)
+                            if (pn[i] && ((uint8_t)pn[i] < 0x20 || (uint8_t)pn[i] > 0x7e))
+                                pn[i] = '.';
+                        const char *sn[] = {"FREE","CURR","RDY","RECV","SLP","SUSP","WAIT","RTIM"};
+                        LOG("hb", "    pid%-3u %-4s fn=%08x '%s'\n",
+                            pid, ps<8?sn[ps]:"??", pfn, pn);
                     }
-                    LOG("hb", "  proctab: %u active processes\n", active);
                 }
                 if (g_emu.uart_pos > 0) {
                     g_emu.uart_buf[g_emu.uart_pos] = '\0';
