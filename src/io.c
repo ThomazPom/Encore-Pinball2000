@@ -1136,6 +1136,150 @@ static uint32_t uart_read(uint16_t port)
     }
 }
 
+/* ===== DCS2 I/O Port Interface (ports 0x13C/0x13E/0x813C) =====
+ * The game's XINU kernel uses I/O ports for DCS2 board communication:
+ *   Port 0x13C (word write): DCS command (e.g. 0x5800=reset, 0x3A=dong)
+ *   Port 0x13C (word read):  DCS response data
+ *   Port 0x13E (byte read):  DCS status flags (bit 7 = data ready)
+ *   Port 0x813C (byte write): DCS control/enable
+ * Discovered by disassembling guest code at 0x1919f8 and 0x192e70-0x192fd2.
+ * The game has two paths: I/O port mode (flag=0) and BAR4 memory mode (flag=1).
+ * During DCS board reset, port mode is always used.
+ */
+static struct {
+    uint16_t buf[32];
+    int      wr, rd;
+    uint8_t  flags;       /* bit 7 = data ready */
+    uint8_t  ctrl;        /* last control byte written to 0x813C */
+    int      pending;     /* multi-word command state */
+    int      active;      /* close-active guard (0x0E command) */
+    int      cmd;         /* current command value */
+    int      mixer[8];
+    int      layer;
+    int      remaining;
+} s_dcs_io;
+
+static void dcs_io_push(uint16_t val) {
+    s_dcs_io.buf[s_dcs_io.wr] = val;
+    s_dcs_io.wr = (s_dcs_io.wr + 1) & 31;
+    s_dcs_io.flags |= 0x80;   /* data ready */
+    static int push_cnt = 0;
+    if (++push_cnt <= 50)
+        LOG("dcs-io", "push 0x%04x (wr=%d rd=%d)\n", val, s_dcs_io.wr, s_dcs_io.rd);
+}
+
+static uint16_t dcs_io_pop(void) {
+    if (s_dcs_io.wr == s_dcs_io.rd) return 0;
+    uint16_t val = s_dcs_io.buf[s_dcs_io.rd];
+    s_dcs_io.rd = (s_dcs_io.rd + 1) & 31;
+    if (s_dcs_io.wr == s_dcs_io.rd)
+        s_dcs_io.flags &= ~0x80u;  /* buffer empty */
+    static int pop_cnt = 0;
+    if (++pop_cnt <= 50)
+        LOG("dcs-io", "pop 0x%04x (wr=%d rd=%d)\n", val, s_dcs_io.wr, s_dcs_io.rd);
+    return val;
+}
+
+static void dcs_io_execute(void) {
+    int cmd = s_dcs_io.cmd;
+
+    if (s_dcs_io.active && cmd == 0x0E) {
+        s_dcs_io.active = 0;
+        s_dcs_io.pending = 0;
+        dcs_io_push(10);
+        LOG("dcs-io", "cmd=0x0E (close active)\n");
+        return;
+    }
+    if (s_dcs_io.active) return;
+
+    /* Multi-word command accumulation */
+    if (s_dcs_io.pending) {
+        if (s_dcs_io.remaining == 0) {
+            s_dcs_io.remaining = ((cmd >> 8) == 0x55) ? 1 : 2;
+            s_dcs_io.mixer[0] = cmd;
+            s_dcs_io.layer = 1;
+            return;
+        }
+        s_dcs_io.mixer[s_dcs_io.layer++] = cmd;
+        if (--s_dcs_io.remaining != 0) return;
+        LOG("dcs-io", "multi-byte: cmd=0x%04x d1=0x%04x d2=0x%04x\n",
+            s_dcs_io.mixer[0],
+            s_dcs_io.layer > 1 ? s_dcs_io.mixer[1] : 0,
+            s_dcs_io.layer > 2 ? s_dcs_io.mixer[2] : 0);
+        if (s_dcs_io.mixer[0] == 999 || s_dcs_io.mixer[0] == 1000) {
+            dcs_io_push(0x100);
+            dcs_io_push(0x10);
+        }
+        s_dcs_io.layer = 0;
+        s_dcs_io.remaining = 0;
+        memset(s_dcs_io.mixer, 0, sizeof(s_dcs_io.mixer));
+        return;
+    }
+
+    LOG("dcs-io", "cmd=0x%04x\n", cmd);
+
+    switch (cmd) {
+    case 0x5800:
+        /* DCS board reset — respond with 0x1000 ("I'm alive") */
+        dcs_io_push(0x1000);
+        LOG("dcs-io", "RESET → 0x1000 (board alive)\n");
+        break;
+    case 0x5A00:
+        /* DCS init continue — respond with success */
+        dcs_io_push(0x1000);
+        break;
+    case 0x3A:
+        dcs_io_push(0xCC01);
+        dcs_io_push(10);
+        break;
+    case 0x1B:
+        dcs_io_push(0xCC09);
+        dcs_io_push(10);
+        break;
+    case 0xAA:
+        dcs_io_push(0xCC04);
+        dcs_io_push(10);
+        break;
+    case 0x0E:
+        s_dcs_io.active = 1;
+        s_dcs_io.pending = 0;
+        break;
+    case 0xACE1:
+        s_dcs_io.pending = 1;
+        dcs_io_push(0x0100);
+        dcs_io_push(0x0C);
+        break;
+    default:
+        /* Unknown command — respond with generic ack */
+        dcs_io_push(10);
+        break;
+    }
+}
+
+static uint32_t dcs_io_read(uint16_t port, int size) {
+    if (port == PORT_DCS2_DATA) {
+        if (size == 2) return dcs_io_pop();
+        return dcs_io_pop() & 0xFF;
+    }
+    if (port == PORT_DCS2_FLAGS) {
+        return s_dcs_io.flags;
+    }
+    return 0xFF;
+}
+
+static void dcs_io_write(uint16_t port, uint32_t val, int size) {
+    if (port == PORT_DCS2_DATA) {
+        s_dcs_io.cmd = (size == 2) ? (val & 0xFFFF) : (val & 0xFF);
+        dcs_io_execute();
+    }
+    else if (port == PORT_DCS2_CTRL) {
+        s_dcs_io.ctrl = val & 0xFF;
+        static int ctrl_cnt = 0;
+        if (++ctrl_cnt <= 20)
+            LOG("dcs-io", "ctrl=0x%02x\n", val & 0xFF);
+    }
+}
+
 /* ===== Main I/O dispatch ===== */
 
 uint32_t io_port_read(uint16_t port, int size)
@@ -1260,6 +1404,12 @@ uint32_t io_port_read(uint16_t port, int size)
     /* DCS2 status — must return 0x00 (ready) */
     case PORT_DCS2_STATUS:
         return 0x00;
+
+    /* DCS2 I/O port interface (data, flags, control) */
+    case PORT_DCS2_DATA:
+    case PORT_DCS2_FLAGS:
+    case PORT_DCS2_CTRL:
+        return dcs_io_read(port, size);
 
     /* POST code */
     case PORT_POST:
@@ -1419,6 +1569,13 @@ void io_port_write(uint16_t port, uint32_t val, int size)
 
     /* DCS2 status — write ignored */
     case PORT_DCS2_STATUS:
+        break;
+
+    /* DCS2 I/O port interface (data, flags, control) */
+    case PORT_DCS2_DATA:
+    case PORT_DCS2_FLAGS:
+    case PORT_DCS2_CTRL:
+        dcs_io_write(port, val, size);
         break;
 
     /* SMC8216T NIC board registers (0x300-0x30F) */

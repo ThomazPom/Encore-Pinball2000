@@ -133,25 +133,9 @@ static void apply_ram_patches(void)
     LOG("boot", "Safety halt at 0x801F7 (post-Init2 fallthrough catcher)\n");
 }
 
-/* Zero DCS presence bytes in ROM banks — prevents NonFatal from missing DCS board.
- * ROM-agnostic: same offset (0x10000) and size (4KB) in all game ROMs. */
-static void patch_dcs_presence(void)
-{
-    for (int b = 0; b < 4; b++) {
-        if (!g_emu.rom_banks[b] || g_emu.rom_sizes[b] < DCS_PRES_OFF + DCS_PRES_BYTES)
-            continue;
-        int cleared = 0;
-        for (uint32_t i = 0; i < DCS_PRES_BYTES; i++) {
-            if (g_emu.rom_banks[b][DCS_PRES_OFF + i]) {
-                g_emu.rom_banks[b][DCS_PRES_OFF + i] = 0;
-                cleared++;
-            }
-        }
-        if (cleared)
-            LOG("boot", "Bank %d: zeroed %d DCS presence bytes at 0x%x\n",
-                b, cleared, DCS_PRES_OFF);
-    }
-}
+/* DCS presence table — no longer zeroed. Game needs it to detect DCS2
+ * hardware and create the DCS2 driver task. NonFatal from missing DCS
+ * board is caught by the NonFatal→XOR EAX,EAX;RET patch in cpu.c. */
 
 /* PRISM option ROM framebuffer write NOP + checksum fix.
  * ROM-agnostic: scan for the MOV [EDI+...], EAX pattern. */
@@ -249,9 +233,9 @@ int main(int argc, char **argv)
     /* Populate NIC LAN ROM data in D-segment guest RAM (BT-131) */
     nic_dseg_init();
 
-    /* Boot assistance (IVT stubs, DCS presence, PRISM ROM fix) */
+    /* Boot assistance (IVT stubs, PRISM ROM fix).
+     * DCS presence table left intact so game detects DCS2 hardware. */
     apply_boot_assist();
-    patch_dcs_presence();
     patch_prism_rom();
 
     /* Load NVRAM/SEEPROM into guest memory after mapping */
@@ -263,6 +247,18 @@ int main(int argc, char **argv)
     /* Write flash into guest BAR3 */
     if (g_emu.flash)
         uc_mem_write(g_emu.uc, WMS_BAR3, g_emu.flash, FLASH_SIZE);
+
+    /* Pre-fill BAR4 with 0xFF (i386 POC copycat: absent DCS2 hardware reads 0xFF).
+     * Guest DCS2 driver checks BAR4 initial state during init. */
+    {
+        uint8_t *bar4_fill = calloc(1, BAR4_SIZE);
+        if (bar4_fill) {
+            memset(bar4_fill, 0xFF, BAR4_SIZE);
+            uc_mem_write(g_emu.uc, WMS_BAR4, bar4_fill, BAR4_SIZE);
+            free(bar4_fill);
+            LOG("init", "BAR4 pre-filled with 0xFF (%u MB)\n", BAR4_SIZE >> 20);
+        }
+    }
 
     /* Set up protected mode (skip BIOS, start at option ROM PM code) */
     if (cpu_setup_protected_mode() != 0) {

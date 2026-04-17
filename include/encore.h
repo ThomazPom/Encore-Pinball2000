@@ -143,6 +143,9 @@
 #define PORT_VGA_CRTC_DATA 0x03D5u
 #define PORT_VGA_STATUS   0x03DAu
 #define PORT_DCS2_STATUS  0x6F96u       /* DCS2 ready = 0x00 */
+#define PORT_DCS2_DATA    0x013Cu       /* DCS2 command/data (word R/W) */
+#define PORT_DCS2_FLAGS   0x013Eu       /* DCS2 flags (byte read: bit7=data ready) */
+#define PORT_DCS2_CTRL    0x813Cu       /* DCS2 control (byte write) */
 
 /* =========================================================================
  * PIC state machine

@@ -176,6 +176,146 @@ static void seeprom_process_write(uint32_t cntrl_val)
     s_ee.last_sk = sk;
 }
 
+/* ===== DCS2 serial bit-bang via PLX CNTRL register (0x50) =====
+ * Reverse-engineered from P2K-driver objdump (UpdateSeepromState @ 0x805c159,
+ * ProcessSeepromData @ 0x805cf0d) and i386 POC (bar4.c).
+ *
+ * PLX CNTRL register (0x50) bit assignments for DCS2 serial:
+ *   bit 24 = clock (rising edge shifts one data bit)
+ *   bit 25 = enable (low→high = new sequence; low = reset)
+ *   bit 26 = data bit (shifted into command byte on clock)
+ *   bit 27 = output data (set when DCS2 response ready)
+ *
+ * The SEEPROM protocol uses the SAME bits (24-26) for EEPROM access.
+ * Both protocols coexist — the DCS serial state machine runs alongside. */
+static struct {
+    int enable_prev, clock_prev;
+    int cmd_received, byte_complete;
+    int bit_cnt;
+    uint8_t shift_reg;
+    uint8_t data_addr;
+    int param;
+    int audio_active, audio_ack, audio_ready;
+    int cntrl_bit1, cntrl_bit2;
+} s_dcs_serial;
+
+static void dcs_serial_shift_bit(int data_bit)
+{
+    int pos = 7 - ((s_dcs_serial.bit_cnt - 1) & 7);
+    s_dcs_serial.shift_reg = (s_dcs_serial.shift_reg & ~(1 << pos)) |
+                             ((data_bit & 1) << pos);
+}
+
+static void dcs_serial_process_command(int continuing)
+{
+    int cls = (s_dcs_serial.param >> 6) & 3;
+
+    switch (cls) {
+    case 0: {
+        int sub_type = (s_dcs_serial.param >> 4) & 3;
+        switch (sub_type) {
+        case 0:
+            s_dcs_serial.audio_active = 0;
+            if (s_dcs_serial.cntrl_bit1 && s_dcs_serial.cntrl_bit2) return;
+            s_dcs_serial.audio_ready = 0;
+            return;
+        case 1:
+            s_dcs_serial.audio_active = 0;
+            return;
+        case 3:
+            s_dcs_serial.audio_active = 0;
+            if (s_dcs_serial.cntrl_bit1 && s_dcs_serial.cntrl_bit2) return;
+            s_dcs_serial.audio_ready = 1;
+            LOG("dcs-serial", "cmd=0x%02x → READY flag set!\n", s_dcs_serial.param);
+            return;
+        default:
+            return;
+        }
+    }
+    case 1:
+        s_dcs_serial.audio_active = 0;
+        if (s_dcs_serial.cntrl_bit1 && s_dcs_serial.cntrl_bit2) return;
+        if (!continuing) s_dcs_serial.data_addr = (uint8_t)(s_dcs_serial.param & 0x3F);
+        return;
+    case 2:
+        s_dcs_serial.audio_active = 1;
+        if (continuing) return;
+        s_dcs_serial.data_addr = (uint8_t)(s_dcs_serial.param & 0x3F);
+        s_dcs_serial.audio_ack = 0;
+        return;
+    case 3:
+        s_dcs_serial.audio_active = 0;
+        return;
+    }
+}
+
+static void dcs_serial_process_plx50(uint32_t val)
+{
+    int enable = (val >> 25) & 1;
+    int clock  = (val >> 24) & 1;
+    int data   = (val >> 26) & 1;
+
+    if (!enable) {
+        s_dcs_serial.cmd_received  = 0;
+        s_dcs_serial.byte_complete = 0;
+        s_dcs_serial.shift_reg     = 0;
+        s_dcs_serial.bit_cnt       = 0;
+        s_dcs_serial.audio_active  = 0;
+        s_dcs_serial.data_addr     = 0;
+        s_dcs_serial.audio_ack     = 0;
+    }
+
+    if (!s_dcs_serial.enable_prev && enable) {
+        s_dcs_serial.byte_complete = 0;
+        s_dcs_serial.param         = 0;
+        s_dcs_serial.shift_reg     = 0;
+        s_dcs_serial.cmd_received  = 0;
+        s_dcs_serial.audio_active  = 0;
+        s_dcs_serial.data_addr     = 0;
+        s_dcs_serial.audio_ack     = 0;
+    }
+
+    if (!s_dcs_serial.clock_prev && clock) {
+        if (!s_dcs_serial.cmd_received) {
+            if (data) s_dcs_serial.cmd_received = 1;
+        } else if (!s_dcs_serial.byte_complete) {
+            dcs_serial_shift_bit(data);
+            s_dcs_serial.bit_cnt++;
+            if (s_dcs_serial.bit_cnt == 8) {
+                s_dcs_serial.bit_cnt = 0;
+                s_dcs_serial.byte_complete = 1;
+                s_dcs_serial.param = (int)s_dcs_serial.shift_reg;
+                LOG("dcs-serial", "byte assembled: 0x%02x (cls=%d sub=0x%02x)\n",
+                    s_dcs_serial.param,
+                    (s_dcs_serial.param >> 6) & 3,
+                    s_dcs_serial.param & 0x3f);
+                dcs_serial_process_command(0);
+            }
+        } else {
+            dcs_serial_process_command(1);
+        }
+    }
+
+    s_dcs_serial.enable_prev = enable;
+    s_dcs_serial.clock_prev  = clock;
+    s_dcs_serial.cntrl_bit1  = (val >> 1) & 1;
+    s_dcs_serial.cntrl_bit2  = (val >> 2) & 1;
+}
+
+static uint32_t dcs_serial_get_plx50_bits(void)
+{
+    uint32_t bits = 0;
+    if (s_dcs_serial.audio_active) {
+        if (s_dcs_serial.audio_ack)
+            bits |= 0x08000000u;  /* bit 27 = data ready */
+        else
+            s_dcs_serial.audio_ack = 1;
+    }
+    if (s_dcs_serial.audio_ready)
+        bits |= 0x08000000u;  /* bit 27 = DCS ready (init response) */
+    return bits;
+}
+
 /* PLX 9050 local config registers — pre-init matching real PRISM hardware */
 static void plx_init(void)
 {
@@ -297,10 +437,16 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
 {
     uint32_t val = 0;
     uint32_t a = (uint32_t)addr;
-    static int mmio_log_cnt = 0;
-    if (mmio_log_cnt < 20 && a >= WMS_BAR0 && a < WMS_BAR0 + 0x01000000u) {
-        mmio_log_cnt++;
-        LOG("mmio", "READ addr=0x%08x size=%d\n", a, size);
+
+    /* Dedicated BAR2/BAR4 access counters - never throttled */
+    static uint32_t bar2_rd_total = 0, bar4_rd_total = 0;
+    if (a >= WMS_BAR2 && a < WMS_BAR2 + 0x01000000u) {
+        if (++bar2_rd_total <= 10)
+            LOG("BAR2", "READ #%u addr=0x%08x size=%d\n", bar2_rd_total, a, size);
+    }
+    if (a >= WMS_BAR4 && a < WMS_BAR4 + BAR4_SIZE) {
+        if (++bar4_rd_total <= 10)
+            LOG("BAR4", "READ #%u addr=0x%08x size=%d\n", bar4_rd_total, a, size);
     }
 
     if (a >= GX_BASE && a < GX_BASE + GX_BASE_SIZE) {
@@ -336,10 +482,6 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
     else if (a >= WMS_BAR0 && a < WMS_BAR0 + 0x01000000u) {
         uint32_t off = a - WMS_BAR0;
         static int plx_rd_cnt = 0;
-        if (off < 0x60 && plx_rd_cnt < 100) {
-            plx_rd_cnt++;
-            LOG("plx", "RD off=0x%02x size=%u\n", off, size);
-        }
 
         if (off < WMS_BAR2 - WMS_BAR0) {
             /* BAR0: PLX 9050 registers */
@@ -352,13 +494,18 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
                     val = (val & ~0x04u) | 0x20u;
                 }
                 else if (off == 0x50) {
-                    /* CNTRL: replace DO bit(27) with emulated, force EE_Present(28) */
-                    val = (val & ~0x18000000u) | 0x10000000u; /* bit28=present */
+                    /* CNTRL: clear bits 24-27, force EE_Present(28) */
+                    val = (val & ~0x1F000000u) | 0x10000000u; /* bit28=present */
                     if (s_ee.do_bit)
                         val |= 0x08000000u; /* bit27=EEDO */
+                    val |= dcs_serial_get_plx50_bits(); /* DCS2 serial status */
                 }
             } else {
                 val = 0;
+            }
+            if (off < 0x60 && plx_rd_cnt < 500) {
+                plx_rd_cnt++;
+                LOG("plx", "RD off=0x%02x size=%u val=0x%08x (#%d)\n", off, size, val, plx_rd_cnt);
             }
         }
         else {
@@ -415,6 +562,10 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
             } else {
                 val = 0;
             }
+            static int s_dcs_rd = 0;
+            if (++s_dcs_rd <= 200)
+                LOG("dcs", "RD off=0 val=0x%04x size=%d cnt=%d left=%d\n",
+                    val, size, s_dcs_rd, g_emu.dcs_resp.count);
         } else if (off == 2) {
             /* Status/flags read: bit 7 = data available */
             uint16_t f = g_emu.dcs_flags;
@@ -423,6 +574,10 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
             else
                 f &= ~0x80u;
             val = f;
+            static int s_dcs_flag_rd = 0;
+            if (++s_dcs_flag_rd <= 200 || (s_dcs_flag_rd % 50000 == 0))
+                LOG("dcs", "RD off=2 flags=0x%04x size=%d cnt=%d q=%d\n",
+                    val, size, s_dcs_flag_rd, g_emu.dcs_resp.count);
         } else {
             val = 0;
         }
@@ -512,9 +667,20 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
     uint32_t a = (uint32_t)addr;
     uint32_t val = (uint32_t)value;
     static int mmio_wr_cnt = 0;
-    if (mmio_wr_cnt < 20 && a >= WMS_BAR0 && a < WMS_BAR0 + 0x01000000u) {
+    if (mmio_wr_cnt < 50) {
         mmio_wr_cnt++;
         LOG("mmio", "WRITE addr=0x%08x size=%d val=0x%08x\n", a, size, val);
+    }
+
+    /* Dedicated BAR2/BAR4 write counters - never throttled */
+    static uint32_t bar2_wr_total = 0, bar4_wr_total = 0;
+    if (a >= WMS_BAR2 && a < WMS_BAR2 + 0x01000000u) {
+        if (++bar2_wr_total <= 10)
+            LOG("BAR2", "WRITE #%u addr=0x%08x size=%d val=0x%x\n", bar2_wr_total, a, size, val);
+    }
+    if (a >= WMS_BAR4 && a < WMS_BAR4 + BAR4_SIZE) {
+        if (++bar4_wr_total <= 10)
+            LOG("BAR4", "WRITE #%u addr=0x%08x size=%d val=0x%x\n", bar4_wr_total, a, size, val);
     }
 
     if (a >= GX_BASE && a < GX_BASE + GX_BASE_SIZE) {
@@ -593,9 +759,11 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
         if ((off >> 2) < 64) {
             g_emu.plx_regs[off >> 2] = val;
 
-            /* SEEPROM bit-bang on CNTRL register (0x50) */
-            if (off == 0x50)
+            /* SEEPROM + DCS2 serial bit-bang on CNTRL register (0x50) */
+            if (off == 0x50) {
                 seeprom_process_write(val);
+                dcs_serial_process_plx50(val);
+            }
 
             /* Track chip-select writes */
             if (off >= 0x3C && off <= 0x48) {
@@ -735,6 +903,11 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
         if (off == 0) {
             /* Command/data write */
             uint16_t cmd = val & 0xFFFF;
+
+            static int s_dcs_wr = 0;
+            if (++s_dcs_wr <= 200)
+                LOG("dcs", "WR off=0 cmd=0x%04x size=%d active=%d pending=%d cnt=%d\n",
+                    cmd, size, g_emu.dcs_active, g_emu.dcs_pending, s_dcs_wr);
 
             if (g_emu.dcs_active && cmd == 0x0E) {
                 g_emu.dcs_active = false;
