@@ -320,17 +320,24 @@ int sound_init(void)
 
     char pb2k_path[512];
     snprintf(pb2k_path, sizeof(pb2k_path),
-             "../emulator/P2K-runtime/roms/%s_P2K-runtime.bin", g_emu.game_prefix);
+             "%s/%s_P2K-runtime.bin", g_emu.roms_dir, g_emu.game_prefix);
     if (access(pb2k_path, R_OK) == 0) {
         pb2k_load(pb2k_path);
         pb2k_preload_samples();
+    } else {
+        LOG("snd", "pb2kslib not found: %s\n", pb2k_path);
     }
 
     /* Boot dong: pb2k first (i386 POC path), synthetic fallback */
-    if (s_pb2k_bong_idx >= 0)
+    if (s_pb2k_bong_idx >= 0) {
         s_boot_dong = pb2k_load_track(s_pb2k_bong_idx);
-    if (!s_boot_dong)
+        LOG("snd", "boot dong from pb2k entry %d: %s\n",
+            s_pb2k_bong_idx, s_boot_dong ? "OK" : "FAIL");
+    }
+    if (!s_boot_dong) {
         s_boot_dong = build_tone(220, 500, 3.0f);
+        LOG("snd", "boot dong synthetic fallback: %s\n", s_boot_dong ? "OK" : "FAIL");
+    }
 
     s_audio_ok = true;
     sound_set_global_volume(s_global_volume);

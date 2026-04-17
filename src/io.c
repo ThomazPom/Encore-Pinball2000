@@ -801,7 +801,7 @@ static uint8_t s_lpt_button_state = 0x00;
 static uint8_t s_lpt_switch_state = 0x00;
 
 /* F-key controlled states */
-static int s_coin_door_closed = 1;  /* F4 toggles */
+static int s_coin_door_closed = 0;  /* F4 toggles; start OPEN for emulator usability */
 static int s_slam_tilt        = 0;  /* F6 toggles */
 
 void lpt_set_host_input(uint8_t buttons, uint8_t switches)
