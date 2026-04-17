@@ -801,7 +801,7 @@ static uint8_t s_lpt_button_state = 0x00;
 static uint8_t s_lpt_switch_state = 0x00;
 
 /* F-key controlled states */
-static int s_coin_door_closed = 0;  /* F4 toggles; start OPEN for emulator usability */
+static int s_coin_door_closed = 1;  /* F4 toggles; default CLOSED (0xFF = all open in col 0) */
 static int s_slam_tilt        = 0;  /* F6 toggles */
 
 void lpt_set_host_input(uint8_t buttons, uint8_t switches)
@@ -858,11 +858,7 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
     case 0x01: result = ~s_lpt_button_state; break; /* flipper buttons (active-LOW) */
     case 0x02: result = 0xFF; break; /* all switches open */
     case 0x03: result = ~s_lpt_switch_state; break; /* coin/start/nav (active-LOW) */
-    case 0x04: {
-        int idx = calc_bitwise_sum(s_rendering_data_val);
-        if (idx > 0 && idx < 8) result = s_rendering_status[idx];
-        break;
-    }
+    case 0x04: result = 0xFF; break; /* switch column 4: all open */
     case 0x0F:
     case 0x10: case 0x11:
     case 0x12: case 0x13:
@@ -938,6 +934,11 @@ static uint32_t lpt_read(uint16_t port)
         if ((s_rendering_flags & 0x01) && (s_rendering_flags & 0x08)) {
             /* Gate open: return switch matrix data */
             val = retrieve_rendering_status(s_data_for_rendering);
+            static int s_gate_rd = 0;
+            s_gate_rd++;
+            if (s_gate_rd <= 200 || (s_gate_rd % 5000 == 0))
+                LOG("lpt", "GATE-RD pos=%d val=0x%02x (cnt=%d)\n",
+                    s_data_for_rendering, val, s_gate_rd);
         } else {
             /* Gate closed: D-type latch echo — critical for probe pass */
             val = g_emu.lpt_data;
