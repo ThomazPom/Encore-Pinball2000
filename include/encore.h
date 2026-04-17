@@ -30,6 +30,8 @@
 #define RAM_RD32(addr)       (*(uint32_t *)(g_emu.ram + (uint32_t)(addr)))
 #define RAM_WR32(addr, val)  do { *(uint32_t *)(g_emu.ram + (uint32_t)(addr)) = (uint32_t)(val); } while(0)
 #define RAM_RD8(addr)        (*(uint8_t  *)(g_emu.ram + (uint32_t)(addr)))
+#define RAM_WR16(addr, val)  do { *(uint16_t *)(g_emu.ram + (uint32_t)(addr)) = (uint16_t)(val); } while(0)
+#define RAM_RD16(addr)       (*(uint16_t *)(g_emu.ram + (uint32_t)(addr)))
 
 #define RAM_SIZE          0x01000000u   /* 16 MB guest RAM */
 #define BIOS_SIZE         0x00010000u   /* 64 KB BIOS */
@@ -381,6 +383,7 @@ void     pci_write(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg, uint32_t v
 /* io.c */
 uint32_t io_port_read(uint16_t port, int size);
 void     io_port_write(uint16_t port, uint32_t val, int size);
+void     dcs_io_get_counters(uint32_t *ww, uint32_t *wr, uint32_t *bw, uint32_t *br, uint32_t *fr);
 void     io_init(void);
 void     nic_dseg_init(void);  /* populate NIC LAN ROM in D-segment guest RAM */
 void     lpt_activate(void);   /* activate LPT emulated port for PinIO (BT-93) */

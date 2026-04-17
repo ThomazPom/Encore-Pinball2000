@@ -14,6 +14,9 @@ static void hook_insn_out(uc_engine *uc, uint32_t port, int size, uint32_t value
 static bool hook_mem_invalid(uc_engine *uc, uc_mem_type type, uint64_t addr,
                              int size, int64_t value, void *user_data);
 static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *user_data);
+static void hook_dcs_mode_write(uc_engine *uc, uc_mem_type type,
+                                uint64_t addr, int size,
+                                int64_t value, void *user_data);
 
 /* SIGALRM handler — sets timer_pending for HLT wakeup only.
  * Does NOT call uc_emu_stop (avoids stop_request contamination).
@@ -99,6 +102,11 @@ int cpu_init(void)
     uc_hook h_vsync_trace;
     uc_hook_add(uc, &h_vsync_trace, UC_HOOK_CODE, (void*)hook_code_trace,
                 NULL, (uint64_t)0x19BF60, (uint64_t)0x19BF70);
+
+    /* Watchpoint: catch writes to dcs_mode at [0x3444b0] */
+    uc_hook h_dcs_wp;
+    uc_hook_add(uc, &h_dcs_wp, UC_HOOK_MEM_WRITE, (void*)hook_dcs_mode_write,
+                NULL, (uint64_t)0x3444b0, (uint64_t)0x3444b3);
 
     LOG("cpu", "Unicorn Engine initialized (i386 mode)\n");
     return 0;
@@ -378,6 +386,45 @@ static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *u
     fflush(stdout);
 }
 
+/* Watchpoint: catch writes to dcs_mode at [0x3444b0] */
+static void hook_dcs_mode_write(uc_engine *uc, uc_mem_type type,
+                                uint64_t addr, int size,
+                                int64_t value, void *user_data)
+{
+    (void)type; (void)user_data;
+    uint32_t eip = 0, esp = 0;
+    uc_reg_read(uc, UC_X86_REG_EIP, &eip);
+    uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+    uint32_t retaddr = 0;
+    if (esp >= 4 && esp < 0x01000000)
+        retaddr = *(uint32_t *)(g_emu.ram + esp);
+    LOG("watch", "dcs_mode WRITE addr=0x%llx size=%d val=%lld "
+        "EIP=0x%08x ret=0x%08x\n",
+        (unsigned long long)addr, size, (long long)value, eip, retaddr);
+
+    /* Dump code around the write instruction */
+    if (size == 4 && eip > 0x100000) {
+        uint32_t start = (eip > 0x80) ? eip - 0x80 : 0;
+        uint8_t *code = g_emu.ram + start;
+        LOG("watch", "--- code dump %08x-%08x ---\n", start, start + 0x100);
+        for (int i = 0; i < 0x100; i += 16) {
+            LOG("watch", "%08x: %02x %02x %02x %02x %02x %02x %02x %02x "
+                "%02x %02x %02x %02x %02x %02x %02x %02x\n",
+                start + i,
+                code[i+0], code[i+1], code[i+2], code[i+3],
+                code[i+4], code[i+5], code[i+6], code[i+7],
+                code[i+8], code[i+9], code[i+10], code[i+11],
+                code[i+12], code[i+13], code[i+14], code[i+15]);
+        }
+        /* Also dump stack for call trace */
+        LOG("watch", "--- stack @ESP=0x%08x ---\n", esp);
+        for (int i = 0; i < 8; i++) {
+            uint32_t sv = *(uint32_t *)(g_emu.ram + esp + i*4);
+            LOG("watch", "  [ESP+%02x] = 0x%08x\n", i*4, sv);
+        }
+    }
+}
+
 /* Main execution loop */
 void cpu_run(void)
 {
@@ -643,6 +690,7 @@ void cpu_run(void)
             /* --- 5. Init gate flags — diagnostic read only.
              *    The i386 POC writes to 0x2797C4/0x2AF824/0x27979C/0x279768
              *    but those are V1.12 BSS addresses that overlap V1.19 code.
+             *    For V1.19 the i386 POC uses "natural flow" — NO patches.
              *    Read-only: check if XINU naturally set them. */
             {
                 uint32_t f_dcs2, f_sysinit, f_gate, f_bar0;
@@ -652,6 +700,23 @@ void cpu_run(void)
                 uc_mem_read(uc, 0x279768u, &f_bar0, 4);
                 LOG("init", "Init flags (read): [2797C4]=0x%X [2AF824]=0x%X [27979C]=0x%X [279768]=0x%X\n",
                     f_dcs2, f_sysinit, f_gate, f_bar0);
+            }
+
+            /* --- 6. DCS mode detection override: force BAR4 path.
+             *    Guest code at 0x1931e6: CMP EAX,1; JNE io_path
+             *    Replace with MOV EAX,1 to force BAR4 (memory-mapped) mode.
+             *    In I/O mode, the command queue stays empty after reset —
+             *    no process ever enqueues DCS commands (0x3A, 0xAA, etc).
+             *    Matching i386 POC which uses BAR4 exclusively. */
+            {
+                uint8_t old[5];
+                uc_mem_read(uc, 0x1931E6u, old, 5);
+                if (old[0] == 0x83 && old[1] == 0xF8 && old[2] == 0x01 &&
+                    old[3] == 0x75 && old[4] == 0x21) {
+                    uint8_t patch[] = { 0xB8, 0x01, 0x00, 0x00, 0x00 };
+                    uc_mem_write(uc, 0x1931E6u, patch, 5);
+                    LOG("init", "DCS mode patch: @1931E6 CMP+JNE → MOV EAX,1 (force BAR4)\n");
+                }
             }
 
             LOG("init", "=== Post-XINU V1.19 patches complete ===\n");
@@ -748,6 +813,38 @@ void cpu_run(void)
         } else if (g_emu.game_started) {
             RAM_WR32(0, 0);
         }
+
+        /* DCS command queue injection — DISABLED: game now uses BAR4 mode
+         * (UART detection returns 0xFF → BAR4 path, matching i386 POC) */
+#if 0
+        {
+            static int s_dcs_injected = 0;
+            if (!s_dcs_injected && g_emu.game_started) {
+                uint32_t rdy = RAM_RD32(0x3442f4);
+                uint32_t cpl = RAM_RD32(0x3442f0);
+                uint32_t dcs_mode = RAM_RD32(0x3444b0);
+                if (rdy == 1 && cpl == 0 && dcs_mode == 0) {
+                    uint32_t wr_idx = RAM_RD32(0x344408);
+                    uint32_t rd_idx = RAM_RD32(0x34440c);
+                    if (wr_idx == rd_idx) {
+                        /* Queue is empty — inject init commands */
+                        uint16_t cmds[] = { 0x003A, 0x00AA };
+                        int ncmds = sizeof(cmds) / sizeof(cmds[0]);
+                        for (int i = 0; i < ncmds; i++) {
+                            uint32_t slot = (wr_idx + i) & 0x7F;
+                            uint16_t cmd = cmds[i];
+                            uint32_t addr = 0x344308 + slot * 2;
+                            RAM_WR16(addr, cmd);
+                        }
+                        RAM_WR32(0x344408, wr_idx + ncmds);
+                        s_dcs_injected = 1;
+                        LOG("dcs", "CMD INJECT: %d commands → queue (wr=%u→%u rd=%u)\n",
+                            ncmds, wr_idx, wr_idx + ncmds, rd_idx);
+                    }
+                }
+            }
+        }
+#endif
 
         /* Read EIP after execution stopped */
         uc_reg_read(uc, UC_X86_REG_EIP, &eip);
@@ -959,7 +1056,60 @@ handle_display:
                 {
                     uint32_t dmm = RAM_RD32(0x2E8E2C);
                     uint32_t gxp = RAM_RD32(0x2E8B74);
-                    LOG("hb", "  DM: mode=%u gxp=0x%x dt2=%u\n", dmm, gxp, g_emu.dc_timing2);
+                    uint32_t dcs_mode = RAM_RD32(0x3444b0);
+                    uint32_t dcs_state = RAM_RD32(0x3442e8);
+                    uint32_t dcs_count = RAM_RD32(0x3442f8);
+                    uint32_t ww,wr,bw,br,fr;
+                    dcs_io_get_counters(&ww,&wr,&bw,&br,&fr);
+                    LOG("hb", "  DM: mode=%u gxp=0x%x dt2=%u dcs_mode=%u dcs_st=%u dcs_cnt=%u io:ww=%u wr=%u bw=%u br=%u fr=%u\n",
+                        dmm, gxp, g_emu.dc_timing2, dcs_mode, dcs_state, dcs_count,
+                        ww, wr, bw, br, fr);
+                    /* V1.19 DCS state machine flags (from disassembly) */
+                    uint32_t dcs_ready_flag = RAM_RD32(0x3442f4);
+                    uint32_t dcs_complete   = RAM_RD32(0x3442f0);
+                    uint32_t dcs_last_val   = RAM_RD32(0x344414);
+                    uint32_t dcs_init_flag  = RAM_RD32(0x344410);
+                    LOG("hb", "  DCS-v19: rdy=%u cpl=%u lastval=0x%x initf=0x%x\n",
+                        dcs_ready_flag, dcs_complete, dcs_last_val, dcs_init_flag);
+                    /* Queue indices monitoring */
+                    {
+                        uint32_t q_wr = RAM_RD32(0x344408);
+                        uint32_t q_rd = RAM_RD32(0x34440c);
+                        uint32_t oq_wr = RAM_RD32(0x344498);
+                        uint32_t oq_rd = RAM_RD32(0x34449c);
+                        LOG("hb", "  Q: inner[wr=%u rd=%u] outer[wr=%u rd=%u]\n",
+                            q_wr, q_rd, oq_wr, oq_rd);
+                    }
+                    /* One-shot dump of guest DCS state — disabled, BAR4 mode working */
+#if 0
+                    static int s_dcs_code_dumped = 0;
+                    if (!s_dcs_code_dumped && wr >= 2) {
+                        s_dcs_code_dumped = 1;
+                        /* Extended DCS dispatch code (pre-statemachine + statemachine) */
+                        LOG("hb", "  === Guest DCS code (0x192d40-0x192fd0) ===\n");
+                        for (uint32_t a = 0x192d40; a < 0x192fd0; a += 16) {
+                            uint8_t *p = g_emu.ram + a;
+                            LOG("hb", "  %08x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+                                a, p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7],
+                                p[8],p[9],p[10],p[11],p[12],p[13],p[14],p[15]);
+                        }
+                        /* Command queue getter + DCS globals */
+                        LOG("hb", "  === Guest DCS cmd queue fn (0x191870-0x191960) ===\n");
+                        for (uint32_t a = 0x191870; a < 0x191960; a += 16) {
+                            uint8_t *p = g_emu.ram + a;
+                            LOG("hb", "  %08x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+                                a, p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7],
+                                p[8],p[9],p[10],p[11],p[12],p[13],p[14],p[15]);
+                        }
+                        LOG("hb", "  === DCS globals 0x344300-0x3444c0 ===\n");
+                        for (uint32_t a = 0x344300; a < 0x3444C0; a += 16) {
+                            uint8_t *p = g_emu.ram + a;
+                            LOG("hb", "  %08x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+                                a, p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7],
+                                p[8],p[9],p[10],p[11],p[12],p[13],p[14],p[15]);
+                        }
+                    }
+#endif
                 }
                 /* Performance stats */
                 LOG("hb", "  PERF: calls=%lu/5s ok=%lu 0f3c=%lu hlt=%lu ticks=%lu bar2wr=%u\n",
