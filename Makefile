@@ -21,6 +21,7 @@ SRCS    = $(SRCDIR)/main.c   \
           $(SRCDIR)/display.c \
           $(SRCDIR)/sound.c  \
           $(SRCDIR)/netcon.c \
+          $(SRCDIR)/lpt_pass.c \
           $(SRCDIR)/stb_impl.c
 
 OBJS    = $(patsubst $(SRCDIR)/%.c,$(BLDDIR)/%.o,$(SRCS))
