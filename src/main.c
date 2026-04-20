@@ -13,6 +13,12 @@
 
 EncoreState g_emu;
 
+static void on_term_signal(int sig)
+{
+    (void)sig;
+    g_emu.running = false;
+}
+
 static void print_banner(void)
 {
     printf("╔══════════════════════════════════════════════════╗\n");
@@ -42,6 +48,9 @@ static void parse_args(int argc, char **argv)
             g_emu.keyboard_tcp_port = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--headless") == 0) {
             g_emu.headless = true;
+        } else if (strcmp(argv[i], "--lpt-device") == 0 && i + 1 < argc) {
+            strncpy(g_emu.lpt_device, argv[++i], sizeof(g_emu.lpt_device) - 1);
+            g_emu.lpt_device_explicit = true;
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             printf(
 "Usage: encore [OPTIONS]\n"
@@ -125,6 +134,56 @@ static void parse_args(int argc, char **argv)
 "          sleep 8                                  # let it boot\n"
 "          nc -q2 localhost 4444 | grep 'STARTING GAME CODE' && echo OK\n"
 "          kill $ENC_PID\n"
+"\n"
+"════════════════════════════════════════════════════════════════════════\n"
+" Real cabinet — drive an actual Pinball 2000 driver board via host LPT\n"
+"════════════════════════════════════════════════════════════════════════\n"
+"\n"
+"  --lpt-device PATH      Forward all guest LPT (0x378/0x379/0x37A) traffic\n"
+"                         to a real parallel port via Linux ppdev.\n"
+"                         Default: /dev/parport0 (auto-detect; silent\n"
+"                         fallback to emulation if absent).\n"
+"                         PATH = 'none' / 'emu' → force emulation.\n"
+"                         PATH explicitly given → fail hard if open fails\n"
+"                         (so you don't silently end up emulated when you\n"
+"                         expected real hardware).\n"
+"\n"
+"      What you get: bytes the guest writes to 0x378/0x37A go to the real\n"
+"          port; reads pull live data from the cabinet driver board. The\n"
+"          emulated state machine (opcode latch, switch matrix, button\n"
+"          injection) is bypassed — the cabinet owns the protocol. F-key /\n"
+"          SDL switch injection becomes inert (real switches are read from\n"
+"          the actual board).\n"
+"\n"
+"      Prerequisites (one-time setup):\n"
+"          sudo modprobe ppdev parport parport_pc\n"
+"          sudo usermod -a -G lp $USER          # then re-login\n"
+"          sudo rmmod lp                        # if printer driver claims it\n"
+"          # confirm bidirectional support:\n"
+"          ls -l /dev/parport0                  # should exist, owned by lp\n"
+"\n"
+"      Example — drive a connected cabinet:\n"
+"          ./build/encore --game swe1 --lpt-device /dev/parport0\n"
+"\n"
+"      Example — force emulation even if /dev/parport0 exists:\n"
+"          ./build/encore --game swe1 --lpt-device none\n"
+"\n"
+"      Notes / gotchas:\n"
+"          * Hardware port is opened at startup but stays guest-invisible\n"
+"            (returns 0xFF) until the existing UART-driven activation gate\n"
+"            fires (XINU/Allegro detected). This preserves boot-probe\n"
+"            semantics so the guest's BIOS/PinIO sees the same bring-up\n"
+"            sequence as in pure-emulated mode.\n"
+"          * Direction: encore unconditionally flips PPDATADIR to input\n"
+"            around data-port reads and back to output afterwards. This\n"
+"            mirrors what the original P2K driver expects (verified by RE\n"
+"            of P2K-driver: its data-read handler gates on renderingFlags\n"
+"            bits 0+3 only — the protocol never touches control bit 5).\n"
+"          * On exit (clean or SIGINT/SIGTERM), the port is released. Hard\n"
+"            crashes (SIGKILL, segfault) may leave it claimed — re-running\n"
+"            encore re-claims it; otherwise reboot or rmmod/modprobe ppdev.\n"
+"          * Combine with --serial-tcp to drive XINA over TCP while the\n"
+"            cabinet handles physical I/O.\n"
 "\n"
 "════════════════════════════════════════════════════════════════════════\n"
 " Maybe-fun future ideas (not implemented — left as bread crumbs)\n"
@@ -384,6 +443,30 @@ int main(int argc, char **argv)
     /* Network console bridges (no-ops if their --*-tcp ports were not given) */
     netcon_init();
 
+    /* Real LPT passthrough (silent fallback to emulation if default path
+     * doesn't exist; hard error if the user explicitly asked for hardware). */
+    {
+        const char *dev = g_emu.lpt_device[0] ? g_emu.lpt_device : "/dev/parport0";
+        if (lpt_passthrough_open(dev) < 0 && g_emu.lpt_device_explicit) {
+            fprintf(stderr,
+                "encore: --lpt-device %s requested but unavailable. "
+                "Aborting (use --lpt-device none to force emulation).\n", dev);
+            return 1;
+        }
+    }
+
+    /* Signal handlers — set running=false so main loop exits and runs
+     * normal cleanup (releases LPT, closes TCP, saves NVRAM). */
+    {
+        struct sigaction sa = { 0 };
+        sa.sa_handler = on_term_signal;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGINT,  &sa, NULL);
+        sigaction(SIGTERM, &sa, NULL);
+        sigaction(SIGHUP,  &sa, NULL);
+    }
+    atexit(lpt_passthrough_close);
+
     /* Start timer and run */
     setup_timer();
     g_emu.running = true;
@@ -395,6 +478,7 @@ int main(int argc, char **argv)
 
     cleanup_and_save();
     netcon_cleanup();
+    lpt_passthrough_close();
 
     LOG("exit", "Encore finished (exec_count=%lu frames=%d)\n",
         (unsigned long)g_emu.exec_count, g_emu.frame_count);
