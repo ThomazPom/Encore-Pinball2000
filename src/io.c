@@ -888,14 +888,14 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
     }
     case 0x04: {
         /* Physical[0..7] matrix scan. The i386 POC always returns
-         * s_rendering_status[1] regardless of selected col, so all
-         * cols get the same byte. To inject the Start Button (sw=2,
-         * col 0, bit 2) without lighting up unrelated playfield bits
-         * in cols 1..7, gate on the col-select latch from opcode 0x05:
-         * data byte from opcode 0x05 is a 1-of-N bit-mask (col 0 = 0x01).
-         */
+         * s_rendering_status[1] regardless of selected col, so all 8
+         * cols end up with the same byte. To inject Start Button
+         * (sw=2, col 0, bit 2) we OR bit 2 unconditionally — which
+         * also lights bit 2 in cols 1..7 (Right Bank Lower / Trough 2
+         * / Shield Tgt / Upper Jet / unused), but those are harmless
+         * in attract mode where the user is pressing Start. */
         uint8_t v = s_rendering_status[1];
-        if (s_start_button_held && (s_rendering_data_val == 0x01)) v |= 0x04;
+        if (s_start_button_held) v |= 0x04;
         result = v;
         break;
     }
@@ -957,7 +957,28 @@ void lpt_set_host_input(uint8_t buttons, uint8_t switches)
 
 void lpt_set_start_button(int held)
 {
+    uint8_t prev = s_start_button_held;
     s_start_button_held = held ? 1 : 0;
+
+    /* Belt-and-suspenders: also poke guest RAM directly so that even
+     * if the matrix-scan opcode 0x04 path doesn't reach Physical[0],
+     * the bit lands. We OR/AND just bit 2 of c0 in both Physical and
+     * Logical regions. The game's debounce will validate continuous
+     * presence and fire the Start callback. */
+    if (g_emu.uc) {
+        uint32_t v;
+        uc_mem_read(g_emu.uc, 0x003450ccu, &v, 4);
+        if (s_start_button_held) v |= 0x04u; else v &= ~0x04u;
+        uc_mem_write(g_emu.uc, 0x003450ccu, &v, 4);
+
+        uc_mem_read(g_emu.uc, 0x003451bcu, &v, 4);
+        if (s_start_button_held) v |= 0x04u; else v &= ~0x04u;
+        uc_mem_write(g_emu.uc, 0x003451bcu, &v, 4);
+    }
+
+    if (prev != s_start_button_held)
+        fprintf(stderr, "[lpt] START button %s\n",
+                s_start_button_held ? "PRESSED" : "released");
 }
 
 void lpt_toggle_coin_door(void)

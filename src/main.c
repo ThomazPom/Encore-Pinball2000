@@ -56,7 +56,7 @@ static void parse_args(int argc, char **argv)
                    "  F8            RIGHT flipper         (Phys[10].b4)\n"
                    "  F9            RIGHT action button   (Phys[10].b6)\n"
                    "  F10 / C       Insert credit (queueable; mash for multi)\n"
-                   "  F11           Toggle FULLSCREEN\n"
+                   "  F11 / ALT+ENTER  Toggle FULLSCREEN\n"
                    "  F12           Dump guest switch state to stderr\n"
                    "  SPACE         START button (sw=2 / Phys[0].b2)\n"
                    "\n"
