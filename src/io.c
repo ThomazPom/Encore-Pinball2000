@@ -987,28 +987,16 @@ void lpt_set_start_button(int held)
          *   call get_state (returns *(state_obj + 0x5c0))
          *   cmp eax, 1; jne <generic handler>; call start_game
          * state_obj is *((dword*)0x002ebfa0) (= "Episode I" struct,
-         * normally 0x002ddad4). We snapshot the original value on
-         * press, force it to 1, and restore on release so we don't
-         * permanently corrupt game state. */
-        static uint32_t s_can_start_saved = 0;
-        static int      s_can_start_was_forced = 0;
+         * normally 0x002ddad4). Sticky-force: write 1 every frame
+         * unconditionally so the game's switch-poll thread always
+         * sees it=1 when the callback runs. (We never restore — this
+         * is a debug shim; if it works we'll find the legit path.) */
         uint32_t state_obj = 0;
         uc_mem_read(g_emu.uc, 0x002ebfa0u, &state_obj, 4);
         if (state_obj) {
             uint32_t addr = state_obj + 0x5c0u;
-            if (s_start_button_held && !s_can_start_was_forced) {
-                uc_mem_read (g_emu.uc, addr, &s_can_start_saved, 4);
-                uint32_t one = 1;
-                uc_mem_write(g_emu.uc, addr, &one, 4);
-                s_can_start_was_forced = 1;
-                fprintf(stderr, "[lpt] force [obj+0x5c0] %u → 1 (gate Start)\n",
-                        s_can_start_saved);
-            } else if (!s_start_button_held && s_can_start_was_forced) {
-                uc_mem_write(g_emu.uc, addr, &s_can_start_saved, 4);
-                s_can_start_was_forced = 0;
-                fprintf(stderr, "[lpt] restore [obj+0x5c0] = %u\n",
-                        s_can_start_saved);
-            }
+            uint32_t one = 1;
+            uc_mem_write(g_emu.uc, addr, &one, 4);
         }
     }
 
