@@ -453,30 +453,14 @@ static void apply_sgc_patches(void)
         free(mb);
     }
 
-    /* Minimal display bootstrap from the working i386 PoC.
-     * These BSS fields stay zero in Encore because we do not emulate the full
-     * PRISM/display bring-up sequence yet; leaving them zero sends the guest
-     * down bad callback paths after ez0 init. */
-    {
-        uint32_t zero = 0u;
-        uint32_t one = 1u;
-        uint32_t fb_base = 0x800000u;
-        uint8_t active = 1u;
-
-        uc_mem_write(g_emu.uc, 0x002C902Cu, &one, sizeof(one));
-        uc_mem_write(g_emu.uc, 0x002C9038u, &one, sizeof(one));
-        uc_mem_write(g_emu.uc, 0x002D7274u, &one, sizeof(one));
-
-        uc_mem_write(g_emu.uc, 0x00294494u, &zero, sizeof(zero));
-        uc_mem_write(g_emu.uc, 0x002D31F8u, &active, sizeof(active));
-        uc_mem_write(g_emu.uc, 0x002D3204u, &zero, sizeof(zero));
-
-        uc_mem_write(g_emu.uc, 0x002935C8u, &fb_base, sizeof(fb_base));
-        uc_mem_write(g_emu.uc, 0x00293638u, &one, sizeof(one));
-        uc_mem_write(g_emu.uc, 0x002935B4u, &zero, sizeof(zero));
-
-        LOG("sgc", "display bootstrap: render guards/gate + text/display state primed\n");
-    }
+    /* DROPPED 2026-04-21: "Minimal display bootstrap" block (9 hardcoded
+     * SWE1-V1.12 BSS writes) was already gated to game_id==50069 only.
+     * Removed entirely because (a) SWE1 currently runs as V1.5, not V1.12,
+     * so those addresses are also wrong, and (b) SWE1 still boots cleanly
+     * to the idle loop (EIP=0x22f433) without it — the scheduler is
+     * primed via apply_xinu_boot_patches() and the V1.19 maintenance
+     * block in cpu.c.  Less patches → version-agnostic.
+     */
 
     /* === prnull idle code at 0xFF0000 (can be written early, it's just code) === */
     {
@@ -508,88 +492,19 @@ static void apply_sgc_patches(void)
         }
     }
 
-    /* === Fatal() → HLT (BT-122) ===
-     * V1.12: Fatal at 0x1CF7F4. V1.19: Fatal at 0x22722C (patched in cpu.c).
-     * Only apply V1.12 patch for RFM (game_id=50070). */
-    if (g_emu.game_id == 50070) {
-        uint8_t fatal_patch[] = {
-            0xFF, 0x05, 0xF0, 0xFF, 0x2B, 0x00,  /* INC [0x2BFFF0] — counter */
-            0x89, 0x35, 0xF4, 0xFF, 0x2B, 0x00,  /* MOV [0x2BFFF4], ESI — caller */
-            0xF4,                                   /* HLT (stops guest) */
-            0xEB, 0xFE                              /* JMP $ (safety spin) */
-        };
-        uc_mem_write(g_emu.uc, 0x001CF7F4u, fatal_patch, sizeof(fatal_patch));
-        LOG("sgc", "Fatal() 0x1CF7F4 → marker+HLT (BT-122, V1.12/RFM)\n");
-    } else {
-        LOG("sgc", "Fatal() 0x1CF7F4 skipped (V1.19 uses 0x22722C, patched in cpu.c)\n");
-    }
-
-    /* === Panic loop → HLT (0x1D96AE: EB FE) — V1.12 only === */
-    if (g_emu.game_id == 50070) {
-        uint8_t code[2];
-        uc_mem_read(g_emu.uc, 0x001D96AEu, code, 2);
-        if (code[0] == 0xEB && code[1] == 0xFE) {
-            uint8_t hlt2[2] = { 0xF4, 0xF4 };
-            uc_mem_write(g_emu.uc, 0x001D96AEu, hlt2, 2);
-            LOG("sgc", "panic loop 0x1D96AE → HLT HLT (V1.12/RFM)\n");
-        }
-    }
-
-    /* === Function stubs: V1.12-specific addresses — skip for V1.19 ===
-     * These addresses (0x18BF70, 0x18C148, 0x17BA9C, 0x2C6D00, 0x2712A8)
-     * are V1.12 functions. In V1.19 they're different code — patching them
-     * corrupts the game (EIP falls through garbage → crash to 0x000000). */
-    if (g_emu.game_id == 50070) {
-        uint8_t ret = 0xC3;
-        uint32_t zero = 0u;
-        uc_mem_write(g_emu.uc, 0x0018BF70u, &ret, 1);
-        uc_mem_write(g_emu.uc, 0x0018C148u, &ret, 1);
-        uc_mem_write(g_emu.uc, 0x0017BA9Cu, &ret, 1);
-        uc_mem_write(g_emu.uc, 0x002712A8u, &zero, 4);
-        uint32_t ret_zone = 0x20000000u;
-        uc_mem_write(g_emu.uc, 0x002C6D00u, &ret_zone, 4);
-        LOG("sgc", "stubs: 0x18BF70, 0x18C148, 0x17BA9C → RET, [0x2C6D00]→0x20000000 (V1.12/RFM)\n");
-    } else {
-        LOG("sgc", "V1.12 stubs skipped for V1.19 (different addresses)\n");
-    }
-
-    /* === SuperIOType = PC97338 (POC: [0x2C6DFC]=1) ===
-     * V1.12 BSS address. In V1.19, this address is in a different section.
-     * Only apply for V1.12; V1.19 game detects chip via I/O probing. */
-    if (!g_emu.is_v19_update) {
-        uint32_t one = 1u;
-        uc_mem_write(g_emu.uc, 0x002C6DFCu, &one, sizeof(one));
-        LOG("sgc", "[0x2C6DFC]=1 (SuperIOType=PC97338, V1.12)\n");
-    }
-
-    /* === EARLY getstk() free list injection (POC BT-64) ===
-     * 0x2D577C is the V1.12 free-list head address. In V1.19, the free list
-     * is at a different BSS address. XINU's sysinit() correctly initializes
-     * the free list at the right address for both versions.
-     * Only inject for V1.12 to avoid corrupting V1.19 data. */
-    if (!g_emu.is_v19_update) {
-        uint32_t head = 0;
-        uc_mem_read(g_emu.uc, 0x002D577Cu, &head, sizeof(head));
-        if (head == 0u) {
-            uint32_t blk = 0x300000u;
-            uint32_t sz  = 0xC00000u;  /* 12MB */
-            uint32_t zero = 0u;
-            uc_mem_write(g_emu.uc, blk + 0u, &zero, sizeof(zero));
-            uc_mem_write(g_emu.uc, blk + 4u, &sz, sizeof(sz));
-            uc_mem_write(g_emu.uc, 0x002D577Cu, &blk, sizeof(blk));
-            LOG("sgc", "getstk free list: [0x2D577C]=0x%08x size=0x%x (V1.12)\n", blk, sz);
-        } else {
-            LOG("sgc", "getstk free list: head already set (0x%08x)\n", head);
-        }
-    }
-
-    /* === PLX BAR0 pointer for init gate (POC: [0x279768]=WMS_BAR0) ===
-     * V1.12 address. In V1.19, the init gate uses a different variable. */
-    if (!g_emu.is_v19_update) {
-        uint32_t bar0 = WMS_BAR0;
-        uc_mem_write(g_emu.uc, 0x00279768u, &bar0, sizeof(bar0));
-        LOG("sgc", "[0x279768]=0x%08x (PLX BAR0 ptr, V1.12)\n", bar0);
-    }
+    /* DROPPED 2026-04-21 (RFM minimization pass):
+     *   - Fatal() 0x1CF7F4 → HLT marker (BT-122)
+     *   - Panic loop 0x1D96AE → HLT HLT
+     *   - 5 function stubs at 0x18BF70/0x18C148/0x17BA9C/0x2712A8/0x2C6D00
+     *   - SuperIOType=1 at 0x2C6DFC
+     *   - getstk free-list seed at 0x2D577C
+     *   - PLX BAR0 ptr at 0x279768
+     * All targeted V1.12 addresses; the latter four were gated on
+     * !is_v19_update which is ALWAYS true for our update-flash loads
+     * (both swe1_14 and rfm_15 set is_v19_update=true in rom.c) →
+     * dead code. The Fatal/panic/stubs were verified irrelevant to
+     * current RFM state via A/B test (identical exec_count + EIP
+     * with/without). Game-agnostic minimization. */
 
     /* === IVT null-pointer guard (POC: bar2_patch_ivt) ===
      * In protected mode, the real-mode IVT at address 0 is unused for interrupts
@@ -1329,6 +1244,13 @@ static void uart_write(uint16_t port, uint8_t val)
                     lpt_activate();
                     LOG("sgc", "XINU boot detected (exec=%lu) — LPT activated (BT-94)\n",
                         (unsigned long)g_emu.exec_count);
+                    /* RFM (V1.12 layout) needs the prnull/scheduler proctab
+                     * patches at 0x2B3E94/0x2B3EB8/0x2BD544/0x2BD5EC/0x2BD540
+                     * confirmed correct by poc-P2K-runtime-i386/src/patches.c.
+                     * SWE1 V1.19 has different addresses (handled in cpu.c). */
+                    if (g_emu.game_id == 50070u) {
+                        apply_xinu_boot_patches();
+                    }
                 }
             }
 

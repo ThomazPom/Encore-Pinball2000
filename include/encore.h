@@ -450,6 +450,25 @@ void netcon_cleanup(void);
  * bytes have just been pushed into the serial-tcp RX ring. */
 void uart_notify_rx(void);
 
+/* symbols.c — XINU symbol-table reader.
+ * sym_init() scans g_emu.flash for the "SYMBOL TABLE" magic shipped with
+ * each update bundle and builds an in-memory index.  sym_lookup() returns
+ * the guest virtual address for a mangled symbol name, or 0 if not found
+ * (table missing, stripped, or symbol not present in this build).
+ *
+ * Patch sites use it as a soft override over hardcoded constants:
+ *
+ *     uint32_t a = sym_lookup("Fatal(char const *,...)");
+ *     if (!a) a = 0x0022722Cu;       // SWE1 v1.19 fallback
+ *
+ * which lets the same patch code work across SWE1/RFM and across update
+ * versions whenever the table exposes the symbol. */
+void     sym_init(void);
+uint32_t sym_lookup(const char *name);
+uint32_t sym_lookup_first(const char *const *names);
+bool     sym_loaded(void);
+uint32_t sym_count(void);
+
 /* =========================================================================
  * Logging
  * ========================================================================= */

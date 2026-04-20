@@ -574,7 +574,9 @@ void cpu_run(void)
                             h6[p++] = 0xC3;                         /* RET */
                             uc_mem_write(uc, 0x500, h6, p);
 
-                            uint32_t idt6 = 0x2F7AD8u + 6u * 8u;
+                            /* Use the runtime-detected IDT base — different
+                             * per game (SWE1=0x2F7AD8, RFM=0x325054, …). */
+                            uint32_t idt6 = g_emu.idt_base + 6u * 8u;
                             uint8_t gate[8] = {
                                 0x00, 0x05, 0x08, 0x00,
                                 0x00, 0x8F, 0x00, 0x00
@@ -595,6 +597,13 @@ void cpu_run(void)
          * Post-XINU initialization: comprehensive V1.19 patches from
          * both i386 and x64 POC analysis.
          *
+         * **SWE1-V1.19-ONLY** — every address in this block (Fatal/NonFatal/
+         * CMOS/LocMgr/watchdog/PIC base_mask/DCS-mode patch) was reverse-
+         * engineered against the SWE1 v1.19 update flash. Applying any of
+         * them to RFM (or any other game) overwrites unrelated code/data
+         * and wedges the boot. RFM's V1.12 patches are handled separately
+         * in io.c, gated on game_id==50070.
+         *
          * Critical patches (from x64 POC sgc-seed + i386 BT-85/BT-91):
          * - Fatal/NonFatal/CMOS → safe returns
          * - Q-table pre-init (BT-85: garbage causes insert() self-loop!)
@@ -604,7 +613,8 @@ void cpu_run(void)
          * - Init gate flags + DCS2 + XINACMOS + BAR2 regs
          * ================================================================ */
         if (g_emu.xinu_booted && g_emu.ctor_phase == 0 &&
-            g_emu.game_started && g_emu.xinu_ready) {
+            g_emu.game_started && g_emu.xinu_ready &&
+            g_emu.game_id == 50069u /* SWE1 only — see comment above */) {
             g_emu.ctor_phase = 3;  /* one-shot */
 
             /* --- 1. Function patches (x64 POC BT-86/BT-100) --- */
@@ -722,14 +732,16 @@ void cpu_run(void)
             LOG("init", "=== Post-XINU V1.19 patches complete ===\n");
         }
 
-        /* pid2 (terminal) crash guard — x64 POC BT-98:
+        /* pid2 (terminal) crash guard — x64 POC BT-98:  **SWE1-V1.19 only**
          * fn@0x1EF7D0 is called every timer tick from clkint at 0x1D0B73.
          * When pid2 doesn't exist yet, proctab[2]+0x18 ([0x2FCAAC]) has
          * garbage=1 → crash at 0x1D83E5, aborting the ENTIRE clkint handler
          * including VSYNC callback and sleep queue processing.
          * Fix: force [0x2FCAAC]=0 until pid2 is PRREADY (pstate=3).
-         * Runs every 64 iterations to reduce overhead. */
-        if (g_emu.xinu_ready && (g_emu.exec_count & 0x3F) == 0) {
+         * Runs every 64 iterations to reduce overhead.
+         * RFM has a different proctab layout — guard would corrupt RAM. */
+        if (g_emu.xinu_ready && g_emu.game_id == 50069u &&
+            (g_emu.exec_count & 0x3F) == 0) {
             uint8_t pt2_state = RAM_RD8(0x2FCA94u); /* proctab[2].pstate */
             if (pt2_state != 3 && pt2_state != 2 && pt2_state != 7) {
                 uint32_t flag = RAM_RD32(0x2FCAACu);
@@ -743,12 +755,14 @@ void cpu_run(void)
             }
         }
 
-        /* BT-118 IStack magic repair — x64 POC:
+        /* BT-118 IStack magic repair — x64 POC:  **SWE1-V1.19 only**
          * clkint checks currpid's IStack magic (0xAAA9) every tick.
          * If corrupted → Fatal → callback chain aborted → VSYNC never fires.
          * Repair magic between timer ticks so ISR always sees valid value.
-         * Runs every 64 iterations to reduce overhead. */
-        if (g_emu.xinu_ready && (g_emu.exec_count & 0x3F) == 0) {
+         * Runs every 64 iterations to reduce overhead.
+         * RFM uses different currpid/proctab addresses — would corrupt RAM. */
+        if (g_emu.xinu_ready && g_emu.game_id == 50069u &&
+            (g_emu.exec_count & 0x3F) == 0) {
             uint32_t cpid = RAM_RD32(0x2FC8BCu);    /* currpid */
             uint32_t nproc_chk = RAM_RD32(0x303E94u);
             if (cpid > 0 && cpid < 130 && nproc_chk >= 24) {
@@ -805,11 +819,16 @@ void cpu_run(void)
         if ((g_emu.exec_count & 0x3F) == 0 && g_emu.game_started) {
             if (g_emu.watchdog_flag_addr)
                 RAM_WR32(g_emu.watchdog_flag_addr, 0x0000FFFFu);
-            RAM_WR32(0x002E98C8u, 0);
             RAM_WR32(0, 0);
-            uint32_t dm_mode = RAM_RD32(0x002e8e2Cu);
-            if (dm_mode == 1u && RAM_RD32(0x002e8e30u) < 2500u)
-                RAM_WR32(0x002e8e30u, 5000u);
+            /* SWE1-V1.19 only: 0x002E98C8 / 0x002E8E2C / 0x002E8E30 are SWE1
+             * BSS slots; on RFM these addresses point at unrelated game code
+             * or data and writing into them wedges the boot. */
+            if (g_emu.game_id == 50069u) {
+                RAM_WR32(0x002E98C8u, 0);
+                uint32_t dm_mode = RAM_RD32(0x002e8e2Cu);
+                if (dm_mode == 1u && RAM_RD32(0x002e8e30u) < 2500u)
+                    RAM_WR32(0x002e8e30u, 5000u);
+            }
         } else if (g_emu.game_started) {
             RAM_WR32(0, 0);
         }
