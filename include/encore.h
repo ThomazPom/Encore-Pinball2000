@@ -266,6 +266,7 @@ typedef struct {
     bool     lpt_active;              /* LPT emulated port activated */
     char     lpt_device[256];         /* passthrough device path; "" = default, "none" = force emulation */
     bool     lpt_device_explicit;     /* user gave --lpt-device → fail hard if open fails */
+    char     update_file[512];        /* explicit update.bin path; empty → default search */
 
     /* SuperIO / CC5530 */
     uint8_t  superio_idx;              /* W83977EF index register (0x2E) */

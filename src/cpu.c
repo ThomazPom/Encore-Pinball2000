@@ -1036,6 +1036,34 @@ handle_display:
                 LOG("hb", "exec=%lu EIP=0x%08x post=0x%02x vsync=%u frames=%d irq_ok=%u\n",
                     (unsigned long)g_emu.exec_count, eip, g_emu.post_code,
                     g_emu.vsync_count, g_emu.frame_count, g_emu.irq_ok_count);
+                {
+                    static uint32_t s_last_eip = 0;
+                    static int s_stuck_n = 0;
+                    if (eip == s_last_eip) s_stuck_n++; else s_stuck_n = 0;
+                    s_last_eip = eip;
+                    if (s_stuck_n >= 1 && s_stuck_n <= 3) {
+                        uint8_t buf[64];
+                        uint32_t base = (eip >= 16) ? eip - 16 : 0;
+                        if (uc_mem_read(g_emu.uc, base, buf, sizeof(buf)) == UC_ERR_OK) {
+                            char hex[64*3+8]; int p = 0;
+                            for (int i = 0; i < 64; i++)
+                                p += snprintf(hex+p, sizeof(hex)-p, "%02x ", buf[i]);
+                            LOG("hb", "  STUCK bytes @0x%08x: %s\n", base, hex);
+                            uint32_t esp = 0, regs[8];
+                            uc_reg_read(g_emu.uc, UC_X86_REG_ESP, &esp);
+                            static const int rids[8] = {UC_X86_REG_EAX,UC_X86_REG_ECX,UC_X86_REG_EDX,UC_X86_REG_EBX,UC_X86_REG_ESP,UC_X86_REG_EBP,UC_X86_REG_ESI,UC_X86_REG_EDI};
+                            for (int i = 0; i < 8; i++) uc_reg_read(g_emu.uc, rids[i], &regs[i]);
+                            LOG("hb", "  STUCK regs: eax=%08x ecx=%08x edx=%08x ebx=%08x esp=%08x ebp=%08x esi=%08x edi=%08x\n",
+                                regs[0],regs[1],regs[2],regs[3],regs[4],regs[5],regs[6],regs[7]);
+                            uint8_t stk[32];
+                            if (uc_mem_read(g_emu.uc, esp, stk, 32) == UC_ERR_OK) {
+                                p = 0;
+                                for (int i = 0; i < 32; i++) p += snprintf(hex+p, sizeof(hex)-p, "%02x ", stk[i]);
+                                LOG("hb", "  STUCK stack @esp: %s\n", hex);
+                            }
+                        }
+                    }
+                }
                 LOG("hb", "  preempt=%u nproc=%u guards=%u/%u/%u tinit=%u tcyc=%u\n",
                     preempt, nproc, guard1, guard2, gate, tinit, tick_cycle);
                 /* PIC state for diagnostics */
