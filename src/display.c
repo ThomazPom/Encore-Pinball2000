@@ -139,6 +139,7 @@ int display_init(void)
         "  F11 / ALT+ENTER  Toggle FULLSCREEN\n"
         "  F12           Dump guest switch state to stderr\n"
         "  SPACE         START button (sw=2 / Phys[0].b2)\n"
+        "  0..7          DEBUG: force Phys[c0].bN — find which bit is real Start\n"
         "  --- coin-door panel (4 buttons; dual-function by mode) ---\n"
         "  ESC / LEFT    btn1: Service Credits / Escape    (Phys[9].b0)\n"
         "  DOWN  - KP_-  btn2: Volume −        / Menu Down (Phys[9].b1)\n"
@@ -340,6 +341,21 @@ void display_handle_events(void)
 
     /* SPACE → Start Button (sw=2, Phys[0].b2). Held-state polling. */
     lpt_set_start_button(keys[SDL_SCANCODE_SPACE]);
+
+    /* DEBUG probe: digit keys 0..7 each set one bit of Physical[c0] +
+     * Logical[c0]. Use this to discover which sw_num actually triggers
+     * "Start Game". When a digit key works, that bit is the real Start. */
+    int probe_bit = -1;
+    if      (keys[SDL_SCANCODE_0]) probe_bit = 0;
+    else if (keys[SDL_SCANCODE_1]) probe_bit = 1;
+    else if (keys[SDL_SCANCODE_2]) probe_bit = 2;
+    else if (keys[SDL_SCANCODE_3]) probe_bit = 3;
+    else if (keys[SDL_SCANCODE_4]) probe_bit = 4;
+    else if (keys[SDL_SCANCODE_5]) probe_bit = 5;
+    else if (keys[SDL_SCANCODE_6]) probe_bit = 6;
+    else if (keys[SDL_SCANCODE_7]) probe_bit = 7;
+    if (probe_bit >= 0) lpt_set_probe_bit(probe_bit, 1);
+    else                lpt_set_probe_bit(0, 0);
 
     lpt_set_host_input(buttons, switches);
 }
