@@ -391,6 +391,7 @@ void     lpt_set_host_input(uint8_t buttons, uint8_t switches);
 void     lpt_toggle_coin_door(void);
 void     lpt_toggle_slam_tilt(void);
 void     lpt_toggle_trace(void);
+void     lpt_dump_guest_switch_state(void);
 void     lpt_inject_switch(int col, uint8_t data);
 
 /* bar.c */

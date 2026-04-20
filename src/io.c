@@ -946,6 +946,54 @@ void lpt_toggle_trace(void)
     LOG("lpt", "trace %s\n", s_lpt_trace_enabled ? "ON" : "OFF");
 }
 
+/* F12: dump the guest's switch state arrays from RAM.
+ * Addresses come from the SWE1 symbol table:
+ *   Physical  @ 0x003450cc — what the guest currently believes is pressed
+ *   OneHit    @ 0x003450fc — debounced "switch just closed" latch
+ *   ValidHit  @ 0x0034512c — passed validation
+ *   Return    @ 0x0034515c
+ *   OnTime    @ 0x0034518c
+ *   Logical   @ 0x003451bc
+ * Each is 12 dwords (one per LPT scan column). Bits 0..7 = switch state.
+ *
+ * Diagnostic use: when the bug is happening (menu drifting, volume
+ * spammed), press F12. The dump shows which COLUMN/BIT the guest
+ * thinks is active. Then we know exactly which fake input we are
+ * leaking into the matrix.
+ */
+void lpt_dump_guest_switch_state(void)
+{
+    static const struct { const char *name; uint32_t addr; } regions[] = {
+        { "Physical ", 0x003450ccu },
+        { "OneHit   ", 0x003450fcu },
+        { "ValidHit ", 0x0034512cu },
+        { "Return   ", 0x0034515cu },
+        { "OnTime   ", 0x0034518cu },
+        { "Logical  ", 0x003451bcu },
+    };
+    fprintf(stderr, "\n=== Guest switch-state dump (F12) ===\n");
+    for (size_t r = 0; r < sizeof(regions)/sizeof(regions[0]); ++r) {
+        uint32_t cols[12] = {0};
+        if (uc_mem_read(g_emu.uc, regions[r].addr, cols, sizeof(cols)) != UC_ERR_OK) {
+            fprintf(stderr, "  %s: uc_mem_read failed\n", regions[r].name);
+            continue;
+        }
+        fprintf(stderr, "  %s @0x%08x:", regions[r].name, regions[r].addr);
+        for (int c = 0; c < 12; ++c) fprintf(stderr, " c%d=%08x", c, cols[c]);
+        fprintf(stderr, "\n");
+    }
+    /* Also surface what we are currently feeding the matrix */
+    fprintf(stderr, "  encore-side: lpt_button=0x%02x lpt_switch=0x%02x col0=0x%02x\n",
+            s_lpt_button_state, s_lpt_switch_state, s_rendering_status[0]);
+    /* And the LPT presence flag the guest computed */
+    uint32_t pinio_lpt = 0xffffffffu, pinio_state = 0;
+    uc_mem_read(g_emu.uc, 0x002e992cu, &pinio_lpt, 4);
+    uc_mem_read(g_emu.uc, 0x002e9930u, &pinio_state, 4);
+    fprintf(stderr, "  pinio_lpt=0x%08x  state_flag=%u (1=present)\n",
+            pinio_lpt, pinio_state);
+    fflush(stderr);
+}
+
 /* Returns 1 if the value is interesting (not the idle/expected default). */
 static int lpt_val_interesting(uint8_t op, uint8_t val)
 {

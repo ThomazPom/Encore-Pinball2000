@@ -249,6 +249,9 @@ void display_handle_events(void)
             case SDLK_F11:
                 lpt_toggle_trace();
                 break;
+            case SDLK_F12:
+                lpt_dump_guest_switch_state();
+                break;
             }
             break;
         }
