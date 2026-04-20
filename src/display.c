@@ -136,7 +136,7 @@ int display_init(void)
         "  F8            RIGHT flipper         (Phys[10].b4)\n"
         "  F9            RIGHT action button   (Phys[10].b6)\n"
         "  F10 / C       Insert credit (queueable; mash for multi)\n"
-        "  F11           Toggle FULLSCREEN\n"
+        "  F11 / ALT+ENTER  Toggle FULLSCREEN\n"
         "  F12           Dump guest switch state to stderr\n"
         "  SPACE         START button (sw=2 / Phys[0].b2)\n"
         "  --- coin-door panel (4 buttons; dual-function by mode) ---\n"
@@ -233,6 +233,13 @@ void display_handle_events(void)
             break;
 
         case SDL_KEYDOWN:
+            /* Diagnostic: log every F-key + special so we can see which
+             * scancodes actually reach SDL (some WMs eat F11). */
+            if ((ev.key.keysym.sym >= SDLK_F1 && ev.key.keysym.sym <= SDLK_F12)
+                || ev.key.keysym.sym == SDLK_RETURN
+                || ev.key.keysym.sym == SDLK_SPACE)
+                fprintf(stderr, "[disp] keydown sym=0x%x mod=0x%x\n",
+                        ev.key.keysym.sym, ev.key.keysym.mod);
             switch (ev.key.keysym.sym) {
             case SDLK_F1:
                 LOG("disp", "F1 — exiting\n");
@@ -266,6 +273,18 @@ void display_handle_events(void)
                         fs ? "OFF" : "ON", rc, rc ? SDL_GetError() : "");
                 break;
             }
+            case SDLK_RETURN:
+                /* ALT+ENTER → fullscreen toggle (canonical emu hotkey).
+                 * Bare ENTER falls through into the coin-door 'btn4'
+                 * polling below, so this only fires with Alt held. */
+                if (ev.key.keysym.mod & (KMOD_ALT | KMOD_LALT | KMOD_RALT)) {
+                    Uint32 fs = SDL_GetWindowFlags(g_emu.window) & SDL_WINDOW_FULLSCREEN;
+                    int rc = SDL_SetWindowFullscreen(g_emu.window,
+                                fs ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
+                    fprintf(stderr, "[disp] fullscreen %s via ALT+ENTER (rc=%d %s)\n",
+                            fs ? "OFF" : "ON", rc, rc ? SDL_GetError() : "");
+                }
+                break;
             case SDLK_F12:
                 lpt_dump_guest_switch_state();
                 break;
