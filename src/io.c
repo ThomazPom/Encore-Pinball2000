@@ -866,7 +866,6 @@ static int calc_bitwise_sum(uint8_t val)
  */
 static uint8_t retrieve_rendering_status(uint8_t opcode)
 {
-    extern volatile int g_lpt_handshake_log_frames;
     uint8_t result = 0;
     switch (opcode) {
     case 0x00:
@@ -923,34 +922,12 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
         break;
     default: result = 0x00; break;
     }
-    if (g_lpt_handshake_log_frames > 0) {
-        static uint8_t s_last_op = 0xFF, s_last_val = 0xFF;
-        if (opcode != s_last_op || result != s_last_val) {
-            uint32_t eip = 0;
-            if (g_emu.uc) uc_reg_read(g_emu.uc, UC_X86_REG_EIP, &eip);
-            fprintf(stderr, "[lpthsk] RD op=%02x → %02x  EIP=0x%08x\n",
-                    opcode, result, eip);
-            s_last_op = opcode; s_last_val = result;
-        }
-    }
     return result;
 }
 
-/* LPT-handshake forensic window: when SPACE is pressed, this counts
- * down for ~3 seconds of frames, during which every LPT WR/RD is
- * logged with EIP. Reveals if game queries something we don't answer. */
-volatile int g_lpt_handshake_log_frames = 0;
-
 /* i386 POC process_data_command — verbatim copy */
-extern volatile int g_lpt_handshake_log_frames; /* set by lpt_set_start_button */
 static void process_data_command(uint8_t opcode, uint8_t data)
 {
-    if (g_lpt_handshake_log_frames > 0) {
-        uint32_t eip = 0;
-        if (g_emu.uc) uc_reg_read(g_emu.uc, UC_X86_REG_EIP, &eip);
-        fprintf(stderr, "[lpthsk] WR op=%02x data=%02x  EIP=0x%08x\n",
-                opcode, data, eip);
-    }
     switch (opcode) {
     case 0x05:
         s_rendering_data_val = data; s_data_flag1 = 1;
@@ -987,88 +964,12 @@ void lpt_set_host_input(uint8_t buttons, uint8_t switches)
 
 void lpt_set_start_button(int held)
 {
-    uint8_t prev = s_start_button_held;
+    /* LPT-only Start button injection. The state flag is read in
+     * retrieve_rendering_status case 0x04 (matrix col 0) where bit 2
+     * is OR'd in while held. The game's switch consumer then sees a
+     * normal sw=2 press. No CPU/RAM patching — if the game doesn't
+     * act on it (gameplay state preconditions), we don't fight it. */
     s_start_button_held = held ? 1 : 0;
-
-    /* On rising edge, open a 600-frame (~10s) LPT trace window so we
-     * can see exactly what the game queries via LPT after we inject
-     * the Start press. Helps test "missing handshake" hypothesis. */
-    if (!prev && s_start_button_held) {
-        g_lpt_handshake_log_frames = 600;
-        fprintf(stderr, "[lpthsk] === window OPEN (600 frames) ===\n");
-    }
-    if (g_lpt_handshake_log_frames > 0) {
-        if (--g_lpt_handshake_log_frames == 0)
-            fprintf(stderr, "[lpthsk] === window CLOSED ===\n");
-    }
-
-    /* Belt-and-suspenders: also poke guest RAM directly so that even
-     * if the matrix-scan opcode 0x04 path doesn't reach Physical[0],
-     * the bit lands. We OR/AND just bit 2 of c0 in both Physical and
-     * Logical regions. The game's debounce will validate continuous
-     * presence and fire the Start callback. */
-    if (g_emu.uc) {
-        uint32_t v;
-        uc_mem_read(g_emu.uc, 0x003450ccu, &v, 4);
-        if (s_start_button_held) v |= 0x04u; else v &= ~0x04u;
-        uc_mem_write(g_emu.uc, 0x003450ccu, &v, 4);
-
-        uc_mem_read(g_emu.uc, 0x003451bcu, &v, 4);
-        if (s_start_button_held) v |= 0x04u; else v &= ~0x04u;
-        uc_mem_write(g_emu.uc, 0x003451bcu, &v, 4);
-
-        /* Force the Start callback's gating field. The callback at
-         * 0x17da4c does:
-         *   call get_state (returns *(state_obj + 0x5c0))
-         *   cmp eax, 1; jne <generic handler>; call start_game
-         * state_obj is *((dword*)0x002ebfa0) (= "Episode I" struct,
-         * normally 0x002ddad4). Sticky-force: write 1 every frame
-         * unconditionally so the game's switch-poll thread always
-         * sees it=1 when the callback runs. (We never restore — this
-         * is a debug shim; if it works we'll find the legit path.) */
-        uint32_t state_obj = 0;
-        uc_mem_read(g_emu.uc, 0x002ebfa0u, &state_obj, 4);
-        if (state_obj) {
-            uint32_t addr = state_obj + 0x5c0u;
-            uint32_t one = 1;
-            uc_mem_write(g_emu.uc, addr, &one, 4);
-        }
-
-        /* Belt #3: NOP out the cmp/jne in the callback so start_game
-         * is ALWAYS called when sw=2 fires, regardless of state. This
-         * is the brute-force test: if SPACE now starts a game, then
-         * the callback at 0x17da4c IS the start_button proc and the
-         * sw=2 → callback wiring is correct. If still nothing, then
-         * either the callback is for a different sw_num, or
-         * start_game itself has its own gate.
-         *
-         * Original bytes at 0x0017da54: 83 f8 01 75 07
-         *   cmp eax, 1
-         *   jne 0x17da60
-         * Patched: 90 90 90 90 90 (5 NOPs) — fall through to call. */
-        if (s_start_button_held) {
-            static int s_patched = 0;
-            if (!s_patched) {
-                uint8_t orig[5] = {0};
-                uc_mem_read(g_emu.uc, 0x0017da54u, orig, 5);
-                uint8_t nops[5] = {0x90, 0x90, 0x90, 0x90, 0x90};
-                if (orig[0] == 0x83 && orig[1] == 0xf8 && orig[2] == 0x01 &&
-                    orig[3] == 0x75 && orig[4] == 0x07) {
-                    uc_mem_write(g_emu.uc, 0x0017da54u, nops, 5);
-                    s_patched = 1;
-                    fprintf(stderr, "[lpt] PATCH @0x17da54: NOPed cmp/jne — Start callback always calls start_game now\n");
-                } else {
-                    fprintf(stderr, "[lpt] PATCH @0x17da54 SKIPPED: bytes mismatch (%02x %02x %02x %02x %02x)\n",
-                            orig[0], orig[1], orig[2], orig[3], orig[4]);
-                    s_patched = -1;
-                }
-            }
-        }
-    }
-
-    if (prev != s_start_button_held)
-        fprintf(stderr, "[lpt] START button %s\n",
-                s_start_button_held ? "PRESSED" : "released");
 }
 
 /* Debug probe: temporarily wire one bit of Physical[Cn] / Logical[Cn]
@@ -1248,28 +1149,6 @@ void lpt_dump_guest_switch_state(void)
     uc_mem_read(g_emu.uc, 0x002e9930u, &pinio_state, 4);
     fprintf(stderr, "  pinio_lpt=0x%08x  state_flag=%u (1=present)\n",
             pinio_lpt, pinio_state);
-    /* Game-state object pointer used by Start Button callback (sw=2):
-     * callback @0x17da4c reads ds:0x2ebfa0, calls method, expects ret==1
-     * to actually start a game. If this is 0 the game is still "booting"
-     * and Start does nothing. */
-    uint32_t state_obj = 0;
-    uc_mem_read(g_emu.uc, 0x002ebfa0u, &state_obj, 4);
-    fprintf(stderr, "  start_state_obj @0x002ebfa0 = 0x%08x %s\n",
-            state_obj, state_obj ? "(state machine ACTIVE)" : "(NULL — game not ready)");
-    if (state_obj) {
-        /* Most VTBL-based objects: first dword = vtbl ptr.
-         * Print first 16 bytes for inspection. */
-        uint32_t hdr[4] = {0};
-        uc_mem_read(g_emu.uc, state_obj, hdr, 16);
-        fprintf(stderr, "    obj[0..3] = %08x %08x %08x %08x\n",
-                hdr[0], hdr[1], hdr[2], hdr[3]);
-        /* The Start callback's check method (0x1d1a20) returns *(obj+0x5c0).
-         * If that == 1, real start_game runs; else it's a no-op. */
-        uint32_t can_start = 0;
-        uc_mem_read(g_emu.uc, state_obj + 0x5c0u, &can_start, 4);
-        fprintf(stderr, "    [obj+0x5c0] (can_start) = 0x%08x %s\n",
-                can_start, can_start == 1 ? "← START WILL FIRE" : "← Start no-op");
-    }
     fflush(stderr);
 }
 

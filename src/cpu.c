@@ -108,19 +108,6 @@ int cpu_init(void)
     uc_hook_add(uc, &h_dcs_wp, UC_HOOK_MEM_WRITE, (void*)hook_dcs_mode_write,
                 NULL, (uint64_t)0x3444b0, (uint64_t)0x3444b3);
 
-    /* Start-button forensics:
-     *   - Code hook on 0x135430 (start_game wrapper) and 0x17da4c
-     *     (Start callback) entries → log when CPU executes them.
-     *   - Memory write watch on 0x002de094 (the can_start gate read by
-     *     the callback's check method) → log who writes it normally. */
-    uc_hook h_start_cb, h_start_game, h_can_start;
-    uc_hook_add(uc, &h_start_cb,   UC_HOOK_CODE, (void*)hook_code_trace,
-                NULL, (uint64_t)0x17da4c, (uint64_t)0x17da4d);
-    uc_hook_add(uc, &h_start_game, UC_HOOK_CODE, (void*)hook_code_trace,
-                NULL, (uint64_t)0x135430, (uint64_t)0x135431);
-    uc_hook_add(uc, &h_can_start,  UC_HOOK_MEM_WRITE, (void*)hook_dcs_mode_write,
-                NULL, (uint64_t)0x002de094, (uint64_t)0x002de097);
-
     LOG("cpu", "Unicorn Engine initialized (i386 mode)\n");
     return 0;
 }
@@ -387,21 +374,6 @@ static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *u
         vs_call++;
         if (vs_call <= 5)
             LOG("vsync", "callback #%u\n", vs_call);
-        break;
-    }
-    case 0x17da4c: {
-        uint32_t arg = 0;
-        if (esp >= 4 && esp + 8 < 0x01000000)
-            arg = *(uint32_t *)(g_emu.ram + esp + 8);
-        fprintf(stderr, "[start] CB ENTER 0x17da4c sw=%u ret=0x%08x\n",
-                arg, esp >= 4 ? *(uint32_t *)(g_emu.ram + esp) : 0);
-        fflush(stderr);
-        break;
-    }
-    case 0x135430: {
-        fprintf(stderr, "[start] start_game ENTER 0x135430 ret=0x%08x  *** GAME SHOULD START NOW ***\n",
-                esp >= 4 ? *(uint32_t *)(g_emu.ram + esp) : 0);
-        fflush(stderr);
         break;
     }
     default:
