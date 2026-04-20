@@ -1165,6 +1165,22 @@ void lpt_dump_guest_switch_state(void)
     uc_mem_read(g_emu.uc, 0x002e9930u, &pinio_state, 4);
     fprintf(stderr, "  pinio_lpt=0x%08x  state_flag=%u (1=present)\n",
             pinio_lpt, pinio_state);
+    /* Game-state object pointer used by Start Button callback (sw=2):
+     * callback @0x17da4c reads ds:0x2ebfa0, calls method, expects ret==1
+     * to actually start a game. If this is 0 the game is still "booting"
+     * and Start does nothing. */
+    uint32_t state_obj = 0;
+    uc_mem_read(g_emu.uc, 0x002ebfa0u, &state_obj, 4);
+    fprintf(stderr, "  start_state_obj @0x002ebfa0 = 0x%08x %s\n",
+            state_obj, state_obj ? "(state machine ACTIVE)" : "(NULL — game not ready)");
+    if (state_obj) {
+        /* Most VTBL-based objects: first dword = vtbl ptr.
+         * Print first 16 bytes for inspection. */
+        uint32_t hdr[4] = {0};
+        uc_mem_read(g_emu.uc, state_obj, hdr, 16);
+        fprintf(stderr, "    obj[0..3] = %08x %08x %08x %08x\n",
+                hdr[0], hdr[1], hdr[2], hdr[3]);
+    }
     fflush(stderr);
 }
 
