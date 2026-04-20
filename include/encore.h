@@ -398,7 +398,7 @@ void     nic_dseg_init(void);  /* populate NIC LAN ROM in D-segment guest RAM */
 void     lpt_activate(void);   /* activate LPT emulated port for PinIO (BT-93) */
 
 /* lpt_pass.c — real LPT passthrough via Linux ppdev */
-int      lpt_passthrough_open(const char *device);
+int      lpt_passthrough_open(const char *device, bool quiet_if_missing);
 void     lpt_passthrough_close(void);
 bool     lpt_passthrough_active(void);
 uint8_t  lpt_passthrough_read(uint8_t reg);

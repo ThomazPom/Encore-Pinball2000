@@ -69,10 +69,10 @@ bool lpt_passthrough_active(void)
 /* Open + claim the device. Returns 0 on success, -1 on failure.
  * Caller decides whether failure is fatal (explicit --lpt-device) or
  * a silent fallback (default path attempted, no device present). */
-int lpt_passthrough_open(const char *device)
+int lpt_passthrough_open(const char *device, bool quiet_if_missing)
 {
 #ifndef __linux__
-    (void)device;
+    (void)device; (void)quiet_if_missing;
     return -1;
 #else
     if (!device || !*device) return -1;
@@ -82,7 +82,13 @@ int lpt_passthrough_open(const char *device)
 
     int fd = open(device, O_RDWR);
     if (fd < 0) {
-        LOG("lpt", "passthrough: open(%s) failed: %s\n", device, strerror(errno));
+        /* Default-mode probe: stay quiet on ENOENT/EACCES so users without
+         * a cabinet don't see scary-looking errors at boot. Anything else
+         * (or any failure when --lpt-device was given explicitly) is logged. */
+        if (!quiet_if_missing || (errno != ENOENT && errno != EACCES &&
+                                  errno != ENXIO  && errno != ENODEV))
+            LOG("lpt", "passthrough: open(%s) failed: %s\n",
+                device, strerror(errno));
         return -1;
     }
 
@@ -116,9 +122,10 @@ int lpt_passthrough_open(const char *device)
     s_dir_input = -1;          /* force first set_dir() to take effect */
     set_dir(0);                /* idle = output (data latch holds bus) */
 
-    LOG("lpt", "passthrough ENABLED on %s — emulated state machine bypassed\n",
-        device);
-    LOG("lpt", "  cabinet board drives switch matrix; F-key injection inert\n");
+    LOG("lpt", "*** real cabinet detected on %s — keyboard/F-key button "
+               "emulation DISABLED ***\n", device);
+    LOG("lpt", "    guest LPT traffic forwarded to hardware; cabinet drives "
+               "switch matrix\n");
     return 0;
 #endif
 }
