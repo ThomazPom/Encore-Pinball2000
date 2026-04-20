@@ -394,6 +394,7 @@ void     lpt_pulse_diag_escape(int frames);  /* one-shot diag_escape press (ente
 void     lpt_toggle_trace(void);
 void     lpt_dump_guest_switch_state(void);
 void     lpt_inject_switch(int col, uint8_t data);
+void     lpt_set_start_button(int held);  /* SPACE → Start Button (sw=2, c0 b2) */
 
 /* bar.c */
 void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int64_t value, void *user_data);

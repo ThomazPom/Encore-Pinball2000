@@ -781,6 +781,7 @@ static int     s_access_mode1_prev   = 0; /* bit0 edge detect */
 /* Switch matrix state (mirrors P2K-runtime globals) */
 static uint8_t s_rendering_status[8];
 static uint8_t s_rendering_data_val  = 0;
+static uint8_t s_start_button_held   = 0;
 static uint8_t s_data_val2           = 0;
 static uint8_t s_data_val3           = 0;
 static uint8_t s_data_val4           = 0;
@@ -885,7 +886,19 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
         result = v;
         break;
     }
-    case 0x04: result = s_rendering_status[1]; break;  /* Physical[0..7] matrix scan */
+    case 0x04: {
+        /* Physical[0..7] matrix scan. The i386 POC always returns
+         * s_rendering_status[1] regardless of selected col, so all
+         * cols get the same byte. To inject the Start Button (sw=2,
+         * col 0, bit 2) without lighting up unrelated playfield bits
+         * in cols 1..7, gate on the col-select latch from opcode 0x05:
+         * data byte from opcode 0x05 is a 1-of-N bit-mask (col 0 = 0x01).
+         */
+        uint8_t v = s_rendering_status[1];
+        if (s_start_button_held && (s_rendering_data_val == 0x01)) v |= 0x04;
+        result = v;
+        break;
+    }
     /* Cases 0x0F-0x13: matches P2K-driver retrieveRenderingStatus exactly.
      * These are auxiliary status reads (data flags / strobe).
      * Returning a constant 0xFF here causes the game to read phantom
@@ -940,6 +953,11 @@ void lpt_set_host_input(uint8_t buttons, uint8_t switches)
 {
     s_lpt_button_state = buttons;
     s_lpt_switch_state = switches;
+}
+
+void lpt_set_start_button(int held)
+{
+    s_start_button_held = held ? 1 : 0;
 }
 
 void lpt_toggle_coin_door(void)

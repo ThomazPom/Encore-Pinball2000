@@ -9,14 +9,21 @@
 #include "encore.h"
 #include "stb_image_write.h"
 
-static int  s_coin_pulse = 0;
-static int  s_start_pulse = 0;
 static int  s_y_flip = 1;
 static bool s_seen_nonzero_fb = false;
 static int  s_snap_id = 0;
 static int  s_auto_snap_id = 0;
 
-#define PULSE_FRAMES 30
+/* Credit (F10/C) pulse state machine — supports rapid mashing.
+ * Each KEYDOWN enqueues a discrete pulse: HIGH for COIN_HIGH_FRAMES,
+ * then a LOW gap of COIN_LOW_FRAMES so the game's edge detector sees
+ * each press as a distinct switch closure. */
+#define COIN_HIGH_FRAMES 6   /* ~100ms HIGH @ 60fps */
+#define COIN_LOW_FRAMES  3   /* ~50ms  LOW gap */
+#define COIN_QUEUE_MAX   8
+static int s_coin_high    = 0;
+static int s_coin_low     = 0;
+static int s_coin_pending = 0;
 #define SCREENSHOT_DIR "/mnt/hgfs/encore_forensic/screen_captures"
 
 static void ensure_screenshot_dir(void)
@@ -74,7 +81,7 @@ int display_init(void)
         "Encore — Pinball 2000",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         SCREEN_W, SCREEN_H,
-        SDL_WINDOW_SHOWN
+        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
     );
     if (!g_emu.window) {
         LOG("disp", "SDL_CreateWindow failed: %s\n", SDL_GetError());
@@ -128,9 +135,10 @@ int display_init(void)
         "  F7            LEFT  flipper         (Phys[10].b5)\n"
         "  F8            RIGHT flipper         (Phys[10].b4)\n"
         "  F9            RIGHT action button   (Phys[10].b6)\n"
-        "  F10 / C       Insert credit (pulse) (Phys[9].b0)\n"
+        "  F10 / C       Insert credit (queueable; mash for multi)\n"
         "  F11           Toggle FULLSCREEN\n"
         "  F12           Dump guest switch state to stderr\n"
+        "  SPACE         START button (sw=2 / Phys[0].b2)\n"
         "  --- coin-door panel (4 buttons; dual-function by mode) ---\n"
         "  ESC / LEFT    btn1: Service Credits / Escape    (Phys[9].b0)\n"
         "  DOWN  - KP_-  btn2: Volume −        / Menu Down (Phys[9].b1)\n"
@@ -242,13 +250,20 @@ void display_handle_events(void)
                 break;
             case SDLK_F10:
             case SDLK_c:
-                s_coin_pulse = PULSE_FRAMES;
-                LOG("input", "Coin pulse\n");
+                /* Enqueue a discrete credit pulse. State machine in the
+                 * polling section below releases between pulses so the
+                 * game's edge detector counts each press separately. */
+                if (s_coin_pending < COIN_QUEUE_MAX) s_coin_pending++;
+                LOG("input", "Coin pulse queued (pending=%d)\n", s_coin_pending);
                 break;
             case SDLK_F11: {
-                Uint32 fs = SDL_GetWindowFlags(g_emu.window) & SDL_WINDOW_FULLSCREEN_DESKTOP;
-                SDL_SetWindowFullscreen(g_emu.window, fs ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
-                LOG("disp", "fullscreen %s\n", fs ? "OFF" : "ON");
+                /* SDL_WINDOW_FULLSCREEN_DESKTOP and SDL_WINDOW_FULLSCREEN
+                 * both set the FULLSCREEN bit; check just that one. */
+                Uint32 fs = SDL_GetWindowFlags(g_emu.window) & SDL_WINDOW_FULLSCREEN;
+                int rc = SDL_SetWindowFullscreen(g_emu.window,
+                            fs ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
+                fprintf(stderr, "[disp] fullscreen %s (rc=%d %s)\n",
+                        fs ? "OFF" : "ON", rc, rc ? SDL_GetError() : "");
                 break;
             }
             case SDLK_F12:
@@ -290,8 +305,22 @@ void display_handle_events(void)
     if (keys[SDL_SCANCODE_RETURN] || keys[SDL_SCANCODE_KP_ENTER]
                                   || keys[SDL_SCANCODE_RIGHT])    switches |= 0x08;
 
-    if (s_coin_pulse > 0)  { switches |= 0x01; s_coin_pulse--; }   /* F10/C → btn1 (credits) */
-    if (s_start_pulse > 0) { buttons  |= 0x80; s_start_pulse--; }  /* legacy start pulse → left action */
+    /* Credit pulse state machine: HIGH → LOW gap → next pulse. */
+    if (s_coin_high > 0) {
+        switches |= 0x01;
+        s_coin_high--;
+    } else if (s_coin_low > 0) {
+        s_coin_low--;
+    } else if (s_coin_pending > 0) {
+        s_coin_pending--;
+        s_coin_high = COIN_HIGH_FRAMES;
+        s_coin_low  = COIN_LOW_FRAMES;
+        switches |= 0x01;
+        s_coin_high--;
+    }
+
+    /* SPACE → Start Button (sw=2, Phys[0].b2). Held-state polling. */
+    lpt_set_start_button(keys[SDL_SCANCODE_SPACE]);
 
     lpt_set_host_input(buttons, switches);
 }
