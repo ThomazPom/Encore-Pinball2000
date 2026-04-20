@@ -981,6 +981,35 @@ void lpt_set_start_button(int held)
         uc_mem_read(g_emu.uc, 0x003451bcu, &v, 4);
         if (s_start_button_held) v |= 0x04u; else v &= ~0x04u;
         uc_mem_write(g_emu.uc, 0x003451bcu, &v, 4);
+
+        /* Force the Start callback's gating field. The callback at
+         * 0x17da4c does:
+         *   call get_state (returns *(state_obj + 0x5c0))
+         *   cmp eax, 1; jne <generic handler>; call start_game
+         * state_obj is *((dword*)0x002ebfa0) (= "Episode I" struct,
+         * normally 0x002ddad4). We snapshot the original value on
+         * press, force it to 1, and restore on release so we don't
+         * permanently corrupt game state. */
+        static uint32_t s_can_start_saved = 0;
+        static int      s_can_start_was_forced = 0;
+        uint32_t state_obj = 0;
+        uc_mem_read(g_emu.uc, 0x002ebfa0u, &state_obj, 4);
+        if (state_obj) {
+            uint32_t addr = state_obj + 0x5c0u;
+            if (s_start_button_held && !s_can_start_was_forced) {
+                uc_mem_read (g_emu.uc, addr, &s_can_start_saved, 4);
+                uint32_t one = 1;
+                uc_mem_write(g_emu.uc, addr, &one, 4);
+                s_can_start_was_forced = 1;
+                fprintf(stderr, "[lpt] force [obj+0x5c0] %u → 1 (gate Start)\n",
+                        s_can_start_saved);
+            } else if (!s_start_button_held && s_can_start_was_forced) {
+                uc_mem_write(g_emu.uc, addr, &s_can_start_saved, 4);
+                s_can_start_was_forced = 0;
+                fprintf(stderr, "[lpt] restore [obj+0x5c0] = %u\n",
+                        s_can_start_saved);
+            }
+        }
     }
 
     if (prev != s_start_button_held)
@@ -1180,6 +1209,12 @@ void lpt_dump_guest_switch_state(void)
         uc_mem_read(g_emu.uc, state_obj, hdr, 16);
         fprintf(stderr, "    obj[0..3] = %08x %08x %08x %08x\n",
                 hdr[0], hdr[1], hdr[2], hdr[3]);
+        /* The Start callback's check method (0x1d1a20) returns *(obj+0x5c0).
+         * If that == 1, real start_game runs; else it's a no-op. */
+        uint32_t can_start = 0;
+        uc_mem_read(g_emu.uc, state_obj + 0x5c0u, &can_start, 4);
+        fprintf(stderr, "    [obj+0x5c0] (can_start) = 0x%08x %s\n",
+                can_start, can_start == 1 ? "← START WILL FIRE" : "← Start no-op");
     }
     fflush(stderr);
 }
