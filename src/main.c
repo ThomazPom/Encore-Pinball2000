@@ -443,15 +443,23 @@ int main(int argc, char **argv)
     /* Network console bridges (no-ops if their --*-tcp ports were not given) */
     netcon_init();
 
-    /* Real LPT passthrough (silent fallback to emulation if default path
-     * doesn't exist; hard error if the user explicitly asked for hardware). */
+    /* Real LPT passthrough auto-detection.
+     * - Default mode probes /dev/parport0 silently; success switches to
+     *   real-cabinet mode and disables button emulation, absence is silent.
+     * - --lpt-device PATH: explicit request, hard-fails if open() fails.
+     * - --lpt-device none: skip probe entirely (force emulation). */
     {
         const char *dev = g_emu.lpt_device[0] ? g_emu.lpt_device : "/dev/parport0";
-        if (lpt_passthrough_open(dev) < 0 && g_emu.lpt_device_explicit) {
-            fprintf(stderr,
-                "encore: --lpt-device %s requested but unavailable. "
-                "Aborting (use --lpt-device none to force emulation).\n", dev);
-            return 1;
+        bool quiet = !g_emu.lpt_device_explicit;
+        if (lpt_passthrough_open(dev, quiet) < 0) {
+            if (g_emu.lpt_device_explicit) {
+                fprintf(stderr,
+                    "encore: --lpt-device %s requested but unavailable. "
+                    "Aborting (use --lpt-device none to force emulation).\n", dev);
+                return 1;
+            }
+            LOG("lpt", "no real cabinet detected (probed %s) — "
+                       "using emulated buttons (F-keys / keyboard)\n", dev);
         }
     }
 
