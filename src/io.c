@@ -550,52 +550,12 @@ static void apply_sgc_patches(void)
     }
 }
 
-/* === Late-stage patches: applied when "XINU: V7" is detected in UART ===
- * By this point XINU has finished sysinit() and the process table is populated.
- * The prnull ctxsw frame and scheduler flags are now at their correct addresses. */
-static void apply_xinu_boot_patches(void)
-{
-    if (!g_emu.uc) return;
-
-    LOG("sgc", "applying XINU boot patches (prnull + scheduler)\n");
-
-    /* prnull ctxsw frame fix: savsp is at proctab[0].savsp = [0x2B3E9C].
-     * ctxsw does POP EBX,EDI,ESI,EBP then RET.
-     * savsp+16 = return address after 4 POPs. Set to 0xFF0000 (idle code). */
-    {
-        uint32_t savsp = 0;
-        uc_mem_read(g_emu.uc, 0x002B3E9Cu, &savsp, 4);
-        if (savsp >= 0x3F0000u && savsp < 0x410000u) {
-            uint32_t idle_addr = 0x00FF0000u;
-            uint32_t safe_ebp  = 0x003FFFFCu;
-            uc_mem_write(g_emu.uc, savsp + 16u, &idle_addr, 4);
-            uc_mem_write(g_emu.uc, savsp + 12u, &safe_ebp, 4);
-            LOG("sgc", "prnull ctxsw: savsp=0x%08x, [savsp+16]=0xFF0000\n", savsp);
-        } else {
-            LOG("sgc", "prnull savsp=0x%08x (unexpected), skipping ctxsw fix\n", savsp);
-        }
-    }
-
-    /* XINU scheduler patches:
-     * - prnull.pstate = PRRUN so resched() can re-insert prnull
-     * - sched_en = 1 so resched() actually runs
-     * - tick_init = 1 so IRQ0 (PIT timer) triggers rescheduling
-     * - clkruns = 1 so the defclk callback chain fires */
-    {
-        uint32_t one = 1u;
-        uint32_t magic = 0x003C2000u;
-        uint8_t prrun = 1u;
-
-        uc_mem_write(g_emu.uc, 0x002B3E94u, &prrun, 1);
-        uc_mem_write(g_emu.uc, 0x002B3EB8u, &magic, 4);
-        uc_mem_write(g_emu.uc, 0x002BD544u, &one, 4);
-        uc_mem_write(g_emu.uc, 0x002BD5ECu, &one, 4);
-        uc_mem_write(g_emu.uc, 0x002BD540u, &one, 4);
-
-        LOG("sgc", "scheduler: pstate=1@0x2B3E94, magic=0x3C2000@0x2B3EB8, "
-            "sched_en@0x2BD544, tick_init@0x2BD5EC, clkruns@0x2BD540\n");
-    }
-}
+/* DROPPED 2026-04-21: apply_xinu_boot_patches() — orphaned and removed.
+ * Was V1.12-hardcoded scheduler/prnull seed (pstate, magic, sched_en,
+ * tick_init, clkruns at SWE1-V1.12 BSS addresses). Last call site removed
+ * for RFM (was corrupting RAM); SWE1 paths never depended on it once the
+ * pattern-scanned BT-74 idle-loop fix landed. Keep this comment as
+ * historical marker; minimization proves no boot-time scheduler poke is needed. */
 
 /* ===== SMC8216T NIC emulation (BT-131) =====
  * ez0: port 0x300 irq 7 mac 00:00:c0:01:02:03 type SMC8216T (8 bit)

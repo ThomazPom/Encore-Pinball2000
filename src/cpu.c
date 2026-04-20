@@ -612,15 +612,44 @@ void cpu_run(void)
          * - Monitor auto-exit triple patch
          * - Init gate flags + DCS2 + XINACMOS + BAR2 regs
          * ================================================================ */
-        if (g_emu.xinu_booted && g_emu.ctor_phase == 0 &&
+        /* ================================================================
+         * Post-XINU V1.19 patches — KILL-SWITCH for minimization audit.
+         * Set ENCORE_KEEP_V19_PATCHES=1 to re-enable the full block.
+         * Goal (per minimization ground truth): patches are SYMPTOMS, not cures.
+         * Watchdog flag suppression already prevents pci_watchdog_bone
+         * from firing; Fatal/NonFatal only fire on real crashes; etc.
+         * If SWE1 v1.5 still boots without these → they're dead code. */
+        static int v19_patches_enabled = -1;
+        if (v19_patches_enabled < 0) {
+            const char *e = getenv("ENCORE_KEEP_V19_PATCHES");
+            v19_patches_enabled = (e && *e == '1') ? 1 : 0;
+            LOG("init", "Post-XINU V1.19 patches: %s (set ENCORE_KEEP_V19_PATCHES=1 to re-enable)\n",
+                v19_patches_enabled ? "ENABLED" : "DISABLED");
+        }
+        if (v19_patches_enabled && g_emu.xinu_booted && g_emu.ctor_phase == 0 &&
             g_emu.game_started && g_emu.xinu_ready &&
             g_emu.game_id == 50069u /* SWE1 only — see comment above */) {
             g_emu.ctor_phase = 3;  /* one-shot */
 
-            /* --- 1. Function patches (x64 POC BT-86/BT-100) --- */
+            /* --- 1. Function patches (x64 POC BT-86/BT-100) ---
+             * 2026-04-21 SAFETY: hardcoded SWE1-V1.5 (=V1.19) addresses.
+             * On SWE1-V2.1 the same offsets contain DIFFERENT code → patching
+             * blindly corrupts random functions → game eventually JMPs to IVT
+             * (EIP=0xdfc).  Each patch now sanity-checks the existing bytes
+             * (function prologue 0x55 0x89 0xE5 = PUSH EBP; MOV EBP,ESP) before
+             * overwriting.  On v2.1 the prologues won't match → patch skipped
+             * → game runs unmodified → no corruption.  Minimization-style minimum.  */
+
+            int fp_applied = 0, fp_skipped = 0;
+
+            #define PROLOGUE_OK(addr) ({                          \
+                uint8_t _p[3];                                    \
+                uc_mem_read(uc, (addr), _p, 3);                   \
+                (_p[0]==0x55 && _p[1]==0x89 && _p[2]==0xE5);      \
+            })
 
             /* Fatal() at 0x22722C → INC counter + HLT for recovery */
-            {
+            if (PROLOGUE_OK(0x0022722Cu)) {
                 uint8_t fatal_patch[] = {
                     0xFF, 0x05, 0xF0, 0xFF, 0x2B, 0x00,  /* INC [0x2BFFF0] */
                     0x89, 0x35, 0xF4, 0xFF, 0x2B, 0x00,  /* MOV [0x2BFFF4], ESI */
@@ -628,28 +657,49 @@ void cpu_run(void)
                     0xEB, 0xFE                              /* JMP $ */
                 };
                 uc_mem_write(uc, 0x0022722Cu, fatal_patch, sizeof(fatal_patch));
-            }
+                fp_applied++;
+            } else fp_skipped++;
             /* LocMgr Fatal wrapper at 0x24743C → XOR EAX,EAX; RET (x64 POC) */
-            {
+            if (PROLOGUE_OK(0x0024743Cu)) {
                 uint8_t xar[] = { 0x31, 0xC0, 0xC3 };
                 uc_mem_write(uc, 0x0024743Cu, xar, 3);
-            }
+                fp_applied++;
+            } else fp_skipped++;
             /* NonFatal at 0x24780C → XOR EAX,EAX; RET (x64 POC BT-86) */
-            {
+            if (PROLOGUE_OK(0x0024780Cu)) {
                 uint8_t xar[] = { 0x31, 0xC0, 0xC3 };
                 uc_mem_write(uc, 0x0024780Cu, xar, 3);
-            }
+                fp_applied++;
+            } else fp_skipped++;
             /* CMOS mem_test at 0x24FDEC → MOV EAX,1; RET (x64 POC BT-100) */
-            {
+            if (PROLOGUE_OK(0x0024FDECu)) {
                 uint8_t pass[] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 };
                 uc_mem_write(uc, 0x0024FDECu, pass, 6);
-            }
+                fp_applied++;
+            } else fp_skipped++;
             /* pci_watchdog_bone at 0x1A4190 → RET */
-            {
+            if (PROLOGUE_OK(0x001A4190u)) {
                 uint8_t ret = 0xC3;
                 uc_mem_write(uc, 0x001A4190u, &ret, 1);
+                fp_applied++;
+            } else fp_skipped++;
+
+            #undef PROLOGUE_OK
+
+            LOG("init", "Function patches: applied=%d skipped=%d "
+                "(skipped means version mismatch — game runs unmodified)\n",
+                fp_applied, fp_skipped);
+
+            /* If NO Function patches matched, we're on a different SWE1
+             * build (e.g. v2.1).  Skip ALL the V1.19-hardcoded follow-ups:
+             * base_mask data write, init-flag reads, BSS pokes — they'd land
+             * on different code/data and corrupt the game.  Minimization proves
+             * v2.1 boots without any of these. */
+            if (fp_applied == 0) {
+                LOG("init", "Post-XINU V1.19 patches SKIPPED — non-V1.19 SWE1 build\n");
+                goto post_xinu_done;
             }
-            LOG("init", "Function patches: Fatal@22722C NonFatal@24780C CMOS@24FDEC LocMgr@24743C watchdog@1A4190\n");
+            g_emu.swe1_v19_detected = true;
 
             /* --- 2. PIC base_mask fix (x64 POC BT-66/71) ---
              * XINU's disable()/restore() use base_mask at 0x2F7CA8 to
@@ -730,6 +780,7 @@ void cpu_run(void)
             }
 
             LOG("init", "=== Post-XINU V1.19 patches complete ===\n");
+        post_xinu_done: ;
         }
 
         /* pid2 (terminal) crash guard — x64 POC BT-98:  **SWE1-V1.19 only**
@@ -740,7 +791,7 @@ void cpu_run(void)
          * Fix: force [0x2FCAAC]=0 until pid2 is PRREADY (pstate=3).
          * Runs every 64 iterations to reduce overhead.
          * RFM has a different proctab layout — guard would corrupt RAM. */
-        if (g_emu.xinu_ready && g_emu.game_id == 50069u &&
+        if (v19_patches_enabled && g_emu.xinu_ready && g_emu.swe1_v19_detected &&
             (g_emu.exec_count & 0x3F) == 0) {
             uint8_t pt2_state = RAM_RD8(0x2FCA94u); /* proctab[2].pstate */
             if (pt2_state != 3 && pt2_state != 2 && pt2_state != 7) {
@@ -761,7 +812,7 @@ void cpu_run(void)
          * Repair magic between timer ticks so ISR always sees valid value.
          * Runs every 64 iterations to reduce overhead.
          * RFM uses different currpid/proctab addresses — would corrupt RAM. */
-        if (g_emu.xinu_ready && g_emu.game_id == 50069u &&
+        if (v19_patches_enabled && g_emu.xinu_ready && g_emu.swe1_v19_detected &&
             (g_emu.exec_count & 0x3F) == 0) {
             uint32_t cpid = RAM_RD32(0x2FC8BCu);    /* currpid */
             uint32_t nproc_chk = RAM_RD32(0x303E94u);

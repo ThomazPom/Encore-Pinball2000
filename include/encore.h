@@ -302,6 +302,7 @@ typedef struct {
     uint64_t      clkint_ready_exec;   /* exec_count when clkint first detected in IDT[0x20] */
     bool          game_started;
     bool          is_v19_update;       /* running with update flash (V1.19) */
+    bool          swe1_v19_detected;   /* SWE1 V1.19 (V1.5) prologues matched at post-XINU */
     volatile int timer_pending;       /* count of unprocessed SIGALRM ticks */
     volatile int timer_tick_queue;    /* queued IRQ0 ticks waiting for EOI */
     uint32_t      idt_base;            /* cached IDT base address */
