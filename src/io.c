@@ -988,41 +988,50 @@ void lpt_set_start_button(int held)
                 s_start_button_held ? "PRESSED" : "released");
 }
 
-/* Debug probe: temporarily wire one bit of Physical[c0] / Logical[c0]
- * to a digit key. Bit 0..7 covers sw=0..7. Use to discover which sw
- * actually triggers Start Game. */
+/* Debug probe: temporarily wire one bit of Physical[Cn] / Logical[Cn]
+ * to a digit key. Col 0..11, bit 0..7 covers all 96 switches. Use to
+ * discover which (col,bit) actually triggers Start Game. */
 void lpt_set_probe_bit(int bit, int held)
 {
+    extern int g_probe_col;  /* set by display.c via [ and ] keys */
+    int col = g_probe_col;
+    if (col < 0) col = 0;
+    if (col > 11) col = 11;
     if (bit < 0 || bit > 7) { s_probe_held = 0; return; }
     uint8_t prev_held = s_probe_held;
     uint8_t prev_bit  = s_probe_bit;
+    static int s_prev_col = 0;
+    int       prev_col   = s_prev_col;
     s_probe_bit  = (uint8_t)bit;
     s_probe_held = held ? 1 : 0;
+    s_prev_col   = col;
 
     if (g_emu.uc) {
         uint32_t v;
-        uint32_t mask = 1u << bit;
-        /* Clear previously held probe bit if changing */
-        if (prev_held && (prev_bit != s_probe_bit || !s_probe_held)) {
-            uint32_t pmask = 1u << prev_bit;
-            uc_mem_read(g_emu.uc, 0x003450ccu, &v, 4);
-            v &= ~pmask;
-            uc_mem_write(g_emu.uc, 0x003450ccu, &v, 4);
-            uc_mem_read(g_emu.uc, 0x003451bcu, &v, 4);
-            v &= ~pmask;
-            uc_mem_write(g_emu.uc, 0x003451bcu, &v, 4);
+        uint32_t mask  = 1u << bit;
+        uint32_t phys  = 0x003450ccu + (uint32_t)col * 4u;
+        uint32_t logc  = 0x003451bcu + (uint32_t)col * 4u;
+        /* Clear previously held probe bit if changing col/bit/release */
+        if (prev_held && (prev_bit != s_probe_bit || prev_col != col || !s_probe_held)) {
+            uint32_t pmask  = 1u << prev_bit;
+            uint32_t pphys  = 0x003450ccu + (uint32_t)prev_col * 4u;
+            uint32_t plogc  = 0x003451bcu + (uint32_t)prev_col * 4u;
+            uc_mem_read (g_emu.uc, pphys, &v, 4); v &= ~pmask; uc_mem_write(g_emu.uc, pphys, &v, 4);
+            uc_mem_read (g_emu.uc, plogc, &v, 4); v &= ~pmask; uc_mem_write(g_emu.uc, plogc, &v, 4);
         }
-        uc_mem_read(g_emu.uc, 0x003450ccu, &v, 4);
+        uc_mem_read (g_emu.uc, phys, &v, 4);
         if (s_probe_held) v |= mask; else v &= ~mask;
-        uc_mem_write(g_emu.uc, 0x003450ccu, &v, 4);
-        uc_mem_read(g_emu.uc, 0x003451bcu, &v, 4);
+        uc_mem_write(g_emu.uc, phys, &v, 4);
+        uc_mem_read (g_emu.uc, logc, &v, 4);
         if (s_probe_held) v |= mask; else v &= ~mask;
-        uc_mem_write(g_emu.uc, 0x003451bcu, &v, 4);
+        uc_mem_write(g_emu.uc, logc, &v, 4);
     }
 
-    if (prev_held != s_probe_held || prev_bit != s_probe_bit)
-        fprintf(stderr, "[lpt] PROBE c0.b%d %s (sw=%d)\n",
-                bit, s_probe_held ? "SET" : "clr", bit);
+    if (prev_held != s_probe_held || prev_bit != s_probe_bit || prev_col != col) {
+        int sw_num = col * 8 + bit;  /* approximation of canonical numbering */
+        fprintf(stderr, "[lpt] PROBE c%d.b%d %s (sw≈%d)\n",
+                col, bit, s_probe_held ? "SET" : "clr", sw_num);
+    }
 }
 
 void lpt_toggle_coin_door(void)
