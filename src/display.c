@@ -120,30 +120,23 @@ int display_init(void)
      * routing in display_handle_events. */
     fprintf(stderr,
         "\n=== Encore — SWE1 key bindings ===\n"
-        "  ESC / F1     quit\n"
-        "  F2           flip Y axis\n"
-        "  F3           screenshot\n"
-        "  F4           toggle COIN DOOR (closed/open interlock)\n"
-        "  F5           pulse 'Enter' button (= Begin Test in attract,\n"
-        "                                       Enter/Select in service)\n"
-        "  F6           (no-op — bit unused on SWE1)\n"
-        "  F7 / F8      host audio volume +/- (SDL mixer, not the game)\n"
-        "  F9           pulse credits     (= 5 key)\n"
-        "  F10          pulse left action (= start surrogate)\n"
-        "  F11          toggle LPT trace log\n"
-        "  F12          dump guest switch state to stderr\n"
+        "  F1            Quit\n"
+        "  F2            Flip display Y axis\n"
+        "  F3            Screenshot\n"
+        "  F4            Toggle COIN DOOR (closed/open interlock)\n"
+        "  F6            LEFT  action button   (Phys[10].b7)\n"
+        "  F7            LEFT  flipper         (Phys[10].b5)\n"
+        "  F8            RIGHT flipper         (Phys[10].b4)\n"
+        "  F9            RIGHT action button   (Phys[10].b6)\n"
+        "  F10 / C       Insert credit (pulse) (Phys[9].b0)\n"
+        "  F11           Toggle FULLSCREEN\n"
+        "  F12           Dump guest switch state to stderr\n"
         "  --- coin-door panel (4 buttons; dual-function by mode) ---\n"
-        "  5 KP_5  LEFT    btn1: Service Credits / Escape    (Phys[9].b0)\n"
-        "  - KP_-  DOWN    btn2: Volume −       / Menu Down  (Phys[9].b1)\n"
-        "  = KP_+  UP      btn3: Volume +       / Menu Up    (Phys[9].b2)\n"
-        "  ENTER KP_ENTER\n"
-        "          RIGHT   btn4: Begin Test     / Enter      (Phys[9].b3)\n"
-        "  --- playfield (Phys[10] — inline, layout-independent) ---\n"
-        "  LSHIFT          left  flipper       (b5)\n"
-        "  RSHIFT          right flipper       (b4)\n"
-        "  LCTRL / Z       left  action        (b7)\n"
-        "  RCTRL / .       right action        (b6)\n"
-        "  SPACE           both actions (dismisses copyright)\n"
+        "  ESC / LEFT    btn1: Service Credits / Escape    (Phys[9].b0)\n"
+        "  DOWN  - KP_-  btn2: Volume −        / Menu Down (Phys[9].b1)\n"
+        "  UP    = KP_+  btn3: Volume +        / Menu Up   (Phys[9].b2)\n"
+        "  RIGHT ENTER\n"
+        "        KP_ENT  btn4: Begin Test      / Enter     (Phys[9].b3)\n"
         "==================================\n\n");
 
     return 0;
@@ -233,9 +226,8 @@ void display_handle_events(void)
 
         case SDL_KEYDOWN:
             switch (ev.key.keysym.sym) {
-            case SDLK_ESCAPE:
             case SDLK_F1:
-                LOG("disp", "Key F1/Esc pressed — exiting\n");
+                LOG("disp", "F1 — exiting\n");
                 g_emu.running = false;
                 break;
             case SDLK_F2:
@@ -248,39 +240,17 @@ void display_handle_events(void)
             case SDLK_F4:
                 lpt_toggle_coin_door();
                 break;
-            case SDLK_F5:
-                /* Enter / leave the SERVICE / DIAGNOSTICS menu.
-                 * Pulses the cabinet diag_escape switch — same as pressing
-                 * the hidden test button inside the coin door. */
-                lpt_pulse_diag_escape(60);
-                LOG("input", "F5 — diag_escape pulse (enter/exit service)\n");
-                break;
-            case SDLK_F6:
-                lpt_toggle_slam_tilt();
-                break;
-            case SDLK_F7: {
-                int v = sound_get_global_volume();
-                v = (v + 16 > 255) ? 255 : v + 16;
-                sound_set_global_volume(v);
-                break;
-            }
-            case SDLK_F8: {
-                int v = sound_get_global_volume();
-                v = (v - 16 < 0) ? 0 : v - 16;
-                sound_set_global_volume(v);
-                break;
-            }
-            case SDLK_F9:
+            case SDLK_F10:
+            case SDLK_c:
                 s_coin_pulse = PULSE_FRAMES;
                 LOG("input", "Coin pulse\n");
                 break;
-            case SDLK_F10:
-                s_start_pulse = PULSE_FRAMES;
-                LOG("input", "Start pulse\n");
+            case SDLK_F11: {
+                Uint32 fs = SDL_GetWindowFlags(g_emu.window) & SDL_WINDOW_FULLSCREEN_DESKTOP;
+                SDL_SetWindowFullscreen(g_emu.window, fs ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
+                LOG("disp", "fullscreen %s\n", fs ? "OFF" : "ON");
                 break;
-            case SDLK_F11:
-                lpt_toggle_trace();
-                break;
+            }
             case SDLK_F12:
                 lpt_dump_guest_switch_state();
                 break;
@@ -291,44 +261,37 @@ void display_handle_events(void)
 
     const uint8_t *keys = SDL_GetKeyboardState(NULL);
     uint8_t buttons = 0;   /* opcode 0x01 → Physical[10] (flippers + actions) */
-    uint8_t switches = 0;  /* opcode 0x03 → Physical[9]  (diag down/up/enter)  */
+    uint8_t switches = 0;  /* opcode 0x03 → Physical[9]  (4 coin-door buttons) */
 
     /* Physical[10] — playfield buttons (sw_num 84-87, bits 4-7).
-     * Bottom-row modifier keys = layout-independent (AZERTY ≡ QWERTY)
-     * and physically inline like the real cabinet flipper paddles.
-     *   bit 4 = right flipper button → RSHIFT     (rightmost shift)
-     *   bit 5 = left  flipper button → LSHIFT     (leftmost  shift)
-     *   bit 6 = right action button  → RCTRL or "."
-     *   bit 7 = left  action button  → LCTRL or Z
-     * SPACE held = both action buttons (handy to dismiss copyright/intro).
+     * F-row keys are positionally identical on every keyboard layout.
+     *   bit 4 = right flipper button → F8
+     *   bit 5 = left  flipper button → F7
+     *   bit 6 = right action button  → F9
+     *   bit 7 = left  action button  → F6
+     * Bits 0-2 (slam tilt / door / plumb tilt) are managed by io.c.
      */
-    if (keys[SDL_SCANCODE_RSHIFT])                              buttons |= 0x10;
-    if (keys[SDL_SCANCODE_LSHIFT])                              buttons |= 0x20;
-    if (keys[SDL_SCANCODE_RCTRL]  || keys[SDL_SCANCODE_PERIOD]) buttons |= 0x40;
-    if (keys[SDL_SCANCODE_LCTRL]  || keys[SDL_SCANCODE_Z])      buttons |= 0x80;
-    if (keys[SDL_SCANCODE_SPACE])                               buttons |= 0xC0;
+    if (keys[SDL_SCANCODE_F8]) buttons |= 0x10;
+    if (keys[SDL_SCANCODE_F7]) buttons |= 0x20;
+    if (keys[SDL_SCANCODE_F9]) buttons |= 0x40;
+    if (keys[SDL_SCANCODE_F6]) buttons |= 0x80;
 
-    /* Physical[9] — 4 buttons inside the coin door (sw_num 72/73/74/75).
-     * Same physical buttons re-purposed by mode:
-     *   bit 0 (sw=72 'Escape')  → attract: Service Credits | test: Escape
-     *   bit 1 (sw=73 'Down')    → attract: Volume −        | test: Menu Down
-     *   bit 2 (sw=74 'Up')      → attract: Volume +        | test: Menu Up
-     *   bit 3 (sw=75 'Enter')   → attract: Begin Test      | test: Enter/Select
-     * Arrow keys are intuitive for menus (UP=+, DOWN=−, RIGHT=enter, LEFT=esc)
-     * and double-bound to the symbolic keys so both feel natural.
-     * Bits 4-7 are flipper EOS sensors — kept 0 (no host key bound).
+    /* Physical[9] — 4 coin-door buttons (sw_num 72/73/74/75).
+     *   bit 0 (sw=72 'Escape') → ESC, LEFT          (Service Credits / Escape)
+     *   bit 1 (sw=73 'Down')   → DOWN, -, KP_-      (Volume − / Menu Down)
+     *   bit 2 (sw=74 'Up')     → UP,   =, KP_+      (Volume + / Menu Up)
+     *   bit 3 (sw=75 'Enter')  → RETURN, KP_ENTER, RIGHT  (Begin Test / Enter)
      */
-    if (keys[SDL_SCANCODE_5]      || keys[SDL_SCANCODE_KP_5]
-                                  || keys[SDL_SCANCODE_LEFT])    switches |= 0x01;
-    if (keys[SDL_SCANCODE_MINUS]  || keys[SDL_SCANCODE_KP_MINUS]
-                                  || keys[SDL_SCANCODE_DOWN])    switches |= 0x02;
-    if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]
-                                  || keys[SDL_SCANCODE_UP])      switches |= 0x04;
+    if (keys[SDL_SCANCODE_ESCAPE] || keys[SDL_SCANCODE_LEFT])     switches |= 0x01;
+    if (keys[SDL_SCANCODE_DOWN]   || keys[SDL_SCANCODE_MINUS]
+                                  || keys[SDL_SCANCODE_KP_MINUS]) switches |= 0x02;
+    if (keys[SDL_SCANCODE_UP]     || keys[SDL_SCANCODE_EQUALS]
+                                  || keys[SDL_SCANCODE_KP_PLUS])  switches |= 0x04;
     if (keys[SDL_SCANCODE_RETURN] || keys[SDL_SCANCODE_KP_ENTER]
-                                  || keys[SDL_SCANCODE_RIGHT])   switches |= 0x08;
+                                  || keys[SDL_SCANCODE_RIGHT])    switches |= 0x08;
 
-    if (s_coin_pulse > 0)  { switches |= 0x01; s_coin_pulse--; }   /* F9  → btn1 (credits) */
-    if (s_start_pulse > 0) { buttons  |= 0x80; s_start_pulse--; }  /* F10 → left action button */
+    if (s_coin_pulse > 0)  { switches |= 0x01; s_coin_pulse--; }   /* F10/C → btn1 (credits) */
+    if (s_start_pulse > 0) { buttons  |= 0x80; s_start_pulse--; }  /* legacy start pulse → left action */
 
     lpt_set_host_input(buttons, switches);
 }
