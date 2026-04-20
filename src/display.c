@@ -114,6 +114,35 @@ int display_init(void)
 
     g_emu.display_ready = true;
     LOG("disp", "SDL2 display: %dx%d ARGB8888\n", SCREEN_W, SCREEN_H);
+
+    /* Print key bindings to stderr so the user always has the up-to-date
+     * help text without digging in source. Mirrors the actual SDL key
+     * routing in display_handle_events. */
+    fprintf(stderr,
+        "\n=== Encore — SWE1 key bindings ===\n"
+        "  ESC / F1     quit\n"
+        "  F2           flip Y axis\n"
+        "  F3           screenshot\n"
+        "  F4           toggle COIN DOOR (open/closed interlock)\n"
+        "  F5           SERVICE menu enter/exit (pulse diag-escape)\n"
+        "  F6           hold diag-escape (debug)\n"
+        "  F7 / F8      host audio volume +/- (SDL mixer, not the game)\n"
+        "  F9           pulse credits (= 5 key)\n"
+        "  F10          pulse start/left-action (= SPACE)\n"
+        "  F11          toggle LPT trace log\n"
+        "  F12          dump guest switch state to stderr\n"
+        "  --- in-game (cabinet panel) ---\n"
+        "  5 / KP_5     credits / coin     (Phys[9].b0)\n"
+        "  - / KP_-     volume DOWN / nav  (Phys[9].b1)\n"
+        "  = / KP_+     volume UP / select (Phys[9].b2)\n"
+        "  ENTER        select             (Phys[9].b2)\n"
+        "  --- flippers / actions (Phys[10]) ---\n"
+        "  Z / LSHIFT   left flipper       (b4)\n"
+        "  / / RSHIFT   right flipper      (b3)\n"
+        "  X            right action       (b5)\n"
+        "  SPACE        left action        (b6)\n"
+        "==================================\n\n");
+
     return 0;
 }
 
@@ -216,13 +245,13 @@ void display_handle_events(void)
             case SDLK_F4:
                 lpt_toggle_coin_door();
                 break;
-            case SDLK_F5: {
-                static int s_service = 0;
-                s_service = !s_service;
-                lpt_inject_switch(1, s_service ? 0xFE : 0xFF);
-                LOG("input", "F5 — service mode %s\n", s_service ? "ON" : "OFF");
+            case SDLK_F5:
+                /* Enter / leave the SERVICE / DIAGNOSTICS menu.
+                 * Pulses the cabinet diag_escape switch — same as pressing
+                 * the hidden test button inside the coin door. */
+                lpt_pulse_diag_escape(60);
+                LOG("input", "F5 — diag_escape pulse (enter/exit service)\n");
                 break;
-            }
             case SDLK_F6:
                 lpt_toggle_slam_tilt();
                 break;
@@ -272,18 +301,24 @@ void display_handle_events(void)
     if (keys[SDL_SCANCODE_X])                                   buttons |= 0x20;
     if (keys[SDL_SCANCODE_SPACE])                               buttons |= 0x40;
 
-    /* Physical[9] — diag/menu nav (sw_num 72/73/74). In attract mode the
-     * game also uses these as volume DOWN / volume UP.
-     *   bit 0 = diag_down  / volume DOWN  → DOWN-arrow, KP_MINUS
-     *   bit 1 = diag_up    / volume UP    → UP-arrow,   KP_PLUS, EQUALS
-     *   bit 2 = diag_enter                → RETURN, KP_ENTER
+    /* Physical[9] — three-button cabinet panel inside the coin door.
+     * Static names are diag_down/diag_up/diag_enter (sw_num 72/73/74),
+     * but in ATTRACT mode the game dynamically overlays them as
+     * credits / volume_down / volume_up. Verified empirically:
+     *   bit 0 (sw=72 "diag_down")  → ATTRACT: credits     | TEST: nav
+     *   bit 1 (sw=73 "diag_up")    → ATTRACT: volume DOWN | TEST: nav
+     *   bit 2 (sw=74 "diag_enter") → ATTRACT: volume UP   | TEST: select
      */
-    if (keys[SDL_SCANCODE_DOWN]   || keys[SDL_SCANCODE_KP_MINUS] || keys[SDL_SCANCODE_MINUS]) switches |= 0x01;
-    if (keys[SDL_SCANCODE_UP]     || keys[SDL_SCANCODE_KP_PLUS]  || keys[SDL_SCANCODE_EQUALS]) switches |= 0x02;
-    if (keys[SDL_SCANCODE_RETURN] || keys[SDL_SCANCODE_KP_ENTER]) switches |= 0x04;
+    if (keys[SDL_SCANCODE_5]      || keys[SDL_SCANCODE_KP_5]
+                                  || keys[SDL_SCANCODE_DOWN])      switches |= 0x01;
+    if (keys[SDL_SCANCODE_MINUS]  || keys[SDL_SCANCODE_KP_MINUS]
+                                  || keys[SDL_SCANCODE_UP])        switches |= 0x02;
+    if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]
+                                  || keys[SDL_SCANCODE_RETURN]
+                                  || keys[SDL_SCANCODE_KP_ENTER])  switches |= 0x04;
 
-    if (s_coin_pulse > 0)  { switches |= 0x04; s_coin_pulse--; }   /* pulse diag_enter as a "credit/select" */
-    if (s_start_pulse > 0) { buttons  |= 0x40; s_start_pulse--; }  /* pulse left_action as "start" surrogate */
+    if (s_coin_pulse > 0)  { switches |= 0x01; s_coin_pulse--; }   /* F9 pulse → credits/coin */
+    if (s_start_pulse > 0) { buttons  |= 0x40; s_start_pulse--; }  /* F10 pulse → left action (start surrogate) */
 
     lpt_set_host_input(buttons, switches);
 }

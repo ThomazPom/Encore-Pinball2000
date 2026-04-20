@@ -390,6 +390,7 @@ void     lpt_activate(void);   /* activate LPT emulated port for PinIO (BT-93) *
 void     lpt_set_host_input(uint8_t buttons, uint8_t switches);
 void     lpt_toggle_coin_door(void);
 void     lpt_toggle_slam_tilt(void);
+void     lpt_pulse_diag_escape(int frames);  /* one-shot diag_escape press (enter/exit service menu) */
 void     lpt_toggle_trace(void);
 void     lpt_dump_guest_switch_state(void);
 void     lpt_inject_switch(int col, uint8_t data);

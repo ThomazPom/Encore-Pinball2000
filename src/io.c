@@ -800,9 +800,11 @@ static uint8_t s_lpt_switch_state = 0x00;
 /* Persistent cabinet bits (toggled, not pulsed):
  *   s_coin_door_open  → Physical[10] bit 0  (sw_num=80, swd_my_coin_door_proc)
  *   s_diag_escape     → Physical[8]  bit 7  (sw_num=71, swd_diag_escape_proc)
- * These are OR'd into the opcode-1 / opcode-0 reads in retrieve_rendering_status. */
+ * These are OR'd into the opcode-1 / opcode-0 reads in retrieve_rendering_status.
+ * s_diag_escape_pulse is a frame counter for a one-shot press (F5 = enter service). */
 static uint8_t s_coin_door_open = 0;
 static uint8_t s_diag_escape    = 0;
+static int     s_diag_escape_pulse = 0;
 
 /* Mirrors P2K-runtime calculateBitwiseSumBasedOnInput */
 static int calc_bitwise_sum(uint8_t val)
@@ -834,7 +836,12 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
 {
     uint8_t result = 0;
     switch (opcode) {
-    case 0x00: result = s_diag_escape ? 0x80 : 0x00; break;                  /* Physical[8]  */
+    case 0x00: {
+        uint8_t v = s_diag_escape ? 0x80 : 0x00;
+        if (s_diag_escape_pulse > 0) { v |= 0x80; s_diag_escape_pulse--; }
+        result = v;
+        break;
+    }                                                                        /* Physical[8]  */
     case 0x01: result = s_lpt_button_state | (s_coin_door_open ? 0x01 : 0); break; /* Physical[10] */
     case 0x02: result = 0xF0; break;                                         /* status hi; low nibble Physical[11] */
     case 0x03: result = s_lpt_switch_state; break;                           /* Physical[9]  */
@@ -900,7 +907,22 @@ void lpt_toggle_coin_door(void)
     /* sw_num=80 → Physical[10] bit 0 → opcode 0x01 read.
      * Bit=1 = switch CLOSED = door OPEN (normally-closed interlock). */
     s_coin_door_open = !s_coin_door_open;
+    fprintf(stderr, "[lpt] coin door %s (s_coin_door_open=%d)\n",
+            s_coin_door_open ? "OPEN" : "CLOSED", s_coin_door_open);
     LOG("lpt", "coin door %s\n", s_coin_door_open ? "OPEN" : "CLOSED");
+}
+
+void lpt_pulse_diag_escape(int frames)
+{
+    /* One-shot press of the diag_escape switch (sw=71, Physical[8] bit 7).
+     * On the real cabinet this is the test-button — pressing it from
+     * attract enters the diagnostics menu; pressing it inside a menu
+     * goes back/exit. ~25 reads ≈ several scan cycles, enough for the
+     * 2ms debounce to validate one edge. */
+    if (frames < 25) frames = 25;
+    s_diag_escape_pulse = frames;
+    fprintf(stderr, "[lpt] diag_escape pulse (%d reads)\n", frames);
+    LOG("lpt", "diag_escape pulse for %d reads\n", frames);
 }
 
 void lpt_toggle_slam_tilt(void)
