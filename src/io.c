@@ -825,9 +825,22 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
     case 0x02: result = 0xFF; break;                      /* status register */
     case 0x03: result = 0xFF & ~s_lpt_switch_state; break;/* active-LOW: set bits → 0 */
     case 0x04: result = 0xFF; break;                      /* playfield: all open */
-    case 0x0F: case 0x10: case 0x11:
-    case 0x12: case 0x13:
-        result = 0xFF; break;
+    /* Cases 0x0F-0x13: matches P2K-driver retrieveRenderingStatus exactly.
+     * These are auxiliary status reads (data flags / strobe).
+     * Returning a constant 0xFF here causes the game to read phantom
+     * switch/volume bits as active. */
+    case 0x0F:
+        result = (s_data_flag1 << 6) | (s_data_bit6 << 7);
+        s_data_bit6 = !s_data_bit6;
+        break;
+    case 0x10:
+    case 0x11:
+        result = s_data_bit6 ? 0x00 : 0xFF;
+        break;
+    case 0x12:
+    case 0x13:
+        result = 0;
+        break;
     default: result = 0x00; break;
     }
     return result;
