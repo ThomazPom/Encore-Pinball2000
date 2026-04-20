@@ -998,6 +998,37 @@ void lpt_set_start_button(int held)
             uint32_t one = 1;
             uc_mem_write(g_emu.uc, addr, &one, 4);
         }
+
+        /* Belt #3: NOP out the cmp/jne in the callback so start_game
+         * is ALWAYS called when sw=2 fires, regardless of state. This
+         * is the brute-force test: if SPACE now starts a game, then
+         * the callback at 0x17da4c IS the start_button proc and the
+         * sw=2 → callback wiring is correct. If still nothing, then
+         * either the callback is for a different sw_num, or
+         * start_game itself has its own gate.
+         *
+         * Original bytes at 0x0017da54: 83 f8 01 75 07
+         *   cmp eax, 1
+         *   jne 0x17da60
+         * Patched: 90 90 90 90 90 (5 NOPs) — fall through to call. */
+        if (s_start_button_held) {
+            static int s_patched = 0;
+            if (!s_patched) {
+                uint8_t orig[5] = {0};
+                uc_mem_read(g_emu.uc, 0x0017da54u, orig, 5);
+                uint8_t nops[5] = {0x90, 0x90, 0x90, 0x90, 0x90};
+                if (orig[0] == 0x83 && orig[1] == 0xf8 && orig[2] == 0x01 &&
+                    orig[3] == 0x75 && orig[4] == 0x07) {
+                    uc_mem_write(g_emu.uc, 0x0017da54u, nops, 5);
+                    s_patched = 1;
+                    fprintf(stderr, "[lpt] PATCH @0x17da54: NOPed cmp/jne — Start callback always calls start_game now\n");
+                } else {
+                    fprintf(stderr, "[lpt] PATCH @0x17da54 SKIPPED: bytes mismatch (%02x %02x %02x %02x %02x)\n",
+                            orig[0], orig[1], orig[2], orig[3], orig[4]);
+                    s_patched = -1;
+                }
+            }
+        }
     }
 
     if (prev != s_start_button_held)
