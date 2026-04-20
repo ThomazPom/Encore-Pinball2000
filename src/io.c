@@ -925,12 +925,41 @@ void lpt_activate(void)
 }
 
 static FILE *s_lpt_trace = NULL;
+static int   s_lpt_trace_enabled = 0;  /* runtime toggle (F11) */
 
 static void lpt_trace_open(void)
 {
-    if (s_lpt_trace || !getenv("ENCORE_LPT_TRACE")) return;
+    if (s_lpt_trace) return;
     s_lpt_trace = fopen("encore_lpt.log", "w");
-    if (s_lpt_trace) setvbuf(s_lpt_trace, NULL, _IOLBF, 0);
+    if (s_lpt_trace) setvbuf(s_lpt_trace, NULL, _IOFBF, 65536);
+}
+
+void lpt_toggle_trace(void)
+{
+    s_lpt_trace_enabled = !s_lpt_trace_enabled;
+    if (s_lpt_trace_enabled) lpt_trace_open();
+    if (s_lpt_trace) {
+        fprintf(s_lpt_trace, "\n=== TRACE %s ===\n",
+                s_lpt_trace_enabled ? "ON" : "OFF");
+        fflush(s_lpt_trace);
+    }
+    LOG("lpt", "trace %s\n", s_lpt_trace_enabled ? "ON" : "OFF");
+}
+
+/* Returns 1 if the value is interesting (not the idle/expected default). */
+static int lpt_val_interesting(uint8_t op, uint8_t val)
+{
+    switch (op) {
+    case 0x00: return val != s_rendering_status[0];   /* changed col 0 (toggle door) */
+    case 0x01: return val != 0x00;                    /* button pressed */
+    case 0x02: return val != 0xFF;
+    case 0x03: return val != 0xFF;                    /* switch active */
+    case 0x04: return val != 0xFF;
+    case 0x0F: return (val != 0x00 && val != 0x40 && val != 0x80 && val != 0xC0);
+    case 0x10: case 0x11: return (val != 0x00 && val != 0xFF);
+    case 0x12: case 0x13: return val != 0x00;
+    default:   return 1;
+    }
 }
 
 static uint32_t lpt_read(uint16_t port)
@@ -953,10 +982,14 @@ static uint32_t lpt_read(uint16_t port)
         if (s_lpt_rd_cnt <= 30 || (s_lpt_rd_cnt % 5000) == 0)
             LOG("lpt", "rd col=0x%02x val=0x%02x ctrl=0x%02x cnt=%d\n",
                     s_data_for_rendering, val, s_rendering_flags, s_lpt_rd_cnt);
-        if (s_lpt_trace)
-            fprintf(s_lpt_trace, "RD col=0x%02x val=0x%02x ctrl=0x%02x gated=%d btn=0x%02x sw=0x%02x cnt=%d\n",
+        /* Trace only interesting reads to keep file small and fast */
+        if (s_lpt_trace_enabled && s_lpt_trace &&
+            lpt_val_interesting(s_data_for_rendering, val)) {
+            fprintf(s_lpt_trace,
+                    "RD col=0x%02x val=0x%02x ctrl=0x%02x gated=%d btn=0x%02x sw=0x%02x cnt=%d\n",
                     s_data_for_rendering, val, s_rendering_flags, gated,
                     s_lpt_button_state, s_lpt_switch_state, s_lpt_rd_cnt);
+        }
         return val;
     }
     case 1: return 0x87u;
@@ -973,13 +1006,10 @@ static void lpt_write(uint16_t port, uint8_t val)
     if (!g_emu.lpt_active) return;
 
     s_lpt_wr_cnt++;
-    lpt_trace_open();
 
     switch (reg) {
     case 0:
         g_emu.lpt_data = val;
-        if (s_lpt_trace)
-            fprintf(s_lpt_trace, "WR data=0x%02x cnt=%d\n", val, s_lpt_wr_cnt);
         break;
     case 2: {
         uint8_t newctrl = val;
@@ -996,9 +1026,6 @@ static void lpt_write(uint16_t port, uint8_t val)
 
         s_rendering_flags = newctrl;
         g_emu.lpt_ctrl = newctrl;
-        if (s_lpt_trace)
-            fprintf(s_lpt_trace, "WR ctrl=0x%02x op=0x%02x data=0x%02x cnt=%d\n",
-                    newctrl, s_data_for_rendering, g_emu.lpt_data, s_lpt_wr_cnt);
         break;
     }
     }
