@@ -866,6 +866,7 @@ static int calc_bitwise_sum(uint8_t val)
  */
 static uint8_t retrieve_rendering_status(uint8_t opcode)
 {
+    extern volatile int g_lpt_handshake_log_frames;
     uint8_t result = 0;
     switch (opcode) {
     case 0x00:
@@ -922,12 +923,34 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
         break;
     default: result = 0x00; break;
     }
+    if (g_lpt_handshake_log_frames > 0) {
+        static uint8_t s_last_op = 0xFF, s_last_val = 0xFF;
+        if (opcode != s_last_op || result != s_last_val) {
+            uint32_t eip = 0;
+            if (g_emu.uc) uc_reg_read(g_emu.uc, UC_X86_REG_EIP, &eip);
+            fprintf(stderr, "[lpthsk] RD op=%02x → %02x  EIP=0x%08x\n",
+                    opcode, result, eip);
+            s_last_op = opcode; s_last_val = result;
+        }
+    }
     return result;
 }
 
+/* LPT-handshake forensic window: when SPACE is pressed, this counts
+ * down for ~3 seconds of frames, during which every LPT WR/RD is
+ * logged with EIP. Reveals if game queries something we don't answer. */
+volatile int g_lpt_handshake_log_frames = 0;
+
 /* i386 POC process_data_command — verbatim copy */
+extern volatile int g_lpt_handshake_log_frames; /* set by lpt_set_start_button */
 static void process_data_command(uint8_t opcode, uint8_t data)
 {
+    if (g_lpt_handshake_log_frames > 0) {
+        uint32_t eip = 0;
+        if (g_emu.uc) uc_reg_read(g_emu.uc, UC_X86_REG_EIP, &eip);
+        fprintf(stderr, "[lpthsk] WR op=%02x data=%02x  EIP=0x%08x\n",
+                opcode, data, eip);
+    }
     switch (opcode) {
     case 0x05:
         s_rendering_data_val = data; s_data_flag1 = 1;
@@ -966,6 +989,18 @@ void lpt_set_start_button(int held)
 {
     uint8_t prev = s_start_button_held;
     s_start_button_held = held ? 1 : 0;
+
+    /* On rising edge, open a 600-frame (~10s) LPT trace window so we
+     * can see exactly what the game queries via LPT after we inject
+     * the Start press. Helps test "missing handshake" hypothesis. */
+    if (!prev && s_start_button_held) {
+        g_lpt_handshake_log_frames = 600;
+        fprintf(stderr, "[lpthsk] === window OPEN (600 frames) ===\n");
+    }
+    if (g_lpt_handshake_log_frames > 0) {
+        if (--g_lpt_handshake_log_frames == 0)
+            fprintf(stderr, "[lpthsk] === window CLOSED ===\n");
+    }
 
     /* Belt-and-suspenders: also poke guest RAM directly so that even
      * if the matrix-scan opcode 0x04 path doesn't reach Physical[0],
