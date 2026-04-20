@@ -24,6 +24,7 @@ static int  s_auto_snap_id = 0;
 static int s_coin_high    = 0;
 static int s_coin_low     = 0;
 static int s_coin_pending = 0;
+int g_probe_col = 0;  /* DEBUG: current col for digit-key probe; [/] adjust */
 #define SCREENSHOT_DIR "/mnt/hgfs/encore_forensic/screen_captures"
 
 static void ensure_screenshot_dir(void)
@@ -139,7 +140,8 @@ int display_init(void)
         "  F11 / ALT+ENTER  Toggle FULLSCREEN\n"
         "  F12           Dump guest switch state to stderr\n"
         "  SPACE / S     START button (sw=2 / Phys[0].b2)\n"
-        "  0..7          DEBUG: force Phys[c0].bN — find which bit is real Start\n"
+        "  0..7          DEBUG: force Phys[c<col>].bN — find which bit is real Start\n"
+        "  [ ]           DEBUG: decrement / increment probe col (0..11)\n"
         "  --- coin-door panel (4 buttons; dual-function by mode) ---\n"
         "  ESC / LEFT    btn1: Service Credits / Escape    (Phys[9].b0)\n"
         "  DOWN  - KP_-  btn2: Volume −        / Menu Down (Phys[9].b1)\n"
@@ -286,6 +288,14 @@ void display_handle_events(void)
                     fprintf(stderr, "[disp] fullscreen %s via ALT+ENTER (rc=%d %s)\n",
                             fs ? "OFF" : "ON", rc, rc ? SDL_GetError() : "");
                 }
+                break;
+            case SDLK_LEFTBRACKET:
+                if (g_probe_col > 0) g_probe_col--;
+                fprintf(stderr, "[disp] probe col = %d\n", g_probe_col);
+                break;
+            case SDLK_RIGHTBRACKET:
+                if (g_probe_col < 11) g_probe_col++;
+                fprintf(stderr, "[disp] probe col = %d\n", g_probe_col);
                 break;
             case SDLK_F12:
                 lpt_dump_guest_switch_state();
