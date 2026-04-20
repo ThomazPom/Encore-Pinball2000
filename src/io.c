@@ -474,22 +474,45 @@ static void apply_sgc_patches(void)
         LOG("sgc", "prnull idle code @ 0xFF0000 (STI+HLT+JMP)\n");
     }
 
-    /* === BT-74: Patch JMP$ idle loop at 0x22f432 → HLT+JMP ===
-     * The game's main idle spin is EB FE (JMP -2, jump to self).
-     * In Unicorn, this creates a tight loop that prevents interrupt delivery.
-     * Patch to F4 EB FD (HLT; JMP -3) so HLT exits Unicorn's emu_start,
-     * allowing the host to deliver timer interrupts. */
+    /* === BT-74: Patch nulluser idle loop JMP$ → HLT+JMP (game-agnostic) ===
+     * XINU's nulluser() ends with a "MOV [flag],1; NOP; JMP $" pattern that
+     * busy-spins forever. In Unicorn, the tight EB FE loop blocks interrupt
+     * delivery → no scheduling → frozen.
+     *
+     * Pattern (verified for SWE1 v1.5 @0x22f432 AND RFM v1.6 @0x002623e4 —
+     * same compiler, same XINU layout):
+     *   75 B1                     JNZ -0x4F      (end of ctor walk loop)
+     *   C7 05 ?? ?? ?? ??         MOV [imm32], imm32   (ready flag)
+     *   01 00 00 00
+     *   90                        NOP
+     *   EB FE                     JMP $          (← we patch THIS site)
+     * Fix: replace the trailing "90 EB FE" with "F4 EB FD" (HLT; JMP -3) so
+     * HLT exits Unicorn's emu_start, host delivers timer IRQ, scheduler
+     * preempts to next process. */
     {
-        uint8_t code[3];
-        uc_mem_read(g_emu.uc, 0x0022f432u, code, 2);
-        if (code[0] == 0xEB && code[1] == 0xFE) {
-            uint8_t patch[3] = { 0xF4, 0xEB, 0xFD };
-            uc_mem_write(g_emu.uc, 0x0022f432u, patch, 3);
-            LOG("sgc", "BT-74: JMP$ → HLT+JMP at 0x22f432\n");
-        } else {
-            LOG("sgc", "BT-74: 0x22f432 = %02x %02x (not EB FE, skipped)\n",
-                code[0], code[1]);
+        const uint32_t scan_base2 = 0x00100000u;
+        const uint32_t scan_size2 = 0x300000u;
+        uint8_t *mb = malloc(scan_size2);
+        int hits = 0;
+        if (mb && uc_mem_read(g_emu.uc, scan_base2, mb, scan_size2) == UC_ERR_OK) {
+            for (uint32_t off = 0; off + 17 < scan_size2; off++) {
+                if (mb[off]    != 0x75 || mb[off+1]  != 0xB1) continue;
+                if (mb[off+2]  != 0xC7 || mb[off+3]  != 0x05) continue;
+                if (mb[off+8]  != 0x01 || mb[off+9]  != 0x00 ||
+                    mb[off+10] != 0x00 || mb[off+11] != 0x00) continue;
+                if (mb[off+12] != 0x90 || mb[off+13] != 0xEB ||
+                    mb[off+14] != 0xFE) continue;
+                uint32_t patch_at = scan_base2 + off + 12;
+                uint8_t patch[3] = { 0xF4, 0xEB, 0xFD };
+                uc_mem_write(g_emu.uc, patch_at, patch, 3);
+                LOG("sgc", "BT-74: nulluser idle JMP$ → HLT+JMP at 0x%08x\n", patch_at);
+                hits++;
+            }
         }
+        if (hits == 0)
+            LOG("sgc", "BT-74: nulluser idle pattern not found in 0x%x-0x%x\n",
+                scan_base2, scan_base2 + scan_size2);
+        free(mb);
     }
 
     /* DROPPED 2026-04-21 (RFM minimization pass):
@@ -1244,13 +1267,14 @@ static void uart_write(uint16_t port, uint8_t val)
                     lpt_activate();
                     LOG("sgc", "XINU boot detected (exec=%lu) — LPT activated (BT-94)\n",
                         (unsigned long)g_emu.exec_count);
-                    /* RFM (V1.12 layout) needs the prnull/scheduler proctab
-                     * patches at 0x2B3E94/0x2B3EB8/0x2BD544/0x2BD5EC/0x2BD540
-                     * confirmed correct by poc-P2K-runtime-i386/src/patches.c.
-                     * SWE1 V1.19 has different addresses (handled in cpu.c). */
-                    if (g_emu.game_id == 50070u) {
-                        apply_xinu_boot_patches();
-                    }
+                    /* DROPPED 2026-04-21: apply_xinu_boot_patches() for RFM.
+                     * Those addresses (0x2B3E94/0x2B3EB8/0x2BD544/0x2BD5EC/
+                     * 0x2BD540) are SWE1-V1.12 BSS layout, NOT RFM v1.6 —
+                     * the savsp guard already caught the mismatch
+                     * ("prnull savsp=0x101e74ff (unexpected)") but the
+                     * unconditional flag writes still corrupted 21 bytes
+                     * of unknown RFM data. RFM's own XINU sysinit
+                     * completes naturally; no scheduler poke needed. */
                 }
             }
 

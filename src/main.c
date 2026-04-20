@@ -51,6 +51,8 @@ static void parse_args(int argc, char **argv)
         } else if (strcmp(argv[i], "--lpt-device") == 0 && i + 1 < argc) {
             strncpy(g_emu.lpt_device, argv[++i], sizeof(g_emu.lpt_device) - 1);
             g_emu.lpt_device_explicit = true;
+        } else if (strcmp(argv[i], "--update") == 0 && i + 1 < argc) {
+            strncpy(g_emu.update_file, argv[++i], sizeof(g_emu.update_file) - 1);
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             printf(
 "Usage: encore [OPTIONS]\n"

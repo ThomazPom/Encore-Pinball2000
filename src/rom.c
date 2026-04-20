@@ -447,6 +447,24 @@ static void rom_load_update_flash(void)
      * The saved flash may have stale game code that fails checksum validation.
      * We always reload from the fresh update files to ensure consistency. */
 
+    /* Strategy 0: explicit --update FILE override */
+    if (g_emu.update_file[0]) {
+        size_t sz = 0;
+        uint8_t *data = load_file(g_emu.update_file, &sz);
+        if (data && sz > 0x50 && sz <= FLASH_SIZE) {
+            memcpy(g_emu.flash, data, sz);
+            uint32_t entry = *(uint32_t *)(g_emu.flash + 0x48);
+            LOG("flash", "Update loaded (--update): %s (%lu KB, entry=0x%08x)\n",
+                g_emu.update_file, (unsigned long)(sz >> 10), entry);
+            free(data);
+            g_emu.is_v19_update = true;
+            return;
+        }
+        LOG("flash", "WARN: --update %s failed (sz=%zu) — falling back to default search\n",
+            g_emu.update_file, sz);
+        free(data);
+    }
+
     /* Strategy 1: Try pre-concatenated update.bin.
      * Scan update dirs for subdirectories starting with game prefix. */
     {
