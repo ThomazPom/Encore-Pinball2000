@@ -1251,8 +1251,9 @@ static void uart_update_irq4(void)
 {
     bool pending = false;
 
-    if ((g_emu.uart_regs[1] & 0x01) && g_emu.monitor_active &&
-        g_emu.monitor_inject_pos < 10)
+    if ((g_emu.uart_regs[1] & 0x01) &&
+        ((g_emu.monitor_active && g_emu.monitor_inject_pos < 10) ||
+         netcon_serial_rx_pending()))
         pending = true; /* RDA */
 
     if ((g_emu.uart_regs[1] & 0x02) && s_uart_thre_pending)
@@ -1269,6 +1270,11 @@ static void uart_write(uint16_t port, uint8_t val)
     uint16_t off = port - PORT_COM1_BASE;
     if (off == 0) {
         /* THR — transmit character */
+
+        /* Mirror raw byte to TCP serial client (no filtering — preserve
+         * binary fidelity for crash dumps, control codes, etc.). */
+        netcon_serial_tx(val);
+
         if (val >= 0x20 || val == '\n' || val == '\r') {
             if (g_emu.uart_pos < (int)sizeof(g_emu.uart_buf) - 1)
                 g_emu.uart_buf[g_emu.uart_pos++] = (char)val;
@@ -1342,7 +1348,14 @@ static uint32_t uart_read(uint16_t port)
 {
     uint16_t off = port - PORT_COM1_BASE;
     switch (off) {
-    case 0: /* RBR — inject "continue\r" when monitor is active */
+    case 0: { /* RBR */
+        /* TCP serial client takes priority (real input from a human/script). */
+        uint8_t b;
+        if (netcon_serial_rx(&b)) {
+            uart_update_irq4();
+            return (uint32_t)b;
+        }
+        /* Fall back to the boot-time "continue\r" auto-injection. */
         if (g_emu.monitor_active && g_emu.monitor_inject_pos < 10) {
             const char *cont = "continue\r";
             char c = cont[g_emu.monitor_inject_pos++];
@@ -1356,10 +1369,12 @@ static uint32_t uart_read(uint16_t port)
             return (uint32_t)c;
         }
         return 0;
+    }
     case 2: {
         /* IIR — report UART-side pending causes, not raw PIC state. */
-        if ((g_emu.uart_regs[1] & 0x01) && g_emu.monitor_active &&
-            g_emu.monitor_inject_pos < 10) {
+        if ((g_emu.uart_regs[1] & 0x01) &&
+            ((g_emu.monitor_active && g_emu.monitor_inject_pos < 10) ||
+             netcon_serial_rx_pending())) {
             return 0x04;  /* RDA */
         }
         if ((g_emu.uart_regs[1] & 0x02) && s_uart_thre_pending) {
@@ -1370,10 +1385,11 @@ static uint32_t uart_read(uint16_t port)
         return 0x01;  /* no interrupt pending */
     }
     case 5: {
-        /* LSR — THRE + TEMT, plus DR when monitor inject active */
+        /* LSR — THRE + TEMT, plus DR when monitor inject or netcon active */
         uint8_t lsr = 0x60;
-        if (g_emu.monitor_active && g_emu.monitor_inject_pos < 10)
-            lsr |= 0x01; /* DR (data ready) — signal char available */
+        if ((g_emu.monitor_active && g_emu.monitor_inject_pos < 10) ||
+            netcon_serial_rx_pending())
+            lsr |= 0x01; /* DR (data ready) */
 
         /* UART poll drain: after many LSR reads with no action, inject NUL (BT-88) */
         g_emu.uart_lsr_count++;
@@ -1639,10 +1655,18 @@ uint32_t io_port_read(uint16_t port, int size)
         return 0;
 
     /* KBC */
-    case PORT_KBC_DATA:
+    case PORT_KBC_DATA: {
+        uint8_t scan;
+        if (netcon_keyboard_rx(&scan)) {
+            g_emu.kbc_outbuf = scan;
+            g_emu.kbc_status &= ~0x01;       /* OBF cleared on read */
+            return scan;
+        }
         return g_emu.kbc_outbuf;
+    }
     case PORT_KBC_CMD:
-        return g_emu.kbc_status;
+        /* Reflect "output buffer full" while a netcon scancode is queued. */
+        return g_emu.kbc_status | (netcon_keyboard_pending() ? 0x01 : 0x00);
 
     /* CMOS/RTC — return live system time on time-register reads */
     case PORT_CMOS_DATA: {

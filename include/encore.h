@@ -314,6 +314,16 @@ typedef struct {
     char          roms_dir[256];
     char          savedata_dir[256];
 
+    /* Netcon (network console) options.
+     *   serial_tcp_port   : if >0, listen on TCP port and bridge bidirectionally
+     *                       to the emulated COM1 UART (0x3F8).
+     *   keyboard_tcp_port : if >0, listen on TCP port and inject received bytes
+     *                       as PS/2 Set 1 scancodes (experimental).
+     *   headless          : skip SDL window/audio init — pure CPU + console. */
+    int           serial_tcp_port;
+    int           keyboard_tcp_port;
+    bool          headless;
+
     /* Savedata */
     uint16_t      seeprom[64];          /* 93C46 SEEPROM (128 bytes) */
     uint32_t      ems[4];              /* EMS state (16 bytes) */
@@ -419,6 +429,16 @@ void sound_set_global_volume(int vol);
 int  sound_get_global_volume(void);
 void sound_start_audio_init_thread(void);
 void sound_cleanup(void);
+
+/* netcon.c — TCP bridges for serial console and PS/2 keyboard. */
+void netcon_init(void);
+void netcon_poll(void);              /* call from frame loop (~60Hz is fine) */
+void netcon_serial_tx(uint8_t b);    /* UART THR byte → TCP client */
+bool netcon_serial_rx(uint8_t *out); /* TCP client → UART RBR (true if popped) */
+bool netcon_serial_rx_pending(void); /* peek without popping */
+bool netcon_keyboard_rx(uint8_t *out); /* TCP client → KBC scancode (true if popped) */
+bool netcon_keyboard_pending(void);  /* peek without popping */
+void netcon_cleanup(void);
 
 /* =========================================================================
  * Logging

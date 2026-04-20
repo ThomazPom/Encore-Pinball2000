@@ -1013,6 +1013,9 @@ handle_display:
                     display_handle_events();
                     display_update();
                 }
+                /* Always poll netcon — independent of SDL display so that
+                 * --headless + --serial-tcp / --keyboard-tcp still work. */
+                netcon_poll();
             }
         }
 

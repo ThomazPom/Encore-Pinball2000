@@ -36,13 +36,39 @@ static void parse_args(int argc, char **argv)
             strncpy(g_emu.roms_dir, argv[++i], sizeof(g_emu.roms_dir) - 1);
         } else if (strcmp(argv[i], "--savedata") == 0 && i + 1 < argc) {
             strncpy(g_emu.savedata_dir, argv[++i], sizeof(g_emu.savedata_dir) - 1);
+        } else if (strcmp(argv[i], "--serial-tcp") == 0 && i + 1 < argc) {
+            g_emu.serial_tcp_port = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--keyboard-tcp") == 0 && i + 1 < argc) {
+            g_emu.keyboard_tcp_port = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--headless") == 0) {
+            g_emu.headless = true;
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             printf("Usage: encore [OPTIONS]\n\n"
                    "Options:\n"
                    "  --game swe1|rfm|auto  Game selection (default: auto-detect)\n"
                    "  --roms /path          ROM directory\n"
                    "  --savedata /path      Save data directory\n"
+                   "  --serial-tcp PORT     Bridge emulated COM1 to TCP port.\n"
+                   "                          nc localhost PORT  ↔  XINA serial console\n"
+                   "                          (every shell prompt, pinevents log,\n"
+                   "                           crash dump comes through here, 9600 8N1\n"
+                   "                           on real hardware).\n"
+                   "  --keyboard-tcp PORT   Forward TCP bytes as PS/2 scancodes\n"
+                   "                          (experimental — may not yet drive the\n"
+                   "                           XINA shell on every boot path).\n"
+                   "  --headless            Skip SDL window/audio init — pure CPU.\n"
+                   "                          Combine with --serial-tcp for CI / scripted\n"
+                   "                          regression tests.\n"
                    "  -h, --help            Show this help\n"
+                   "\n"
+                   "Maybe-fun future ideas (not implemented):\n"
+                   "  --record FILE / --replay FILE   deterministic input capture/replay\n"
+                   "  --http   PORT                   read-only status HTTP endpoint\n"
+                   "                                  (FPS, switch matrix, regs, RAM peek)\n"
+                   "  --lpt-trace FILE                opt-in LPT bus trace dump\n"
+                   "  --xina-script FILE              type a list of XINA commands at boot\n"
+                   "  --net-bridge tap0               TUN/TAP for RFM internet leaderboard\n"
+                   "                                  (requires emulating the on-board NIC)\n"
                    "\n"
                    "Key bindings (F-row keys are positionally identical on every\n"
                    "keyboard layout — works on QWERTY, AZERTY, DVORAK, etc.):\n"
@@ -272,12 +298,19 @@ int main(int argc, char **argv)
     /* Apply RAM patches after ROM is in guest memory */
     apply_ram_patches();
 
-    /* Display and sound (non-fatal if they fail) */
-    if (display_init() != 0)
-        LOG("warn", "Display init failed — running headless\n");
+    /* Display and sound (non-fatal if they fail) — both skipped under --headless */
+    if (g_emu.headless) {
+        LOG("init", "headless mode — SDL display and audio disabled\n");
+    } else {
+        if (display_init() != 0)
+            LOG("warn", "Display init failed — running headless\n");
 
-    if (sound_init() != 0)
-        LOG("warn", "Sound init failed — running silent\n");
+        if (sound_init() != 0)
+            LOG("warn", "Sound init failed — running silent\n");
+    }
+
+    /* Network console bridges (no-ops if their --*-tcp ports were not given) */
+    netcon_init();
 
     /* Start timer and run */
     setup_timer();
@@ -289,6 +322,7 @@ int main(int argc, char **argv)
     cpu_run();
 
     cleanup_and_save();
+    netcon_cleanup();
 
     LOG("exit", "Encore finished (exec_count=%lu frames=%d)\n",
         (unsigned long)g_emu.exec_count, g_emu.frame_count);
