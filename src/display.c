@@ -138,7 +138,7 @@ int display_init(void)
         "  F10 / C       Insert credit (queueable; mash for multi)\n"
         "  F11 / ALT+ENTER  Toggle FULLSCREEN\n"
         "  F12           Dump guest switch state to stderr\n"
-        "  SPACE         START button (sw=2 / Phys[0].b2)\n"
+        "  SPACE / S     START button (sw=2 / Phys[0].b2)\n"
         "  0..7          DEBUG: force Phys[c0].bN — find which bit is real Start\n"
         "  --- coin-door panel (4 buttons; dual-function by mode) ---\n"
         "  ESC / LEFT    btn1: Service Credits / Escape    (Phys[9].b0)\n"
@@ -238,7 +238,8 @@ void display_handle_events(void)
              * scancodes actually reach SDL (some WMs eat F11). */
             if ((ev.key.keysym.sym >= SDLK_F1 && ev.key.keysym.sym <= SDLK_F12)
                 || ev.key.keysym.sym == SDLK_RETURN
-                || ev.key.keysym.sym == SDLK_SPACE)
+                || ev.key.keysym.sym == SDLK_SPACE
+                || ev.key.keysym.sym == SDLK_s)
                 fprintf(stderr, "[disp] keydown sym=0x%x mod=0x%x\n",
                         ev.key.keysym.sym, ev.key.keysym.mod);
             switch (ev.key.keysym.sym) {
@@ -339,8 +340,8 @@ void display_handle_events(void)
         s_coin_high--;
     }
 
-    /* SPACE → Start Button (sw=2, Phys[0].b2). Held-state polling. */
-    lpt_set_start_button(keys[SDL_SCANCODE_SPACE]);
+    /* SPACE or S → Start Button (sw=2, Phys[0].b2). Held-state polling. */
+    lpt_set_start_button(keys[SDL_SCANCODE_SPACE] || keys[SDL_SCANCODE_S]);
 
     /* DEBUG probe: digit keys 0..7 each set one bit of Physical[c0] +
      * Logical[c0]. Use this to discover which sw_num actually triggers
