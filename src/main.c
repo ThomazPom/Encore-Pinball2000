@@ -53,6 +53,27 @@ static void parse_args(int argc, char **argv)
             g_emu.lpt_device_explicit = true;
         } else if (strcmp(argv[i], "--update") == 0 && i + 1 < argc) {
             strncpy(g_emu.update_file, argv[++i], sizeof(g_emu.update_file) - 1);
+            /* Auto-detect game from update bin's game_id field (offset 0x803C
+             * in the flash image — set by the bootdata header). This ensures
+             * chip ROM loading + savedata naming match the update file, so
+             * --update <swe1.bin> doesn't get loaded on top of RFM chip ROMs. */
+            FILE *f = fopen(g_emu.update_file, "rb");
+            if (f) {
+                uint32_t gid = 0;
+                if (fseek(f, 0x3C, SEEK_SET) == 0 &&
+                    fread(&gid, 4, 1, f) == 1) {
+                    if (gid == 50069u) {
+                        strncpy(g_emu.game_prefix, "swe1", sizeof(g_emu.game_prefix) - 1);
+                        printf("[main] --update: detected SWE1 (game_id=%u) → forcing prefix=swe1\n", gid);
+                    } else if (gid == 50070u) {
+                        strncpy(g_emu.game_prefix, "rfm", sizeof(g_emu.game_prefix) - 1);
+                        printf("[main] --update: detected RFM (game_id=%u) → forcing prefix=rfm\n", gid);
+                    } else {
+                        printf("[main] --update: WARN unknown game_id=%u at 0x803C\n", gid);
+                    }
+                }
+                fclose(f);
+            }
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             printf(
 "Usage: encore [OPTIONS]\n"
