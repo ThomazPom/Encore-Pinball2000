@@ -123,24 +123,26 @@ int display_init(void)
         "  ESC / F1     quit\n"
         "  F2           flip Y axis\n"
         "  F3           screenshot\n"
-        "  F4           toggle COIN DOOR (open/closed interlock)\n"
-        "  F5           SERVICE menu enter/exit (pulse diag-escape)\n"
-        "  F6           hold diag-escape (debug)\n"
+        "  F4           toggle COIN DOOR (closed/open interlock)\n"
+        "  F5           pulse 'Enter' button (= Begin Test in attract,\n"
+        "                                       Enter/Select in service)\n"
+        "  F6           (no-op — bit unused on SWE1)\n"
         "  F7 / F8      host audio volume +/- (SDL mixer, not the game)\n"
-        "  F9           pulse credits (= 5 key)\n"
-        "  F10          pulse start/left-action (= SPACE)\n"
+        "  F9           pulse credits     (= 5 key)\n"
+        "  F10          pulse left action (= SPACE)\n"
         "  F11          toggle LPT trace log\n"
         "  F12          dump guest switch state to stderr\n"
-        "  --- in-game (cabinet panel) ---\n"
-        "  5 / KP_5     credits / coin     (Phys[9].b0)\n"
-        "  - / KP_-     volume DOWN / nav  (Phys[9].b1)\n"
-        "  = / KP_+     volume UP / select (Phys[9].b2)\n"
-        "  ENTER        select             (Phys[9].b2)\n"
-        "  --- flippers / actions (Phys[10]) ---\n"
-        "  Z / LSHIFT   left flipper       (b4)\n"
-        "  / / RSHIFT   right flipper      (b3)\n"
-        "  X            right action       (b5)\n"
-        "  SPACE        left action        (b6)\n"
+        "  --- coin-door panel (4 buttons) ---\n"
+        "  5 / KP_5     btn1: Service Credits / Escape    (Phys[9].b0)\n"
+        "  - / KP_-     btn2: Volume −       / Menu Down  (Phys[9].b1)\n"
+        "  = / KP_+     btn3: Volume +       / Menu Up    (Phys[9].b2)\n"
+        "  ENTER /      btn4: Begin Test     / Enter      (Phys[9].b3)\n"
+        "    KP_ENTER\n"
+        "  --- playfield (Phys[10]) ---\n"
+        "  / / RSHIFT   right flipper      (b4)\n"
+        "  Z / LSHIFT   left  flipper      (b5)\n"
+        "  X            right action       (b6)\n"
+        "  SPACE        left  action       (b7)\n"
         "==================================\n\n");
 
     return 0;
@@ -290,35 +292,34 @@ void display_handle_events(void)
     uint8_t buttons = 0;   /* opcode 0x01 → Physical[10] (flippers + actions) */
     uint8_t switches = 0;  /* opcode 0x03 → Physical[9]  (diag down/up/enter)  */
 
-    /* Physical[10] — flippers/actions (sw_num 83-86)
-     *   bit 3 = lower_right_flipper  → "/" or RSHIFT
-     *   bit 4 = lower_left_flipper   → Z or LSHIFT
-     *   bit 5 = right_action         → X
-     *   bit 6 = left_action          → SPACE
+    /* Physical[10] — flippers/actions (sw_num 84-87, bits 4-7).
+     * Lower bits 0-2 are interlocks (slam tilt / door / plumb tilt),
+     * driven by io.c — DO NOT touch them from here.
+     *   bit 4 = right flipper button → "/" or RSHIFT
+     *   bit 5 = left  flipper button → Z   or LSHIFT
+     *   bit 6 = right action button  → X
+     *   bit 7 = left  action button  → SPACE
      */
-    if (keys[SDL_SCANCODE_SLASH]  || keys[SDL_SCANCODE_RSHIFT]) buttons |= 0x08;
-    if (keys[SDL_SCANCODE_Z]      || keys[SDL_SCANCODE_LSHIFT]) buttons |= 0x10;
-    if (keys[SDL_SCANCODE_X])                                   buttons |= 0x20;
-    if (keys[SDL_SCANCODE_SPACE])                               buttons |= 0x40;
+    if (keys[SDL_SCANCODE_SLASH]  || keys[SDL_SCANCODE_RSHIFT]) buttons |= 0x10;
+    if (keys[SDL_SCANCODE_Z]      || keys[SDL_SCANCODE_LSHIFT]) buttons |= 0x20;
+    if (keys[SDL_SCANCODE_X])                                   buttons |= 0x40;
+    if (keys[SDL_SCANCODE_SPACE])                               buttons |= 0x80;
 
-    /* Physical[9] — three-button cabinet panel inside the coin door.
-     * Static names are diag_down/diag_up/diag_enter (sw_num 72/73/74),
-     * but in ATTRACT mode the game dynamically overlays them as
-     * credits / volume_down / volume_up. Verified empirically:
-     *   bit 0 (sw=72 "diag_down")  → ATTRACT: credits     | TEST: nav
-     *   bit 1 (sw=73 "diag_up")    → ATTRACT: volume DOWN | TEST: nav
-     *   bit 2 (sw=74 "diag_enter") → ATTRACT: volume UP   | TEST: select
+    /* Physical[9] — 4 buttons inside the coin door (sw_num 72/73/74/75).
+     * Same physical buttons re-purposed by mode:
+     *   bit 0 (sw=72 'Escape')  → attract: Service Credits | test: Escape
+     *   bit 1 (sw=73 'Down')    → attract: Volume −        | test: Menu Down
+     *   bit 2 (sw=74 'Up')      → attract: Volume +        | test: Menu Up
+     *   bit 3 (sw=75 'Enter')   → attract: Begin Test      | test: Enter/Select
+     * Bits 4-7 are flipper EOS sensors — kept 0 (no host key bound).
      */
-    if (keys[SDL_SCANCODE_5]      || keys[SDL_SCANCODE_KP_5]
-                                  || keys[SDL_SCANCODE_DOWN])      switches |= 0x01;
-    if (keys[SDL_SCANCODE_MINUS]  || keys[SDL_SCANCODE_KP_MINUS]
-                                  || keys[SDL_SCANCODE_UP])        switches |= 0x02;
-    if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]
-                                  || keys[SDL_SCANCODE_RETURN]
-                                  || keys[SDL_SCANCODE_KP_ENTER])  switches |= 0x04;
+    if (keys[SDL_SCANCODE_5]      || keys[SDL_SCANCODE_KP_5])     switches |= 0x01;
+    if (keys[SDL_SCANCODE_MINUS]  || keys[SDL_SCANCODE_KP_MINUS]) switches |= 0x02;
+    if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS])  switches |= 0x04;
+    if (keys[SDL_SCANCODE_RETURN] || keys[SDL_SCANCODE_KP_ENTER]) switches |= 0x08;
 
-    if (s_coin_pulse > 0)  { switches |= 0x01; s_coin_pulse--; }   /* F9 pulse → credits/coin */
-    if (s_start_pulse > 0) { buttons  |= 0x40; s_start_pulse--; }  /* F10 pulse → left action (start surrogate) */
+    if (s_coin_pulse > 0)  { switches |= 0x01; s_coin_pulse--; }   /* F9  → btn1 (credits) */
+    if (s_start_pulse > 0) { buttons  |= 0x80; s_start_pulse--; }  /* F10 → left action button */
 
     lpt_set_host_input(buttons, switches);
 }

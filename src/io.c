@@ -794,17 +794,26 @@ static uint8_t s_data_flag7          = 0;
 static int     s_data_bit4           = 0;
 static int     s_data_bit6           = 0;
 
-/* Game button/switch state — active-HIGH (bit SET = pressed, 0x00 = idle) */
+/* Game button/switch state — active-HIGH (bit SET = pressed, 0x00 = idle).
+ *   s_lpt_button_state → Physical[10] (flippers + action buttons, masked to bits 4-7)
+ *   s_lpt_switch_state → Physical[9]  (4 coin-door buttons, masked to bits 0-3) */
 static uint8_t s_lpt_button_state = 0x00;
 static uint8_t s_lpt_switch_state = 0x00;
-/* Persistent cabinet bits (toggled, not pulsed):
- *   s_coin_door_open  → Physical[10] bit 0  (sw_num=80, swd_my_coin_door_proc)
- *   s_diag_escape     → Physical[8]  bit 7  (sw_num=71, swd_diag_escape_proc)
- * These are OR'd into the opcode-1 / opcode-0 reads in retrieve_rendering_status.
- * s_diag_escape_pulse is a frame counter for a one-shot press (F5 = enter service). */
-static uint8_t s_coin_door_open = 0;
-static uint8_t s_diag_escape    = 0;
-static int     s_diag_escape_pulse = 0;
+
+/* Persistent cabinet interlocks — Physical[10]:
+ *   bit 0 = sw=80 SLAM TILT       (must stay 0 in idle, else game refuses play)
+ *   bit 1 = sw=81 Coin Door CLOSED (interlock; 1 = door physically closed)
+ *   bit 2 = sw=82 Plumb-bob tilt   (stays 0)
+ * F4 toggles s_coin_door_closed. Boot default = closed (1) so the
+ * "OPEN COIN DOOR" overlay disappears and play is enabled. */
+static uint8_t s_coin_door_closed = 1;
+
+/* One-shot pulse for sw=75 'Enter' button (Physical[9] bit 3).
+ * F5 calls lpt_pulse_enter() which holds the bit high for ~60 LPT
+ * reads — long enough for the 2ms scan to validate one press+release
+ * edge. From attract this enters the diagnostics menu; inside a menu
+ * it acts as ENTER/select. */
+static int     s_enter_pulse = 0;
 
 /* Mirrors P2K-runtime calculateBitwiseSumBasedOnInput */
 static int calc_bitwise_sum(uint8_t val)
@@ -817,35 +826,66 @@ static int calc_bitwise_sum(uint8_t val)
     return has_bit + sum;
 }
 
-/* LPT switch matrix — VERIFIED from SWE1 ROM:
- *   - scan loop  @ game.rom file 0xad065-0xad1ff
- *   - SwitchInit @ 0xacf4c (96 entries × 0x30 bytes at 0x2e3018, indexed by sw_num)
+/* LPT switch matrix — RE-VERIFIED from SWE1 ROM table @ 0x2e3018:
  *
- * Scan loop stores PinIORead results DIRECTLY into Physical[col] (no inversion).
- * Dispatcher fires when (Physical[col] & BitMask[bit]) != 0 — bit=1 = PRESSED,
- * for every column. Idle = 0x00 everywhere.
+ *   The SwitchInit table has a subtle off-by-one quirk: for entry index N
+ *   the *name strings* (offsets +0x14..+0x20) describe sw_num = N, but
+ *   the *callback pointer* at +0x2c is actually entry (N+1)'s first
+ *   field — i.e. each entry's REAL stride begins at +0x2c of the previous
+ *   one. So the swd_*_proc symbols line up with the strings of entry N+1.
+ *   Double-check by following a few: entry 1 cb=swd_start_button_proc /
+ *   entry 2 names=["Start Button"] → sw_num=2 IS Start Button. ✓
  *
- *   opcode 0x04 → Physical[0..7]   (matrix scan; col selected via opcode 5)
- *   opcode 0x00 → Physical[8]      (only sw=71 diag_escape, bit 7)
- *   opcode 0x03 → Physical[9]      (sw=72/73/74 = diag_down/up/enter, bits 0/1/2)
- *   opcode 0x01 → Physical[10]     (sw=80 coin door bit 0; sw=83-86 flippers/actions bits 3-6)
- *   opcode 0x02 → Physical[11] LOW nibble only; HIGH nibble = device-status word
- *                  checked by PinIOWork_16ms — must be != 0x78 (we use 0xF0).
+ *   Authoritative map (sw_num → col,bit → meaning):
+ *     sw= 2  c0 b2  Start Button
+ *     sw=64  c8 b0  Left   Coin Slot
+ *     sw=65  c8 b1  Center Coin Slot
+ *     sw=66  c8 b2  Right  Coin Slot
+ *     sw=67  c8 b3  4th    Coin Option
+ *     sw=72  c9 b0  'Escape' button (= Service Credits in attract)
+ *     sw=73  c9 b1  'Down'   button (= Volume −     in attract)
+ *     sw=74  c9 b2  'Up'     button (= Volume +     in attract)
+ *     sw=75  c9 b3  'Enter'  button (= Begin Test   in attract)
+ *     sw=80  c10 b0 SLAM TILT             (must be 0 idle!)
+ *     sw=81  c10 b1 Coin Door Closed      (interlock; 1=closed)
+ *     sw=82  c10 b2 Plumb-bob Tilt        (0 idle)
+ *     sw=84  c10 b4 Right flipper button
+ *     sw=85  c10 b5 Left  flipper button
+ *     sw=86  c10 b6 Right Action button
+ *     sw=87  c10 b7 Left  Action button
+ *
+ *   Column → opcode mapping (verified twice in scan loop @ 0xad137):
+ *     col 8  → opcode 0x00  (push 0)
+ *     col 9  → opcode 0x03  (push 3)
+ *     col 10 → opcode 0x01  (push ebx=1)
+ *     col 11 → opcode 0x02  (push 2)
+ *     col 0..7 → opcode 0x04 + col selected via opcode 0x05 latch
  */
 static uint8_t retrieve_rendering_status(uint8_t opcode)
 {
     uint8_t result = 0;
     switch (opcode) {
-    case 0x00: {
-        uint8_t v = s_diag_escape ? 0x80 : 0x00;
-        if (s_diag_escape_pulse > 0) { v |= 0x80; s_diag_escape_pulse--; }
+    case 0x00:
+        /* Physical[8] — coin slots only (bits 0-3). Idle = 0x00. */
+        result = s_lpt_button_state >> 4;  /* unused for now; coin-slot keys not bound */
+        result = 0x00;                     /* keep zero until a coin-slot key is added */
+        break;
+    case 0x01: {
+        /* Physical[10] — flippers/actions + door interlock + tilts */
+        uint8_t v = s_lpt_button_state & 0xF0;       /* bits 4-7 from host keys */
+        if (s_coin_door_closed) v |= 0x02;           /* bit 1 = door closed (interlock) */
+        result = v;                                  /* bit 0 (slam) and bit 2 (plumb) stay 0 */
+        break;
+    }
+    case 0x02: result = 0xF0; break;                 /* status hi nibble; low = Physical[11] */
+    case 0x03: {
+        /* Physical[9] — 4 coin-door buttons (bits 0-3); flipper EOS bits 4-7 stay 0 */
+        uint8_t v = s_lpt_switch_state & 0x0F;
+        if (s_enter_pulse > 0) { v |= 0x08; s_enter_pulse--; }   /* F5 → 'Enter' button */
         result = v;
         break;
-    }                                                                        /* Physical[8]  */
-    case 0x01: result = s_lpt_button_state | (s_coin_door_open ? 0x01 : 0); break; /* Physical[10] */
-    case 0x02: result = 0xF0; break;                                         /* status hi; low nibble Physical[11] */
-    case 0x03: result = s_lpt_switch_state; break;                           /* Physical[9]  */
-    case 0x04: result = s_rendering_status[1]; break;                        /* Physical[0..7] matrix scan */
+    }
+    case 0x04: result = s_rendering_status[1]; break;  /* Physical[0..7] matrix scan */
     /* Cases 0x0F-0x13: matches P2K-driver retrieveRenderingStatus exactly.
      * These are auxiliary status reads (data flags / strobe).
      * Returning a constant 0xFF here causes the game to read phantom
@@ -904,34 +944,35 @@ void lpt_set_host_input(uint8_t buttons, uint8_t switches)
 
 void lpt_toggle_coin_door(void)
 {
-    /* sw_num=80 → Physical[10] bit 0 → opcode 0x01 read.
-     * Bit=1 = switch CLOSED = door OPEN (normally-closed interlock). */
-    s_coin_door_open = !s_coin_door_open;
-    fprintf(stderr, "[lpt] coin door %s (s_coin_door_open=%d)\n",
-            s_coin_door_open ? "OPEN" : "CLOSED", s_coin_door_open);
-    LOG("lpt", "coin door %s\n", s_coin_door_open ? "OPEN" : "CLOSED");
+    /* sw=81 → Physical[10] bit 1 → opcode 0x01 read.
+     * Bit=1 = "Coin Door CLOSED" interlock asserted. Game enables play
+     * when this is HIGH; when LOW the "OPEN COIN DOOR" overlay shows
+     * and the diagnostics buttons are reachable. */
+    s_coin_door_closed = !s_coin_door_closed;
+    fprintf(stderr, "[lpt] coin door %s (interlock bit=%d)\n",
+            s_coin_door_closed ? "CLOSED" : "OPEN", s_coin_door_closed);
+    LOG("lpt", "coin door %s\n", s_coin_door_closed ? "CLOSED" : "OPEN");
 }
 
 void lpt_pulse_diag_escape(int frames)
 {
-    /* One-shot press of the diag_escape switch (sw=71, Physical[8] bit 7).
-     * On the real cabinet this is the test-button — pressing it from
-     * attract enters the diagnostics menu; pressing it inside a menu
-     * goes back/exit. ~25 reads ≈ several scan cycles, enough for the
-     * 2ms debounce to validate one edge. */
+    /* Kept for ABI compatibility — actually pulses the 'Enter' button
+     * (sw=75, Physical[9] bit 3) which is the BEGIN-TEST switch in
+     * attract / ENTER in service menus. The SWE1 static table has no
+     * "diag_escape" callback at sw=71 (that index is "Not Used"); the
+     * REAL escape function lives at sw=72 (the c9 b0 button). */
     if (frames < 25) frames = 25;
-    s_diag_escape_pulse = frames;
-    fprintf(stderr, "[lpt] diag_escape pulse (%d reads)\n", frames);
-    LOG("lpt", "diag_escape pulse for %d reads\n", frames);
+    s_enter_pulse = frames;
+    fprintf(stderr, "[lpt] 'Enter' button pulse (%d reads)\n", frames);
+    LOG("lpt", "enter-button pulse for %d reads\n", frames);
 }
 
 void lpt_toggle_slam_tilt(void)
 {
-    /* No slam-tilt entry exists in the SWE1 static switch table; reuse the
-     * diag_escape line (sw=71, Physical[8] bit 7) so F6 still does something
-     * useful (it dismisses test-menu screens). */
-    s_diag_escape = !s_diag_escape;
-    LOG("lpt", "diag-escape (F6) %s\n", s_diag_escape ? "DOWN" : "UP");
+    /* DEPRECATED: previously toggled what we wrongly thought was diag_escape
+     * (Physical[8] bit 7). That bit is "Not Used" in SWE1. F6 now does
+     * nothing — kept as a no-op so the SDL handler still links cleanly. */
+    LOG("lpt", "F6 no-op (unused bit in SWE1 switch table)\n");
 }
 
 void lpt_inject_switch(int col, uint8_t data)
@@ -955,12 +996,12 @@ void lpt_activate(void)
     s_data_bit4 = 0;
     s_data_bit6 = 0;
 
-    /* Idle = 0x00 across the board. Coin door starts OPEN — the attract
-     * loop expects an open coin door (the "OPEN COIN DOOR" overlay is
-     * normal). The user can close it with F4 to enable play. */
+    /* Idle = 0x00 across the matrix scan store. Coin door starts CLOSED
+     * so the "OPEN COIN DOOR" overlay is gone and play is enabled. F4
+     * toggles to OPEN to allow service-button access. */
     memset(s_rendering_status, 0x00, sizeof(s_rendering_status));
-    s_coin_door_open = 1;
-    s_diag_escape    = 0;
+    s_coin_door_closed = 1;
+    s_enter_pulse      = 0;
 
     LOG("lpt", "activated — i386 POC opcode protocol (latch echo + active-low)\n");
 }
@@ -1024,8 +1065,8 @@ void lpt_dump_guest_switch_state(void)
         fprintf(stderr, "\n");
     }
     /* Also surface what we are currently feeding the matrix */
-    fprintf(stderr, "  encore-side: lpt_button=0x%02x lpt_switch=0x%02x door=%d esc=%d\n",
-            s_lpt_button_state, s_lpt_switch_state, s_coin_door_open, s_diag_escape);
+    fprintf(stderr, "  encore-side: lpt_button=0x%02x lpt_switch=0x%02x door_closed=%d enter_pulse=%d\n",
+            s_lpt_button_state, s_lpt_switch_state, s_coin_door_closed, s_enter_pulse);
     /* And the LPT presence flag the guest computed */
     uint32_t pinio_lpt = 0xffffffffu, pinio_state = 0;
     uc_mem_read(g_emu.uc, 0x002e992cu, &pinio_lpt, 4);
@@ -1039,10 +1080,10 @@ void lpt_dump_guest_switch_state(void)
 static int lpt_val_interesting(uint8_t op, uint8_t val)
 {
     switch (op) {
-    case 0x00: return val != 0x00 && val != 0x80;     /* Physical[8] — diag_escape only */
-    case 0x01: return val != 0x00 && val != 0x01;     /* Physical[10] — ignore door-only */
+    case 0x00: return val != 0x00;                    /* Physical[8] — coin slots, idle = 0 */
+    case 0x01: return val != 0x00 && val != 0x02;     /* Physical[10] — ignore door-only */
     case 0x02: return val != 0xF0;
-    case 0x03: return val != 0x00;                    /* switch active */
+    case 0x03: return val != 0x00;                    /* Physical[9] — switch active */
     case 0x04: return val != 0x00;
     case 0x0F: return (val != 0x00 && val != 0x40 && val != 0x80 && val != 0xC0);
     case 0x10: case 0x11: return (val != 0x00 && val != 0xFF);
