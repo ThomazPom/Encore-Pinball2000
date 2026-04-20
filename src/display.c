@@ -258,27 +258,32 @@ void display_handle_events(void)
     }
 
     const uint8_t *keys = SDL_GetKeyboardState(NULL);
-    uint8_t buttons = 0;
-    uint8_t switches = 0;
+    uint8_t buttons = 0;   /* opcode 0x01 → Physical[10] (flippers + actions) */
+    uint8_t switches = 0;  /* opcode 0x03 → Physical[9]  (diag down/up/enter)  */
 
-    if (keys[SDL_SCANCODE_Z] || keys[SDL_SCANCODE_UP])    buttons |= 0x10;
-    if (keys[SDL_SCANCODE_X] || keys[SDL_SCANCODE_DOWN])  buttons |= 0x20;
-    if (keys[SDL_SCANCODE_SPACE] || keys[SDL_SCANCODE_A]) buttons |= 0x40;
-    if (keys[SDL_SCANCODE_RETURN] || keys[SDL_SCANCODE_A]) buttons |= 0x80;
+    /* Physical[10] — flippers/actions (sw_num 83-86)
+     *   bit 3 = lower_right_flipper  → "/" or RSHIFT
+     *   bit 4 = lower_left_flipper   → Z or LSHIFT
+     *   bit 5 = right_action         → X
+     *   bit 6 = left_action          → SPACE
+     */
+    if (keys[SDL_SCANCODE_SLASH]  || keys[SDL_SCANCODE_RSHIFT]) buttons |= 0x08;
+    if (keys[SDL_SCANCODE_Z]      || keys[SDL_SCANCODE_LSHIFT]) buttons |= 0x10;
+    if (keys[SDL_SCANCODE_X])                                   buttons |= 0x20;
+    if (keys[SDL_SCANCODE_SPACE])                               buttons |= 0x40;
 
-    if (keys[SDL_SCANCODE_5] || keys[SDL_SCANCODE_KP_5])  switches |= 0x01;
-    if (keys[SDL_SCANCODE_1] || keys[SDL_SCANCODE_KP_1])  switches |= 0x02;
-    if (keys[SDL_SCANCODE_LEFT])  switches |= 0x04;
-    if (keys[SDL_SCANCODE_RIGHT]) switches |= 0x08;
+    /* Physical[9] — diag/menu nav (sw_num 72/73/74). In attract mode the
+     * game also uses these as volume DOWN / volume UP.
+     *   bit 0 = diag_down  / volume DOWN  → DOWN-arrow, KP_MINUS
+     *   bit 1 = diag_up    / volume UP    → UP-arrow,   KP_PLUS, EQUALS
+     *   bit 2 = diag_enter                → RETURN, KP_ENTER
+     */
+    if (keys[SDL_SCANCODE_DOWN]   || keys[SDL_SCANCODE_KP_MINUS] || keys[SDL_SCANCODE_MINUS]) switches |= 0x01;
+    if (keys[SDL_SCANCODE_UP]     || keys[SDL_SCANCODE_KP_PLUS]  || keys[SDL_SCANCODE_EQUALS]) switches |= 0x02;
+    if (keys[SDL_SCANCODE_RETURN] || keys[SDL_SCANCODE_KP_ENTER]) switches |= 0x04;
 
-    if (s_coin_pulse > 0) {
-        switches |= 0x01;
-        s_coin_pulse--;
-    }
-    if (s_start_pulse > 0) {
-        switches |= 0x02;
-        s_start_pulse--;
-    }
+    if (s_coin_pulse > 0)  { switches |= 0x04; s_coin_pulse--; }   /* pulse diag_enter as a "credit/select" */
+    if (s_start_pulse > 0) { buttons  |= 0x40; s_start_pulse--; }  /* pulse left_action as "start" surrogate */
 
     lpt_set_host_input(buttons, switches);
 }
