@@ -820,10 +820,10 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
 {
     uint8_t result = 0;
     switch (opcode) {
-    case 0x00: result = 0xFF; break;                      /* active-LOW: all open */
+    case 0x00: result = s_rendering_status[0]; break;     /* active-LOW: coin door bit 1 etc. */
     case 0x01: result = s_lpt_button_state; break;        /* active-HIGH: bit=1 pressed */
     case 0x02: result = 0xFF; break;                      /* status register */
-    case 0x03: result = 0xFF & ~s_lpt_switch_state; break;/* active-LOW: set bits → 0 */
+    case 0x03: result = 0xFFu & ~s_lpt_switch_state; break;/* active-LOW: set bits → 0 */
     case 0x04: result = 0xFF; break;                      /* playfield: all open */
     /* Cases 0x0F-0x13: matches P2K-driver retrieveRenderingStatus exactly.
      * These are auxiliary status reads (data flags / strobe).
@@ -883,12 +883,19 @@ void lpt_set_host_input(uint8_t buttons, uint8_t switches)
 
 void lpt_toggle_coin_door(void)
 {
-    LOG("lpt", "coin door toggle (informational)\n");
+    /* Coin door is on col 0 bit 1, active-LOW.
+     * Closed: bit 1 = 1 (default). Open: bit 1 = 0. */
+    s_rendering_status[0] ^= 0x02;
+    LOG("lpt", "coin door toggle: col0=0x%02x (door %s)\n",
+            s_rendering_status[0],
+            (s_rendering_status[0] & 0x02) ? "CLOSED" : "OPEN");
 }
 
 void lpt_toggle_slam_tilt(void)
 {
-    LOG("lpt", "slam tilt toggle (informational)\n");
+    /* Slam tilt — col 0 bit 2, active-LOW (best guess) */
+    s_rendering_status[0] ^= 0x04;
+    LOG("lpt", "slam tilt toggle: col0=0x%02x\n", s_rendering_status[0]);
 }
 
 void lpt_inject_switch(int col, uint8_t data)
@@ -917,6 +924,15 @@ void lpt_activate(void)
     LOG("lpt", "activated — i386 POC opcode protocol (latch echo + active-low)\n");
 }
 
+static FILE *s_lpt_trace = NULL;
+
+static void lpt_trace_open(void)
+{
+    if (s_lpt_trace || !getenv("ENCORE_LPT_TRACE")) return;
+    s_lpt_trace = fopen("encore_lpt.log", "w");
+    if (s_lpt_trace) setvbuf(s_lpt_trace, NULL, _IOLBF, 0);
+}
+
 static uint32_t lpt_read(uint16_t port)
 {
     static int s_lpt_rd_cnt = 0;
@@ -928,7 +944,8 @@ static uint32_t lpt_read(uint16_t port)
     case 0: { /* Data port read */
         s_lpt_rd_cnt++;
         uint8_t val;
-        if ((s_rendering_flags & 0x01) && (s_rendering_flags & 0x08)) {
+        int gated = (s_rendering_flags & 0x01) && (s_rendering_flags & 0x08);
+        if (gated) {
             val = retrieve_rendering_status(s_data_for_rendering);
         } else {
             val = g_emu.lpt_data;
@@ -936,6 +953,10 @@ static uint32_t lpt_read(uint16_t port)
         if (s_lpt_rd_cnt <= 30 || (s_lpt_rd_cnt % 5000) == 0)
             LOG("lpt", "rd col=0x%02x val=0x%02x ctrl=0x%02x cnt=%d\n",
                     s_data_for_rendering, val, s_rendering_flags, s_lpt_rd_cnt);
+        if (s_lpt_trace)
+            fprintf(s_lpt_trace, "RD col=0x%02x val=0x%02x ctrl=0x%02x gated=%d btn=0x%02x sw=0x%02x cnt=%d\n",
+                    s_data_for_rendering, val, s_rendering_flags, gated,
+                    s_lpt_button_state, s_lpt_switch_state, s_lpt_rd_cnt);
         return val;
     }
     case 1: return 0x87u;
@@ -952,10 +973,13 @@ static void lpt_write(uint16_t port, uint8_t val)
     if (!g_emu.lpt_active) return;
 
     s_lpt_wr_cnt++;
+    lpt_trace_open();
 
     switch (reg) {
     case 0:
         g_emu.lpt_data = val;
+        if (s_lpt_trace)
+            fprintf(s_lpt_trace, "WR data=0x%02x cnt=%d\n", val, s_lpt_wr_cnt);
         break;
     case 2: {
         uint8_t newctrl = val;
@@ -972,6 +996,9 @@ static void lpt_write(uint16_t port, uint8_t val)
 
         s_rendering_flags = newctrl;
         g_emu.lpt_ctrl = newctrl;
+        if (s_lpt_trace)
+            fprintf(s_lpt_trace, "WR ctrl=0x%02x op=0x%02x data=0x%02x cnt=%d\n",
+                    newctrl, s_data_for_rendering, g_emu.lpt_data, s_lpt_wr_cnt);
         break;
     }
     }
