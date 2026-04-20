@@ -258,15 +258,14 @@ typedef struct {
     uint8_t  uart_regs[8];
     char     uart_buf[4096];
     int      uart_pos;
-    int      uart_lsr_count;           /* LSR poll counter for drain (BT-88) */
-    bool     monitor_active;           /* XINU monitor prompt detected */
-    int      monitor_inject_pos;       /* position in "continue\r" injection */
 
     /* LPT — Pinball 2000 driver board interface (BT-120) */
     uint8_t  lpt_data;
     uint8_t  lpt_status;
     uint8_t  lpt_ctrl;
     bool     lpt_active;              /* LPT emulated port activated */
+    char     lpt_device[256];         /* passthrough device path; "" = default, "none" = force emulation */
+    bool     lpt_device_explicit;     /* user gave --lpt-device → fail hard if open fails */
 
     /* SuperIO / CC5530 */
     uint8_t  superio_idx;              /* W83977EF index register (0x2E) */
@@ -397,6 +396,13 @@ void     dcs_io_get_counters(uint32_t *ww, uint32_t *wr, uint32_t *bw, uint32_t 
 void     io_init(void);
 void     nic_dseg_init(void);  /* populate NIC LAN ROM in D-segment guest RAM */
 void     lpt_activate(void);   /* activate LPT emulated port for PinIO (BT-93) */
+
+/* lpt_pass.c — real LPT passthrough via Linux ppdev */
+int      lpt_passthrough_open(const char *device);
+void     lpt_passthrough_close(void);
+bool     lpt_passthrough_active(void);
+uint8_t  lpt_passthrough_read(uint8_t reg);
+void     lpt_passthrough_write(uint8_t reg, uint8_t val);
 void     lpt_set_host_input(uint8_t buttons, uint8_t switches);
 void     lpt_toggle_coin_door(void);
 void     lpt_toggle_slam_tilt(void);

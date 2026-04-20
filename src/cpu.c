@@ -814,38 +814,6 @@ void cpu_run(void)
             RAM_WR32(0, 0);
         }
 
-        /* DCS command queue injection — DISABLED: game now uses BAR4 mode
-         * (UART detection returns 0xFF → BAR4 path, matching i386 POC) */
-#if 0
-        {
-            static int s_dcs_injected = 0;
-            if (!s_dcs_injected && g_emu.game_started) {
-                uint32_t rdy = RAM_RD32(0x3442f4);
-                uint32_t cpl = RAM_RD32(0x3442f0);
-                uint32_t dcs_mode = RAM_RD32(0x3444b0);
-                if (rdy == 1 && cpl == 0 && dcs_mode == 0) {
-                    uint32_t wr_idx = RAM_RD32(0x344408);
-                    uint32_t rd_idx = RAM_RD32(0x34440c);
-                    if (wr_idx == rd_idx) {
-                        /* Queue is empty — inject init commands */
-                        uint16_t cmds[] = { 0x003A, 0x00AA };
-                        int ncmds = sizeof(cmds) / sizeof(cmds[0]);
-                        for (int i = 0; i < ncmds; i++) {
-                            uint32_t slot = (wr_idx + i) & 0x7F;
-                            uint16_t cmd = cmds[i];
-                            uint32_t addr = 0x344308 + slot * 2;
-                            RAM_WR16(addr, cmd);
-                        }
-                        RAM_WR32(0x344408, wr_idx + ncmds);
-                        s_dcs_injected = 1;
-                        LOG("dcs", "CMD INJECT: %d commands → queue (wr=%u→%u rd=%u)\n",
-                            ncmds, wr_idx, wr_idx + ncmds, rd_idx);
-                    }
-                }
-            }
-        }
-#endif
-
         /* Read EIP after execution stopped */
         uc_reg_read(uc, UC_X86_REG_EIP, &eip);
 

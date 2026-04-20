@@ -1053,6 +1053,15 @@ void lpt_toggle_slam_tilt(void)
 
 void lpt_inject_switch(int col, uint8_t data)
 {
+    if (lpt_passthrough_active()) {
+        static int s_warned = 0;
+        if (!s_warned) {
+            LOG("lpt", "inject ignored — passthrough active "
+                       "(use real cabinet switches)\n");
+            s_warned = 1;
+        }
+        return;
+    }
     if (col >= 0 && col < 8)
         s_rendering_status[col] = data;
     LOG("lpt", "inject col=%d data=0x%02x\n", col, data);
@@ -1175,6 +1184,12 @@ static uint32_t lpt_read(uint16_t port)
 
     if (!g_emu.lpt_active) return 0xFFu;
 
+    /* Real LPT passthrough takes priority over the emulated state machine.
+     * The shadow decoder below is NOT run in passthrough mode (the real
+     * board owns the protocol; running it would only confuse traces). */
+    if (lpt_passthrough_active())
+        return lpt_passthrough_read((uint8_t)reg);
+
     switch (reg) {
     case 0: { /* Data port read */
         s_lpt_rd_cnt++;
@@ -1214,6 +1229,11 @@ static void lpt_write(uint16_t port, uint8_t val)
 
     if (!g_emu.lpt_active) return;
 
+    if (lpt_passthrough_active()) {
+        lpt_passthrough_write((uint8_t)reg, val);
+        return;
+    }
+
     s_lpt_wr_cnt++;
 
     switch (reg) {
@@ -1251,9 +1271,7 @@ static void uart_update_irq4(void)
 {
     bool pending = false;
 
-    if ((g_emu.uart_regs[1] & 0x01) &&
-        ((g_emu.monitor_active && g_emu.monitor_inject_pos < 10) ||
-         netcon_serial_rx_pending()))
+    if ((g_emu.uart_regs[1] & 0x01) && netcon_serial_rx_pending())
         pending = true; /* RDA */
 
     if ((g_emu.uart_regs[1] & 0x02) && s_uart_thre_pending)
@@ -1328,17 +1346,6 @@ static void uart_write(uint16_t port, uint8_t val)
             g_emu.uart_pos = 0;
         }
 
-        /* Check for early-boot firmware monitor prompt (pre-XINA).
-         * NOTE: do not trigger on "% " — that is XINA's shell prompt and
-         * would cause "continue\r" to be re-injected after every command. */
-        if (g_emu.uart_pos >= 8 && !g_emu.monitor_active) {
-            g_emu.uart_buf[g_emu.uart_pos] = '\0';
-            if (strstr(g_emu.uart_buf, "monitor>") ||
-                strstr(g_emu.uart_buf, "-> ")) {
-                g_emu.monitor_active = true;
-                g_emu.monitor_inject_pos = 0;
-            }
-        }
         /* THR becomes empty again immediately after we consume the byte. */
         s_uart_thre_pending = true;
         uart_update_irq4();
@@ -1358,34 +1365,17 @@ static uint32_t uart_read(uint16_t port)
     uint16_t off = port - PORT_COM1_BASE;
     switch (off) {
     case 0: { /* RBR */
-        /* TCP serial client takes priority (real input from a human/script). */
         uint8_t b;
         if (netcon_serial_rx(&b)) {
             uart_update_irq4();
             return (uint32_t)b;
         }
-        /* Fall back to the boot-time "continue\r" auto-injection. */
-        if (g_emu.monitor_active && g_emu.monitor_inject_pos < 10) {
-            const char *cont = "continue\r";
-            char c = cont[g_emu.monitor_inject_pos++];
-            if (c == '\0') {
-                g_emu.monitor_active = false;
-                g_emu.monitor_inject_pos = 0;
-                uart_update_irq4();
-                return 0;
-            }
-            uart_update_irq4();
-            return (uint32_t)c;
-        }
         return 0;
     }
     case 2: {
         /* IIR — report UART-side pending causes, not raw PIC state. */
-        if ((g_emu.uart_regs[1] & 0x01) &&
-            ((g_emu.monitor_active && g_emu.monitor_inject_pos < 10) ||
-             netcon_serial_rx_pending())) {
+        if ((g_emu.uart_regs[1] & 0x01) && netcon_serial_rx_pending())
             return 0x04;  /* RDA */
-        }
         if ((g_emu.uart_regs[1] & 0x02) && s_uart_thre_pending) {
             s_uart_thre_pending = false; /* THRE clears when IIR is read */
             uart_update_irq4();
@@ -1394,17 +1384,10 @@ static uint32_t uart_read(uint16_t port)
         return 0x01;  /* no interrupt pending */
     }
     case 5: {
-        /* LSR — THRE + TEMT, plus DR when monitor inject or netcon active */
+        /* LSR — THRE + TEMT, plus DR when netcon has bytes pending. */
         uint8_t lsr = 0x60;
-        if ((g_emu.monitor_active && g_emu.monitor_inject_pos < 10) ||
-            netcon_serial_rx_pending())
+        if (netcon_serial_rx_pending())
             lsr |= 0x01; /* DR (data ready) */
-
-        /* UART poll drain: after many LSR reads with no action, inject NUL (BT-88) */
-        g_emu.uart_lsr_count++;
-        if (g_emu.uart_lsr_count > 200) {
-            g_emu.uart_lsr_count = 0;
-        }
         return lsr;
     }
     case 6: return 0x30;               /* MSR — CTS + DSR */
