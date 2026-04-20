@@ -1328,12 +1328,13 @@ static void uart_write(uint16_t port, uint8_t val)
             g_emu.uart_pos = 0;
         }
 
-        /* Check for monitor prompt (may NOT end with newline) */
+        /* Check for early-boot firmware monitor prompt (pre-XINA).
+         * NOTE: do not trigger on "% " — that is XINA's shell prompt and
+         * would cause "continue\r" to be re-injected after every command. */
         if (g_emu.uart_pos >= 8 && !g_emu.monitor_active) {
             g_emu.uart_buf[g_emu.uart_pos] = '\0';
             if (strstr(g_emu.uart_buf, "monitor>") ||
-                strstr(g_emu.uart_buf, "-> ") ||
-                strstr(g_emu.uart_buf, "% ")) {
+                strstr(g_emu.uart_buf, "-> ")) {
                 g_emu.monitor_active = true;
                 g_emu.monitor_inject_pos = 0;
             }
