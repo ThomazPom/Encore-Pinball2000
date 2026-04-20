@@ -782,6 +782,8 @@ static int     s_access_mode1_prev   = 0; /* bit0 edge detect */
 static uint8_t s_rendering_status[8];
 static uint8_t s_rendering_data_val  = 0;
 static uint8_t s_start_button_held   = 0;
+static uint8_t s_probe_held          = 0;   /* digit-key debug probe */
+static uint8_t s_probe_bit           = 0;   /* which bit of c0 to set  */
 static uint8_t s_data_val2           = 0;
 static uint8_t s_data_val3           = 0;
 static uint8_t s_data_val4           = 0;
@@ -893,9 +895,12 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
          * (sw=2, col 0, bit 2) we OR bit 2 unconditionally — which
          * also lights bit 2 in cols 1..7 (Right Bank Lower / Trough 2
          * / Shield Tgt / Upper Jet / unused), but those are harmless
-         * in attract mode where the user is pressing Start. */
+         * in attract mode where the user is pressing Start.
+         * Probe bits (digit-key debug) override bit 2 with whatever
+         * bit s_probe_bit selects so we can find the real Start. */
         uint8_t v = s_rendering_status[1];
-        if (s_start_button_held) v |= 0x04;
+        if (s_probe_held) v |= (uint8_t)(1u << s_probe_bit);
+        else if (s_start_button_held) v |= 0x04;
         result = v;
         break;
     }
@@ -924,7 +929,9 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
 static void process_data_command(uint8_t opcode, uint8_t data)
 {
     switch (opcode) {
-    case 0x05: s_rendering_data_val = data; s_data_flag1 = 1; break;
+    case 0x05:
+        s_rendering_data_val = data; s_data_flag1 = 1;
+        break;
     case 0x06: s_data_val2 = data; break;
     case 0x07: s_data_val3 = data; break;
     case 0x08:
@@ -979,6 +986,43 @@ void lpt_set_start_button(int held)
     if (prev != s_start_button_held)
         fprintf(stderr, "[lpt] START button %s\n",
                 s_start_button_held ? "PRESSED" : "released");
+}
+
+/* Debug probe: temporarily wire one bit of Physical[c0] / Logical[c0]
+ * to a digit key. Bit 0..7 covers sw=0..7. Use to discover which sw
+ * actually triggers Start Game. */
+void lpt_set_probe_bit(int bit, int held)
+{
+    if (bit < 0 || bit > 7) { s_probe_held = 0; return; }
+    uint8_t prev_held = s_probe_held;
+    uint8_t prev_bit  = s_probe_bit;
+    s_probe_bit  = (uint8_t)bit;
+    s_probe_held = held ? 1 : 0;
+
+    if (g_emu.uc) {
+        uint32_t v;
+        uint32_t mask = 1u << bit;
+        /* Clear previously held probe bit if changing */
+        if (prev_held && (prev_bit != s_probe_bit || !s_probe_held)) {
+            uint32_t pmask = 1u << prev_bit;
+            uc_mem_read(g_emu.uc, 0x003450ccu, &v, 4);
+            v &= ~pmask;
+            uc_mem_write(g_emu.uc, 0x003450ccu, &v, 4);
+            uc_mem_read(g_emu.uc, 0x003451bcu, &v, 4);
+            v &= ~pmask;
+            uc_mem_write(g_emu.uc, 0x003451bcu, &v, 4);
+        }
+        uc_mem_read(g_emu.uc, 0x003450ccu, &v, 4);
+        if (s_probe_held) v |= mask; else v &= ~mask;
+        uc_mem_write(g_emu.uc, 0x003450ccu, &v, 4);
+        uc_mem_read(g_emu.uc, 0x003451bcu, &v, 4);
+        if (s_probe_held) v |= mask; else v &= ~mask;
+        uc_mem_write(g_emu.uc, 0x003451bcu, &v, 4);
+    }
+
+    if (prev_held != s_probe_held || prev_bit != s_probe_bit)
+        fprintf(stderr, "[lpt] PROBE c0.b%d %s (sw=%d)\n",
+                bit, s_probe_held ? "SET" : "clr", bit);
 }
 
 void lpt_toggle_coin_door(void)
