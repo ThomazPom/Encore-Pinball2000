@@ -246,6 +246,9 @@ void display_handle_events(void)
                 s_start_pulse = PULSE_FRAMES;
                 LOG("input", "Start pulse\n");
                 break;
+            case SDLK_F11:
+                lpt_toggle_trace();
+                break;
             }
             break;
         }
