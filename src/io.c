@@ -1265,6 +1265,14 @@ static void uart_update_irq4(void)
         g_emu.pic[0].irr &= ~0x10;
 }
 
+/* Public wrapper — called from netcon_poll after bytes arrive on the
+ * serial-tcp socket so the guest's IRQ4 handler is notified promptly
+ * (without waiting for the next guest-side LSR poll). */
+void uart_notify_rx(void)
+{
+    uart_update_irq4();
+}
+
 static void uart_write(uint16_t port, uint8_t val)
 {
     uint16_t off = port - PORT_COM1_BASE;

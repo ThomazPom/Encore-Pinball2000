@@ -440,6 +440,10 @@ bool netcon_keyboard_rx(uint8_t *out); /* TCP client → KBC scancode (true if p
 bool netcon_keyboard_pending(void);  /* peek without popping */
 void netcon_cleanup(void);
 
+/* io.c hook used by netcon_poll to wake up the guest's UART IRQ when
+ * bytes have just been pushed into the serial-tcp RX ring. */
+void uart_notify_rx(void);
+
 /* =========================================================================
  * Logging
  * ========================================================================= */

@@ -240,6 +240,11 @@ void netcon_poll(void)
     uint8_t b;
     while (rx_pop(&s_kbd, &b)) enqueue_keyboard_byte(b);
 
+    /* Wake the guest UART ISR if serial-tcp pushed bytes since last tick.
+     * Without this, RX bytes only triggered IRQ4 when the guest happened
+     * to read the UART for an unrelated reason — i.e. one-way bridge. */
+    uart_notify_rx();
+
     /* IRQ1 management: raise while any scancode awaits CPU pickup;
      * the KBC read path clears OBF naturally and we re-evaluate next tick. */
     if (s_scan_head != s_scan_tail)
