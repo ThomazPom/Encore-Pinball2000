@@ -519,15 +519,9 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
         /* BAR2: DCS2 SRAM echo */
         uint32_t off = a - WMS_BAR2;
 
-        /* Phase 3 start trigger: offset 0x21C0 DWORD read (V1.12 only) */
-        if (off == 0x21C0 && size == 4 && !g_emu.is_v19_update) {
-            static bool s_phase3_done = false;
-            if (!s_phase3_done) {
-                s_phase3_done = true;
-                LOG("bar2", "Phase 3 start (V1.12) — applying RAM patches\n");
-                /* V1.12-specific patches would go here */
-            }
-        }
+        /* DROPPED 2026-04-21: Phase 3 start trigger (V1.12 only) was a
+         * stub anyway (just logged, no patches inside). is_v19_update
+         * is always true for our update-flash loads → dead code. */
 
         if (off < BAR2_SIZE) {
             if (size == 1)
@@ -816,24 +810,11 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
             lpt_activate();
         }
 
-        /* DCS2 Phase completion intercepts (V1.12 only) */
-        if (!g_emu.is_v19_update) {
-            /* Offset 0x50 byte write = 0xFF: auto-ack DCS2 completion */
-            if (off == 0x50 && size == 1 && (val & 0xFF) == 0xFF) {
-                g_emu.bar2_sram[0x50] = 0x00; /* auto-clear ack */
-                LOG("bar2", "DCS2 completion ack (V1.12) — patching RAM\n");
-                /* Write 0 at 0x002797C4, 1 at 0x002C927C */
-                uint32_t zero = 0, one = 1;
-                uc_mem_write(g_emu.uc, 0x002797C4, &zero, 4);
-                uc_mem_write(g_emu.uc, 0x002C927C, &one, 4);
-            }
-            /* Offset 0x1C DWORD write ≥ 8: DCS2 channel count ready */
-            if (off == 0x1C && size == 4 && val >= 8) {
-                uint32_t zero = 0;
-                uc_mem_write(g_emu.uc, 0x002797C4, &zero, 4);
-                LOG("bar2", "DCS2 channels=%u (V1.12) — patching ready\n", val);
-            }
-        }
+        /* DROPPED 2026-04-21: DCS2 V1.12 completion intercepts (offset 0x50/0x1C
+         * acks writing 0x2797C4 / 0x2C927C BSS addresses). Gated on
+         * !is_v19_update which is always true for our update-flash loads
+         * (rom.c sets is_v19_update=true for both swe1_14 and rfm_15) →
+         * dead code. */
 
         /* Text display: printable chars at SRAM offsets are char display data */
         if (size == 1 && val >= 0x20 && val < 0x7F && off >= 0x200) {

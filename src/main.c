@@ -374,6 +374,11 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    /* Build the XINU symbol-table index from the freshly-loaded update
+     * flash.  Safe to call even when no symbols are present — sym_lookup()
+     * just returns 0 and patch sites fall back to hardcoded constants. */
+    sym_init();
+
     if (cpu_init() != 0) {
         fprintf(stderr, "Failed to init CPU\n");
         return 1;
