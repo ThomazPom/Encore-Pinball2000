@@ -636,21 +636,66 @@ void cpu_run(void)
         }
 
         /* ============================================================
-         * DCS-mode override removed.
+         * DCS-mode override — pattern-driven, game-agnostic.
          *
-         * Rationale: this used to force BAR4 mode by overwriting a
-         * CMP+JNE in the DCS-detect probe. It was needed back when the
-         * DCS2 I/O port window (0x138-0x13F) returned 0xFF for every
-         * access — the game's I/O-port DCS path went through but our
-         * command queue never drained, so the boot dong + mixer init
-         * never ran. We've since wired io.c's dcs2_port_read/write to
-         * route the DATA word (off=4, size>=2) and FLAGS poll (off=6)
-         * through the same dcs_io_execute() backend that bar.c uses
-         * for BAR4. Both transports now share the same dispatch, so
-         * the patch is no longer needed and was per-game gated to
-         * SWE1 anyway (RFM never got it → silence). Removed for full
-         * game/version agnosticism per user spec.
+         * The Williams DCS-detect probe in the boot/init code does
+         *     CMP EAX, 1                  (83 F8 01)
+         *     JNE  +0x21                  (75 21)
+         *     MOV  [0x3444B0], EAX        (A3 B0 44 34 00)
+         * after reading the DCS reset response. EAX==1 means "BAR4
+         * (MMIO) DCS interface present" → take the fall-through branch
+         * which stores 1 into the dcs_mode slot and the rest of the
+         * sound init uses BAR4. Anything else → JNE → "I/O-port DCS
+         * interface" path, which our io.c implements only partially
+         * (RESETs are answered, but the post-reset cmd stream that
+         * carries dong/init/mixer never gets sent by the game).
+         *
+         * Patching the JNE-branch is the cleanest way to keep the
+         * BAR4 audio path live across all bundles that contain this
+         * idiom. We do NOT gate on g_emu.game_id — instead we scan
+         * RAM once for the exact 10-byte signature and patch each
+         * occurrence with `MOV EAX, 1 ; NOP*5`. Bundles that don't
+         * contain the signature (e.g. RFM, SWE1 v2.1 — confirmed via
+         * static scan of all 7 update bins) get no patch and continue
+         * unmodified.
+         *
+         * Range 0x80000-0x400000 covers all known relocation targets
+         * of the option-ROM copy (entry=0x100000, code segment grows
+         * up). One-shot at the XINU-ready transition.
          * ============================================================ */
+        if (g_emu.xinu_booted && g_emu.xinu_ready &&
+            !g_emu.dcs_mode_patch_attempted) {
+            g_emu.dcs_mode_patch_attempted = true;
+            const uint32_t scan_lo = 0x80000u;
+            const uint32_t scan_hi = 0x400000u;
+            int hits = 0;
+            uint8_t *r = g_emu.ram;
+            for (uint32_t a = scan_lo; a + 10 <= scan_hi; a++) {
+                if (r[a]   == 0x83 && r[a+1] == 0xF8 && r[a+2] == 0x01 &&
+                    r[a+3] == 0x75 &&
+                    r[a+5] == 0xA3 && r[a+6] == 0xB0 && r[a+7] == 0x44 &&
+                    r[a+8] == 0x34 && r[a+9] == 0x00) {
+                    /* MOV EAX, 1 (5 bytes) + NOP*5 — preserves length. */
+                    uint8_t patch[10] = {
+                        0xB8, 0x01, 0x00, 0x00, 0x00,
+                        0x90, 0x90, 0x90, 0x90, 0x90
+                    };
+                    uc_mem_write(uc, a, patch, 10);
+                    /* Also keep the RAM mirror in sync so any reader
+                     * that bypasses Unicorn's TLB sees the patched code. */
+                    memcpy(r + a, patch, 10);
+                    LOG("init",
+                        "DCS-mode pattern hit @0x%08x — patched (force BAR4)\n",
+                        a);
+                    hits++;
+                    if (hits >= 4) break;  /* bail-out, shouldn't happen */
+                }
+            }
+            if (hits == 0)
+                LOG("init",
+                    "DCS-mode pattern absent — bundle uses different DCS-detect "
+                    "(RFM / SWE1 v2.1 family); no patch applied\n");
+        }
 
         /* Inject all pending PIC interrupts (timer IRQ0 + others like IRQ4 UART).
          * check_and_inject_irq() respects both PIC IMR (hw mask) and CPU IF flag,
