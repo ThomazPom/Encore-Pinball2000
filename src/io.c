@@ -357,11 +357,31 @@ static void apply_sgc_patches(void)
     LOG("sgc", "watchdog scan: CALL at 0x%08x → callee 0x%08x\n",
         scan_base + call_off, callee_guest);
 
-    /* 4. In the callee (pci_read_watchdog, possibly via wrapper), find
-     *    CMP [addr32], 0xFFFF  →  81 3D <addr32> FF FF 00 00
-     * This is the "watchdog health register" kept at 0xFFFF by the timer.
-     * The callee may itself CALL pci_read_watchdog (one-level wrapper), so
-     * we follow one nested CALL if the direct scan fails. */
+    /* 4. In the callee, find CMP [addr32], 0xFFFF → 81 3D <addr32> FF FF 00 00.
+     *
+     * The callee body for SWE1 v1.5 (0x1a41f0) disassembles as:
+     *     push ebp; mov ebp,esp
+     *     call <dcs_probe>          ; returns 1 if [probe_cell]==0xFFFF
+     *     mov edx,eax; cmp edx,1; jne .expired
+     *     mov eax,[ds:0x2e9898]     ; PLX BAR ptr (NULL in our emu)
+     *     mov eax,[eax+0x4c]        ; PLX register
+     *     test al,0x4; jne .expired ; bit 2 = watchdog expired
+     *     mov eax,edx; jmp .out     ; return 1 (alive)
+     *   .expired: xor eax,eax       ; return 0 (expired)
+     *
+     * So the CMP [<probe_cell>],0xFFFF the scanner latches onto is inside
+     * the nested dcs_probe() call — it IS the DCS/PLX PCI-detect probe, not
+     * a dedicated health register.  But that works in our favour: writing
+     * 0xFFFF to that cell every tick makes the probe return 1 ("device
+     * present") → the watchdog callee returns 1 → game proceeds.  Same cell
+     * serves double duty (DCS presence + watchdog alive) in both dcs-modes:
+     *   bar4-patch : cpu.c patches the probe's CMP/JNE to force dcs_mode=1
+     *                regardless; the scribble keeps the watchdog alive.
+     *   io-handled : the scribble makes the unmodified probe report
+     *                "device present" → game initializes DCS naturally
+     *                (writes dcs_mode=1 from its own code) AND watchdog
+     *                stays alive.
+     * Follows one nested CALL to reach the CMP inside dcs_probe. */
     uint32_t health_addr = 0;
     /* Try direct callee first, then follow first E8 CALL within it */
     uint32_t search_starts[2] = { callee_off, 0 };
