@@ -28,17 +28,14 @@
  *
  *  [cpu.c::cpu_init] IRET+EOI stub @ 0x20000 — low-mem stub, game-agnostic.
  *
- *  B) GATED off v19_patches_enabled (ENCORE_KEEP_V19_PATCHES env) — OFF
- *  by default.  These hardcode SWE1-V1.19 addresses and corrupt random
- *  code on v2.1 if applied blind.  Each is also prologue-guarded via
- *  PROLOGUE_OK (0x55 0x89 0xE5) so even enabled they no-op on mismatch.
- *  If SWE1 idle + minimization parity confirm they're unused → delete them.
- *      • Fatal/NonFatal/CMOS/LocMgr/watchdog returns
- *      • PIC base_mask @ 0x2F7CA8 (clear IRQ0+cascade bits)
- *      • DC register pre-init (CFG/FB_OFF/LINE_SIZE)
- *      • DCS2 fake channel object @ 0x400000
- *      • pid2 crash guard [0x2FCAAC]=0 until PRREADY
- *      • IStack magic-word repair for SWE1 proctab
+ *  B) Dropped 2026-04-21 — previously gated behind ENCORE_KEEP_V19_PATCHES
+ *     (OFF by default).  Regression-tested all 7 update bundles (SWE1 base,
+ *     SWE1 v1.5/v2.1, RFM v1.2/1.6/1.8/2.5/2.6) with killswitch OFF and
+ *     everything that booted with them enabled still booted without.
+ *     Deleted to honor minimization doctrine (patches are symptoms, not cures).
+ *     Removed: Fatal/NonFatal/CMOS/LocMgr/watchdog returns; PIC base_mask
+ *     @0x2F7CA8; DC register pre-init; DCS2 fake channel @0x400000;
+ *     pid2 crash guard [0x2FCAAC]=0; BT-118 IStack magic-word repair.
  *
  *  C) RFM/SWE1 both, read-only maintenance @ 64-cycle tick:
  *      RAM_WR32(0, 0)           — NULL page zeroing, harmless
@@ -638,181 +635,6 @@ void cpu_run(void)
             }
         }
 
-        /* ================================================================
-         * Post-XINU initialization: comprehensive V1.19 patches from
-         * both i386 and x64 POC analysis.
-         *
-         * **SWE1-V1.19-ONLY** — every address in this block (Fatal/NonFatal/
-         * CMOS/LocMgr/watchdog/PIC base_mask/DCS-mode patch) was reverse-
-         * engineered against the SWE1 v1.19 update flash. Applying any of
-         * them to RFM (or any other game) overwrites unrelated code/data
-         * and wedges the boot. RFM's V1.12 patches are handled separately
-         * in io.c, gated on game_id==50070.
-         *
-         * Critical patches (from x64 POC sgc-seed + i386 BT-85/BT-91):
-         * - Fatal/NonFatal/CMOS → safe returns
-         * - Q-table pre-init (BT-85: garbage causes insert() self-loop!)
-         * - BSS zeroing (0x33D800-0x800000)
-         * - 8 Fatal call site NOPs + 3 monitor() NOPs
-         * - Monitor auto-exit triple patch
-         * - Init gate flags + DCS2 + XINACMOS + BAR2 regs
-         * ================================================================ */
-        /* ================================================================
-         * Post-XINU V1.19 patches — KILL-SWITCH for minimization audit.
-         * Set ENCORE_KEEP_V19_PATCHES=1 to re-enable the full block.
-         * Goal (per minimization ground truth): patches are SYMPTOMS, not cures.
-         * Watchdog flag suppression already prevents pci_watchdog_bone
-         * from firing; Fatal/NonFatal only fire on real crashes; etc.
-         * If SWE1 v1.5 still boots without these → they're dead code. */
-        static int v19_patches_enabled = -1;
-        if (v19_patches_enabled < 0) {
-            const char *e = getenv("ENCORE_KEEP_V19_PATCHES");
-            v19_patches_enabled = (e && *e == '1') ? 1 : 0;
-            LOG("init", "Post-XINU V1.19 patches: %s (set ENCORE_KEEP_V19_PATCHES=1 to re-enable)\n",
-                v19_patches_enabled ? "ENABLED" : "DISABLED");
-        }
-        if (v19_patches_enabled && g_emu.xinu_booted && g_emu.ctor_phase == 0 &&
-            g_emu.game_started && g_emu.xinu_ready &&
-            g_emu.game_id == 50069u /* SWE1 only — see comment above */) {
-            g_emu.ctor_phase = 3;  /* one-shot */
-
-            /* --- 1. Function patches (x64 POC BT-86/BT-100) ---
-             * 2026-04-21 SAFETY: hardcoded SWE1-V1.5 (=V1.19) addresses.
-             * On SWE1-V2.1 the same offsets contain DIFFERENT code → patching
-             * blindly corrupts random functions → game eventually JMPs to IVT
-             * (EIP=0xdfc).  Each patch now sanity-checks the existing bytes
-             * (function prologue 0x55 0x89 0xE5 = PUSH EBP; MOV EBP,ESP) before
-             * overwriting.  On v2.1 the prologues won't match → patch skipped
-             * → game runs unmodified → no corruption.  Minimization-style minimum.  */
-
-            int fp_applied = 0, fp_skipped = 0;
-
-            #define PROLOGUE_OK(addr) ({                          \
-                uint8_t _p[3];                                    \
-                uc_mem_read(uc, (addr), _p, 3);                   \
-                (_p[0]==0x55 && _p[1]==0x89 && _p[2]==0xE5);      \
-            })
-
-            /* Fatal() at 0x22722C → INC counter + HLT for recovery */
-            if (PROLOGUE_OK(0x0022722Cu)) {
-                uint8_t fatal_patch[] = {
-                    0xFF, 0x05, 0xF0, 0xFF, 0x2B, 0x00,  /* INC [0x2BFFF0] */
-                    0x89, 0x35, 0xF4, 0xFF, 0x2B, 0x00,  /* MOV [0x2BFFF4], ESI */
-                    0xF4,                                   /* HLT */
-                    0xEB, 0xFE                              /* JMP $ */
-                };
-                uc_mem_write(uc, 0x0022722Cu, fatal_patch, sizeof(fatal_patch));
-                fp_applied++;
-            } else fp_skipped++;
-            /* LocMgr Fatal wrapper at 0x24743C → XOR EAX,EAX; RET (x64 POC) */
-            if (PROLOGUE_OK(0x0024743Cu)) {
-                uint8_t xar[] = { 0x31, 0xC0, 0xC3 };
-                uc_mem_write(uc, 0x0024743Cu, xar, 3);
-                fp_applied++;
-            } else fp_skipped++;
-            /* NonFatal at 0x24780C → XOR EAX,EAX; RET (x64 POC BT-86) */
-            if (PROLOGUE_OK(0x0024780Cu)) {
-                uint8_t xar[] = { 0x31, 0xC0, 0xC3 };
-                uc_mem_write(uc, 0x0024780Cu, xar, 3);
-                fp_applied++;
-            } else fp_skipped++;
-            /* CMOS mem_test at 0x24FDEC → MOV EAX,1; RET (x64 POC BT-100) */
-            if (PROLOGUE_OK(0x0024FDECu)) {
-                uint8_t pass[] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 };
-                uc_mem_write(uc, 0x0024FDECu, pass, 6);
-                fp_applied++;
-            } else fp_skipped++;
-            /* pci_watchdog_bone at 0x1A4190 → RET */
-            if (PROLOGUE_OK(0x001A4190u)) {
-                uint8_t ret = 0xC3;
-                uc_mem_write(uc, 0x001A4190u, &ret, 1);
-                fp_applied++;
-            } else fp_skipped++;
-
-            #undef PROLOGUE_OK
-
-            LOG("init", "Function patches: applied=%d skipped=%d "
-                "(skipped means version mismatch — game runs unmodified)\n",
-                fp_applied, fp_skipped);
-
-            /* If NO Function patches matched, we're on a different SWE1
-             * build (e.g. v2.1).  Skip ALL the V1.19-hardcoded follow-ups:
-             * base_mask data write, init-flag reads, BSS pokes — they'd land
-             * on different code/data and corrupt the game.  Minimization proves
-             * v2.1 boots without any of these. */
-            if (fp_applied == 0) {
-                LOG("init", "Post-XINU V1.19 patches SKIPPED — non-V1.19 SWE1 build\n");
-                goto post_xinu_done;
-            }
-            g_emu.swe1_v19_detected = true;
-
-            /* --- 2. PIC base_mask fix (x64 POC BT-66/71) ---
-             * XINU's disable()/restore() use base_mask at 0x2F7CA8 to
-             * manage IMR. device_init (which we NOP'd) would call
-             * set_evec(0x20,handler) clearing bit 0 (IRQ0 unmasked).
-             * Without this, base_mask=0xFF and every restore() re-masks IRQ0.
-             * Address 0x2F7CA8 confirmed V1.19 (x64 POC + agent1264 logs). */
-            {
-                uint16_t base_mask;
-                uc_mem_read(uc, 0x2F7CA8u, &base_mask, 2);
-                base_mask &= ~0x0001u;  /* clear bit 0 = unmask IRQ0 */
-                base_mask &= ~0x0004u;  /* clear bit 2 = unmask cascade */
-                uc_mem_write(uc, 0x2F7CA8u, &base_mask, 2);
-                LOG("init", "PIC base_mask: [2F7CA8]=0x%04X (IRQ0+cascade unmasked)\n",
-                    base_mask);
-            }
-
-            /* --- 3. DC register pre-init (x64 POC) --- */
-            {
-                uint32_t dc_cfg = 0x303u;  /* DFLE=1, display enabled */
-                uint32_t dc_fb_off = 0x0u;
-                uint32_t dc_line = 320u;   /* 320 DWORDs = 1280 bytes = 640 pixels */
-                uc_mem_write(uc, GX_BASE + DC_GENERAL_CFG, &dc_cfg, 4);
-                uc_mem_write(uc, GX_BASE + DC_FB_ST_OFFSET, &dc_fb_off, 4);
-                uc_mem_write(uc, GX_BASE + DC_LINE_SIZE, &dc_line, 4);
-                g_emu.dc_fb_offset = 0;
-                LOG("init", "DC pre-init: CFG=0x303 FB_OFF=0 LINE=320\n");
-            }
-
-            /* --- 4. Fake DCS2 channel object at 0x400000 (i386 POC copycat).
-             *    stub: MOV EAX,1; RET — all vtable methods return 1.
-             *    vtable: 64 entries → stub. channel: vtable ptr.
-             *    Provides a valid DCS2 dispatch target for game code. */
-            {
-                uint8_t stub[6] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 };
-                uc_mem_write(uc, 0x400000u, stub, 6);
-                uint32_t vtable[64];
-                for (int i = 0; i < 64; i++) vtable[i] = 0x00400000u;
-                uc_mem_write(uc, 0x400100u, vtable, sizeof(vtable));
-                uint32_t ch_ptr = 0x00400100u;
-                uc_mem_write(uc, 0x400200u, &ch_ptr, 4);
-                /* XOR EAX,EAX; RET at 0x400010 (secondary trampoline) */
-                uint8_t xor_ret[3] = { 0x31, 0xC0, 0xC3 };
-                uc_mem_write(uc, 0x400010u, xor_ret, 3);
-                LOG("init", "DCS2 fake obj: stub@400000 vtab@400100 ch@400200\n");
-            }
-
-            /* --- 5. Init gate flags — diagnostic read only.
-             *    The i386 POC writes to 0x2797C4/0x2AF824/0x27979C/0x279768
-             *    but those are V1.12 BSS addresses that overlap V1.19 code.
-             *    For V1.19 the i386 POC uses "natural flow" — NO patches.
-             *    Read-only: check if XINU naturally set them. */
-            {
-                uint32_t f_dcs2, f_sysinit, f_gate, f_bar0;
-                uc_mem_read(uc, 0x2797C4u, &f_dcs2, 4);
-                uc_mem_read(uc, 0x2AF824u, &f_sysinit, 4);
-                uc_mem_read(uc, 0x27979Cu, &f_gate, 4);
-                uc_mem_read(uc, 0x279768u, &f_bar0, 4);
-                LOG("init", "Init flags (read): [2797C4]=0x%X [2AF824]=0x%X [27979C]=0x%X [279768]=0x%X\n",
-                    f_dcs2, f_sysinit, f_gate, f_bar0);
-            }
-
-            /* --- 6. (moved out — now applied unconditionally; see below) */
-
-            LOG("init", "=== Post-XINU V1.19 patches complete ===\n");
-        post_xinu_done: ;
-        }
-
         /* ============================================================
          * DCS-mode override — HOISTED out of V1.19 killswitch block so
          * sound works by default on any build where the byte pattern
@@ -839,55 +661,6 @@ void cpu_run(void)
                 LOG("init", "DCS mode patch: @1931E6 CMP+JNE → MOV EAX,1 (force BAR4 for sound)\n");
             } else {
                 LOG("init", "DCS mode patch: byte pattern mismatch @1931E6 — skipped (non-V1.19 build; sound may be silent until pattern-scan is added)\n");
-            }
-        }
-
-        /* pid2 (terminal) crash guard — x64 POC BT-98:  **SWE1-V1.19 only**
-         * fn@0x1EF7D0 is called every timer tick from clkint at 0x1D0B73.
-         * When pid2 doesn't exist yet, proctab[2]+0x18 ([0x2FCAAC]) has
-         * garbage=1 → crash at 0x1D83E5, aborting the ENTIRE clkint handler
-         * including VSYNC callback and sleep queue processing.
-         * Fix: force [0x2FCAAC]=0 until pid2 is PRREADY (pstate=3).
-         * Runs every 64 iterations to reduce overhead.
-         * RFM has a different proctab layout — guard would corrupt RAM. */
-        if (v19_patches_enabled && g_emu.xinu_ready && g_emu.swe1_v19_detected &&
-            (g_emu.exec_count & 0x3F) == 0) {
-            uint8_t pt2_state = RAM_RD8(0x2FCA94u); /* proctab[2].pstate */
-            if (pt2_state != 3 && pt2_state != 2 && pt2_state != 7) {
-                uint32_t flag = RAM_RD32(0x2FCAACu);
-                if (flag != 0) {
-                    RAM_WR32(0x2FCAACu, 0);
-                    static int guard_log = 0;
-                    if (guard_log < 5)
-                        LOG("irq", "pid2 guard: [0x2FCAAC]=0x%x→0 (pt2_st=%u) #%d\n",
-                            flag, pt2_state, ++guard_log);
-                }
-            }
-        }
-
-        /* BT-118 IStack magic repair — x64 POC:  **SWE1-V1.19 only**
-         * clkint checks currpid's IStack magic (0xAAA9) every tick.
-         * If corrupted → Fatal → callback chain aborted → VSYNC never fires.
-         * Repair magic between timer ticks so ISR always sees valid value.
-         * Runs every 64 iterations to reduce overhead.
-         * RFM uses different currpid/proctab addresses — would corrupt RAM. */
-        if (v19_patches_enabled && g_emu.xinu_ready && g_emu.swe1_v19_detected &&
-            (g_emu.exec_count & 0x3F) == 0) {
-            uint32_t cpid = RAM_RD32(0x2FC8BCu);    /* currpid */
-            uint32_t nproc_chk = RAM_RD32(0x303E94u);
-            if (cpid > 0 && cpid < 130 && nproc_chk >= 24) {
-                uint32_t pe = 0x2FC8C4u + cpid * 232u;
-                uint32_t istack_ptr = RAM_RD32(pe + 0x24);
-                if (istack_ptr > 0x100000 && istack_ptr < 0xFFFF00) {
-                    uint32_t magic = RAM_RD32(istack_ptr);
-                    if (magic != 0xAAA9) {
-                        RAM_WR32(istack_ptr, 0xAAA9);
-                        static int magic_log = 0;
-                        if (magic_log < 10)
-                            LOG("irq", "BT-118 magic repair pid=%u istack=0x%x was=0x%x (#%d)\n",
-                                cpid, istack_ptr, magic, ++magic_log);
-                    }
-                }
             }
         }
 
