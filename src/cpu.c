@@ -4,6 +4,51 @@
  * Key design: Unicorn UC_MODE_32 for i386 guest on x64 host.
  * Timer interrupt injection between emulation slices (no hardware PIC in Unicorn).
  * SIGALRM at 100Hz triggers uc_emu_stop() → check IRQs → inject → resume.
+ *
+ * ==========================================================================
+ *  REMAINING HARDCODED PATCHES — minimization ground-truth minimization audit
+ *  Status as of 2026-04-21.  Goal: every patch should self-validate, be
+ *  game/version-agnostic, or be clearly gated with a sanity check.
+ * ==========================================================================
+ *
+ *  A) ALWAYS-ON, self-validating or pattern-scanned (safe for any build):
+ *  ---------------------------------------------------------------------
+ *  [cpu.c] DCS-mode override @ 0x1931E6 (SWE1 v1.5/v1.19 only)
+ *      Byte-validated (CMP EAX,1 ; JNE 0x21 → MOV EAX,1).  Forces BAR4
+ *      path so DCS sound engine receives commands.  Without it the game
+ *      sits in I/O-port mode (ports 0x13C-0x13F) which we stub as 0xFF
+ *      → DCS detection fails → no boot dong, no audio init.
+ *      TODO: replace with pattern scan for v2.1 compatibility.
+ *
+ *  [io.c::apply_sgc_patches]  — game-agnostic pattern scans:
+ *      • pci_watchdog_bone health register — UART string-anchored scan
+ *      • mem_detect 4MB → 14MB — function-prologue scan (BT-130)
+ *      • prnull idle code @ 0xFF0000 — low-mem stub (STI+HLT+JMP)
+ *      • BT-74 nulluser JMP$ → HLT;JMP-3 — 17-byte pattern scan
+ *
+ *  [cpu.c::cpu_init] IRET+EOI stub @ 0x20000 — low-mem stub, game-agnostic.
+ *
+ *  B) GATED off v19_patches_enabled (ENCORE_KEEP_V19_PATCHES env) — OFF
+ *  by default.  These hardcode SWE1-V1.19 addresses and corrupt random
+ *  code on v2.1 if applied blind.  Each is also prologue-guarded via
+ *  PROLOGUE_OK (0x55 0x89 0xE5) so even enabled they no-op on mismatch.
+ *  If SWE1 idle + minimization parity confirm they're unused → delete them.
+ *      • Fatal/NonFatal/CMOS/LocMgr/watchdog returns
+ *      • PIC base_mask @ 0x2F7CA8 (clear IRQ0+cascade bits)
+ *      • DC register pre-init (CFG/FB_OFF/LINE_SIZE)
+ *      • DCS2 fake channel object @ 0x400000
+ *      • pid2 crash guard [0x2FCAAC]=0 until PRREADY
+ *      • IStack magic-word repair for SWE1 proctab
+ *
+ *  C) RFM/SWE1 both, read-only maintenance @ 64-cycle tick:
+ *      RAM_WR32(0, 0)           — NULL page zeroing, harmless
+ *      watchdog_flag_addr=FFFF  — uses scanned address (safe)
+ *
+ *  D) Dropped in prior pass — kept only as commented markers:
+ *      apply_xinu_boot_patches() (V1.12 BSS pokes) — orphaned, deleted.
+ *      SWE1-V1.12 display bootstrap — deleted.
+ *      Fatal/panic loop HLT pokes — deleted.
+ * ==========================================================================
  */
 #include "encore.h"
 
@@ -762,25 +807,39 @@ void cpu_run(void)
                     f_dcs2, f_sysinit, f_gate, f_bar0);
             }
 
-            /* --- 6. DCS mode detection override: force BAR4 path.
-             *    Guest code at 0x1931e6: CMP EAX,1; JNE io_path
-             *    Replace with MOV EAX,1 to force BAR4 (memory-mapped) mode.
-             *    In I/O mode, the command queue stays empty after reset —
-             *    no process ever enqueues DCS commands (0x3A, 0xAA, etc).
-             *    Matching i386 POC which uses BAR4 exclusively. */
-            {
-                uint8_t old[5];
-                uc_mem_read(uc, 0x1931E6u, old, 5);
-                if (old[0] == 0x83 && old[1] == 0xF8 && old[2] == 0x01 &&
-                    old[3] == 0x75 && old[4] == 0x21) {
-                    uint8_t patch[] = { 0xB8, 0x01, 0x00, 0x00, 0x00 };
-                    uc_mem_write(uc, 0x1931E6u, patch, 5);
-                    LOG("init", "DCS mode patch: @1931E6 CMP+JNE → MOV EAX,1 (force BAR4)\n");
-                }
-            }
+            /* --- 6. (moved out — now applied unconditionally; see below) */
 
             LOG("init", "=== Post-XINU V1.19 patches complete ===\n");
         post_xinu_done: ;
+        }
+
+        /* ============================================================
+         * DCS-mode override — HOISTED out of V1.19 killswitch block so
+         * sound works by default on any build where the byte pattern
+         * matches (SWE1 v1.5/v1.19). Self-validates via CMP EAX,1 ; JNE
+         * 0x21 (83 F8 01 75 21). On v2.1 the bytes don't match → patch
+         * no-ops → game runs unmodified. One-shot: only attempted once
+         * per XINU-ready transition.
+         *
+         * WHY THIS IS NEEDED: our DCS2 UART ports (0x13C-0x13F) return
+         * 0xFF — the game's DCS-detect then falls to I/O-port mode and
+         * its command queue never drains. Forcing BAR4 (MMIO) mode
+         * routes commands to bar.c's DCS handler, which plays the boot
+         * dong, runs audio init, and processes mixer cmds.
+         * ============================================================ */
+        if (g_emu.xinu_booted && g_emu.xinu_ready && g_emu.game_id == 50069u &&
+            !g_emu.dcs_mode_patch_attempted) {
+            g_emu.dcs_mode_patch_attempted = true;
+            uint8_t old[5];
+            if (uc_mem_read(uc, 0x1931E6u, old, 5) == UC_ERR_OK &&
+                old[0] == 0x83 && old[1] == 0xF8 && old[2] == 0x01 &&
+                old[3] == 0x75 && old[4] == 0x21) {
+                uint8_t patch[] = { 0xB8, 0x01, 0x00, 0x00, 0x00 };
+                uc_mem_write(uc, 0x1931E6u, patch, 5);
+                LOG("init", "DCS mode patch: @1931E6 CMP+JNE → MOV EAX,1 (force BAR4 for sound)\n");
+            } else {
+                LOG("init", "DCS mode patch: byte pattern mismatch @1931E6 — skipped (non-V1.19 build; sound may be silent until pattern-scan is added)\n");
+            }
         }
 
         /* pid2 (terminal) crash guard — x64 POC BT-98:  **SWE1-V1.19 only**
