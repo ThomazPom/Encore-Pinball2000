@@ -177,3 +177,7 @@ exists. Full grammar: [04-config-yaml.md](04-config-yaml.md).
 
 Prints the full 200-line help with worked examples. The help screen
 is authoritative — if it disagrees with this document, the code wins.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

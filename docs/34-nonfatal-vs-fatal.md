@@ -102,3 +102,7 @@ if (inv_cnt <= 30 || (inv_cnt % 10000) == 0)
 * XINU boot sequence: [22-xinu-boot-sequence.md](22-xinu-boot-sequence.md)
 * IRQ injection: [16-irq-pic.md](16-irq-pic.md)
 * Patching philosophy: [21-patching-philosophy.md](21-patching-philosophy.md)
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

@@ -146,7 +146,7 @@ use during a play session.
 |---|---|
 | `F1` | Quit Encore (clean shutdown) |
 | `F2` | Toggle vertical-flip of the framebuffer (debug aid) |
-| `F3` | Save a screenshot to `encore_snap_NNNN.png` in the current dir |
+| `F3` | Save a timestamped PNG screenshot to the hardcoded `SCREENSHOT_DIR` path (see `src/display.c`) |
 | `F4` | Toggle the cabinet coin-door interlock (game-side effect) |
 | `F10` or `c` | Queue a coin pulse (insert credit) |
 | `F11` | Toggle fullscreen / windowed |
@@ -185,7 +185,7 @@ clear error rather than crash inside SDL.
 ### 5.2 LPT passthrough (real cabinet only)
 
 ```sh
-./build/encore --lpt-pass /dev/parport0 --update 210
+./build/encore --lpt-device /dev/parport0 --update 210
 ```
 
 Forwards the guest's parallel-port traffic to a real `ppdev` device.
@@ -208,7 +208,7 @@ how to help.
 ### 5.3 Network console / keyboard injection
 
 ```sh
-./build/encore --com1-listen 12345 --kbd-listen 12346 --update 210
+./build/encore --serial-tcp 12345 --keyboard-tcp 12346 --update 210
 ```
 
 Opens TCP listeners that bridge into the guest's COM1 serial port and
@@ -269,3 +269,7 @@ For runtime issues see [27-troubleshooting.md](27-troubleshooting.md).
 * Keyboard shortcut reference: [36-cli-keyboard-guide.md](36-cli-keyboard-guide.md)
 * LPT passthrough deep-dive: [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md)
 * Cabinet-testing call to action: [42-cabinet-testing-call.md](42-cabinet-testing-call.md)
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

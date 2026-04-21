@@ -159,3 +159,7 @@ problem (missing extraction work), not a code problem.
 [snd] dcs cmd 0x0140 0x0230 0x0000 → sample id 0x0140
 [snd] playback chan=5 chunk=… len=8820 B
 ```
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

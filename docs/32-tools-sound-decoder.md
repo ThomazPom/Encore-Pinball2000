@@ -89,3 +89,7 @@ audio subsystem initialised correctly. Its playback is logged by
 * Sound pipeline: [12-sound-pipeline.md](12-sound-pipeline.md)
 * DCS mode duality: [13-dcs-mode-duality.md](13-dcs-mode-duality.md)
 * Regression matrix: [26-testing-7-bundle-matrix.md](26-testing-7-bundle-matrix.md)
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

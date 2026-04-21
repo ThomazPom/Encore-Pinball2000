@@ -193,3 +193,7 @@ window at `0x40800000`.
 If the EIP stays at the same value for three heartbeats in a row, 16
 bytes of code around EIP and the full register set are dumped so you
 can see where the guest is stuck.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

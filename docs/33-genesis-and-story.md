@@ -115,7 +115,7 @@ Nothing regressed. The resulting codebase is the current state of the
 Six of the seven known update bundles boot to attract mode with full
 graphics and DCS audio under emulation. RFM v1.2 (1999) reaches a pre-XINU crash and
 is documented as a known limitation. The emulator is approximately
-8 000 lines of C across twelve files.
+8 000 lines of C across thirteen files.
 
 ## Cross-references
 
@@ -156,3 +156,7 @@ the function table in
 The original runtime also linked an MP3 wrapper library exposing a
 small API (initialise, load, play, stop, free) used for the early
 boot music; Encore replaces this with SDL_mixer entirely.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

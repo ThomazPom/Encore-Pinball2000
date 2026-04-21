@@ -96,3 +96,7 @@ sufficient. The function is commemorated in a comment block at
 * XINU boot context: [22-xinu-boot-sequence.md](22-xinu-boot-sequence.md)
 * Patch philosophy: [21-patching-philosophy.md](21-patching-philosophy.md)
 * Regression matrix: [26-testing-7-bundle-matrix.md](26-testing-7-bundle-matrix.md)
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

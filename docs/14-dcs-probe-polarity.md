@@ -162,3 +162,7 @@ landed. See the regression table in
 result: `bar4-patch` has 100 % audio success; `io-handled` boots on
 all seven but audio produces the expected output under emulation only on the bundles whose I/O
 command pump is implemented.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

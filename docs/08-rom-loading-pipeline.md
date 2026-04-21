@@ -165,3 +165,7 @@ Before returning, `rom_load_all()` calls `savedata_load()` (unless
 If the `.flash` file is present, it shadows the update bundle from
 disk. This mirrors real cabinet behaviour — the service installer
 writes into flash and the flash persists across reboots.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

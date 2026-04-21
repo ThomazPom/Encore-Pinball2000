@@ -123,3 +123,7 @@ the instruction equivalent.
 * VBLANK mechanics: [17-vblank.md](17-vblank.md)
 * IRQ0 injection: [16-irq-pic.md](16-irq-pic.md)
 * XINU ready detection: [22-xinu-boot-sequence.md](22-xinu-boot-sequence.md)
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

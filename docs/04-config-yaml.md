@@ -137,3 +137,7 @@ passes `value == NULL` to `apply_option()`; in the config file,
 `headless: true` triggers the boolean-shortcut dance above, which
 resets the value pointer to `NULL` before calling the same function.
 The two paths converge.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

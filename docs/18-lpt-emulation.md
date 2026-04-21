@@ -102,10 +102,12 @@ queues multiple edges.
 
 ## Credit injection
 
-F10 / C presses call `lpt_inject_switch(col=0, data=set-coin-bit)` for
-`COIN_HIGH_FRAMES = 6` frames (≈ 100 ms at 60 FPS), matching the
-minimum pulse width Williams validated for. Multiple presses are
-queued so a fast-mash adds multiple credits.
+F10 / C presses enqueue a credit pulse via `s_coin_pending++` in the
+key event handler. The gameplay polling loop then sets bit 0 of the
+`switches` byte (`Phys[9].b0` = Service Credits button) HIGH for
+`COIN_HIGH_FRAMES = 6` frames (≈ 100 ms at 60 FPS) and passes it to
+`lpt_set_host_input()`. Multiple presses are queued so a fast-mash
+adds multiple credits.
 
 ## Service menu navigation
 
@@ -123,12 +125,18 @@ With the door open:
 The bindings are identical because the real coin-door panel is four
 physical buttons whose interpretation depends on interlock state.
 
-## The trace window
+## The trace facility
 
-`F11` (or `ENCORE_LPT_TRACE=1`) toggles an LPT-trace log window that
-records every opcode and response for 10 seconds. Useful for figuring
-out why a new playfield switch isn't recognised. Output goes to
-stderr in a timestamped format.
+`lpt_toggle_trace()` (`src/io.c`) enables an LPT bus trace: every
+opcode and response byte is written to `encore_lpt.log` in the
+working directory. Useful for figuring out why a new playfield switch
+isn't recognised.
+
+Note: the function is implemented and exported (`include/encore.h`)
+but is **not yet wired to any key or environment variable** — it must
+be called programmatically (e.g. from a debugger, or by adding a
+temporary call site). `F11` is the fullscreen toggle, not this trace;
+there is no `ENCORE_LPT_TRACE` environment variable.
 
 ## F12 — guest switch-state dump
 
@@ -158,3 +166,7 @@ shipped with the real hardware. Every opcode number, every polarity
 decision, every timing threshold matches the driver's code. The
 disassembly is not included in the repository (for clean-room
 reasons), but its consequences are all faithfully reproduced.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

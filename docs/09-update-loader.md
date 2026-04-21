@@ -91,10 +91,8 @@ characters after the dot.
 
 ## Auto-inference of `--game`
 
-When `--update` resolves to a file, Encore opens it, seeks to
-`0x803C` (offset within the `game.rom` region, which always starts at
-flash `+ 0x08000` of the bundle… modulo the im_flsh0 size), and reads
-a `u32` `game_id`:
+When `--update` resolves to a file, Encore opens it, seeks to file
+offset `0x3C`, and reads a `u32` `game_id`:
 
 ```
 50069 → SWE1
@@ -128,20 +126,17 @@ regions as uninitialised.
 ## Installer-ZIP path
 
 ```c
-/* assemble_update_from_dir — zip branch */
-int rc = system("unzip -tq /path/to/X.exe");
-if (rc == 0) {
-    mkdtemp under ./savedata/
-    unzip -q X.exe -d /tmp_inside_savedata/
-    recursive scan for *.rom
-    … then same as Form 2 …
-}
+/* try_extract_zip_to_tmp — rom.c */
+snprintf(tmpdir, tmpdir_sz, "/tmp/encore_upd_XXXXXX");
+mkdtemp(tmpdir);
+system("unzip -q -o X.exe -d /tmp/encore_upd_XXXXXX");
+/* … then assemble_update_from_dir(tmpdir, …) … */
+/* cleaned up by caller after assembly */
 ```
 
-Notice we do **not** use `/tmp`. This is deliberate: the project runs
-in sandboxes where `/tmp` is rejected (see the project's top-level
-security rule). Extraction happens under `./savedata/<uuid>/` and is
-cleaned up on exit.
+The temporary extraction directory is created under `/tmp` via
+`mkdtemp`. It is cleaned up with `rm -rf` immediately after the
+in-memory assembly step, before the binary returns.
 
 ## A note on `.flash` savedata
 
@@ -180,3 +175,7 @@ Examples:
 ./build/encore --game rfm  --update latest      # → pin2000_50070_0260_*
 ./build/encore --update latest                  # newest bundle, any game
 ```
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

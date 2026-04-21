@@ -56,3 +56,7 @@ Encore's own `src/` tree.
   the two pieces of light obfuscation Williams applied to the
   shipped binaries; both are trivial and well-documented in the
   reverse-engineering notes.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

@@ -103,3 +103,7 @@ agree on the table format; if either is updated, check both.
 * Runtime symbol reader: [20-symbols-rom.md](20-symbols-rom.md)
 * Patching philosophy: [21-patching-philosophy.md](21-patching-philosophy.md)
 * Update bundle layout: [30-tools-build-update-bin.md](30-tools-build-update-bin.md)
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

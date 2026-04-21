@@ -15,7 +15,7 @@ but it is not the same as a real Pinball 2000 cabinet.
 Real hardware validation would tell us:
 
 * Whether the NVRAM image Encore writes is accepted by the original firmware.
-* Whether the LPT protocol (`--lpt-pass`) correctly drives real lamps, coils
+* Whether the LPT protocol (`--lpt-device`) correctly drives real lamps, coils
   and switches.
 * Whether the DCS audio timing matches what the original DCS-2 board expects
   when commanded over the parallel port.
@@ -125,3 +125,7 @@ Encore already passes an emulator-only regression matrix covering all
 seven known update bundles. See [26-testing-7-bundle-matrix.md](26-testing-7-bundle-matrix.md)
 for the pass criteria and current status. Cabinet testing would extend
 that baseline with real-hardware confirmation.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

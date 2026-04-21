@@ -10,10 +10,10 @@ deep dives.
 > [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
 > how to help verify.
 
-## The twelve compilation units
+## The thirteen compilation units
 
 ```
-src/main.c       832  CLI, config, wiring, boot-assist stubs
+src/main.c       855  CLI, config, wiring, boot-assist stubs
 src/cpu.c       1203  Unicorn loop, IRQ inject, patch scans, HLT redirection
 src/memory.c     161  Unicorn memory-region mapping
 src/rom.c        963  Chip-ROM de-interleave, bundle load, savedata
@@ -25,6 +25,7 @@ src/sound.c      537  SDL2_mixer init, DCS cmd dispatch, sample container
 src/netcon.c     300  TCP ↔ UART and TCP ↔ PS/2 bridges
 src/lpt_pass.c   343  Linux ppdev real-cabinet passthrough
 src/symbols.c    207  XINU SYMBOL TABLE index + lookup
+src/stb_impl.c     3  stb_image_write implementation unit (header-only)
 ```
 
 Plus one header: `include/encore.h`, 511 lines — the entire
@@ -170,3 +171,7 @@ The standard QEMU PC chipset devices i440FX (`0x8086:0x1237`) and
 PIIX3 (`0x8086:0x7000`) have nothing to do with real Pinball 2000
 hardware. Earlier emulator attempts that exposed these IDs were
 rejected by the PRISM option ROM at boot.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

@@ -100,7 +100,7 @@ calls, no implicit `$HOME`/`$XDG_*` behaviour.
 | `--fullscreen` / `--flipscreen` / `--bpp N` | Display tweaks |
 | `--no-savedata` | Skip NVRAM / SEEPROM load (clean boot) |
 | `--config FILE` | Load options from a YAML config |
-| `--lpt-pass /dev/parport0` | Forward the guest's LPT to a real parallel port (cabinet only) |
+| `--lpt-device /dev/parport0` | Forward the guest's LPT to a real parallel port (cabinet only) |
 
 See [docs/03-cli-reference.md](docs/03-cli-reference.md) for the
 complete list and

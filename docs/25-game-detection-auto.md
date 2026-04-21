@@ -117,3 +117,7 @@ or
 * Update loader: [09-update-loader.md](09-update-loader.md)
 * Title differences: [35-rfm-vs-swe1.md](35-rfm-vs-swe1.md)
 * Real LPT passthrough: [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md)
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

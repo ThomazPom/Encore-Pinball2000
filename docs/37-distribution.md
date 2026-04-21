@@ -143,3 +143,7 @@ Do not include `roms/`, `updates/`, or `savedata/`.
 * Update loader: [09-update-loader.md](09-update-loader.md)
 * Savedata: [10-savedata.md](10-savedata.md)
 * RFM r2 chips: [35-rfm-vs-swe1.md](35-rfm-vs-swe1.md)
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

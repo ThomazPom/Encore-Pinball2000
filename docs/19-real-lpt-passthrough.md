@@ -180,3 +180,7 @@ TCP for service-menu operations.
   have ISA.
 * On-board parallel ports of modern (post-2015) consumer motherboards:
   usually require BIOS to be set to `ECP+EPP` mode.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

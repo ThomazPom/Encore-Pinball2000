@@ -209,3 +209,7 @@ set, the task calls `regres()` with an 8-space resource ID,
 unblocking the XINA shell. Encore's BAR2 SRAM faithfully echoes
 back every written byte so the channel-init `REPNZ SCAS` loop
 terminates correctly.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

@@ -94,3 +94,7 @@ site may no longer be active; check archive services.
 
 Community-sourced updates (from the mypinballs.com project) may also
 be available; these are not official Williams releases.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

@@ -177,3 +177,7 @@ Every stage emits an `[sgc]` log line so you can see the scan progress:
 
 If any line is missing, the scan failed at that stage and the tag
 itself tells you which stage.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

@@ -134,3 +134,7 @@ Every patch-adding commit should answer these questions in its body:
 
 The last question is the single best protection against "this patch
 fixes A and silently breaks B".
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)
