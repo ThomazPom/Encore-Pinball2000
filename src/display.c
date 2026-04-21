@@ -12,7 +12,6 @@
 static int  s_y_flip = 1;
 static bool s_seen_nonzero_fb = false;
 static int  s_snap_id = 0;
-static int  s_auto_snap_id = 0;
 
 /* Alt+K raw keyboard capture state. When ON every SDL_KEYDOWN/UP gets
  * translated to PS/2 Set-1 scancode bytes and queued via netcon's
@@ -339,7 +338,6 @@ void display_update(void)
     if (any_nonzero && !s_seen_nonzero_fb) {
         s_seen_nonzero_fb = true;
         LOG("disp", "first non-zero framebuffer detected (fb_off=0x%x)\n", fb_off);
-        save_screenshot("encore_first", 0);
     }
 
     /* Upload to GPU and present */
@@ -373,10 +371,8 @@ void display_update(void)
         }
     }
 
-    /* Periodic screenshot */
-    if (g_emu.frame_count == 1000 || g_emu.frame_count == 3000 || g_emu.frame_count == 8000) {
-        save_screenshot("encore_auto", s_auto_snap_id++);
-    }
+    /* Manual screenshots only — press F3. (Auto-snapshots removed
+     * to avoid filling the screenshots directory unattended.) */
 }
 
 void display_handle_events(void)
