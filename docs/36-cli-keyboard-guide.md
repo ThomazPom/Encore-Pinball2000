@@ -3,6 +3,11 @@
 Quick reference for all key bindings while Encore is running. All
 bindings are defined in `src/display.c`.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## Normal mode (default)
 
 In normal mode the host intercepts F-keys, SPACE and navigation keys.

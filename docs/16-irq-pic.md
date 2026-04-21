@@ -4,6 +4,11 @@ Encore emulates a standard cascaded 8259A PIC pair, just enough for
 the Pinball 2000 firmware to function. The PIC code lives at the top
 of `src/io.c` (lines 14–170). The IRQ injector lives in `src/cpu.c`.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## Layout
 
 Two PIC chips, chained master → slave, at the canonical ISA ports:

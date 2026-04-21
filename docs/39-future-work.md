@@ -7,6 +7,11 @@ speculative.
 
 ---
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## High priority
 
 ### Patchless IO DSP handshake
@@ -30,7 +35,7 @@ See [38-known-limitations.md](38-known-limitations.md).
 
 ### DCS-mode pattern scan for all versions
 
-The `bar4-patch` CMP/JNE scan is currently confirmed for SWE1 v1.5 and
+The `bar4-patch` CMP/JNE scan is currently working for SWE1 v1.5 and
 v2.1. A scan that works for every RFM and SWE1 version without relying
 on the address `0x001931e4` being stable would be preferable. The
 pattern is in the SYMBOL TABLE as `dcs_mode_select`; a sym-lookup based
@@ -110,3 +115,31 @@ endpoint would restore this functionality.
 * DCS probe polarity: [14-dcs-probe-polarity.md](14-dcs-probe-polarity.md)
 * Patching philosophy: [21-patching-philosophy.md](21-patching-philosophy.md)
 * Regression matrix: [26-testing-7-bundle-matrix.md](26-testing-7-bundle-matrix.md)
+
+## Historical research notes
+
+The following items remain open from earlier P2K reverse-engineering
+work and would benefit from further investigation. None are blocking
+for current Encore functionality, but each would expand what the
+emulator can faithfully reproduce.
+
+* **DCS-2 sound-DSP ROM format (`u109` / `u110`).** The on-card ADSP
+  ROMs that drive DCS-2 sample playback use a layout that is not yet
+  fully documented. Encore bypasses ADSP emulation entirely and
+  serves samples from a pre-extracted container, so the ROM format
+  is not required for current playback — but documenting it would
+  enable a true DCS-2 emulator path.
+* **EMS file format.** The 16-byte `*.ems` savedata file holds
+  service-menu flags. The encoding is partially understood from
+  observed bit changes after menu interactions, but a complete field
+  table has not been written down.
+* **PRISM I/O port map (`0x22` / `0x23` and others).** Several
+  PRISM-side ISA I/O registers are recognised by the option ROM but
+  their full register table has not been enumerated.
+* **SEEPROM data layout.** Words 38–45 are known to hold the
+  CS0BASE–CS3BASE PLX values. The remainder of the 64-word, 16-bit
+  SEEPROM is mostly understood from observed reads but is not yet
+  documented as a single field map.
+* **Video BIOS identity.** Confirmed: the first 32 KB of ROM bank 0
+  serves as the option ROM. No separate video BIOS image exists on
+  the card.

@@ -1,5 +1,9 @@
 # 38 — Known Limitations
 
+> *This list is based on emulator-only testing. Some entries may turn
+> out to be cabinet-only issues — and other cabinet-only issues may
+> surface that aren't listed here yet.*
+
 Items that are incomplete, partially working, or require further
 research. This is a truthful snapshot; it is not a promise of future
 delivery.

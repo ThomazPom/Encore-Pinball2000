@@ -5,6 +5,11 @@ processes the `*_symbols.rom` file (also called `SYMBOLS.ROM`) that is
 embedded in every Pinball 2000 update bundle and lets you resolve
 function names to addresses and vice-versa.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## Why this tool exists
 
 Encore's patching philosophy prefers pattern scans and symbol lookups

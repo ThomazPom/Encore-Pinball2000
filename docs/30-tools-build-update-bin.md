@@ -4,6 +4,11 @@
 directory of component ROM files produced by de-archiving a Williams
 update installer.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## Why this tool exists
 
 Encore's `--update` flag accepts a pre-built `update.bin` directly. But

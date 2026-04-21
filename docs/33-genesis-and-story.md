@@ -3,6 +3,11 @@
 A chronological account of how Encore was built, what was discovered
 along the way, and why the project exists in its current form.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## Starting point
 
 The project began as a single-developer investigation into whether the
@@ -108,7 +113,7 @@ Nothing regressed. The resulting codebase is the current state of the
 ## Current status
 
 Six of the seven known update bundles boot to attract mode with full
-graphics and DCS audio. RFM v1.2 (1999) reaches a pre-XINU crash and
+graphics and DCS audio under emulation. RFM v1.2 (1999) reaches a pre-XINU crash and
 is documented as a known limitation. The emulator is approximately
 8 000 lines of C across twelve files.
 
@@ -119,3 +124,35 @@ is documented as a known limitation. The emulator is approximately
 * Watchdog scanner: [15-watchdog-scanner.md](15-watchdog-scanner.md)
 * Patching philosophy: [21-patching-philosophy.md](21-patching-philosophy.md)
 * Known limitations: [38-known-limitations.md](38-known-limitations.md)
+
+## Historical research notes
+
+### Why a from-scratch Unicorn build (and not a binary translation of the original)
+
+Before Encore was started, several attempts were made to take the
+original 32-bit P2K runtime binary and re-host it on modern x86-64
+Linux directly. The shortest path explored was static binary
+translation via the Rev.ng toolchain. Five iterations of that
+approach were attempted; all of them failed for different reasons
+(symbol resolution, dynamic library bridging, calling-convention
+mismatches between the i386 C ABI used by the binary and the
+SysV AMD64 ABI of host libraries, and similar issues).
+
+The conclusion from those experiments was that re-hosting the
+original binary unmodified was not viable in any reasonable amount
+of work, and that a clean-room implementation built on top of an
+existing CPU emulator (Unicorn Engine) would be both faster to
+deliver and easier to maintain.
+
+### Binary-stripping observations
+
+All shipped P2K game binaries are stripped of debugging symbols but
+retain dynamic symbols (the export table needed by the dynamic
+loader). This is enough to recover the call-graph for the major
+subsystems through standard reverse-engineering tools, which is how
+the function table in
+[46-function-reference.md](46-function-reference.md) was produced.
+
+The original runtime also linked an MP3 wrapper library exposing a
+small API (initialise, load, play, stop, free) used for the early
+boot music; Encore replaces this with SDL_mixer entirely.

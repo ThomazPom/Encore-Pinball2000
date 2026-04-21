@@ -6,6 +6,11 @@ option also works as a `key: value` line inside a YAML config file;
 see [04-config-yaml.md](04-config-yaml.md) for the loader rules and
 precedence.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## Summary table
 
 | Flag | Argument | Default | Purpose |

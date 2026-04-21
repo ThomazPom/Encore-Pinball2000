@@ -7,6 +7,11 @@ guest memory map.
 
 Source of truth: `src/rom.c` (963 lines).
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## Chip ROMs
 
 A complete bank is carried on eight socketed chips labelled

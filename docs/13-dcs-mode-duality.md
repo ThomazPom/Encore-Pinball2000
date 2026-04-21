@@ -5,6 +5,11 @@ its sound subsystem. There are two distinct paths, corresponding to
 two distinct decisions the game's own init code tries to make. The
 flag `--dcs-mode` selects which of those two paths we support.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## The game's internal decision
 
 During early init the game probes for a DCS-2 board. The probe
@@ -55,7 +60,7 @@ Now the MOV stores 1 unconditionally. The game takes the BAR4 path.
 `sound.c` handles the ensuing command stream.
 
 Why is this the default? Because it **works on every dearchived
-bundle**. The 5-byte pattern is stable across SWE1 and RFM versions
+bundle**. The 5-byte pattern has been stable across tested bundles for SWE1 and RFM versions
 1.2 through 2.6. The bundle-specific difference — which address the
 MOV stores to — is irrelevant because we leave the MOV untouched.
 
@@ -91,7 +96,7 @@ Two reasons:
 
 1. On bundles whose natural probe returns 0 (even after scribble),
    the game skips DCS init entirely and stays silent. We have only
-   verified clean probe-returns-1 behaviour on a subset of bundles.
+   observed clean probe-returns-1 behaviour under emulation on a subset of bundles.
 2. The I/O port handshake pump in `io.c` currently answers the
    reset + handshake parts but does not fully emulate every mixer /
    multi-word command in the same way that the BAR4 path does. Some

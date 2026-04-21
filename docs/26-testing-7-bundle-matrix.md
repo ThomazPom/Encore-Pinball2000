@@ -4,6 +4,11 @@ Encore's primary correctness criterion is: *every supported bundle
 boots to attract mode with graphics and DCS audio*. The regression
 matrix encodes this criterion as a reproducible manual test procedure.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## The seven bundles
 
 | # | Bundle directory pattern              | Title | Version | Notes |
@@ -37,7 +42,7 @@ observed within 60 seconds of launch:
 1. `[disp] first non-zero framebuffer detected` — guest wrote pixels.
 2. `[disp] FPS:` line logged — display loop is running.
 3. `[irq] XINU ready: timer injection enabled` — scheduler is live.
-4. DCS boot-dong sound plays (audible or confirmed via
+4. DCS boot-dong sound plays (audible under emulation or logged via
    `[sound] boot dong` log line).
 5. SDL window shows the WMS logo or attract-mode graphics (no stuck
    black frame).
@@ -91,6 +96,9 @@ For interactive testing (with display and audio), omit `--headless` and
 ```
 
 ## Current status
+
+> *Note: All results are from emulator-only testing. Real-cabinet
+> validation is pending.*
 
 | Bundle    | bar4-patch | io-handled |
 |-----------|-----------|------------|

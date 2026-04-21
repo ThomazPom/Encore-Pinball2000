@@ -11,6 +11,11 @@ independent channels:
 Encore drives both at ~57 Hz from the wall clock, independent of the
 guest's programmed refresh rate.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## The wall-clock generator
 
 In `src/cpu.c:523-547`:

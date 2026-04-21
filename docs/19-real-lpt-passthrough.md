@@ -6,6 +6,11 @@ to set it up and the design choices behind the implementation.
 
 Source: `src/lpt_pass.c` (343 lines), also the `--lpt-device` CLI flag.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## Why real-cabinet mode at all?
 
 Two reasons:
@@ -78,8 +83,8 @@ uint8_t lpt_passthrough_read(uint8_t reg)
 }
 ```
 
-This policy matches what the real driver binary does — verified by
-reverse engineering of its own LPT handler, which gates the data read
+This policy matches what the real driver binary does — consistent with what
+reverse engineering of its own LPT handler shows, which gates the data read
 on a pair of `renderingFlags` bits and never touches control-register
 bit 5 (the canonical PC "direction bit"). The P2K protocol is
 **implicit-direction**.

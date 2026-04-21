@@ -8,6 +8,11 @@ loud warning.
 Implemented in `src/main.c` `load_config_file()` and
 `apply_option()`.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## Grammar
 
 ```

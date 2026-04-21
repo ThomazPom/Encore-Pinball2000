@@ -4,6 +4,11 @@ Quick diagnosis guide for the most common failure modes.
 
 ---
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## Black SDL window — no graphics
 
 **Symptom:** The window opens but stays black indefinitely.
@@ -51,7 +56,7 @@ Quick diagnosis guide for the most common failure modes.
    CI). Use `--headless` to skip audio entirely in that environment.
 4. Check that `--dcs-mode bar4-patch` is active (the default). The
    `io-handled` path relies on the natural PCI probe which is only
-   proven on SWE1 v1.5 under specific conditions.
+   reproducible on SWE1 v1.5 under specific conditions.
 
 ---
 

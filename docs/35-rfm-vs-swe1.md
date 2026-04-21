@@ -5,6 +5,11 @@ and XINU kernel are identical, there are meaningful per-title
 differences in ROM content, chip-ROM revisions, sound libraries, and
 boot behaviour.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## Identity
 
 | Field              | Star Wars Episode I | Revenge From Mars |
@@ -73,7 +78,7 @@ needed.
 ### SWE1 v1.5 and v2.1
 
 Both boot to attract mode in `bar4-patch` mode. SWE1 v1.5 is also the
-only bundle confirmed to reach DCS audio via `io-handled` mode (natural
+only bundle observed to reach DCS audio under emulation via `io-handled` mode (natural
 probe path).
 
 ### RFM v1.6, v1.8, v2.5, v2.6

@@ -6,6 +6,11 @@ conditions. Understanding how Encore intercepts and handles each class
 is important for interpreting the log output and for diagnosing boot
 failures.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## Game-side exception model
 
 ### NonFatal()

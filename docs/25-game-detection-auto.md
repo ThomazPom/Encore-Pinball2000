@@ -5,6 +5,11 @@ Encore supports two titles — **Star Wars Episode I (SWE1)** and
 in the update bundle. Detecting the correct title automatically avoids
 the need for the user to pass `--game` on every invocation.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## game_id values
 
 | Decimal | Hex        | Title                  |

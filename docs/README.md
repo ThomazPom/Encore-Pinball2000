@@ -7,7 +7,15 @@ of **Unicorn Engine**; video is driven by **SDL2** and audio by
 bundle with graphics and DCS sound, and can optionally drive a real
 cabinet through the host parallel port.
 
-This tree contains 40 documents, grouped by subsystem. Read the first
+## Status
+
+> **Emulator-only validation.** All documented behaviour has been
+> observed under emulation on x86-64 Linux. Real-cabinet validation
+> against a physical Pinball 2000 machine is pending. If you own a
+> cabinet, see [42-cabinet-testing-call.md](42-cabinet-testing-call.md)
+> to learn how to help verify.
+
+This tree contains 47 documents, grouped by subsystem. Read the first
 three in order if you are new to the project; afterwards jump straight
 to whatever interests you.
 
@@ -85,6 +93,12 @@ to whatever interests you.
 | [38](38-known-limitations.md) | What does not yet work |
 | [39](39-future-work.md) | Roadmap and `maybe-fun` list |
 | [40](40-glossary.md) | Terms and acronyms |
+| [41](41-build-env-and-runtime.md) | Build, environment and runtime knobs |
+| [42](42-cabinet-testing-call.md) | Real-cabinet testing call-to-action |
+| [43](43-cabinet-hardware-primer.md) | Cabinet hardware primer for software contributors |
+| [44](44-xina-os-deep-dive.md) | XINA OS deep dive |
+| [45](45-official-update-manager.md) | Official update manager background |
+| [46](46-function-reference.md) | Key function reference (game binary) |
 
 ## Conventions
 

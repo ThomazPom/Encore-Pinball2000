@@ -3,6 +3,11 @@
 From a fresh Debian 12 / Ubuntu 24.04 install to attract mode in under
 five minutes.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## 1. Install dependencies
 
 ```sh
