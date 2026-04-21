@@ -4,6 +4,11 @@ XINU is the operating system kernel that the Pinball 2000 game image
 uses for multi-process scheduling. Understanding its startup path is
 essential for debugging early-boot failures.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## The five milestones
 
 ```
@@ -80,7 +85,7 @@ never corrupts the real XINU stack.
 scheduling. It is set by XINU's own `clkinit()` routine; no external
 poke is needed. Encore historically contained a hardcoded BSS poke for
 SWE1 V1.12 (`apply_xinu_boot_patches`) but it was deleted in the
-2026-04-21 minimisation pass once pattern-scan BT-74 was proven to work
+2026-04-21 minimisation pass once pattern-scan BT-74 was observed to work under emulation
 on all bundles without it.
 
 The ready-queue is primed naturally: once `nulluser` is in the HLT-idle

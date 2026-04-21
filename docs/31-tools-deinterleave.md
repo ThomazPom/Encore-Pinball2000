@@ -3,6 +3,11 @@
 `tools/deinterleave_rebuild.sh` reconstructs the four interleaved
 chip-ROM bank files from pairs of individual chip dump files.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## Background
 
 The Pinball 2000 hardware stores the game code in eight physical ROM

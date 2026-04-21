@@ -6,6 +6,11 @@ several BAR windows, and a DCS-2 audio board on another PCI function.
 Encore's memory map mirrors this layout and is defined at the top of
 `include/encore.h`.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## Summary
 
 | Guest range | Size | Backing | Use |
@@ -72,7 +77,7 @@ our host-side VBLANK driver writes `01 00 00 00` there every VBLANK
 * the four component ROMs concatenated at fixed offsets;
 * an installer-ZIP that is unzipped and then treated as a directory.
 
-Layout inside the flash (verified against `rfm_15_update.bin`):
+Layout inside the flash (cross-referenced against `rfm_15_update.bin`):
 
 ```
 0x000000   bootdata.rom        (32 KB)
@@ -147,3 +152,60 @@ This corresponds to what a real BIOS would do after running `Init2`
 from the option ROM. The BIOS image (`BIOS_SIZE = 64 KB`) is loaded
 only so that any code path that still references `0xFFFF0000` lands on
 plausible bytes; we never run it.
+
+## PRISM card detailed notes
+
+These details were captured from live boot traces of the original
+P2K runtime and from analysis of the PRISM option ROM. They are not
+all directly used by Encore's code — Encore implements only what
+the game actually exercises — but they are useful when investigating
+new behaviour or extending BAR coverage.
+
+### PRISM PCI BAR layout
+
+| BAR     | Config reg | Runtime address | Purpose                                   |
+|---------|-----------|-----------------|-------------------------------------------|
+| BAR0    | `0x10`    | `0x10000000`    | PLX 9050 register file                    |
+| BAR2    | `0x18`    | `0x11000000`    | DCS-2 interface / character display out   |
+| BAR3    | `0x1C`    | `0x12000000`    | Update-flash region (returns `0xFF` if no update) |
+| BAR4    | `0x20`    | `0x13000000`    | DCS audio command port                    |
+| BAR5    | `0x24`    | `0x14000000`    | ROM flash bank 0                          |
+| ROM BAR | `0x30`    | `0x18000001`    | Expansion / DCS sound ROM bank 4          |
+
+BAR2 doubles as a character/text display output: the original
+runtime writes ASCII bytes to it for debug messages.
+
+### PLX 9050 registers (BAR0)
+
+| Register | Offset | Typical value | Meaning                          |
+|----------|--------|---------------|----------------------------------|
+| LAS0BA   | `0x14` | `0x00100001`  | DCS/system image window          |
+| LAS3BA   | `0x20` | `0x08000001`  | ROM bank 0 base                  |
+| CS0BASE  | `0x3C` | `0x08800001`  | ROM bank 1                       |
+| CS1BASE  | `0x40` | `0x09800001`  | ROM bank 2                       |
+| CS2BASE  | `0x44` | `0x0A800001`  | ROM bank 3                       |
+| CS3BASE  | `0x48` | `0x0B800001`  | ROM bank 4 (DCS-2 sound)         |
+| CNTRL    | `0x50` | dynamic       | SEEPROM bit-bang (CLK/CS/DI/DO)  |
+
+Note: `LAS0BA`–`LAS3BA` are host DMA windows, not ROM bank
+selects. `CS0BASE`–`CS3BASE` are the actual bank addresses XINU
+uses. After the game starts, XINU zeros the PLX registers and
+re-programs them from SEEPROM data.
+
+### Option ROM
+
+The first 32 KB of the correctly de-interleaved ROM bank 0 is a
+valid ISA option ROM with header `55 AA` and size byte `0x40`
+(64 × 512 = 32 768 bytes). Its checksum is valid. The option ROM
+hooks `INT 0x19`, switches the CPU to protected mode, and jumps to
+the game image at `0x08170284`.
+
+### DCS-2 BAR2 channel-init protocol
+
+The DCS-2 task initialises the audio board in three phases by
+writing DWORD sequences to BAR2 MMIO. Phase 3 ends by polling a
+completion flag at `RAM[0x2797C4]` for `0xFFFF`. Once the flag is
+set, the task calls `regres()` with an 8-space resource ID,
+unblocking the XINA shell. Encore's BAR2 SRAM faithfully echoes
+back every written byte so the channel-init `REPNZ SCAS` loop
+terminates correctly.

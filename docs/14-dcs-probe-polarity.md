@@ -6,6 +6,11 @@ engineering work in the entire project. Read this if you want to
 understand why the watchdog scribble is `0` in one mode and `0xFFFF`
 in the other.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## The artefact
 
 Around line 777 of `src/cpu.c`:
@@ -145,7 +150,7 @@ mode.
 If a future bundle exposes a probe at a different offset or with a
 different cell value, the scanner's job is to find it. The `CMP
 [addr], 0xFFFF` idiom (opcode bytes `81 3D`) is the fingerprint and
-is extraordinarily stable across builds. Any new idiom would require
+has been stable across the emulated bundles tested. Any new idiom would require
 extending `apply_sgc_patches()` to recognise more shapes.
 
 ## Testing impact
@@ -155,5 +160,5 @@ Every one of the seven dearchived bundles was tested with both
 landed. See the regression table in
 [26-testing-7-bundle-matrix.md](26-testing-7-bundle-matrix.md). Net
 result: `bar4-patch` has 100 % audio success; `io-handled` boots on
-all seven but audio is fully working only on the bundles whose I/O
+all seven but audio produces the expected output under emulation only on the bundles whose I/O
 command pump is implemented.

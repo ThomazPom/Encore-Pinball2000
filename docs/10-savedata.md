@@ -4,6 +4,11 @@ Savedata in Encore is deliberately simple: four binary files, no
 versioning, no JSON, no migrations. State in, state out; whatever the
 game wrote to NVRAM is what we read back next run.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## The four files
 
 Under `./savedata/`, files are named `<game_id_str>.<suffix>`:

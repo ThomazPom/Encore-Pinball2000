@@ -7,6 +7,11 @@ logic around Unicorn that turns "an i386 JIT" into "a PC".
 
 Source of truth: `src/cpu.c`, 1203 lines.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## Guest model
 
 * Architecture: **i386**, `UC_ARCH_X86 / UC_MODE_32`.

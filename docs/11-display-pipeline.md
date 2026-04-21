@@ -5,6 +5,11 @@ Encore's video path is a straight line: guest MediaGX framebuffer →
 
 Source: `src/display.c` (595 lines).
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## The guest side
 
 The game draws into the MediaGX framebuffer region at guest physical

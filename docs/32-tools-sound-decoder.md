@@ -3,6 +3,11 @@
 `tools/extract_sounds.py` decodes and extracts all sound samples from a
 Pinball 2000 `*_P2K.bin` sound library file.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## The pb2kslib container
 
 The Pinball 2000 sound library (`swe1_P2K.bin` or `rfm_P2K.bin`) is a

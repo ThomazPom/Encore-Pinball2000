@@ -9,6 +9,11 @@ Encore's audio subsystem has two jobs:
 
 Source: `src/sound.c` (537 lines).
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## The DCS-2 board, briefly
 
 On real Pinball 2000 hardware, the DCS-2 board is a separate ADSP-2105

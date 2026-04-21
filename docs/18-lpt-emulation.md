@@ -11,6 +11,11 @@ play the game without a real cabinet attached. Real-cabinet
 passthrough is covered separately in
 [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md).
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## The protocol (as Williams implemented it)
 
 The guest's PinIO driver talks to the driver board in a request/response

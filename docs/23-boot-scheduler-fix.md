@@ -3,6 +3,11 @@
 This document records how the earliest Encore boot hang was diagnosed
 and the pattern-scan fix that resolved it for every bundle.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## The symptom
 
 Early Encore builds loaded the ROM, reached XINU `sysinit`, printed the
@@ -34,7 +39,7 @@ calling `cpu_inject_interrupt` between `uc_emu_start` calls.
 
 ## The fix — BT-74
 
-Discovered while tracing why SWE1 V1.12 hung and later confirmed
+Discovered while tracing why SWE1 V1.12 hung and subsequently reproduced
 game-agnostic. The compiler always emits the same 9-byte sequence before
 the `JMP $`:
 

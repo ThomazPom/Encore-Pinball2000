@@ -5,6 +5,11 @@
 > from scratch in C against published hardware references, plus
 > disassembly of the game's own i386 binaries.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## What Encore is
 
 Encore loads the exact ROM and update files that Williams shipped for a

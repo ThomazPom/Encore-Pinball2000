@@ -8,6 +8,11 @@ Entry points: `src/main.c` `resolve_update_token()`,
 `apply_option("update", …)`; ROM side: `src/rom.c` `rom_load_update_flash`,
 `assemble_update_from_dir`.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## The four accepted forms
 
 ### Form 1 — a pre-built `update.bin`

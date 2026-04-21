@@ -5,6 +5,11 @@ before you start poking at individual subsystems. If you have time for
 only one architecture doc, read this one and then come back for the
 deep dives.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## The twelve compilation units
 
 ```
@@ -146,3 +151,22 @@ irrelevant because we are single-threaded-ish by design.
 * Address space: [07-memory-map.md](07-memory-map.md)
 * Specific patches: [21-patching-philosophy.md](21-patching-philosophy.md)
 * Frame timing: [24-fps-and-pacing.md](24-fps-and-pacing.md)
+
+## Historical research notes
+
+The following PCI device identities were captured from live boot
+traces of the original P2K runtime and are what the PRISM option ROM
+expects to find on the bus. Returning a different vendor/device pair
+causes the option ROM to refuse to boot. Encore's PCI emulation
+mirrors these exactly.
+
+| Slot   | Device                                | Vendor | Device   | Class      | Rev |
+|--------|---------------------------------------|--------|----------|------------|-----|
+| Dev 0  | Cyrix MediaGX (CPU / north bridge)    | `0x1078` | `0x0001` | `0x060000` | `0x0` |
+| Dev 8  | WMS PRISM                             | `0x146E` | `0x0001` | `0x030000` | `0x2` |
+| Dev 18 | Cyrix CX5520 (south bridge)           | `0x1078` | `0x0002` | `0x060100` | `0x0` |
+
+The standard QEMU PC chipset devices i440FX (`0x8086:0x1237`) and
+PIIX3 (`0x8086:0x7000`) have nothing to do with real Pinball 2000
+hardware. Earlier emulator attempts that exposed these IDs were
+rejected by the PRISM option ROM at boot.

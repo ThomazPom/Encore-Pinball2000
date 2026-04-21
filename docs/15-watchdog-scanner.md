@@ -12,6 +12,11 @@ Implementation: `src/io.c:apply_sgc_patches()`. ROM-agnostic — the
 scanner finds the cell at runtime with no hardcoded per-bundle
 addresses.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## The four-step scan
 
 ```

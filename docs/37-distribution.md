@@ -3,6 +3,11 @@
 This document describes the folder layout of a ready-to-run Encore
 installation after all files are in place.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## Top-level layout
 
 ```

@@ -6,6 +6,11 @@ controls how often the framebuffer is scanned out to the SDL window).
 Understanding both is necessary when tuning performance or debugging
 timing-sensitive boot behaviour.
 
+> **Status:** Behaviour described here is based on emulator testing
+> only. Real-cabinet validation is pending — see
+> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
+> how to help verify.
+
 ## Execution batches
 
 Unicorn does not expose hardware timers; each call to `uc_emu_start`
