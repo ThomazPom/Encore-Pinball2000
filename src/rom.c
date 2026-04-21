@@ -421,6 +421,194 @@ int rom_load_all(void)
 
 /* ===== Update Flash Loading ===== */
 
+/* All-terrain update assembly.
+ *
+ * Accepts any of the following sources:
+ *   • A pre-concatenated update.bin (or any file ≤ FLASH_SIZE that
+ *     starts with a date string + entry-point at offset 0x48 — exactly
+ *     what the bootdata header looks like)
+ *   • A directory containing the 4-6 individual *.rom parts
+ *     (bootdata, im_flsh0, game, symbols [, pubboot, sf]) as shipped
+ *     by Williams' update bundles
+ *   • A ZIP archive (the official .exe installers ARE ZIPs — confirmed
+ *     by file(1) magic; they contain {game_id}/ subfolder with the
+ *     same .rom layout). Extracted to a unique tmp dir via the
+ *     system unzip(1), then assembled like the directory case.
+ *
+ * The on-disk layout the binary's option-ROM expects is fixed:
+ *     0x000000  bootdata.rom
+ *     0x008000  im_flsh0.rom
+ *     0x008000+|im_flsh0|  game.rom
+ *     0x008000+|im_flsh0|+|game|  symbols.rom
+ * matching tools/build_update_bin.py exactly.
+ *
+ * Returns assembled byte count on success, 0 on failure. Caller owns
+ * *out_data via free(). */
+
+static int assemble_update_from_dir(const char *dir,
+                                    uint8_t **out_data, size_t *out_sz);
+
+static int try_extract_zip_to_tmp(const char *zip_path, char *tmpdir, size_t tmpdir_sz)
+{
+    /* Probe with `unzip -t` — handles raw .zip *and* self-extracting
+     * .exe wrappers (PE with appended ZIP, central directory at EOF).
+     * Exit code 0 means the archive is readable. */
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd),
+             "unzip -tqq '%s' >/dev/null 2>&1", zip_path);
+    if (system(cmd) != 0) {
+        LOG("flash", "zip-detect: %s is not a readable zip/exe-installer\n",
+            zip_path);
+        return -1;
+    }
+    LOG("flash", "zip-detect: %s is a valid archive, extracting...\n", zip_path);
+
+    /* Allocate a unique tmp dir */
+    snprintf(tmpdir, tmpdir_sz, "/tmp/encore_upd_XXXXXX");
+    if (!mkdtemp(tmpdir)) {
+        LOG("flash", "mkdtemp failed: %s\n", strerror(errno));
+        return -1;
+    }
+
+    /* Quote the zip path to survive spaces/special chars. unzip -q for
+     * silence, -o for overwrite. */
+    snprintf(cmd, sizeof(cmd),
+             "unzip -q -o '%s' -d '%s' >/dev/null 2>&1", zip_path, tmpdir);
+    int rc = system(cmd);
+    if (rc != 0) {
+        LOG("flash", "unzip(1) failed (rc=%d) on %s\n", rc, zip_path);
+        return -1;
+    }
+    return 0;
+}
+
+/* Recursively search DIR for *.rom files, classify by suffix, and
+ * concatenate per the bootdata/im_flsh0/game/symbols layout. */
+static void scan_for_roms(const char *dir, char by_kind[6][512])
+{
+    static const char *kinds[6] = {
+        "bootdata", "im_flsh0", "game", "symbols", "pubboot", "sf"
+    };
+    DIR *d = opendir(dir);
+    if (!d) return;
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        if (de->d_name[0] == '.') continue;
+        char path[512];
+        snprintf(path, sizeof(path), "%s/%s", dir, de->d_name);
+        struct stat st;
+        if (stat(path, &st) != 0) continue;
+        if (S_ISDIR(st.st_mode)) {
+            scan_for_roms(path, by_kind);
+            continue;
+        }
+        if (!S_ISREG(st.st_mode)) continue;
+        const char *ext = strrchr(de->d_name, '.');
+        if (!ext || strcasecmp(ext, ".rom") != 0) continue;
+        for (int k = 0; k < 6; k++) {
+            char needle[32];
+            snprintf(needle, sizeof(needle), "_%s.", kinds[k]);
+            if (strstr(de->d_name, needle) && by_kind[k][0] == '\0') {
+                snprintf(by_kind[k], 512, "%s", path);
+                break;
+            }
+        }
+    }
+    closedir(d);
+}
+
+static int assemble_update_from_dir(const char *dir,
+                                    uint8_t **out_data, size_t *out_sz)
+{
+    char by_kind[6][512] = {{0}};
+    scan_for_roms(dir, by_kind);
+
+    /* Need at minimum bootdata + im_flsh0 + game + symbols. */
+    static const char *kind_names[4] = {"bootdata", "im_flsh0", "game", "symbols"};
+    for (int k = 0; k < 4; k++) {
+        if (by_kind[k][0] == '\0') {
+            LOG("flash", "directory %s missing %s.rom\n", dir, kind_names[k]);
+            return -1;
+        }
+    }
+
+    size_t sz_bd = 0, sz_im = 0, sz_g = 0, sz_sy = 0;
+    uint8_t *bd = load_file(by_kind[0], &sz_bd);
+    uint8_t *im = load_file(by_kind[1], &sz_im);
+    uint8_t *g  = load_file(by_kind[2], &sz_g);
+    uint8_t *sy = load_file(by_kind[3], &sz_sy);
+    if (!bd || !im || !g || !sy) {
+        free(bd); free(im); free(g); free(sy);
+        LOG("flash", "directory %s: failed to load one of the .rom parts\n", dir);
+        return -1;
+    }
+
+    size_t total = 0x8000 + sz_im + sz_g + sz_sy;
+    if (total > FLASH_SIZE) {
+        free(bd); free(im); free(g); free(sy);
+        LOG("flash", "assembled size %zu > FLASH_SIZE\n", total);
+        return -1;
+    }
+    uint8_t *buf = calloc(1, total);
+    if (!buf) {
+        free(bd); free(im); free(g); free(sy);
+        return -1;
+    }
+    memcpy(buf, bd, sz_bd > 0x8000 ? 0x8000 : sz_bd);
+    size_t off = 0x8000;
+    memcpy(buf + off, im, sz_im); off += sz_im;
+    memcpy(buf + off, g,  sz_g);  off += sz_g;
+    memcpy(buf + off, sy, sz_sy); off += sz_sy;
+    free(bd); free(im); free(g); free(sy);
+
+    LOG("flash", "assembled update from %s: bootdata=%zuKB im=%zuKB game=%zuKB sym=%zuKB → %zuKB total\n",
+        dir, sz_bd >> 10, sz_im >> 10, sz_g >> 10, sz_sy >> 10, total >> 10);
+
+    *out_data = buf;
+    *out_sz = total;
+    return 0;
+}
+
+/* Returns 0 on success, -1 if PATH cannot be converted to an update
+ * payload by any of the supported routes. */
+static int load_update_anyform(const char *path,
+                               uint8_t **out_data, size_t *out_sz)
+{
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        LOG("flash", "stat(%s): %s\n", path, strerror(errno));
+        return -1;
+    }
+
+    /* Directory → assemble in place */
+    if (S_ISDIR(st.st_mode))
+        return assemble_update_from_dir(path, out_data, out_sz);
+
+    /* Try ZIP/EXE-installer */
+    char tmpdir[64];
+    if (try_extract_zip_to_tmp(path, tmpdir, sizeof(tmpdir)) == 0) {
+        int rc = assemble_update_from_dir(tmpdir, out_data, out_sz);
+        /* Best-effort cleanup; non-fatal */
+        char cmd[128];
+        snprintf(cmd, sizeof(cmd), "rm -rf '%s'", tmpdir);
+        if (system(cmd) != 0) { /* nothing to do */ }
+        return rc;
+    }
+
+    /* Plain .bin */
+    size_t sz = 0;
+    uint8_t *data = load_file(path, &sz);
+    if (!data) return -1;
+    if (sz <= 0x50 || sz > FLASH_SIZE) {
+        LOG("flash", "%s: size %zu out of range\n", path, sz);
+        free(data);
+        return -1;
+    }
+    *out_data = data;
+    *out_sz = sz;
+    return 0;
+}
+
 /*
  * Load V1.x update ROM files into flash (BAR3 at 0x12000000).
  * The option ROM (Init2) checks flash for a valid update. If the flash bootdata
@@ -450,11 +638,10 @@ static void rom_load_update_flash(void)
      * The saved flash may have stale game code that fails checksum validation.
      * We always reload from the fresh update files to ensure consistency. */
 
-    /* Strategy 0: explicit --update FILE override */
+    /* Strategy 0: explicit --update PATH override (file/dir/zip-exe). */
     if (g_emu.update_file[0]) {
-        size_t sz = 0;
-        uint8_t *data = load_file(g_emu.update_file, &sz);
-        if (data && sz > 0x50 && sz <= FLASH_SIZE) {
+        uint8_t *data = NULL; size_t sz = 0;
+        if (load_update_anyform(g_emu.update_file, &data, &sz) == 0) {
             memcpy(g_emu.flash, data, sz);
             uint32_t entry = *(uint32_t *)(g_emu.flash + 0x48);
             LOG("flash", "Update loaded (--update): %s (%lu KB, entry=0x%08x)\n",
@@ -463,9 +650,9 @@ static void rom_load_update_flash(void)
             g_emu.is_v19_update = true;
             return;
         }
-        LOG("flash", "WARN: --update %s failed (sz=%zu) — falling back to default search\n",
-            g_emu.update_file, sz);
-        free(data);
+        LOG("flash", "WARN: --update %s could not be parsed as bin/dir/exe-zip"
+                     " — falling back to default search\n",
+            g_emu.update_file);
     }
 
     /* Strategy 1: Try pre-concatenated update.bin.
