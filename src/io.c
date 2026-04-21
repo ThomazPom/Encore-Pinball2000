@@ -381,41 +381,6 @@ static void apply_sgc_patches(void)
             }
         }
     }
-    /* In --dcs-mode io-handled we want the DCS PCI-detect cells to keep
-     * their natural value so the unpatched probe can correctly answer
-     * "device present"; collect probe shapes up-front and skip those
-     * cells in the main scan. The DCS-detect probe shape (always the
-     * same bytes across bundles):
-     *     81 3D <a4> FF FF 00 00     ; cmp dword [<a4>], 0xFFFF
-     *     74 07                       ; je  +7
-     *     B8 01 00 00 00              ; mov eax, 1
-     *     EB 02                       ; jmp +2
-     *     31 C0                       ; xor eax, eax
-     *     C9 C3                       ; leave; ret
-     * In --dcs-mode bar4-patch we DON'T blacklist: the cpu.c CMP/JNE
-     * patch makes the probe's read-of-cell irrelevant to the BAR4 path,
-     * and on at least SWE1 v2.1 something downstream depends on the
-     * scanner pinning these cells to 0xFFFF for the boot to complete.
-     * Don't fix what isn't broken in that mode. */
-    uint32_t pci_probe_blacklist[16];
-    int n_blacklist = 0;
-    if (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) {
-        for (uint32_t off = 0; off + 21 <= scan_size && n_blacklist < 16; off++) {
-            uint8_t *p = buf + off;
-            if (p[0]==0x81 && p[1]==0x3D && p[6]==0xFF && p[7]==0xFF &&
-                p[8]==0x00 && p[9]==0x00 && p[10]==0x74 && p[11]==0x07 &&
-                p[12]==0xB8 && p[13]==0x01 && p[14]==0x00 && p[15]==0x00 &&
-                p[16]==0x00 && p[17]==0xEB && p[18]==0x02 && p[19]==0x31 &&
-                p[20]==0xC0) {
-                uint32_t cand;
-                memcpy(&cand, p + 2, 4);
-                pci_probe_blacklist[n_blacklist++] = cand;
-                LOG("sgc", "io-handled: pci-probe blacklist cell=0x%08x @0x%08x\n",
-                    cand, scan_base + off);
-            }
-        }
-    }
-
     for (int si = 0; si < n_starts && !health_addr; si++) {
         uint32_t ce = search_starts[si] + 64;
         if (ce > scan_size - 4) ce = scan_size - 4;
@@ -426,15 +391,12 @@ static void apply_sgc_patches(void)
                 p[6] == 0xFF && p[7] == 0xFF && p[8] == 0x00 && p[9] == 0x00) {
                 uint32_t cand;
                 memcpy(&cand, p + 2, 4);
-                if (cand < 0x100000u || cand >= 0x1000000u) continue;
-                bool skip = false;
-                for (int k = 0; k < n_blacklist; k++)
-                    if (pci_probe_blacklist[k] == cand) { skip = true; break; }
-                if (skip) continue;
-                health_addr = cand;
-                LOG("sgc", "watchdog health reg: CMP [0x%08x],0xFFFF at 0x%08x\n",
-                    health_addr, scan_base + off);
-                break;
+                if (cand >= 0x100000u && cand < 0x1000000u) {
+                    health_addr = cand;
+                    LOG("sgc", "watchdog health reg: CMP [0x%08x],0xFFFF at 0x%08x\n",
+                        health_addr, scan_base + off);
+                    break;
+                }
             }
         }
     }
