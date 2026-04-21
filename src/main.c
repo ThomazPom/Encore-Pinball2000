@@ -54,6 +54,19 @@ static int apply_option(const char *key, const char *value)
     }
     if (strcmp(key, "headless") == 0) { g_emu.headless = true; return 0; }
     if (strcmp(key, "no-savedata") == 0) { g_emu.no_savedata = true; return 0; }
+    if (strcmp(key, "dcs-mode") == 0 && value) {
+        if (strcmp(value, "bar4-patch") == 0) {
+            g_emu.dcs_mode_choice = ENCORE_DCS_BAR4_PATCH;
+        } else if (strcmp(value, "io-handled") == 0) {
+            g_emu.dcs_mode_choice = ENCORE_DCS_IO_HANDLED;
+        } else {
+            fprintf(stderr,
+                "[main] --dcs-mode '%s' invalid; expected bar4-patch|io-handled "
+                "(falling back to bar4-patch)\n", value);
+            g_emu.dcs_mode_choice = ENCORE_DCS_BAR4_PATCH;
+        }
+        return 1;
+    }
     if (strcmp(key, "fullscreen") == 0) { g_emu.start_fullscreen = true; return 0; }
     if (strcmp(key, "flipscreen") == 0) { g_emu.start_flipscreen = true; return 0; }
     if (strcmp(key, "bpp") == 0 && value) {
@@ -374,6 +387,19 @@ print_help:
 "  --flipscreen           Start with the display Y-flipped (some cabs).\n"
 "  --bpp 16|32            Output texture bit depth (default 32 / ARGB8888;\n"
 "                         16 = RGB565). 24 falls back to 32 with a warning.\n"
+"  --dcs-mode MODE        How the DCS-2 sound subsystem is reached.\n"
+"                           bar4-patch  (default) — pattern-scan + 5-byte\n"
+"                              CMP/JNE prologue patch at xinu_ready, forces\n"
+"                              dcs_mode=1, audio via PCI BAR4 + sound.c mixer.\n"
+"                              Proven on every bundle (SWE1 v1.5/v2.1 + RFM\n"
+"                              v1.2/1.6/1.8/2.5/2.6).\n"
+"                           io-handled — skip the patch; the game runs its\n"
+"                              unmodified PCI-detect probe. Bundles whose\n"
+"                              natural probe returns 1 use BAR4 (e.g. SWE1\n"
+"                              v1.5); the rest fall through to the DCS2 UART\n"
+"                              port handlers (0x138-0x13F) in io.c. Audio\n"
+"                              coverage on the UART-only path is partial — a\n"
+"                              full I/O handshake pump is WIP.\n"
 "  --config FILE.yaml     Load options from a yaml-ish file (one key:value\n"
 "                         per line; '#' starts a comment). CLI args override\n"
 "                         config; auto-loads ./encore.yaml when no CLI args.\n"

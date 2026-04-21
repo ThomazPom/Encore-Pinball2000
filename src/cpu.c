@@ -679,6 +679,12 @@ void cpu_run(void)
         if (g_emu.xinu_booted && g_emu.xinu_ready &&
             !g_emu.dcs_mode_patch_attempted) {
             g_emu.dcs_mode_patch_attempted = true;
+            if (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) {
+                LOG("init",
+                    "DCS-mode patch SKIPPED (--dcs-mode io-handled): "
+                    "game uses unmodified PCI probe; UART handlers in io.c "
+                    "answer the I/O path.\n");
+            } else {
             const uint32_t scan_lo = 0x80000u;
             const uint32_t scan_hi = 0x400000u;
             int hits = 0;
@@ -717,6 +723,7 @@ void cpu_run(void)
             if (hits == 0)
                 LOG("init",
                     "DCS-mode pattern absent — no patch applied\n");
+            }
         }
 
         /* Inject all pending PIC interrupts (timer IRQ0 + others like IRQ4 UART).
