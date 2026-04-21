@@ -636,33 +636,21 @@ void cpu_run(void)
         }
 
         /* ============================================================
-         * DCS-mode override — HOISTED out of V1.19 killswitch block so
-         * sound works by default on any build where the byte pattern
-         * matches (SWE1 v1.5/v1.19). Self-validates via CMP EAX,1 ; JNE
-         * 0x21 (83 F8 01 75 21). On v2.1 the bytes don't match → patch
-         * no-ops → game runs unmodified. One-shot: only attempted once
-         * per XINU-ready transition.
+         * DCS-mode override removed.
          *
-         * WHY THIS IS NEEDED: our DCS2 UART ports (0x13C-0x13F) return
-         * 0xFF — the game's DCS-detect then falls to I/O-port mode and
-         * its command queue never drains. Forcing BAR4 (MMIO) mode
-         * routes commands to bar.c's DCS handler, which plays the boot
-         * dong, runs audio init, and processes mixer cmds.
+         * Rationale: this used to force BAR4 mode by overwriting a
+         * CMP+JNE in the DCS-detect probe. It was needed back when the
+         * DCS2 I/O port window (0x138-0x13F) returned 0xFF for every
+         * access — the game's I/O-port DCS path went through but our
+         * command queue never drained, so the boot dong + mixer init
+         * never ran. We've since wired io.c's dcs2_port_read/write to
+         * route the DATA word (off=4, size>=2) and FLAGS poll (off=6)
+         * through the same dcs_io_execute() backend that bar.c uses
+         * for BAR4. Both transports now share the same dispatch, so
+         * the patch is no longer needed and was per-game gated to
+         * SWE1 anyway (RFM never got it → silence). Removed for full
+         * game/version agnosticism per user spec.
          * ============================================================ */
-        if (g_emu.xinu_booted && g_emu.xinu_ready && g_emu.game_id == 50069u &&
-            !g_emu.dcs_mode_patch_attempted) {
-            g_emu.dcs_mode_patch_attempted = true;
-            uint8_t old[5];
-            if (uc_mem_read(uc, 0x1931E6u, old, 5) == UC_ERR_OK &&
-                old[0] == 0x83 && old[1] == 0xF8 && old[2] == 0x01 &&
-                old[3] == 0x75 && old[4] == 0x21) {
-                uint8_t patch[] = { 0xB8, 0x01, 0x00, 0x00, 0x00 };
-                uc_mem_write(uc, 0x1931E6u, patch, 5);
-                LOG("init", "DCS mode patch: @1931E6 CMP+JNE → MOV EAX,1 (force BAR4 for sound)\n");
-            } else {
-                LOG("init", "DCS mode patch: byte pattern mismatch @1931E6 — skipped (non-V1.19 build; sound may be silent until pattern-scan is added)\n");
-            }
-        }
 
         /* Inject all pending PIC interrupts (timer IRQ0 + others like IRQ4 UART).
          * check_and_inject_irq() respects both PIC IMR (hw mask) and CPU IF flag,
