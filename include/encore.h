@@ -415,6 +415,7 @@ void     lpt_passthrough_close(void);
 bool     lpt_passthrough_active(void);
 uint8_t  lpt_passthrough_read(uint8_t reg);
 void     lpt_passthrough_write(uint8_t reg, uint8_t val);
+int      lpt_passthrough_detect_game(char *out, size_t out_sz);
 void     lpt_set_host_input(uint8_t buttons, uint8_t switches);
 void     lpt_toggle_coin_door(void);
 void     lpt_toggle_slam_tilt(void);
