@@ -262,11 +262,10 @@ static void apply_sgc_patches(void)
      * both SWE1 and RFM without hardcoded addresses. */
     if (!g_emu.uc) return;
 
-    /* Read 1 MB of live guest RAM (0x100000-0x1FFFFF) into a temp buffer.
-     * We cannot use g_emu.ram directly: that buffer is the initial snapshot
-     * written at memory_init() time. All subsequent guest writes (option ROM
-     * copying game code to 0x100000) go into Unicorn's internal copy only.
-     * uc_mem_read gives us the live view. */
+    /* Read 3 MB of live guest RAM (0x100000-0x3FFFFF) into a temp buffer.
+     * g_emu.ram is actually the live Unicorn backing store (memory.c maps
+     * it via uc_mem_map_ptr), so either access would work — uc_mem_read is
+     * kept here for clarity. */
     const uint32_t scan_base = 0x100000u;
     const uint32_t scan_size = 0x300000u;  /* 3 MB — mem_detect can be at 0x2BFxxx */
     uint8_t *buf = malloc(scan_size);
@@ -381,6 +380,37 @@ static void apply_sgc_patches(void)
             }
         }
     }
+    /* Collect the cells referenced by the DCS/PLX/Cyrix PCI-detect probes:
+     * every such probe has a fixed shape
+     *     81 3D <a4> FF FF 00 00   ; cmp dword [<a4>], 0xFFFF
+     *     74 07                    ; je  +7
+     *     B8 01 00 00 00           ; mov eax, 1
+     *     EB 02                    ; jmp +2
+     *     31 C0                    ; xor eax, eax
+     *     C9 C3                    ; leave; ret
+     * Its `<a4>` is a PCI-device-index BSS slot which the real PCI init
+     * primes to a valid device number, then the game polls 0xFFFF to
+     * detect absence. If the SGC scanner picks this CMP as the watchdog
+     * register it pins the cell at 0xFFFF every tick and the DCS BAR4
+     * path never activates. Collect all such <a4> addresses up-front and
+     * skip them in the main scan — works for every bundle (SWE1+RFM). */
+    uint32_t pci_probe_blacklist[16];
+    int n_blacklist = 0;
+    for (uint32_t off = 0; off + 21 <= scan_size && n_blacklist < 16; off++) {
+        uint8_t *p = buf + off;
+        if (p[0]==0x81 && p[1]==0x3D && p[6]==0xFF && p[7]==0xFF &&
+            p[8]==0x00 && p[9]==0x00 && p[10]==0x74 && p[11]==0x07 &&
+            p[12]==0xB8 && p[13]==0x01 && p[14]==0x00 && p[15]==0x00 &&
+            p[16]==0x00 && p[17]==0xEB && p[18]==0x02 && p[19]==0x31 &&
+            p[20]==0xC0) {
+            uint32_t cand;
+            memcpy(&cand, p + 2, 4);
+            pci_probe_blacklist[n_blacklist++] = cand;
+            LOG("sgc", "pci-probe blacklist: cell=0x%08x @0x%08x\n",
+                cand, scan_base + off);
+        }
+    }
+
     for (int si = 0; si < n_starts && !health_addr; si++) {
         uint32_t ce = search_starts[si] + 64;
         if (ce > scan_size - 4) ce = scan_size - 4;
@@ -391,12 +421,15 @@ static void apply_sgc_patches(void)
                 p[6] == 0xFF && p[7] == 0xFF && p[8] == 0x00 && p[9] == 0x00) {
                 uint32_t cand;
                 memcpy(&cand, p + 2, 4);
-                if (cand >= 0x100000u && cand < 0x1000000u) {
-                    health_addr = cand;
-                    LOG("sgc", "watchdog health reg: CMP [0x%08x],0xFFFF at 0x%08x\n",
-                        health_addr, scan_base + off);
-                    break;
-                }
+                if (cand < 0x100000u || cand >= 0x1000000u) continue;
+                bool skip = false;
+                for (int k = 0; k < n_blacklist; k++)
+                    if (pci_probe_blacklist[k] == cand) { skip = true; break; }
+                if (skip) continue;
+                health_addr = cand;
+                LOG("sgc", "watchdog health reg: CMP [0x%08x],0xFFFF at 0x%08x\n",
+                    health_addr, scan_base + off);
+                break;
             }
         }
     }
