@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assemble update.bin from a de-archived P2K-runtime bundle.
+"""Assemble update.bin from a de-archived P2K update bundle.
 
 Layout (verified from rfm_15_update.bin):
     0x000000  bootdata.rom   (32 KB)

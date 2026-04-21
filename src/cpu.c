@@ -6,7 +6,7 @@
  * SIGALRM at 100Hz triggers uc_emu_stop() → check IRQs → inject → resume.
  *
  * ==========================================================================
- *  REMAINING HARDCODED PATCHES — minimization ground-truth minimization audit
+ *  REMAINING HARDCODED PATCHES — ground-truth minimization audit
  *  Status as of 2026-04-21.  Goal: every patch should self-validate, be
  *  game/version-agnostic, or be clearly gated with a sanity check.
  * ==========================================================================
