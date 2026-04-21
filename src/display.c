@@ -14,6 +14,109 @@ static bool s_seen_nonzero_fb = false;
 static int  s_snap_id = 0;
 static int  s_auto_snap_id = 0;
 
+/* Alt+K raw keyboard capture state. When ON every SDL_KEYDOWN/UP gets
+ * translated to PS/2 Set-1 scancode bytes and queued via netcon's
+ * KBC injection helper. ALL gameplay polling (F-keys, flippers, coin,
+ * START button) is suppressed so the keystrokes can't double-fire as
+ * cabinet inputs. ALT+K toggles back; F1 still quits. */
+static bool s_alt_k_held_last = false;
+
+/* Map an SDL_Scancode to a PS/2 Set 1 make code. Returns 0 if not mapped.
+ * Out-param `is_extended` is set true for keys that need an 0xE0 prefix
+ * byte (right-side modifiers, arrows, navigation, KP_Enter, KP /). */
+static uint8_t sdl_to_set1(SDL_Scancode sc, bool *is_extended)
+{
+    *is_extended = false;
+    switch (sc) {
+    /* Letters (Set 1 make codes) */
+    case SDL_SCANCODE_A: return 0x1E;  case SDL_SCANCODE_B: return 0x30;
+    case SDL_SCANCODE_C: return 0x2E;  case SDL_SCANCODE_D: return 0x20;
+    case SDL_SCANCODE_E: return 0x12;  case SDL_SCANCODE_F: return 0x21;
+    case SDL_SCANCODE_G: return 0x22;  case SDL_SCANCODE_H: return 0x23;
+    case SDL_SCANCODE_I: return 0x17;  case SDL_SCANCODE_J: return 0x24;
+    case SDL_SCANCODE_K: return 0x25;  case SDL_SCANCODE_L: return 0x26;
+    case SDL_SCANCODE_M: return 0x32;  case SDL_SCANCODE_N: return 0x31;
+    case SDL_SCANCODE_O: return 0x18;  case SDL_SCANCODE_P: return 0x19;
+    case SDL_SCANCODE_Q: return 0x10;  case SDL_SCANCODE_R: return 0x13;
+    case SDL_SCANCODE_S: return 0x1F;  case SDL_SCANCODE_T: return 0x14;
+    case SDL_SCANCODE_U: return 0x16;  case SDL_SCANCODE_V: return 0x2F;
+    case SDL_SCANCODE_W: return 0x11;  case SDL_SCANCODE_X: return 0x2D;
+    case SDL_SCANCODE_Y: return 0x15;  case SDL_SCANCODE_Z: return 0x2C;
+    /* Top-row digits */
+    case SDL_SCANCODE_1: return 0x02;  case SDL_SCANCODE_2: return 0x03;
+    case SDL_SCANCODE_3: return 0x04;  case SDL_SCANCODE_4: return 0x05;
+    case SDL_SCANCODE_5: return 0x06;  case SDL_SCANCODE_6: return 0x07;
+    case SDL_SCANCODE_7: return 0x08;  case SDL_SCANCODE_8: return 0x09;
+    case SDL_SCANCODE_9: return 0x0A;  case SDL_SCANCODE_0: return 0x0B;
+    /* Punctuation main row */
+    case SDL_SCANCODE_MINUS:        return 0x0C;
+    case SDL_SCANCODE_EQUALS:       return 0x0D;
+    case SDL_SCANCODE_BACKSPACE:    return 0x0E;
+    case SDL_SCANCODE_TAB:          return 0x0F;
+    case SDL_SCANCODE_LEFTBRACKET:  return 0x1A;
+    case SDL_SCANCODE_RIGHTBRACKET: return 0x1B;
+    case SDL_SCANCODE_RETURN:       return 0x1C;
+    case SDL_SCANCODE_LCTRL:        return 0x1D;
+    case SDL_SCANCODE_SEMICOLON:    return 0x27;
+    case SDL_SCANCODE_APOSTROPHE:   return 0x28;
+    case SDL_SCANCODE_GRAVE:        return 0x29;
+    case SDL_SCANCODE_LSHIFT:       return 0x2A;
+    case SDL_SCANCODE_BACKSLASH:    return 0x2B;
+    case SDL_SCANCODE_COMMA:        return 0x33;
+    case SDL_SCANCODE_PERIOD:       return 0x34;
+    case SDL_SCANCODE_SLASH:        return 0x35;
+    case SDL_SCANCODE_RSHIFT:       return 0x36;
+    case SDL_SCANCODE_KP_MULTIPLY:  return 0x37;
+    case SDL_SCANCODE_LALT:         return 0x38;
+    case SDL_SCANCODE_SPACE:        return 0x39;
+    case SDL_SCANCODE_CAPSLOCK:     return 0x3A;
+    /* F1..F10 */
+    case SDL_SCANCODE_F1:  return 0x3B;  case SDL_SCANCODE_F2:  return 0x3C;
+    case SDL_SCANCODE_F3:  return 0x3D;  case SDL_SCANCODE_F4:  return 0x3E;
+    case SDL_SCANCODE_F5:  return 0x3F;  case SDL_SCANCODE_F6:  return 0x40;
+    case SDL_SCANCODE_F7:  return 0x41;  case SDL_SCANCODE_F8:  return 0x42;
+    case SDL_SCANCODE_F9:  return 0x43;  case SDL_SCANCODE_F10: return 0x44;
+    case SDL_SCANCODE_NUMLOCKCLEAR: return 0x45;
+    case SDL_SCANCODE_SCROLLLOCK:   return 0x46;
+    /* Numeric keypad (no extension) */
+    case SDL_SCANCODE_KP_7: return 0x47;  case SDL_SCANCODE_KP_8: return 0x48;
+    case SDL_SCANCODE_KP_9: return 0x49;  case SDL_SCANCODE_KP_MINUS: return 0x4A;
+    case SDL_SCANCODE_KP_4: return 0x4B;  case SDL_SCANCODE_KP_5: return 0x4C;
+    case SDL_SCANCODE_KP_6: return 0x4D;  case SDL_SCANCODE_KP_PLUS:  return 0x4E;
+    case SDL_SCANCODE_KP_1: return 0x4F;  case SDL_SCANCODE_KP_2: return 0x50;
+    case SDL_SCANCODE_KP_3: return 0x51;  case SDL_SCANCODE_KP_0: return 0x52;
+    case SDL_SCANCODE_KP_PERIOD: return 0x53;
+    case SDL_SCANCODE_F11: return 0x57;
+    case SDL_SCANCODE_F12: return 0x58;
+    /* Extended (0xE0-prefixed) */
+    case SDL_SCANCODE_RCTRL:    *is_extended = true; return 0x1D;
+    case SDL_SCANCODE_RALT:     *is_extended = true; return 0x38;
+    case SDL_SCANCODE_KP_ENTER: *is_extended = true; return 0x1C;
+    case SDL_SCANCODE_KP_DIVIDE:*is_extended = true; return 0x35;
+    case SDL_SCANCODE_INSERT:   *is_extended = true; return 0x52;
+    case SDL_SCANCODE_HOME:     *is_extended = true; return 0x47;
+    case SDL_SCANCODE_PAGEUP:   *is_extended = true; return 0x49;
+    case SDL_SCANCODE_DELETE:   *is_extended = true; return 0x53;
+    case SDL_SCANCODE_END:      *is_extended = true; return 0x4F;
+    case SDL_SCANCODE_PAGEDOWN: *is_extended = true; return 0x51;
+    case SDL_SCANCODE_UP:       *is_extended = true; return 0x48;
+    case SDL_SCANCODE_LEFT:     *is_extended = true; return 0x4B;
+    case SDL_SCANCODE_DOWN:     *is_extended = true; return 0x50;
+    case SDL_SCANCODE_RIGHT:    *is_extended = true; return 0x4D;
+    default: return 0;
+    }
+}
+
+/* Update the SDL window title to reflect capture state. */
+static void update_window_title(void)
+{
+    if (!g_emu.window) return;
+    SDL_SetWindowTitle(g_emu.window,
+        g_emu.kbd_capture
+            ? "Encore — Pinball 2000  [KBD CAPTURE — ALT+K to release]"
+            : "Encore — Pinball 2000");
+}
+
 /* Credit (F10/C) pulse state machine — supports rapid mashing.
  * Each KEYDOWN enqueues a discrete pulse: HIGH for COIN_HIGH_FRAMES,
  * then a LOW gap of COIN_LOW_FRAMES so the game's edge detector sees
@@ -68,6 +171,17 @@ static void save_screenshot(const char *prefix, int id)
 
 int display_init(void)
 {
+    /* Honour --flipscreen seed. Default keeps existing GP-blit Y-flip. */
+    if (g_emu.start_flipscreen)
+        s_y_flip = !s_y_flip;
+
+    /* Resolve bpp early; values other than 16/32 fall back to 32. */
+    if (g_emu.bpp == 0) g_emu.bpp = 32;
+    if (g_emu.bpp != 16 && g_emu.bpp != 32) {
+        LOG("disp", "--bpp %d unsupported, falling back to 32\n", g_emu.bpp);
+        g_emu.bpp = 32;
+    }
+
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
         LOG("disp", "SDL_Init failed: %s\n", SDL_GetError());
         /* Try without video for headless operation */
@@ -78,11 +192,15 @@ int display_init(void)
         return -1;
     }
 
+    Uint32 win_flags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
+    if (g_emu.start_fullscreen)
+        win_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+
     g_emu.window = SDL_CreateWindow(
         "Encore — Pinball 2000",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         SCREEN_W, SCREEN_H,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
+        win_flags
     );
     if (!g_emu.window) {
         LOG("disp", "SDL_CreateWindow failed: %s\n", SDL_GetError());
@@ -101,15 +219,19 @@ int display_init(void)
         return -1;
     }
 
+    Uint32 tex_fmt = (g_emu.bpp == 16)
+                    ? SDL_PIXELFORMAT_RGB565
+                    : SDL_PIXELFORMAT_ARGB8888;
     g_emu.texture = SDL_CreateTexture(g_emu.renderer,
-        SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+        tex_fmt, SDL_TEXTUREACCESS_STREAMING,
         SCREEN_W, SCREEN_H);
     if (!g_emu.texture) {
         LOG("disp", "SDL_CreateTexture failed: %s\n", SDL_GetError());
         return -1;
     }
 
-    /* Build RGB555 → ARGB8888 lookup table (32K entries) */
+    /* Build RGB555 → ARGB8888 lookup table (32K entries).
+     * Also build RGB555 → RGB565 LUT for --bpp 16 output. */
     for (int i = 0; i < 32768; i++) {
         int r5 = (i >> 10) & 0x1F;
         int g5 = (i >> 5)  & 0x1F;
@@ -118,10 +240,17 @@ int display_init(void)
         uint8_t g8 = (g5 << 3) | (g5 >> 2);
         uint8_t b8 = (b5 << 3) | (b5 >> 2);
         g_emu.rgb555_lut[i] = 0xFF000000u | (r8 << 16) | (g8 << 8) | b8;
+        /* RGB565: 5R | 6G | 5B. Replicate g5's MSB into the new low bit
+         * to get the 6th green bit (matches the standard 5-to-6 dither). */
+        uint16_t g6 = (g5 << 1) | (g5 >> 4);
+        g_emu.rgb555_lut16[i] = (uint16_t)((r5 << 11) | (g6 << 5) | b5);
     }
 
     g_emu.display_ready = true;
-    LOG("disp", "SDL2 display: %dx%d ARGB8888\n", SCREEN_W, SCREEN_H);
+    LOG("disp", "SDL2 display: %dx%d %s%s%s\n", SCREEN_W, SCREEN_H,
+        g_emu.bpp == 16 ? "RGB565" : "ARGB8888",
+        g_emu.start_fullscreen ? " [fullscreen]" : "",
+        g_emu.start_flipscreen ? " [flipscreen]" : "");
 
     /* Print key bindings to stderr so the user always has the up-to-date
      * help text without digging in source. Mirrors the actual SDL key
@@ -165,21 +294,39 @@ void display_update(void)
     uint8_t *guest_fb = g_emu.ram + 0x800000u + fb_off;
     bool any_nonzero = false;
 
-    /* Render 240 source rows → 480 output rows (double each row, Y-flip) */
+    /* Render 240 source rows → 480 output rows (double each row, Y-flip). */
+    bool bpp16 = (g_emu.bpp == 16);
     for (int src_y = 0; src_y < FB_H; src_y++) {
         int draw_y = s_y_flip ? (FB_H - 1 - src_y) : src_y;
         int dst_y = draw_y * 2;
 
         uint16_t *pixels = (uint16_t *)(guest_fb + src_y * FB_STRIDE);
-        uint32_t *dst1 = &g_emu.fb_pixels[dst_y * SCREEN_W];
-        uint32_t *dst2 = &g_emu.fb_pixels[(dst_y + 1) * SCREEN_W];
-
-        for (int x = 0; x < FB_W; x++) {
-            uint16_t px = pixels[x] & 0x7FFF;
-            if (px) any_nonzero = true;
-            uint32_t argb = g_emu.rgb555_lut[px];
-            dst1[x] = argb;
-            dst2[x] = argb;
+        if (bpp16) {
+            uint16_t *dst1 = &g_emu.fb_pixels16[dst_y * SCREEN_W];
+            uint16_t *dst2 = &g_emu.fb_pixels16[(dst_y + 1) * SCREEN_W];
+            /* Maintain ARGB shadow only for screenshot/snapshot path. */
+            uint32_t *sh1 = &g_emu.fb_pixels[dst_y * SCREEN_W];
+            uint32_t *sh2 = &g_emu.fb_pixels[(dst_y + 1) * SCREEN_W];
+            for (int x = 0; x < FB_W; x++) {
+                uint16_t px = pixels[x] & 0x7FFF;
+                if (px) any_nonzero = true;
+                uint16_t out = g_emu.rgb555_lut16[px];
+                dst1[x] = out;
+                dst2[x] = out;
+                uint32_t argb = g_emu.rgb555_lut[px];
+                sh1[x] = argb;
+                sh2[x] = argb;
+            }
+        } else {
+            uint32_t *dst1 = &g_emu.fb_pixels[dst_y * SCREEN_W];
+            uint32_t *dst2 = &g_emu.fb_pixels[(dst_y + 1) * SCREEN_W];
+            for (int x = 0; x < FB_W; x++) {
+                uint16_t px = pixels[x] & 0x7FFF;
+                if (px) any_nonzero = true;
+                uint32_t argb = g_emu.rgb555_lut[px];
+                dst1[x] = argb;
+                dst2[x] = argb;
+            }
         }
     }
 
@@ -190,7 +337,11 @@ void display_update(void)
     }
 
     /* Upload to GPU and present */
-    SDL_UpdateTexture(g_emu.texture, NULL, g_emu.fb_pixels, SCREEN_W * 4);
+    if (bpp16) {
+        SDL_UpdateTexture(g_emu.texture, NULL, g_emu.fb_pixels16, SCREEN_W * 2);
+    } else {
+        SDL_UpdateTexture(g_emu.texture, NULL, g_emu.fb_pixels, SCREEN_W * 4);
+    }
     SDL_RenderClear(g_emu.renderer);
     SDL_RenderCopy(g_emu.renderer, g_emu.texture, NULL, NULL);
     SDL_RenderPresent(g_emu.renderer);
@@ -236,6 +387,56 @@ void display_handle_events(void)
             break;
 
         case SDL_KEYDOWN:
+        case SDL_KEYUP: {
+            bool is_down = (ev.type == SDL_KEYDOWN);
+
+            /* Alt+K toggles capture. We detect it on KEYDOWN, ignore SDL
+             * key-repeat (key.repeat != 0). The toggling key itself must
+             * NOT be forwarded to the guest, otherwise capture-mode would
+             * inject a stray K + ALT make/break pair on every toggle. */
+            if (is_down && !ev.key.repeat
+                && ev.key.keysym.scancode == SDL_SCANCODE_K
+                && (ev.key.keysym.mod & (KMOD_LALT | KMOD_RALT | KMOD_ALT))) {
+                g_emu.kbd_capture = !g_emu.kbd_capture;
+                update_window_title();
+                LOG("disp", "kbd_capture %s (Alt+K)\n",
+                    g_emu.kbd_capture ? "ON" : "OFF");
+                /* When LEAVING capture, send guest break codes for the
+                 * Alt+K combo so the guest's KBD driver doesn't think
+                 * those keys are still held down. Order: K break, then
+                 * ALT break. */
+                if (!g_emu.kbd_capture) {
+                    netcon_kbd_inject_scancode(0x80 | 0x25);  /* K break */
+                    netcon_kbd_inject_scancode(0x80 | 0x38);  /* L-Alt break */
+                }
+                s_alt_k_held_last = true;
+                break;
+            }
+            if (!is_down && ev.key.keysym.scancode == SDL_SCANCODE_K) {
+                s_alt_k_held_last = false;
+            }
+
+            /* In CAPTURE mode every key (except F1 quit + the Alt+K
+             * toggle handled above) is translated to a Set 1 scancode
+             * and queued straight to the emulated KBC. */
+            if (g_emu.kbd_capture) {
+                if (is_down && ev.key.keysym.sym == SDLK_F1) {
+                    LOG("disp", "F1 — exiting (during capture)\n");
+                    g_emu.running = false;
+                    break;
+                }
+                if (is_down && ev.key.repeat) break;  /* drop typematic */
+                bool ext = false;
+                uint8_t make = sdl_to_set1(ev.key.keysym.scancode, &ext);
+                if (make == 0) break;
+                if (ext) netcon_kbd_inject_scancode(0xE0);
+                netcon_kbd_inject_scancode(is_down ? make : (uint8_t)(0x80 | make));
+                break;
+            }
+
+            /* Non-capture KEYUP not handled by gameplay logic. */
+            if (!is_down) break;
+
             /* Diagnostic: log every F-key + special so we can see which
              * scancodes actually reach SDL (some WMs eat F11). */
             if ((ev.key.keysym.sym >= SDLK_F1 && ev.key.keysym.sym <= SDLK_F12)
@@ -303,6 +504,19 @@ void display_handle_events(void)
             }
             break;
         }
+        }
+    }
+
+    /* === Gameplay polling (F-keys, flippers, coin, START) ===
+     * SUPPRESSED while raw keyboard capture is on, otherwise the same
+     * physical keypress would fire as both a guest scancode AND a
+     * cabinet input — wrong on both counts. Real cabinet path
+     * (lpt_passthrough) is unaffected; it doesn't go through here. */
+    if (g_emu.kbd_capture) {
+        lpt_set_host_input(0, 0);
+        lpt_set_start_button(0);
+        lpt_set_probe_bit(0, 0);
+        return;
     }
 
     const uint8_t *keys = SDL_GetKeyboardState(NULL);

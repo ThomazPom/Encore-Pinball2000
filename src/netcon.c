@@ -279,6 +279,18 @@ bool netcon_keyboard_rx(uint8_t *out)
 
 bool netcon_keyboard_pending(void)         { return s_scan_head != s_scan_tail; }
 
+/* Push a single raw Set 1 scancode into the KBC ring.
+ * Used by display.c's Alt+K capture mode to forward host SDL events as
+ * already-encoded scancodes (no ASCII translation, supports modifiers,
+ * E0-prefixed extended keys, and explicit make/break by caller). */
+void netcon_kbd_inject_scancode(uint8_t code)
+{
+    scan_push(code);
+    /* Wake IRQ1 immediately so the guest KBD ISR doesn't have to wait
+     * for the next netcon_poll() tick to pick it up. */
+    g_emu.pic[0].irr |= 0x02;
+}
+
 void netcon_cleanup(void)
 {
     if (s_serial.client_fd >= 0) close(s_serial.client_fd);

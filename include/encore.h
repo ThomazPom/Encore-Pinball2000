@@ -288,7 +288,9 @@ typedef struct {
     SDL_Renderer *renderer;
     SDL_Texture  *texture;
     uint32_t      fb_pixels[SCREEN_W * SCREEN_H];
+    uint16_t      fb_pixels16[SCREEN_W * SCREEN_H];   /* --bpp 16 output (RGB565) */
     uint32_t      rgb555_lut[32768];
+    uint16_t      rgb555_lut16[32768];                /* RGB555 → RGB565, --bpp 16 */
     bool          display_ready;
     int           frame_count;
 
@@ -324,6 +326,14 @@ typedef struct {
     int           serial_tcp_port;
     int           keyboard_tcp_port;
     bool          headless;
+
+    /* User-visible toggles (CLI / yaml config). */
+    bool          no_savedata;          /* --no-savedata: skip load and save */
+    bool          start_fullscreen;     /* --fullscreen: open SDL window in FS */
+    bool          start_flipscreen;     /* --flipscreen: initial Y-flip ON */
+    int           bpp;                  /* --bpp: 16 or 32 (24 falls back to 32) */
+    char          config_file[512];     /* --config FILE.yaml; "" = auto-search */
+    bool          kbd_capture;          /* runtime: Alt+K toggles raw kbd capture */
 
     /* Savedata */
     uint16_t      seeprom[64];          /* 93C46 SEEPROM (128 bytes) */
@@ -446,6 +456,7 @@ bool netcon_serial_rx(uint8_t *out); /* TCP client → UART RBR (true if popped)
 bool netcon_serial_rx_pending(void); /* peek without popping */
 bool netcon_keyboard_rx(uint8_t *out); /* TCP client → KBC scancode (true if popped) */
 bool netcon_keyboard_pending(void);  /* peek without popping */
+void netcon_kbd_inject_scancode(uint8_t code); /* push raw Set 1 byte (Alt+K capture) */
 void netcon_cleanup(void);
 
 /* io.c hook used by netcon_poll to wake up the guest's UART IRQ when
