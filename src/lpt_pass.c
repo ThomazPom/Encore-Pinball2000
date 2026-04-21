@@ -202,7 +202,7 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
  * Game auto-detect over the LPT cabinet board.
  *
  * Ported 1:1 from P2K-driver @ 0x804fe56 (disasm in build/scratch/
- * driver disassembly around line 5120). The driver-board exposes a custom
+ * the driver disassembly around line 5120). The driver-board exposes a custom
  * register bus bit-banged through the parallel port:
  *
  *   bus_write(addr, data)                         bus_read(addr)

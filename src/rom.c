@@ -366,12 +366,12 @@ int rom_load_all(void)
 
     /* Load BIOS — try multiple paths */
     const char *bios_paths[] = {
-        "../emulator/P2K-runtime/roms/bios.bin",
-        "emulator/P2K-runtime/roms/bios.bin",
+        "./roms/bios.bin",
+        "./roms/bios.bin",
         NULL
     };
     /* Build relative path from roms_dir */
-    snprintf(path, sizeof(path), "%s/../emulator/P2K-runtime/roms/bios.bin", g_emu.roms_dir);
+    snprintf(path, sizeof(path), "%s/./roms/bios.bin", g_emu.roms_dir);
     g_emu.bios = load_file(path, &g_emu.bios_size);
     for (int i = 0; !g_emu.bios && bios_paths[i]; i++)
         g_emu.bios = load_file(bios_paths[i], &g_emu.bios_size);
@@ -621,7 +621,7 @@ static int load_update_anyform(const char *path,
  *   2. Individual ROM files: bootdata + im_flsh0 + game + symbols (concatenated)
  *
  * Search directories:
- *   - ../emulator/P2K-runtime/update/{game_id_str}/
+ *   - ./updates/{game_id_str}/
  *   - {roms_dir}/ for {prefix}_upd_{game_id_str}_update.bin
  */
 static void rom_load_update_flash(void)
@@ -659,8 +659,8 @@ static void rom_load_update_flash(void)
      * Scan update dirs for subdirectories starting with game prefix. */
     {
         const char *upd_dirs[] = {
-            "../emulator/P2K-runtime/update",
-            "emulator/P2K-runtime/update",
+            "./updates",
+            "./updates",
             NULL
         };
 
@@ -761,8 +761,8 @@ static void rom_load_update_flash(void)
      * Try multiple version numbers (newest first) */
     if (game_num > 0) {
         const char *upd_dirs[] = {
-            "../emulator/P2K-runtime/update",
-            "emulator/P2K-runtime/update",
+            "./updates",
+            "./updates",
             NULL
         };
         /* Version numbers to try, newest first */
@@ -811,7 +811,7 @@ static void rom_load_update_flash(void)
     }
 
     LOG("flash", "WARNING: No update data found — Init2 may hang at 'NO UPDATE' path\n");
-    LOG("flash", "  Expected: ../emulator/P2K-runtime/update/%s/{id}_update.bin\n", id);
+    LOG("flash", "  Expected: ./updates/%s/{id}_update.bin\n", id);
     LOG("flash", "  Or individual ROM files: bootdata + im_flsh0 + game + symbols\n");
 }
 

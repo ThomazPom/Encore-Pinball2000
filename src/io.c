@@ -589,11 +589,11 @@ static void apply_sgc_patches(void)
  * tick_init, clkruns at SWE1-V1.12 BSS addresses). Last call site removed
  * for RFM (was corrupting RAM); SWE1 paths never depended on it once the
  * pattern-scanned BT-74 idle-loop fix landed. Keep this comment as
- * historical marker; minimization proves no boot-time scheduler poke is needed. */
+ * historical marker; empirical tests prove no boot-time scheduler poke is needed. */
 
 /* ===== SMC8216T NIC emulation (BT-131) =====
  * ez0: port 0x300 irq 7 mac 00:00:c0:01:02:03 type SMC8216T (8 bit)
- * Mirrors poc-P2K-runtime-i386/src/ports.c SMC8216T block.
+ * Mirrors the i386 reference port driver SMC8216T block.
  * 0x300-0x30F: WD/SMC board registers (mode-switched by reg[4] bit 7)
  *   bit7=0 → LAN ROM mode: regs 0x08-0x0E return MAC + board ID
  *   bit7=1 → internal mode: returns raw reg shadow
@@ -704,7 +704,7 @@ static uint8_t s_port61 = 0;
  *     - stores renderingFlags for gating data reads
  */
 
-/* P2K-runtime rendering/switch state machine — exact copy of i386 POC (BT-118) */
+/* P2K rendering/switch state machine — exact copy of i386 POC (BT-118) */
 static uint8_t s_rendering_flags     = 0;
 static uint8_t s_data_for_rendering  = 0; /* captured opcode */
 static int     s_access_mode4_prev   = 0; /* bit2 edge detect */
@@ -750,7 +750,7 @@ static uint8_t s_coin_door_closed = 1;
  * it acts as ENTER/select. */
 static int     s_enter_pulse = 0;
 
-/* Mirrors P2K-runtime calculateBitwiseSumBasedOnInput */
+/* Mirrors P2K calculateBitwiseSumBasedOnInput */
 static int calc_bitwise_sum(uint8_t val)
 {
     int has_bit = 0, sum = 0, pos = 0;

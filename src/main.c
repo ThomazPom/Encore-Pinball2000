@@ -10,6 +10,8 @@
  *   - Savedata persistence between sessions
  */
 #include "encore.h"
+#include <dirent.h>
+#include <ctype.h>
 
 EncoreState g_emu;
 
@@ -26,6 +28,91 @@ static void print_banner(void)
     printf("║  CPU: Unicorn Engine (i386)                     ║\n");
     printf("║  Video: SDL2 | Audio: SDL2_mixer                ║\n");
     printf("╚══════════════════════════════════════════════════╝\n\n");
+}
+
+/* Resolve a --update value to an actual path.
+ *
+ *   - If `token` is an existing file or directory, return it verbatim.
+ *   - Otherwise, treat `token` as a version string and search the bundled
+ *     `./updates/` folder (also parent `../updates/`) for a bundle whose
+ *     version field matches.  Accepted forms:
+ *         "210"   decimal version × 10 (the on-disk 4-digit field, leading
+ *                  zero allowed: "0210" or "210")
+ *         "2.1"   human-readable dotted version
+ *         "1.80"  → "0180"
+ *     The bundle naming convention is pin2000_<game_id>_<vvvv>_<date>_...
+ *     If g_emu.game_prefix is set to "swe1" or "rfm", the matching bundle
+ *     is also filtered by game_id (50069 or 50070); otherwise the first
+ *     version match wins.
+ *
+ * Writes the resolved path into `out` (size cap) and returns true on
+ * success; returns false if no match found. */
+static bool resolve_update_token(const char *token, char *out, size_t out_sz)
+{
+    if (!token || !*token) return false;
+
+    /* Pass-through: existing file or directory */
+    struct stat st;
+    if (stat(token, &st) == 0) {
+        strncpy(out, token, out_sz - 1);
+        out[out_sz - 1] = '\0';
+        return true;
+    }
+
+    /* Normalize to 4-digit version × 10 (e.g. "2.1" → "0210", "210"→"0210"). */
+    char want[8] = {0};
+    const char *dot = strchr(token, '.');
+    if (dot) {
+        int major = atoi(token);
+        int minor = atoi(dot + 1);
+        /* For "2.1" we want "0210"; for "1.80" we want "0180". Detect if the
+         * caller already wrote a two-digit minor (e.g. "1.80" → minor=80)
+         * vs a single-digit minor (e.g. "2.1" → minor=1, treat as 10). */
+        int minor_len = 0;
+        for (const char *p = dot + 1; *p && isdigit((unsigned char)*p); p++) minor_len++;
+        if (minor_len == 1) minor *= 10;
+        int vvvv = major * 100 + minor;
+        snprintf(want, sizeof(want), "%04d", vvvv);
+    } else {
+        int v = atoi(token);
+        snprintf(want, sizeof(want), "%04d", v);
+    }
+
+    const char *want_gid = NULL;
+    if (strcmp(g_emu.game_prefix, "swe1") == 0) want_gid = "50069";
+    else if (strcmp(g_emu.game_prefix, "rfm") == 0) want_gid = "50070";
+
+    const char *search_dirs[] = { "./updates", "../updates", "updates", NULL };
+    for (int i = 0; search_dirs[i]; i++) {
+        DIR *d = opendir(search_dirs[i]);
+        if (!d) continue;
+        struct dirent *de;
+        while ((de = readdir(d)) != NULL) {
+            if (de->d_name[0] == '.') continue;
+            /* Expected form: pin2000_<gid>_<vvvv>_...  */
+            if (strncmp(de->d_name, "pin2000_", 8) != 0) continue;
+            const char *p = de->d_name + 8;
+            if (want_gid) {
+                if (strncmp(p, want_gid, 5) != 0) continue;
+                p += 5;
+                if (*p != '_') continue;
+                p++;
+            } else {
+                /* skip the 5-digit gid */
+                for (int k = 0; k < 5 && isdigit((unsigned char)*p); k++) p++;
+                if (*p != '_') continue;
+                p++;
+            }
+            if (strncmp(p, want, 4) != 0) continue;
+            /* Match.  Return the directory path (rom.c's load_update_anyform
+             * handles both dirs and files). */
+            snprintf(out, out_sz, "%s/%s", search_dirs[i], de->d_name);
+            closedir(d);
+            return true;
+        }
+        closedir(d);
+    }
+    return false;
 }
 
 /* Apply one option (key, optional value) to g_emu. Used by both CLI parsing
@@ -87,7 +174,29 @@ static int apply_option(const char *key, const char *value)
         return 1;
     }
     if (strcmp(key, "update") == 0 && value) {
-        strncpy(g_emu.update_file, value, sizeof(g_emu.update_file) - 1);
+        char resolved[1024];
+        if (!resolve_update_token(value, resolved, sizeof(resolved))) {
+            fprintf(stderr,
+                "[main] --update: could not resolve '%s' — not a file/dir "
+                "and no bundle under ./updates matched that version\n", value);
+            return 1;
+        }
+        strncpy(g_emu.update_file, resolved, sizeof(g_emu.update_file) - 1);
+        if (strcmp(resolved, value) != 0)
+            printf("[main] --update: resolved '%s' → %s\n", value, resolved);
+
+        /* Infer game_prefix from the bundle name (pin2000_<gid>_...)
+         * whether resolved is a directory or a file. */
+        const char *bn = strrchr(resolved, '/');
+        bn = bn ? bn + 1 : resolved;
+        if (strncmp(bn, "pin2000_50069", 13) == 0) {
+            strncpy(g_emu.game_prefix, "swe1", sizeof(g_emu.game_prefix) - 1);
+            printf("[main] --update: bundle for SWE1 → forcing prefix=swe1\n");
+        } else if (strncmp(bn, "pin2000_50070", 13) == 0) {
+            strncpy(g_emu.game_prefix, "rfm", sizeof(g_emu.game_prefix) - 1);
+            printf("[main] --update: bundle for RFM → forcing prefix=rfm\n");
+        }
+
         FILE *f = fopen(g_emu.update_file, "rb");
         if (f) {
             uint32_t gid = 0;
@@ -169,8 +278,8 @@ static void parse_args(int argc, char **argv)
 {
     /* Defaults: auto-detect game, standard paths */
     strncpy(g_emu.game_prefix, "auto", sizeof(g_emu.game_prefix));
-    strncpy(g_emu.roms_dir, "../emulator/P2K-runtime/roms", sizeof(g_emu.roms_dir));
-    strncpy(g_emu.savedata_dir, "../emulator/P2K-runtime/roms/savedata", sizeof(g_emu.savedata_dir));
+    strncpy(g_emu.roms_dir, "./roms", sizeof(g_emu.roms_dir));
+    strncpy(g_emu.savedata_dir, "./savedata", sizeof(g_emu.savedata_dir));
     g_emu.bpp = 32;
 
     /* First pass: scan for --config so explicit config loads BEFORE other
@@ -218,7 +327,7 @@ print_help:
 " Game / paths\n"
 "════════════════════════════════════════════════════════════════════════\n"
 "  --game swe1|rfm|auto   Game selection (default: auto-detect from ROMs)\n"
-"  --roms /path           ROM directory (default: ../emulator/P2K-runtime/roms)\n"
+"  --roms /path           ROM directory (default: ./roms)\n"
 "  --savedata /path       Save data directory\n"
 "  -h, --help             Show this help\n"
 "\n"
