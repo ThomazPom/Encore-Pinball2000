@@ -197,6 +197,13 @@ static int apply_option(const char *key, const char *value)
         return 1;
     }
     if (strcmp(key, "update") == 0 && value) {
+        if (strcasecmp(value, "none") == 0) {
+            g_emu.update_file[0] = '\0';
+            g_emu.update_explicit_none = true;
+            printf("[main] --update none → boot from base ROMs only "
+                   "(may not reach a usable state)\n");
+            return 1;
+        }
         char resolved[1024];
         if (!resolve_update_token(value, resolved, sizeof(resolved))) {
             fprintf(stderr,
@@ -231,7 +238,7 @@ static int apply_option(const char *key, const char *value)
                     strncpy(g_emu.game_prefix, "rfm", sizeof(g_emu.game_prefix) - 1);
                     printf("[main] --update: detected RFM (game_id=%u) → forcing prefix=rfm\n", gid);
                 } else {
-                    printf("[main] --update: WARN unknown game_id=%u at 0x803C\n", gid);
+                    printf("[main] --update: WARN unknown game_id=%u at file offset 0x3C\n", gid);
                 }
             }
             fclose(f);
@@ -681,6 +688,30 @@ int main(int argc, char **argv)
     memset(&g_emu, 0, sizeof(g_emu));
     print_banner();
     parse_args(argc, argv);
+
+    /* Auto-pick latest update bundle when none specified.
+     * Base ROMs alone don't reach a usable state on this platform: XINA
+     * panics with "sysinit: game code overlaps 640k - 1024k hole" on RFM,
+     * and DCS sound never wires up on SWE1. Real cabinets always shipped
+     * with at least one update flashed; mirror that. Override with
+     * --update none|<version|path>. Only applies when --game has been set
+     * to a concrete prefix (swe1/rfm) and we're not running against a
+     * real LPT board (real cabinet may have its own flashed contents). */
+    if (g_emu.update_file[0] == '\0' && !g_emu.update_explicit_none
+        && (strcmp(g_emu.game_prefix, "swe1") == 0
+            || strcmp(g_emu.game_prefix, "rfm") == 0)) {
+        char resolved[1024];
+        if (resolve_update_token("latest", resolved, sizeof(resolved))) {
+            strncpy(g_emu.update_file, resolved,
+                    sizeof(g_emu.update_file) - 1);
+            printf("[main] no --update given → auto-selected latest bundle: %s\n",
+                   resolved);
+        } else {
+            fprintf(stderr,
+                "[main] WARN no --update given and no bundle found under "
+                "updates/ — base ROMs alone are not expected to boot.\n");
+        }
+    }
 
     LOG("init", "Game: %s | ROMs: %s | Savedata: %s\n",
         g_emu.game_prefix, g_emu.roms_dir, g_emu.savedata_dir);

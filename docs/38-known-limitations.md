@@ -10,35 +10,63 @@ delivery.
 
 ---
 
-## RFM v1.2 — pre-XINU crash (1999 build)
+## Base ROMs alone do not boot
 
-RFM v1.2 (`pin2000_50070_0120_06091999`) is the oldest known bundle,
-predating the XINU port that all later builds use. It reaches a crash
-state before XINU `sysinit` completes. Serial output is visible on the
-virtual COM1 console but no graphics are produced.
+The chip ROMs under `roms/` do not reach a usable state without a
+flashed update overlay. Launching `--game rfm` with `--update none`
+halts at a XINA panic:
 
-**Root cause:** Unknown. The crash appears to be in the C++ static
-constructor phase, which in v1.2 has a different layout from all later
-bundles. Investigation was deferred in favour of the five working RFM
-bundles.
+```
+sysinit: game code overlaps 640k - 1024k hole
+```
 
-**Impact:** 1 of 7 bundles does not boot fully. All other bundles are
-unaffected.
+followed by an infinite loop (`jmp $`). `--game swe1 --update none`
+reaches attract-mode code paths but never wires up DCS sound.
+
+This mirrors real-hardware behaviour: no shipping cabinet ran with
+just the chip ROMs — every cabinet had at least one update flashed.
+Encore therefore auto-selects `--update latest` when `--game` is used
+without an explicit `--update`. Pass `--update none` to opt out.
 
 ---
 
-## `io-handled` DCS mode — audio silent on most bundles
+## Reference-only update bundles (below chip-ROM baseline)
+
+The bundled chip ROMs are at a fixed baseline: **SWE1 v1.5** and
+**RFM v1.6 (r2)**. An on-cabinet update can only *upgrade* flash,
+never downgrade the underlying chip ROMs. Bundles below the baseline
+— SWE1 v1.3 / v1.4 and RFM v1.2 / v1.4 / v1.5 — are therefore
+**reference-only**:
+
+* They ship on disk for historical interest (so you can see what
+  shipped earlier and inspect the `.exe` self-extractors under
+  `updates/exe-sources/`).
+* Encore does not claim they reach a usable state.
+* Failures under these versions are not tracked as bugs and will
+  not be investigated.
+
+RFM v1.2 in particular predates the XINU port and uses r1 chip ROMs
+(`rfm_u100.rom` / `rfm_u101.rom`) with a different memory layout.
+
+See [26-testing-bundle-matrix.md](26-testing-bundle-matrix.md#scope-policy-in-scope-vs-reference-only)
+for the full scope table.
+
+---
+
+## `io-handled` DCS mode — alternate audio path
 
 `--dcs-mode io-handled` lets the game run the unmodified PCI detect
 probe at `0x1A2ABC`. The probe has inverted polarity (returns 1 when
 the probed cell is **not** `0xFFFF`). In `io-handled` mode the emulator
 scribbles `0x0000` into that cell so the probe returns 1 and the game
-initialises DCS naturally.
+initialises DCS naturally, then routes commands through the emulated
+I/O ports `0x138`–`0x13F` rather than a BAR4 byte-patch.
 
-In practice audio works in `io-handled` mode only for SWE1 v1.5. For
-all other bundles the game takes the I/O-port DCS path (ports
-`0x138`–`0x13F`) which requires a fuller handshake sequence that is not
-yet fully implemented.
+Under in-scope bundles (SWE1 v1.5, v2.1; RFM v1.6, v1.8, v2.5, v2.6)
+both `--dcs-mode bar4-patch` (default) and `--dcs-mode io-handled`
+pass the headless regression with DCS command writes observed. The
+`bar4-patch` path remains the default and the primary delivery
+because it has accumulated the most testing hours.
 
 **Reference:** `src/io.c:432–449`, `src/encore.h` — `ENCORE_DCS_IO_HANDLED`.
 

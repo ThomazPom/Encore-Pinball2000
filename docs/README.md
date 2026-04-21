@@ -68,7 +68,7 @@ to whatever interests you.
 |---|---|
 | [24](24-fps-and-pacing.md) | Frame budget, exec-count batching |
 | [25](25-game-detection-auto.md) | `game_id @ 0x803C`, LPT auto-detect |
-| [26](26-testing-7-bundle-matrix.md) | Full regression matrix, all 7 bundles |
+| [26](26-testing-bundle-matrix.md) | Full regression matrix, all 7 bundles |
 | [27](27-troubleshooting.md) | Common failures and fixes |
 | [28](28-build-system.md) | Makefile targets, layout |
 

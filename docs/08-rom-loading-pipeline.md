@@ -138,7 +138,7 @@ bundles:
 | 50070 | 0250 | RFM   |    2.5  |
 | 50070 | 0260 | RFM   |    2.6  |
 
-See [26-testing-7-bundle-matrix.md](26-testing-7-bundle-matrix.md) for
+See [26-testing-bundle-matrix.md](26-testing-bundle-matrix.md) for
 the full regression results.
 
 ## The symbol table

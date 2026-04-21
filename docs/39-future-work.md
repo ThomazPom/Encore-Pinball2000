@@ -60,7 +60,7 @@ Add a `make install DESTDIR=/usr/local` target and a minimal
 ### Automated regression script
 
 The 7-bundle × 2-mode regression matrix (see
-[26-testing-7-bundle-matrix.md](26-testing-7-bundle-matrix.md)) is
+[26-testing-bundle-matrix.md](26-testing-bundle-matrix.md)) is
 currently a manual procedure. A shell script that launches each bundle
 with `--headless`, waits for the `FPS:` log line, and exits 0/1 would
 make CI feasible.
@@ -114,7 +114,7 @@ endpoint would restore this functionality.
 * Known limitations: [38-known-limitations.md](38-known-limitations.md)
 * DCS probe polarity: [14-dcs-probe-polarity.md](14-dcs-probe-polarity.md)
 * Patching philosophy: [21-patching-philosophy.md](21-patching-philosophy.md)
-* Regression matrix: [26-testing-7-bundle-matrix.md](26-testing-7-bundle-matrix.md)
+* Regression matrix: [26-testing-bundle-matrix.md](26-testing-bundle-matrix.md)
 
 ## Historical research notes
 

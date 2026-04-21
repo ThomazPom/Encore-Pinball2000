@@ -122,7 +122,7 @@ the channel listed in the top-level README.
 ## Background: emulator regression baseline
 
 Encore already passes an emulator-only regression matrix covering all
-seven known update bundles. See [26-testing-7-bundle-matrix.md](26-testing-7-bundle-matrix.md)
+seven known update bundles. See [26-testing-bundle-matrix.md](26-testing-bundle-matrix.md)
 for the pass criteria and current status. Cabinet testing would extend
 that baseline with real-hardware confirmation.
 

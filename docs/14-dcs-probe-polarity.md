@@ -158,7 +158,7 @@ extending `apply_sgc_patches()` to recognise more shapes.
 Every one of the seven dearchived bundles was tested with both
 `--dcs-mode bar4-patch` and `--dcs-mode io-handled` after this fix
 landed. See the regression table in
-[26-testing-7-bundle-matrix.md](26-testing-7-bundle-matrix.md). Net
+[26-testing-bundle-matrix.md](26-testing-bundle-matrix.md). Net
 result: `bar4-patch` has 100 % audio success; `io-handled` boots on
 all seven but audio produces the expected output under emulation only on the bundles whose I/O
 command pump is implemented.
