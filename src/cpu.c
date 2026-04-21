@@ -675,15 +675,17 @@ void cpu_run(void)
                     r[a+3] == 0x75 &&
                     r[a+5] == 0xA3 && r[a+6] == 0xB0 && r[a+7] == 0x44 &&
                     r[a+8] == 0x34 && r[a+9] == 0x00) {
-                    /* MOV EAX, 1 (5 bytes) + NOP*5 — preserves length. */
-                    uint8_t patch[10] = {
-                        0xB8, 0x01, 0x00, 0x00, 0x00,
-                        0x90, 0x90, 0x90, 0x90, 0x90
-                    };
-                    uc_mem_write(uc, a, patch, 10);
+                    /* Replace ONLY the 5-byte CMP+JNE prologue with
+                     * `MOV EAX, 1`. The trailing `A3 B0 44 34 00`
+                     * (MOV [0x3444B0], EAX) MUST remain intact so the
+                     * forced value actually lands in dcs_mode — without
+                     * the store, the game's later sound-init checks
+                     * see dcs_mode==0 and skip the BAR4 command stream. */
+                    uint8_t patch[5] = { 0xB8, 0x01, 0x00, 0x00, 0x00 };
+                    uc_mem_write(uc, a, patch, 5);
                     /* Also keep the RAM mirror in sync so any reader
                      * that bypasses Unicorn's TLB sees the patched code. */
-                    memcpy(r + a, patch, 10);
+                    memcpy(r + a, patch, 5);
                     LOG("init",
                         "DCS-mode pattern hit @0x%08x — patched (force BAR4)\n",
                         a);
