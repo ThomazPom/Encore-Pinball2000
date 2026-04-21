@@ -1664,9 +1664,17 @@ uint32_t io_port_read(uint16_t port, int size)
     case PORT_DCS2_STATUS:
         return 0x00;
 
-    /* DCS2 UART ports (0x138-0x13F)
-     * Return 0xFF (no UART present) — forces game to use BAR4 mode,
-     * matching i386 POC behavior where UART detection fails. */
+    /* DCS2 UART ports (0x138-0x13F) — game-agnostic "no UART present".
+     *
+     * Sound on every bundle flows through the pattern-scanned BAR4-mode
+     * override patch in cpu.c (CMP/JNE byte-signature validated, no
+     * hardcoded game_id gate — it self-skips on builds that don't have
+     * the pattern). We tried wiring the 16550 I/O path here as an
+     * additional route; on RFM v1.8 and v2.5 it triggered early
+     * Resource-retrieval NonFatals because DCS state machine replies
+     * arrive in an order the pre-XINU init doesn't expect. Returning
+     * 0xFF keeps the guest on the BAR4 path for every game and update,
+     * which is the behaviour the i386 POC also shipped with. */
     case DCS2_UART_BASE ... (DCS2_UART_BASE + 7):
         return 0xFF;
 
@@ -1834,7 +1842,7 @@ void io_port_write(uint16_t port, uint32_t val, int size)
     case PORT_DCS2_STATUS:
         break;
 
-    /* DCS2 UART ports (0x138-0x13F) — disabled, game uses BAR4 */
+    /* DCS2 UART ports (0x138-0x13F) — no-op, see read side. */
     case DCS2_UART_BASE ... (DCS2_UART_BASE + 7):
         break;
 

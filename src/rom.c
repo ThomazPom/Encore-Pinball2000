@@ -400,8 +400,11 @@ int rom_load_all(void)
     /* Clear EMS */
     memset(g_emu.ems, 0, sizeof(g_emu.ems));
 
-    /* Load savedata if available */
-    savedata_load();
+    /* Load savedata if available (unless --no-savedata) */
+    if (!g_emu.no_savedata)
+        savedata_load();
+    else
+        LOG("save", "--no-savedata: skipping NVRAM/SEEPROM load\n");
 
     /* Load update ROM files into flash (BAR3).
      * The .flash savedata is usually erased (all 0xFF at the beginning).

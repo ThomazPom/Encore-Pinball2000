@@ -28,53 +28,176 @@ static void print_banner(void)
     printf("╚══════════════════════════════════════════════════╝\n\n");
 }
 
+/* Apply one option (key, optional value) to g_emu. Used by both CLI parsing
+ * and yaml config loading so behaviour stays consistent across both paths.
+ * Returns 1 if value was consumed, 0 if option was a bare flag, -1 on
+ * unknown option. The caller decides whether unknowns are fatal. */
+static int apply_option(const char *key, const char *value)
+{
+    if (strcmp(key, "game") == 0 && value) {
+        strncpy(g_emu.game_prefix, value, sizeof(g_emu.game_prefix) - 1);
+        return 1;
+    }
+    if (strcmp(key, "roms") == 0 && value) {
+        strncpy(g_emu.roms_dir, value, sizeof(g_emu.roms_dir) - 1);
+        return 1;
+    }
+    if (strcmp(key, "savedata") == 0 && value) {
+        strncpy(g_emu.savedata_dir, value, sizeof(g_emu.savedata_dir) - 1);
+        return 1;
+    }
+    if (strcmp(key, "serial-tcp") == 0 && value) {
+        g_emu.serial_tcp_port = atoi(value); return 1;
+    }
+    if (strcmp(key, "keyboard-tcp") == 0 && value) {
+        g_emu.keyboard_tcp_port = atoi(value); return 1;
+    }
+    if (strcmp(key, "headless") == 0) { g_emu.headless = true; return 0; }
+    if (strcmp(key, "no-savedata") == 0) { g_emu.no_savedata = true; return 0; }
+    if (strcmp(key, "fullscreen") == 0) { g_emu.start_fullscreen = true; return 0; }
+    if (strcmp(key, "flipscreen") == 0) { g_emu.start_flipscreen = true; return 0; }
+    if (strcmp(key, "bpp") == 0 && value) {
+        int b = atoi(value);
+        if (b == 16 || b == 32) g_emu.bpp = b;
+        else if (b == 24) {
+            fprintf(stderr, "[main] --bpp 24 not supported, falling back to 32\n");
+            g_emu.bpp = 32;
+        } else {
+            fprintf(stderr, "[main] --bpp %d invalid; using 32\n", b);
+            g_emu.bpp = 32;
+        }
+        return 1;
+    }
+    if (strcmp(key, "lpt-device") == 0 && value) {
+        strncpy(g_emu.lpt_device, value, sizeof(g_emu.lpt_device) - 1);
+        g_emu.lpt_device_explicit = true;
+        return 1;
+    }
+    if (strcmp(key, "update") == 0 && value) {
+        strncpy(g_emu.update_file, value, sizeof(g_emu.update_file) - 1);
+        FILE *f = fopen(g_emu.update_file, "rb");
+        if (f) {
+            uint32_t gid = 0;
+            if (fseek(f, 0x3C, SEEK_SET) == 0 && fread(&gid, 4, 1, f) == 1) {
+                if (gid == 50069u) {
+                    strncpy(g_emu.game_prefix, "swe1", sizeof(g_emu.game_prefix) - 1);
+                    printf("[main] --update: detected SWE1 (game_id=%u) → forcing prefix=swe1\n", gid);
+                } else if (gid == 50070u) {
+                    strncpy(g_emu.game_prefix, "rfm", sizeof(g_emu.game_prefix) - 1);
+                    printf("[main] --update: detected RFM (game_id=%u) → forcing prefix=rfm\n", gid);
+                } else {
+                    printf("[main] --update: WARN unknown game_id=%u at 0x803C\n", gid);
+                }
+            }
+            fclose(f);
+        }
+        return 1;
+    }
+    return -1;
+}
+
+/* Trim leading and trailing ASCII whitespace from s in place. */
+static char *trim(char *s)
+{
+    while (*s == ' ' || *s == '\t') s++;
+    char *e = s + strlen(s);
+    while (e > s && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\r' || e[-1] == '\n'))
+        e--;
+    *e = '\0';
+    return s;
+}
+
+/* Minimal yaml subset loader: one "key: value" per line, # comments, blank
+ * lines ignored. Bare flags can be written as "headless: true" or just
+ * "headless:". Quoted values have their surrounding quotes stripped. */
+static int load_config_file(const char *path)
+{
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    char line[1024];
+    int applied = 0;
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        char *hash = strchr(p, '#');
+        if (hash) *hash = '\0';
+        p = trim(p);
+        if (!*p) continue;
+        char *colon = strchr(p, ':');
+        if (!colon) continue;
+        *colon = '\0';
+        char *key = trim(p);
+        char *val = trim(colon + 1);
+        size_t vl = strlen(val);
+        if (vl >= 2 && ((val[0] == '"' && val[vl-1] == '"') ||
+                        (val[0] == '\'' && val[vl-1] == '\''))) {
+            val[vl-1] = '\0'; val++;
+        }
+        const char *vptr = (*val) ? val : NULL;
+        /* Bare boolean shortcuts. */
+        if (vptr && (strcasecmp(vptr, "true") == 0 || strcasecmp(vptr, "yes") == 0
+                  || strcasecmp(vptr, "on") == 0 || strcmp(vptr, "1") == 0))
+            vptr = NULL; /* treat as bare flag */
+        if (vptr && (strcasecmp(vptr, "false") == 0 || strcasecmp(vptr, "no") == 0
+                  || strcasecmp(vptr, "off") == 0 || strcmp(vptr, "0") == 0))
+            continue; /* skip; we don't have explicit-off */
+        int rc = apply_option(key, vptr);
+        if (rc < 0) {
+            fprintf(stderr, "[config] %s: unknown key '%s'\n", path, key);
+        } else {
+            applied++;
+        }
+    }
+    fclose(f);
+    LOG("config", "loaded %d setting(s) from %s\n", applied, path);
+    return 0;
+}
+
 static void parse_args(int argc, char **argv)
 {
     /* Defaults: auto-detect game, standard paths */
     strncpy(g_emu.game_prefix, "auto", sizeof(g_emu.game_prefix));
     strncpy(g_emu.roms_dir, "../emulator/P2K-runtime/roms", sizeof(g_emu.roms_dir));
     strncpy(g_emu.savedata_dir, "../emulator/P2K-runtime/roms/savedata", sizeof(g_emu.savedata_dir));
+    g_emu.bpp = 32;
+
+    /* First pass: scan for --config so explicit config loads BEFORE other
+     * CLI args, allowing CLI to override config (CLI > config > defaults). */
+    for (int i = 1; i < argc - 1; i++) {
+        if (strcmp(argv[i], "--config") == 0) {
+            strncpy(g_emu.config_file, argv[i + 1], sizeof(g_emu.config_file) - 1);
+            load_config_file(g_emu.config_file);
+            break;
+        }
+    }
+
+    /* Auto-load ./encore.yaml only when no CLI args were given AND the
+     * file exists. Loud log so this isn't a silent surprise. */
+    if (argc == 1 && !g_emu.config_file[0]) {
+        if (access("encore.yaml", R_OK) == 0) {
+            LOG("config", "no CLI args — auto-loading ./encore.yaml\n");
+            strncpy(g_emu.config_file, "encore.yaml", sizeof(g_emu.config_file) - 1);
+            load_config_file("encore.yaml");
+        }
+    }
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--game") == 0 && i + 1 < argc) {
-            strncpy(g_emu.game_prefix, argv[++i], sizeof(g_emu.game_prefix) - 1);
-        } else if (strcmp(argv[i], "--roms") == 0 && i + 1 < argc) {
-            strncpy(g_emu.roms_dir, argv[++i], sizeof(g_emu.roms_dir) - 1);
-        } else if (strcmp(argv[i], "--savedata") == 0 && i + 1 < argc) {
-            strncpy(g_emu.savedata_dir, argv[++i], sizeof(g_emu.savedata_dir) - 1);
-        } else if (strcmp(argv[i], "--serial-tcp") == 0 && i + 1 < argc) {
-            g_emu.serial_tcp_port = atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--keyboard-tcp") == 0 && i + 1 < argc) {
-            g_emu.keyboard_tcp_port = atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--headless") == 0) {
-            g_emu.headless = true;
-        } else if (strcmp(argv[i], "--lpt-device") == 0 && i + 1 < argc) {
-            strncpy(g_emu.lpt_device, argv[++i], sizeof(g_emu.lpt_device) - 1);
-            g_emu.lpt_device_explicit = true;
-        } else if (strcmp(argv[i], "--update") == 0 && i + 1 < argc) {
-            strncpy(g_emu.update_file, argv[++i], sizeof(g_emu.update_file) - 1);
-            /* Auto-detect game from update bin's game_id field (offset 0x803C
-             * in the flash image — set by the bootdata header). This ensures
-             * chip ROM loading + savedata naming match the update file, so
-             * --update <swe1.bin> doesn't get loaded on top of RFM chip ROMs. */
-            FILE *f = fopen(g_emu.update_file, "rb");
-            if (f) {
-                uint32_t gid = 0;
-                if (fseek(f, 0x3C, SEEK_SET) == 0 &&
-                    fread(&gid, 4, 1, f) == 1) {
-                    if (gid == 50069u) {
-                        strncpy(g_emu.game_prefix, "swe1", sizeof(g_emu.game_prefix) - 1);
-                        printf("[main] --update: detected SWE1 (game_id=%u) → forcing prefix=swe1\n", gid);
-                    } else if (gid == 50070u) {
-                        strncpy(g_emu.game_prefix, "rfm", sizeof(g_emu.game_prefix) - 1);
-                        printf("[main] --update: detected RFM (game_id=%u) → forcing prefix=rfm\n", gid);
-                    } else {
-                        printf("[main] --update: WARN unknown game_id=%u at 0x803C\n", gid);
-                    }
-                }
-                fclose(f);
-            }
-        } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+        const char *a = argv[i];
+        if (strncmp(a, "--", 2) != 0) continue;
+        const char *key = a + 2;
+        if (strcmp(key, "config") == 0) { i++; continue; } /* already handled */
+        if (strcmp(key, "help") == 0 || strcmp(a, "-h") == 0) {
+            goto print_help;
+        }
+        const char *val = (i + 1 < argc && argv[i + 1][0] != '-') ? argv[i + 1] : NULL;
+        int rc = apply_option(key, val);
+        if (rc < 0) {
+            fprintf(stderr, "[main] unknown option: %s\n", a);
+            continue;
+        }
+        if (rc == 1) i++;
+    }
+    return;
+print_help:
             printf(
 "Usage: encore [OPTIONS]\n"
 "\n"
@@ -238,6 +361,22 @@ static void parse_args(int argc, char **argv)
 "  F11 / ALT+ENTER  Toggle FULLSCREEN\n"
 "  F12              Dump guest switch state to stderr\n"
 "  SPACE / S        START button              (sw=2 / Phys[0].b2)\n"
+"  ALT+K            Toggle raw keyboard CAPTURE (route every key to guest\n"
+"                   PS/2 KBC; F-key gameplay bindings disabled while ON;\n"
+"                   F1 still quits, ALT+K toggles back).\n"
+"\n"
+"════════════════════════════════════════════════════════════════════════\n"
+" Session / display\n"
+"════════════════════════════════════════════════════════════════════════\n"
+"  --no-savedata          Don't load NVRAM/SEEPROM at boot AND don't save\n"
+"                         on exit. Useful for fresh-state regression runs.\n"
+"  --fullscreen           Open the SDL window fullscreen at startup.\n"
+"  --flipscreen           Start with the display Y-flipped (some cabs).\n"
+"  --bpp 16|32            Output texture bit depth (default 32 / ARGB8888;\n"
+"                         16 = RGB565). 24 falls back to 32 with a warning.\n"
+"  --config FILE.yaml     Load options from a yaml-ish file (one key:value\n"
+"                         per line; '#' starts a comment). CLI args override\n"
+"                         config; auto-loads ./encore.yaml when no CLI args.\n"
 "\n"
 "  Coin-door panel (4 buttons, dual-function by mode):\n"
 "                          attract        |   service / test\n"
@@ -249,8 +388,6 @@ static void parse_args(int argc, char **argv)
 "      KP_ENTER\n"
 "\n");
             exit(0);
-        }
-    }
 }
 
 /*
@@ -371,8 +508,11 @@ static void setup_timer(void)
 
 static void cleanup_and_save(void)
 {
-    /* Save state before exit */
-    savedata_save();
+    /* Save state before exit (unless --no-savedata gates it) */
+    if (!g_emu.no_savedata)
+        savedata_save();
+    else
+        LOG("save", "--no-savedata: skipping NVRAM/SEEPROM save\n");
 
     display_cleanup();
     sound_cleanup();
@@ -489,6 +629,32 @@ int main(int argc, char **argv)
             LOG("lpt", "no real cabinet detected (probed %s) — "
                        "using emulated buttons (F-keys / keyboard)\n", dev);
         }
+    }
+
+    /* --game auto resolution.
+     *
+     * In EMULATED mode (no real LPT board): the chip ROMs already loaded
+     * by rom_load_all() determine which game we're running, and
+     * --update FILE has already overridden game_prefix when applicable.
+     * If we're still on "auto" here, default to swe1 per user spec.
+     *
+     * In REAL CABINET mode: the protocol the original P2K-driver uses to
+     * tell SWE1 from RFM via the LPT driver board (see P2K-driver
+     * objdump @ 0x804fe56) is not yet ported — silently picking SWE1
+     * could corrupt a real RFM cabinet. Refuse to start without an
+     * explicit --game in that case. */
+    if (strcmp(g_emu.game_prefix, "auto") == 0) {
+        if (lpt_passthrough_active()) {
+            fprintf(stderr,
+                "encore: --game auto with a real cabinet attached needs an\n"
+                "explicit --game swe1 or --game rfm. The LPT-board playfield\n"
+                "auto-detect protocol (P2K-driver @ 0x804fe56) is not yet\n"
+                "ported and silently choosing the wrong game can damage a\n"
+                "real cabinet's coil drivers.\n");
+            return 1;
+        }
+        LOG("init", "--game auto in emulated mode → defaulting to swe1\n");
+        strncpy(g_emu.game_prefix, "swe1", sizeof(g_emu.game_prefix) - 1);
     }
 
     /* Signal handlers — set running=false so main loop exits and runs

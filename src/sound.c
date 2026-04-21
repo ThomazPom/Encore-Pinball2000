@@ -9,6 +9,8 @@
 #include "encore.h"
 #include <math.h>
 #include <pthread.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #define MAX_TRACKS 8
 #define SAMPLE_CACHE_SIZE 0x1000
@@ -80,6 +82,99 @@ static Mix_Chunk *build_tone(int freq_hz, int duration_ms, float decay_rate)
 static int dcs_vol_to_sdl(int dcs_vol)
 {
     return (dcs_vol * MIX_MAX_VOLUME) / 255;
+}
+
+/* Validate the first 16 bytes of a candidate file as the pb2kslib header.
+ * Magic is: ver=1 (LE u32), hdr_size=0x10, entry_cnt (sane), entry_sz=0x48.
+ * Also sanity-checks that hdr_size + entry_cnt * entry_sz fits within the
+ * file. Returns true if the file looks like a valid pb2kslib container. */
+static bool pb2k_validate_header(const uint8_t hdr[16], off_t file_size)
+{
+    uint32_t ver       = *(const uint32_t *)(hdr + 0);
+    uint32_t hdr_size  = *(const uint32_t *)(hdr + 4);
+    uint32_t entry_cnt = *(const uint32_t *)(hdr + 8);
+    uint32_t entry_sz  = *(const uint32_t *)(hdr + 12);
+    if (ver != 1u) return false;
+    if (hdr_size != 0x10u) return false;
+    if (entry_sz != 0x48u) return false;
+    if (entry_cnt == 0 || entry_cnt > PB2K_MAX_ENTRIES) return false;
+    uint64_t need = (uint64_t)hdr_size + (uint64_t)entry_cnt * (uint64_t)entry_sz;
+    if ((uint64_t)file_size < need) return false;
+    return true;
+}
+
+#include <dirent.h>
+#include <strings.h>
+#include <ctype.h>
+
+/* Locate a pb2kslib container in roms_dir by file shape, not by name.
+ *   1. Scan the dir; for each regular file, validate first 16 bytes match
+ *      the pb2kslib header magic.
+ *   2. Prefer files whose name begins with the current game_prefix
+ *      (e.g. "swe1_minimization.bin" for swe1).
+ *   3. Among those, prefer names that do NOT contain "P2K-runtime" (the
+ *      pre-fork emulator's naming). Fall back to a "P2K-runtime"-named file
+ *      if that's the only match — better silent sound than no sound.
+ *
+ * Writes the chosen path into out (size cap), returns true on success.
+ *
+ * stat() is used instead of dirent->d_type because some shared-folder
+ * filesystems return DT_UNKNOWN for everything. */
+static bool pb2k_find_container(char *out, size_t out_sz)
+{
+    DIR *d = opendir(g_emu.roms_dir);
+    if (!d) return false;
+
+    char best_path[512] = { 0 };
+    int  best_score = -1;   /* higher is better */
+
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        if (de->d_name[0] == '.') continue;
+
+        char path[512];
+        snprintf(path, sizeof(path), "%s/%s", g_emu.roms_dir, de->d_name);
+
+        struct stat st;
+        if (stat(path, &st) != 0) continue;
+        if (!S_ISREG(st.st_mode)) continue;
+        if (st.st_size < 64) continue;
+
+        int fd = open(path, O_RDONLY);
+        if (fd < 0) continue;
+        uint8_t hdr[16];
+        ssize_t n = read(fd, hdr, 16);
+        close(fd);
+        if (n != 16) continue;
+        if (!pb2k_validate_header(hdr, st.st_size)) continue;
+
+        /* Score: prefix-match worth most, then non-"P2K-runtime" naming. */
+        int score = 0;
+        size_t plen = strlen(g_emu.game_prefix);
+        if (plen > 0 && strncasecmp(de->d_name, g_emu.game_prefix, plen) == 0)
+            score += 10;
+
+        /* case-insensitive substring search for "P2K-runtime" in d_name */
+        bool has_P2K-runtime = false;
+        for (const char *p = de->d_name; *p; p++) {
+            if (tolower((unsigned char)*p) == 'n' &&
+                strncasecmp(p, "P2K-runtime", 6) == 0) { has_P2K-runtime = true; break; }
+        }
+        if (!has_P2K-runtime) score += 1;
+
+        if (score > best_score) {
+            best_score = score;
+            strncpy(best_path, path, sizeof(best_path) - 1);
+            best_path[sizeof(best_path) - 1] = '\0';
+        }
+    }
+    closedir(d);
+
+    if (best_score < 0) return false;
+    strncpy(out, best_path, out_sz - 1);
+    out[out_sz - 1] = '\0';
+    LOG("snd", "pb2kslib detected by shape: %s (score=%d)\n", out, best_score);
+    return true;
 }
 
 static void pb2k_load(const char *path)
@@ -318,14 +413,20 @@ int sound_init(void)
 
     Mix_AllocateChannels(MAX_TRACKS);
 
-    char pb2k_path[512];
-    snprintf(pb2k_path, sizeof(pb2k_path),
-             "%s/%s_P2K-runtime.bin", g_emu.roms_dir, g_emu.game_prefix);
+    char pb2k_path[512] = { 0 };
+    /* Prefer shape-based detection so the user is free to rename the
+     * pb2kslib container however they want — no dependency on the
+     * legacy "*_P2K-runtime.bin" naming. Fall back to the canonical name only
+     * if the scan came up empty. */
+    if (!pb2k_find_container(pb2k_path, sizeof(pb2k_path))) {
+        snprintf(pb2k_path, sizeof(pb2k_path),
+                 "%s/%s_P2K-runtime.bin", g_emu.roms_dir, g_emu.game_prefix);
+    }
     if (access(pb2k_path, R_OK) == 0) {
         pb2k_load(pb2k_path);
         pb2k_preload_samples();
     } else {
-        LOG("snd", "pb2kslib not found: %s\n", pb2k_path);
+        LOG("snd", "pb2kslib not found in %s\n", g_emu.roms_dir);
     }
 
     /* Boot dong: pb2k first (i386 POC path), synthetic fallback */
