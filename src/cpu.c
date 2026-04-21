@@ -760,22 +760,39 @@ void cpu_run(void)
         prof_emu_calls++;
         int eip_dirty = 0;  /* set when error handlers modify local eip */
 
-        /* Periodic maintenance — every 64 iterations. */
-        if ((g_emu.exec_count & 0x3F) == 0 && g_emu.game_started) {
-            if (g_emu.watchdog_flag_addr)
-                RAM_WR32(g_emu.watchdog_flag_addr, 0x0000FFFFu);
-            RAM_WR32(0, 0);
-            /* SWE1-V1.19 only: 0x002E98C8 / 0x002E8E2C / 0x002E8E30 are SWE1
-             * BSS slots; on RFM these addresses point at unrelated game code
-             * or data and writing into them wedges the boot. */
-            if (g_emu.game_id == 50069u) {
-                RAM_WR32(0x002E98C8u, 0);
-                uint32_t dm_mode = RAM_RD32(0x002e8e2Cu);
-                if (dm_mode == 1u && RAM_RD32(0x002e8e30u) < 2500u)
-                    RAM_WR32(0x002e8e30u, 5000u);
+        /* Periodic maintenance — every iteration. */
+        if (g_emu.game_started) {
+            if (g_emu.watchdog_flag_addr) {
+                /* The "watchdog health register" found by the scanner is
+                 * actually inside the DCS PCI-detect probe at 0x1A2ABC:
+                 *     cmp dword [<cell>], 0xFFFF ; je RET-0
+                 *     mov eax, 1                  ; (cell != 0xFFFF) RET-1
+                 * Probe returns 1 (DCS PRESENT) when cell != 0xFFFF.
+                 * In bar4-patch mode the CMP is byte-patched to mov eax,1
+                 * so the cell value is irrelevant; writing 0xFFFF (legacy
+                 * empirical value) is fine.  In io-handled mode we depend
+                 * on the *natural* probe → must keep cell != 0xFFFF, so
+                 * we scribble 0 instead, which yields probe → 1 → DCS
+                 * detected → game writes dcs_mode=1 → audio init runs. */
+                uint32_t scribble_val =
+                    (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) ? 0u
+                                                                     : 0x0000FFFFu;
+                RAM_WR32(g_emu.watchdog_flag_addr, scribble_val);
             }
-        } else if (g_emu.game_started) {
-            RAM_WR32(0, 0);
+            if ((g_emu.exec_count & 0x3F) == 0) {
+                RAM_WR32(0, 0);
+                /* SWE1-V1.19 only: 0x002E98C8 / 0x002E8E2C / 0x002E8E30 are SWE1
+                 * BSS slots; on RFM these addresses point at unrelated game code
+                 * or data and writing into them wedges the boot. */
+                if (g_emu.game_id == 50069u) {
+                    RAM_WR32(0x002E98C8u, 0);
+                    uint32_t dm_mode = RAM_RD32(0x002e8e2Cu);
+                    if (dm_mode == 1u && RAM_RD32(0x002e8e30u) < 2500u)
+                        RAM_WR32(0x002e8e30u, 5000u);
+                }
+            } else {
+                RAM_WR32(0, 0);
+            }
         }
 
         /* Read EIP after execution stopped */

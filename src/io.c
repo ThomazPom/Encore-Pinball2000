@@ -428,11 +428,25 @@ static void apply_sgc_patches(void)
         return;
     }
 
-    /* Store health_addr; cpu.c writes 0xFFFF there each exec iteration,
-     * simulating the timer regularly feeding the watchdog. (BT-107) */
+    /* Store health_addr; cpu.c writes to it each exec iteration.  The
+     * value depends on --dcs-mode (see cpu.c for the rationale):
+     *   bar4-patch : 0xFFFF (legacy; CMP at 0x1931e6 byte-patched anyway)
+     *   io-handled : 0      (probe@0x1A2ABC returns 1 ↔ cell != 0xFFFF;
+     *                        scribbling 0xFFFF would INVERT the natural
+     *                        DCS detection and silence audio)
+     *
+     * One-shot prime mirrors the per-tick value so the cell is correct
+     * BEFORE the first cpu.c maintenance pass fires (matters because the
+     * DCS-mode decision function at e.g. SWE1 v1.5 @ 0x00193100 calls the
+     * probe ONCE during init).  In io-handled, prime=0; in bar4-patch,
+     * prime=0xFFFF (the byte-patch makes the probe result moot). */
     g_emu.watchdog_flag_addr = health_addr;
-    LOG("sgc", "watchdog suppression active: [0x%08x] will be kept =0xFFFF (BT-107)\n",
-        health_addr);
+    uint32_t prime_val =
+        (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) ? 0u : 0x0000FFFFu;
+    RAM_WR32(health_addr, prime_val);
+    LOG("sgc", "watchdog suppression active: [0x%08x] primed =0x%08x (BT-107, dcs-mode=%s)\n",
+        health_addr, prime_val,
+        (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) ? "io-handled" : "bar4-patch");
 
     /* === BT-130: mem_detect() patch ===
      * XINU's mem_detect() returns 0x400 pages (4MB) in our emulator because the
