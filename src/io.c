@@ -1675,8 +1675,24 @@ uint32_t io_port_read(uint16_t port, int size)
      * arrive in an order the pre-XINU init doesn't expect. Returning
      * 0xFF keeps the guest on the BAR4 path for every game and update,
      * which is the behaviour the i386 POC also shipped with. */
-    case DCS2_UART_BASE ... (DCS2_UART_BASE + 7):
+    /* DCS2 UART window at 0x138-0x13F.
+     *
+     * Narrowed route: the guest sends audio *commands* via word writes
+     * to off=4 (0x13C) and polls *flags* via reads of off=6 (0x13E).
+     * Routing ONLY those two offsets through dcs2_port_read/write gives
+     * games that ignore the BAR4 path (notably RFM builds) a working
+     * DCS pipe without fooling the pre-XINU init into believing a full
+     * 16550 UART is sitting here — that misdetection was what made
+     * RFM v1.8 and v2.5 spin on Resource-retrieval NonFatals when we
+     * previously routed the entire window. Other offsets stay at 0xFF
+     * so the UART probe fails and the game falls back to BAR4 (which
+     * the SWE1 builds take and which we pattern-patch separately). */
+    case DCS2_UART_BASE ... (DCS2_UART_BASE + 7): {
+        int off = (int)port - DCS2_UART_BASE;
+        if ((off == 4 && size >= 2) || off == 6)
+            return dcs2_port_read(port, size);
         return 0xFF;
+    }
 
     /* DCS2 control port 0x813C — disabled, game uses BAR4 */
     case 0x813C:
@@ -1842,9 +1858,14 @@ void io_port_write(uint16_t port, uint32_t val, int size)
     case PORT_DCS2_STATUS:
         break;
 
-    /* DCS2 UART ports (0x138-0x13F) — no-op, see read side. */
-    case DCS2_UART_BASE ... (DCS2_UART_BASE + 7):
+    /* DCS2 UART window (write side) — mirror of read-side narrowing:
+     * only word writes to off=4 (DCS command) are delivered. */
+    case DCS2_UART_BASE ... (DCS2_UART_BASE + 7): {
+        int off = (int)port - DCS2_UART_BASE;
+        if (off == 4 && size >= 2)
+            dcs2_port_write(port, val, size);
         break;
+    }
 
     /* DCS2 control port 0x813C — disabled, game uses BAR4 */
     case 0x813C:

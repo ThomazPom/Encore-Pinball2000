@@ -638,23 +638,32 @@ int main(int argc, char **argv)
      * --update FILE has already overridden game_prefix when applicable.
      * If we're still on "auto" here, default to swe1 per user spec.
      *
-     * In REAL CABINET mode: the protocol the original P2K-driver uses to
-     * tell SWE1 from RFM via the LPT driver board (see P2K-driver
-     * objdump @ 0x804fe56) is not yet ported — silently picking SWE1
-     * could corrupt a real RFM cabinet. Refuse to start without an
-     * explicit --game in that case. */
+     * In REAL CABINET mode: use lpt_passthrough_detect_game() — ported
+     * 1:1 from P2K-driver @ 0x804fe56. It bit-bangs a 3-register probe
+     * over the parallel port and classifies the playfield from the
+     * weighted popcounts. If the board doesn't answer clearly, bail out
+     * rather than guessing (wrong game = wrong coil driver map → risk
+     * of damage on real hardware). */
     if (strcmp(g_emu.game_prefix, "auto") == 0) {
         if (lpt_passthrough_active()) {
-            fprintf(stderr,
-                "encore: --game auto with a real cabinet attached needs an\n"
-                "explicit --game swe1 or --game rfm. The LPT-board playfield\n"
-                "auto-detect protocol (P2K-driver @ 0x804fe56) is not yet\n"
-                "ported and silently choosing the wrong game can damage a\n"
-                "real cabinet's coil drivers.\n");
-            return 1;
+            char detected[16] = {0};
+            if (lpt_passthrough_detect_game(detected, sizeof(detected)) == 0) {
+                LOG("init", "LPT board auto-detect → %s\n", detected);
+                strncpy(g_emu.game_prefix, detected,
+                        sizeof(g_emu.game_prefix) - 1);
+                g_emu.game_prefix[sizeof(g_emu.game_prefix) - 1] = '\0';
+            } else {
+                fprintf(stderr,
+                    "encore: --game auto: LPT board did not return a\n"
+                    "recognizable playfield signature. Pass --game swe1\n"
+                    "or --game rfm explicitly.\n");
+                return 1;
+            }
+        } else {
+            LOG("init", "--game auto in emulated mode → defaulting to swe1\n");
+            strncpy(g_emu.game_prefix, "swe1",
+                    sizeof(g_emu.game_prefix) - 1);
         }
-        LOG("init", "--game auto in emulated mode → defaulting to swe1\n");
-        strncpy(g_emu.game_prefix, "swe1", sizeof(g_emu.game_prefix) - 1);
     }
 
     /* Signal handlers — set running=false so main loop exits and runs

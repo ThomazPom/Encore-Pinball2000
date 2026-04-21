@@ -197,3 +197,147 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
     (void)reg; (void)val;
 #endif
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Game auto-detect over the LPT cabinet board.
+ *
+ * Ported 1:1 from P2K-driver @ 0x804fe56 (disasm in build/scratch/
+ * driver disassembly around line 5120). The driver-board exposes a custom
+ * register bus bit-banged through the parallel port:
+ *
+ *   bus_write(addr, data)                         bus_read(addr)
+ *     DATA  ← addr                                  DATA  ← addr
+ *     CTRL  ← 0                                     CTRL  ← 0
+ *     usleep(100)                                   usleep(100)
+ *     CTRL  ← 4      (latch address)                CTRL  ← 4    (latch)
+ *     DATA  ← data                                  CTRL  ← 0x2D (bus → read)
+ *     CTRL  ← 5      (latch data)                   usleep(100)
+ *     usleep(100)                                   value = inb(DATA)
+ *     CTRL  ← 4      (done)                         CTRL  ← 4    (done)
+ *
+ * The probe walks 3 board-ID registers (0x04, 0x10, 0x11) in 8 selector
+ * steps each, sets a precharge flag at 0xD, then computes two weighted
+ * popcount sums across specific bytes of the captured arrays. The
+ * decision thresholds (sum_20 vs sum_1c ranges) discriminate SWE1 from
+ * RFM from an empty/unknown board.
+ *
+ * This is identity-matched to what the original binary does — so
+ * plugging the same playfield into us yields the same string. Nothing
+ * is touched on the cabinet-board register state that lpt_activate()
+ * will later reinit, so the probe leaves no trace. */
+
+#ifdef __linux__
+static void pp_usleep(unsigned us) { usleep(us); }
+
+static void bus_write(uint8_t addr, uint8_t data)
+{
+    lpt_passthrough_write(0, addr);
+    lpt_passthrough_write(2, 0);
+    pp_usleep(100);
+    lpt_passthrough_write(2, 4);
+    lpt_passthrough_write(0, data);
+    lpt_passthrough_write(2, 5);
+    pp_usleep(100);
+    lpt_passthrough_write(2, 4);
+}
+
+static uint8_t bus_read(uint8_t addr)
+{
+    lpt_passthrough_write(0, addr);
+    lpt_passthrough_write(2, 0);
+    pp_usleep(100);
+    lpt_passthrough_write(2, 4);
+    lpt_passthrough_write(2, 0x2D);   /* bus → input, enable read strobe */
+    pp_usleep(100);
+    uint8_t v = lpt_passthrough_read(0);
+    lpt_passthrough_write(2, 4);
+    return v;
+}
+
+/* popcount() of (0xFF - val) & mask — matches the helper at
+ * P2K-driver+0x804fe09: counts the LOW (0) bits of `val` inside `mask`. */
+static int popcount_low_bits(uint8_t val, uint8_t mask)
+{
+    uint8_t bits = (uint8_t)(~val) & mask;
+    int c = 0;
+    for (int i = 0; i < 8; i++) { c += (bits >> i) & 1; }
+    return c;
+}
+#endif /* __linux__ */
+
+int lpt_passthrough_detect_game(char *out, size_t out_sz)
+{
+#ifndef __linux__
+    (void)out; (void)out_sz;
+    return -1;
+#else
+    if (s_fd < 0) return -1;
+
+    uint8_t a1[8] = {0}, a2[8] = {0}, a3[8] = {0};
+
+    /* Phase 1: walk 8 selector bits, read board-ID register 0x04 each time. */
+    for (int i = 0; i < 8; i++) {
+        bus_write(0x05, (uint8_t)(1u << i));
+        pp_usleep(150);
+        a1[i] = bus_read(0x04);
+        bus_write(0x05, 0);
+    }
+    bus_write(0x0D, 0x80);  /* arm precharge latch */
+
+    /* Phase 2: walk 8 selector bits on two lines, read reg 0x10. */
+    for (int i = 0; i < 8; i++) {
+        bus_write(0x05, (uint8_t)(1u << i));
+        bus_write(0x08, (uint8_t)(1u << i));
+        bus_write(0x06, 0xFF);
+        bus_write(0x05, 0);
+        pp_usleep(150);
+        a2[i] = bus_read(0x10);
+        bus_write(0x08, 0);
+        bus_write(0x06, 0);
+    }
+
+    /* Phase 3: same walk, different read register (0x11). */
+    for (int i = 0; i < 8; i++) {
+        bus_write(0x05, (uint8_t)(1u << i));
+        bus_write(0x08, (uint8_t)(1u << i));
+        bus_write(0x07, 0xFF);
+        bus_write(0x05, 0);
+        pp_usleep(150);
+        a3[i] = bus_read(0x11);
+        bus_write(0x08, 0);
+        bus_write(0x07, 0);
+    }
+    bus_write(0x0D, 0x00);  /* release precharge */
+
+    /* Weighted popcounts across specific indices + masks — byte-for-byte
+     * identical to P2K-driver+0x80500f6..0x80501c4. */
+    int s20 = 0, s1c = 0;
+    s20 += popcount_low_bits(a2[1], 0x04);   /* 0xe993ed5 */
+    s20 += popcount_low_bits(a2[5], 0xC0);   /* 0xe993ed9 */
+    s20 += popcount_low_bits(a3[3], 0x06);   /* 0x8170273 */
+    s20 += popcount_low_bits(a3[5], 0xFF);   /* 0x8170275 */
+    s1c += popcount_low_bits(a2[4], 0x80);   /* 0xe993ed8 */
+    s1c += popcount_low_bits(a3[2], 0x80);   /* 0x8170272 */
+    s1c += popcount_low_bits(a3[3], 0x80);   /* 0x8170273 */
+
+    LOG("lpt", "board probe: s20=%d s1c=%d "
+               "a1=%02x%02x%02x%02x%02x%02x%02x%02x\n",
+        s20, s1c,
+        a1[0], a1[1], a1[2], a1[3], a1[4], a1[5], a1[6], a1[7]);
+
+    const char *game;
+    if (s20 > 1 && s1c > 1) {
+        game = "swe1";
+    } else if (s20 <= 11 && s1c <= 1) {
+        game = "rfm";
+    } else {
+        LOG("lpt", "board probe: no clear match (s20=%d s1c=%d)\n", s20, s1c);
+        return -1;
+    }
+
+    strncpy(out, game, out_sz - 1);
+    out[out_sz - 1] = '\0';
+    LOG("lpt", "board auto-detect → %s\n", out);
+    return 0;
+#endif
+}
