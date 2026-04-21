@@ -186,3 +186,7 @@ check. Our state machine mirrors it via the `read_isr` flag.
 If a future bundle wanders into any of those, the PIC will return
 sensible defaults and the guest will log a complaint; nothing will
 crash.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

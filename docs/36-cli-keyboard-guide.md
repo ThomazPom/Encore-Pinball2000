@@ -17,6 +17,7 @@ The game's own keyboard handling (XINA shell) does not receive these.
 |---------------------|--------|
 | `F1`                | Clean exit (flushes savedata, terminates) |
 | `F2`                | Toggle Y-flip (invert framebuffer vertically) |
+| `F3`                | Save timestamped PNG screenshot (see `src/display.c` `SCREENSHOT_DIR`) |
 | `F4`                | Toggle coin-door interlock (closed ↔ open) |
 | `F6`                | Left action button (`Phys[10].b7`) |
 | `F7`                | Left flipper (`Phys[10].b5`) |
@@ -44,7 +45,7 @@ or test/service mode:
 
 `F10` / `C` does not inject a raw switch closure. Instead it enqueues
 a discrete coin pulse: the coin line is held HIGH for `COIN_HIGH_FRAMES`
-frames (~100 ms), then LOW for `COIN_LOW_FRAMES` frames (~67 ms). Up to
+frames (~100 ms), then LOW for `COIN_LOW_FRAMES` frames (~50 ms). Up to
 `COIN_QUEUE_MAX` pulses can be queued by rapid pressing; each queued
 pulse produces one credit.
 
@@ -114,3 +115,7 @@ game state unless the LPT polling loop is active.
 * LPT emulation: [18-lpt-emulation.md](18-lpt-emulation.md)
 * Real cabinet passthrough: [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md)
 * CLI reference: [03-cli-reference.md](03-cli-reference.md)
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

@@ -39,7 +39,7 @@ cd encore
 make                                  # produces ./build/encore
 ```
 
-The build is a single non-parallel invocation of `gcc` over twelve C
+The build is a single non-parallel invocation of `gcc` over thirteen C
 sources. On a modest laptop it completes in under four seconds and
 produces an 800 KB stripped binary. There are no generated files, no
 autoconf, no meson, no per-distro configuration step. See
@@ -126,3 +126,7 @@ NVRAM, SEEPROM and EMS state land under `./savedata/<game_id>.*` on
 clean exit (F1, SIGINT/SIGTERM). Pass `--no-savedata` to keep those
 files untouched across the run — useful for CI and regression work.
 Full details in [10-savedata.md](10-savedata.md).
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

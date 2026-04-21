@@ -135,3 +135,7 @@ counter. At 57 Hz it should advance by ~285 every 5 seconds. If the
 heartbeat log shows a stalled `vsync_count`, the emulator's main loop
 itself is wedged — not just the guest. This happens only if SDL blocks
 indefinitely, which is rare.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

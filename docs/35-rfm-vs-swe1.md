@@ -108,3 +108,7 @@ at guest base `0x8000`. See [25-game-detection-auto.md](25-game-detection-auto.m
 * DCS mode duality: [13-dcs-mode-duality.md](13-dcs-mode-duality.md)
 * Known limitations: [38-known-limitations.md](38-known-limitations.md)
 * ROM loading pipeline: [08-rom-loading-pipeline.md](08-rom-loading-pipeline.md)
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

@@ -198,3 +198,7 @@ keyboard guide, see
 * **CMOS index `0x3E`.** The PRISM option ROM sets bit 0 of this
   CMOS byte to mark the PRISM as present. Encore's CMOS emulation
   handles this naturally.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

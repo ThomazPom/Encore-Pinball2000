@@ -143,3 +143,7 @@ emulator can faithfully reproduce.
 * **Video BIOS identity.** Confirmed: the first 32 KB of ROM bank 0
   serves as the option ROM. No separate video BIOS image exists on
   the card.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

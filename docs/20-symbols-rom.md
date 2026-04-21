@@ -156,3 +156,7 @@ The symbol table is currently consumed only by the patch sites. A
 future diagnostic UI could surface it for live guest-memory inspection
 (e.g. type a symbol, get its value). Today that lives only in the
 offline dumper.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

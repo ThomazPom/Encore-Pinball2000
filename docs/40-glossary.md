@@ -187,3 +187,7 @@ Encore flag set when `xinu_booted` is true AND the clock interrupt
 handler (`clkint`) has appeared in IDT[0x20] AND 50 execution batches
 have elapsed as a grace period. Timer injection is enabled once this
 flag is set.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

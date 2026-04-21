@@ -178,3 +178,7 @@ See [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md).
 * DCS mode: [13-dcs-mode-duality.md](13-dcs-mode-duality.md)
 * ROM loading: [08-rom-loading-pipeline.md](08-rom-loading-pipeline.md)
 * Keyboard guide: [36-cli-keyboard-guide.md](36-cli-keyboard-guide.md)
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

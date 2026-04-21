@@ -4,3 +4,7 @@ build/
 *.swp
 *~
 encore_lpt.log
+savedata/
+encore_snap_*.png
+screen_captures/
+*.log

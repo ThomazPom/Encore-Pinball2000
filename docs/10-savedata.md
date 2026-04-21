@@ -141,3 +141,7 @@ to load the stale save; today the behaviour is deliberately dumb.
 directory is created on first save if absent. Permissions: mode `0600`
 on the files; they contain per-game bookkeeping that has no reason to
 be world-readable.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

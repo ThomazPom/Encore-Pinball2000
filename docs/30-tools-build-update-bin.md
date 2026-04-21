@@ -89,3 +89,7 @@ or archival, or when debugging the layout itself.
 * Update loader: [09-update-loader.md](09-update-loader.md)
 * ROM loading: [08-rom-loading-pipeline.md](08-rom-loading-pipeline.md)
 * Symbol dump tool: [29-tools-sym-dump.md](29-tools-sym-dump.md)
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

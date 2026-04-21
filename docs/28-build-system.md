@@ -76,14 +76,11 @@ Key points:
 
 ## Dependencies
 
-Install on Debian 12 / Ubuntu 24.04:
+Full package list with minimum versions and multi-distro install
+commands: [41-build-env-and-runtime.md](41-build-env-and-runtime.md).
 
-```sh
-sudo apt install -y \
-    build-essential pkg-config \
-    libsdl2-dev libsdl2-mixer-dev \
-    libunicorn-dev
-```
+Summary for Debian 12 / Ubuntu 24.04: `build-essential pkg-config
+libsdl2-dev libsdl2-mixer-dev libunicorn-dev`.
 
 No other runtime dependencies. The binary is statically linked to
 `stb_image_write.h` (header-only, compiled through `stb_impl.c`).
@@ -110,5 +107,9 @@ finishes in under two seconds.
 
 ## Cross-references
 
-* Dependencies: [02-quickstart.md](02-quickstart.md)
+* Full build prerequisites & env vars: [41-build-env-and-runtime.md](41-build-env-and-runtime.md)
 * Source layout: [05-architecture.md](05-architecture.md)
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

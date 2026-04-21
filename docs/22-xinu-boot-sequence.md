@@ -122,3 +122,7 @@ before the first IRQ0 is injected into the IDT handler.
 * Scheduler discovery: [23-boot-scheduler-fix.md](23-boot-scheduler-fix.md)
 * IRQ injection and PIC: [16-irq-pic.md](16-irq-pic.md)
 * VBLANK timing: [17-vblank.md](17-vblank.md)
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

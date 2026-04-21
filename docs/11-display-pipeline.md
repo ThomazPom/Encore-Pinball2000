@@ -87,7 +87,8 @@ A latch `s_seen_nonzero_fb` triggers the first time any non-zero
 pixel appears in the scan buffer. On the transition we:
 
 * print `[disp] first non-zero framebuffer detected (fb_off=0x…)`
-* save a screenshot to `./screen_captures/encore_first.png`
+* save a timestamped PNG screenshot prefixed `encore_first` to the
+  hardcoded `SCREENSHOT_DIR` path defined in `src/display.c`
 
 This gives a zero-effort visual confirmation of "the guest has entered
 attract mode" across any bundle.
@@ -95,7 +96,8 @@ attract mode" across any bundle.
 ## Periodic screenshots
 
 At frame counts 1000, 3000 and 8000, `save_screenshot()` writes a PNG
-to the repo-root `screen_captures/` folder. These three checkpoints
+with a timestamped filename to the hardcoded `SCREENSHOT_DIR` path
+defined in `src/display.c`. These three checkpoints
 were chosen empirically: 1000 ≈ WMS logo, 3000 ≈ XINU boot, 8000 ≈
 attract-mode loop. Useful as a regression artefact for CI.
 
@@ -146,3 +148,7 @@ the SDL present itself, which is GPU-gated.
 Handled by `display_handle_events()`. See
 [36-cli-keyboard-guide.md](36-cli-keyboard-guide.md) for the full
 key map.
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)
