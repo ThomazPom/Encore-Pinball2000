@@ -305,6 +305,22 @@ typedef struct {
     bool          game_started;
     bool          is_v19_update;       /* running with update flash (V1.19) */
     bool          dcs_mode_patch_attempted; /* one-shot DCS-mode BAR4 force */
+    /* Sound subsystem mode selector (--dcs-mode):
+     *   ENCORE_DCS_BAR4_PATCH (default) — pattern-scan + 5-byte CMP/JNE
+     *     prologue patch at xinu_ready, forces dcs_mode=1 across every
+     *     bundle, sound is delivered via PCI BAR4 + sound.c mixer.
+     *     Currently the only path proven to deliver audio on every bundle.
+     *   ENCORE_DCS_IO_HANDLED — patch is skipped; the game runs the
+     *     unmodified PCI-detect probe and (where the PCI scan exposes
+     *     device 8) takes the natural BAR4 path; otherwise it stays in
+     *     I/O-UART mode and our existing dcs2_port_read/write handlers
+     *     in io.c (ports 0x138-0x13F) answer.  Confirmed silent today on
+     *     bundles whose probe returns 0 (game skips DCS init entirely);
+     *     more I/O-handshake research is needed for full coverage.  */
+    enum {
+        ENCORE_DCS_BAR4_PATCH = 0,
+        ENCORE_DCS_IO_HANDLED = 1,
+    } dcs_mode_choice;
     volatile int timer_pending;       /* count of unprocessed SIGALRM ticks */
     volatile int timer_tick_queue;    /* queued IRQ0 ticks waiting for EOI */
     uint32_t      idt_base;            /* cached IDT base address */
