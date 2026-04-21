@@ -11,6 +11,7 @@ make                                           # build ./build/encore
 ./build/encore --game swe1                     # boot SWE1 with default settings
 ./build/encore --update 210                    # boot the SWE1 v2.1 bundle
 ./build/encore --update 2.6 --dcs-mode io-handled   # RFM v2.6, I/O-handled DCS
+./build/encore --update latest --game rfm            # newest RFM bundle bundled here
 ```
 
 ## Folder layout

@@ -159,3 +159,19 @@ run regardless of what's in savedata.
 * "Assembled size > FLASH_SIZE" → the components add up to more than
   4 MB. Only seen on unusual bundles; usually a signal that one of the
   files was duplicated.
+
+## The `latest` token
+
+`--update latest` scans `./updates/` and selects the bundle with the
+highest 4-digit version field for the active game. Combine with
+`--game swe1` or `--game rfm` to pin the title; without `--game`, the
+highest version across all bundled titles wins (and `game_prefix` is
+inferred from the resolved bundle name).
+
+Examples:
+
+```sh
+./build/encore --game swe1 --update latest      # → pin2000_50069_0210_*
+./build/encore --game rfm  --update latest      # → pin2000_50070_0260_*
+./build/encore --update latest                  # newest bundle, any game
+```

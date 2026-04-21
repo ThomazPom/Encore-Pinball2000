@@ -59,10 +59,14 @@ static bool resolve_update_token(const char *token, char *out, size_t out_sz)
         return true;
     }
 
+    bool latest = (strcasecmp(token, "latest") == 0);
+
     /* Normalize to 4-digit version × 10 (e.g. "2.1" → "0210", "210"→"0210"). */
     char want[8] = {0};
-    const char *dot = strchr(token, '.');
-    if (dot) {
+    const char *dot = (latest ? NULL : strchr(token, '.'));
+    if (latest) {
+        /* sentinel — matched by version-max sweep below */
+    } else if (dot) {
         int major = atoi(token);
         int minor = atoi(dot + 1);
         /* For "2.1" we want "0210"; for "1.80" we want "0180". Detect if the
@@ -83,6 +87,8 @@ static bool resolve_update_token(const char *token, char *out, size_t out_sz)
     else if (strcmp(g_emu.game_prefix, "rfm") == 0) want_gid = "50070";
 
     const char *search_dirs[] = { "./updates", "../updates", "updates", NULL };
+    char best_path[1024] = {0};
+    int  best_v = -1;
     for (int i = 0; search_dirs[i]; i++) {
         DIR *d = opendir(search_dirs[i]);
         if (!d) continue;
@@ -103,6 +109,18 @@ static bool resolve_update_token(const char *token, char *out, size_t out_sz)
                 if (*p != '_') continue;
                 p++;
             }
+            if (latest) {
+                /* Take the highest 4-digit version field across all matches. */
+                int v = 0;
+                for (int k = 0; k < 4 && isdigit((unsigned char)p[k]); k++)
+                    v = v * 10 + (p[k] - '0');
+                if (v > best_v) {
+                    best_v = v;
+                    snprintf(best_path, sizeof(best_path), "%s/%s",
+                             search_dirs[i], de->d_name);
+                }
+                continue;
+            }
             if (strncmp(p, want, 4) != 0) continue;
             /* Match.  Return the directory path (rom.c's load_update_anyform
              * handles both dirs and files). */
@@ -111,6 +129,11 @@ static bool resolve_update_token(const char *token, char *out, size_t out_sz)
             return true;
         }
         closedir(d);
+    }
+    if (latest && best_v >= 0) {
+        strncpy(out, best_path, out_sz - 1);
+        out[out_sz - 1] = '\0';
+        return true;
     }
     return false;
 }
