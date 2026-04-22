@@ -34,7 +34,7 @@ the VSYNC poll. Upgrade if your distro still ships 1.x.
 ## 2. Clone and build
 
 ```sh
-git clone <your-mirror>/encore-pinball2000 encore
+git clone https://github.com/ThomazPom/Encore-Pinball2000.git encore
 cd encore
 make                                  # produces ./build/encore
 ```
@@ -45,32 +45,42 @@ produces an 800 KB stripped binary. There are no generated files, no
 autoconf, no meson, no per-distro configuration step. See
 [28-build-system.md](28-build-system.md) for target-by-target detail.
 
-## 3. Get ROM files
+## 3. ROMs and update bundles
 
-Encore needs two kinds of files for each bundle:
+The repository **already ships** every chip ROM and every dearchived
+update bundle Encore needs — they are committed under `./roms/` and
+`./updates/`. You don't need to download or place anything for the
+default games to run.
+
+For reference, Encore needs two kinds of files per bundle:
 
 * the chip ROMs (`U100…U107` for the game banks, `U109/U110` for DCS
-  sound), which are unchanged across every update revision;
-* exactly one update bundle, in any of four forms Encore accepts (see
-  [09-update-loader.md](09-update-loader.md)):
+  sound), which are unchanged across every update revision and are
+  loaded from `./roms/`;
+* exactly one update bundle, in any of four forms `--update` accepts
+  (see [09-update-loader.md](09-update-loader.md)):
   * a pre-concatenated `update.bin` file,
   * a directory containing `bootdata.rom`, `im_flsh0.rom`, `game.rom`
     and `symbols.rom`,
   * a Williams-branded `.exe` installer (a renamed ZIP),
-  * a version token like `2.1` or `210`, resolved against `./updates/`.
+  * a **version token** like `0210`, `0150`, `2.1` or `latest`,
+    resolved against the directory names under `./updates/`
+    (e.g. `pin2000_50069_0210_…` ⇒ `--update 0210`).
 
-Place the chip ROMs under `./roms/` in the layout documented in
-[08-rom-loading-pipeline.md](08-rom-loading-pipeline.md); place the
-update bundles under `./updates/`. The repository ships with empty
-placeholders for both directories.
+The canonical form is the **4-digit version field** that appears in
+every shipped bundle directory name (`0210`, `0150`, `0260`, …);
+shorter forms like `2.1`, `210`, `1.5` are accepted and normalised to
+the same `0vvv` value internally. Pass `--update none` to skip update
+loading entirely (boots straight into the chip ROMs).
 
 ## 4. First run
 
 ```sh
-./build/encore --game swe1 --update 2.1
+./build/encore --game swe1 --update 0210
 ```
 
-Expected output, abbreviated:
+Expected output, abbreviated (every line below is what the binary
+actually prints — copy-paste from a fresh run):
 
 ```
 ╔══════════════════════════════════════════════════╗
@@ -79,17 +89,18 @@ Expected output, abbreviated:
 ║  Video: SDL2 | Audio: SDL2_mixer                ║
 ╚══════════════════════════════════════════════════╝
 
-[main] --update: resolved '2.1' → ./updates/pin2000_50069_0210_….
-[main] --update: detected SWE1 (game_id=50069) → forcing prefix=swe1
+[main] --update: resolved '0210' → ./updates/pin2000_50069_0210_….
+[main] --update: bundle for SWE1 → forcing prefix=swe1
 [init] Game: swe1 | ROMs: ./roms | Savedata: ./savedata
-[rom] Bank 0: 8 chip files found, interleaving…
-[rom] Save data ID: swe1_21
+[rom] Bank 0 chip u100: ./roms/swe1_u100.rom
+[rom] Bank 0 chip u101: ./roms/swe1_u101.rom
+[rom] Bank 0: raw interleaved load complete (16 MB)
+…
 [cpu] Starting Encore in protected mode...
-[sgc] applying minimal post-start fixes for watchdog/mem_detect/…
+[sgc] applying minimal post-start fixes for watchdog/mem_detect/display bring-up
 [sgc] watchdog scan: string at 0x…
 [irq] clkint detected: IDT[0x20]=0x0022a4c8 EIP=…
 [irq] XINU ready: timer injection enabled EIP=…
-[init] DCS-mode pattern hit @0x001931e4 slot=0x0034a714 — patched
 [disp] FPS: 60.0 (300 frames / 5000 ms)
 ```
 
@@ -101,16 +112,18 @@ sample plays.
 
 | Symptom | Likely cause |
 |---|---|
-| `Failed to load ROMs` | Missing chip files under `./roms/`. Verify U100…U107 are present and the correct sizes. |
-| `--update: could not resolve '2.1'` | No directory named `pin2000_50069_0210_*` under `./updates/`. Use `--update /full/path/to/bundle.bin` as a fallback. |
+| `Failed to load ROMs` | Chip files missing or wrong size under `./roms/`. The repo ships these — you should only see this if you replaced the directory or pointed `--roms` at an empty path. Verify U100…U107 are present and the right sizes. |
+| `--update: could not resolve '0210'` | No directory named `pin2000_50069_0210_*` (or `_50070_` for RFM) under `./updates/`. Use `--update /full/path/to/bundle.bin` as a fallback, or `--update latest` to pick the highest-versioned shipped bundle for the selected game. |
 | Black SDL window, no DCS activity | `--dcs-mode bar4-patch` is the default and required for most bundles. If you forced `--dcs-mode io-handled` this is expected on every bundle except SWE1 v1.5. |
 | Exits immediately with `SDL_Init failed` | No display. Pass `--headless`; attach with `--serial-tcp 4444` and `nc localhost 4444` to see the serial console. |
 
 See [27-troubleshooting.md](27-troubleshooting.md) for a fuller list.
 
-## 6. Bindings during play
+## 6. Bindings during emulation
 
-Once the window is up, the most useful keys are:
+Once the SDL window is up, the most useful keys are (these go to the
+emulated cabinet, not to a "play" mode — there is no separate play vs.
+service mode at the keyboard layer):
 
 * `F10` or `C` — insert a credit
 * `SPACE` or `S` — press the Start button

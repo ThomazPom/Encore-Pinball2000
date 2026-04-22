@@ -60,6 +60,49 @@ exercise.
 
 ---
 
+## What Encore is, in one screen
+
+Encore loads the exact ROM and update files Williams shipped for a
+Pinball 2000 head, boots them inside a self-contained Unicorn-driven
+i386 virtual machine, and renders the resulting 640×240 framebuffer to
+an SDL window while pumping the game's DCS-2 command stream to an
+SDL_mixer audio backend. It is a single ~800 KB native ELF — no
+interpreter, no Python runtime, no kernel module: copy the binary,
+point it at a ROM folder, and run.
+
+The design is **authenticity through simplicity**:
+
+* boot the *real* game binary, not a reimplementation;
+* run from untouched ROM images (the flash update is assembled on disk
+  the same way Williams' own service installer would have assembled it);
+* emulate only the hardware the game actually touches — MediaGX config
+  registers, the PLX 9050 bridge, the PRISM BAR0–BAR5 window, DCS-2
+  PCI audio, the LPT driver-board protocol and the COM1 UART; everything
+  else returns a safe default.
+
+### Goals (in priority order)
+
+1. **Correct boot on every dearchived bundle.** Seven update bundles
+   pulled from the wild — SWE1 v1.5 / v2.1 and RFM v1.2 / v1.6 / v1.8 /
+   v2.5 / v2.6. Six of the seven reach attract mode with full graphics
+   and DCS audio; the oldest (RFM v1.2, 1999) dies pre-XINU and is
+   documented separately (see [docs/26](docs/26-testing-bundle-matrix.md)).
+2. **Single binary, zero dynamic discovery.** No per-bundle JSON blob,
+   no Python plug-ins, no per-game `#ifdef`. Every bundle-specific
+   offset is either pattern-scanned at boot or looked up through the
+   update's own `SYMBOL TABLE`.
+3. **Real-cabinet compatible.** `--lpt-device /dev/parport0` forwards
+   every LPT access to a physical Pinball 2000 driver board; the
+   emulated switch matrix falls silent so the real playfield owns I/O.
+4. **Small, legible, hackable.** ≈ 8 000 lines of C across thirteen
+   files. Any technically-minded contributor should be able to read the
+   entire source in an afternoon.
+
+For the deeper architecture diagram, the per-subsystem walkthroughs and
+the full design rationale, see **[docs/01-overview.md](docs/01-overview.md)**.
+
+---
+
 ## Quick start
 
 Prerequisites (Debian 12 / Ubuntu 24.04 reference):
@@ -72,12 +115,17 @@ sudo apt install -y build-essential pkg-config \
 Build and run:
 
 ```sh
+git clone https://github.com/ThomazPom/Encore-Pinball2000.git encore && cd encore
 make                                                     # → ./build/encore
 ./build/encore --game swe1                                # SWE1 with default settings
-./build/encore --update 210                               # SWE1 v2.1
-./build/encore --update 2.6 --dcs-mode io-handled         # RFM v2.6, I/O-handled DCS
+./build/encore --update 0210                              # SWE1 v2.1 (canonical 4-digit token)
+./build/encore --update 0260 --dcs-mode io-handled        # RFM v2.6, I/O-handled DCS
 ./build/encore --update latest --game rfm                 # newest bundled RFM
 ```
+
+The chip ROMs (`./roms/`) and every dearchived update bundle
+(`./updates/`) ship with the repo — no extra downloads needed for the
+default games.
 
 Other useful entry points are documented in
 [docs/02-quickstart.md](docs/02-quickstart.md) and
