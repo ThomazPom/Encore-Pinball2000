@@ -137,7 +137,45 @@ linearly; everything else is reference material you can dip into.
 
 ---
 
-## How you can help
+## Side quests along the way
+
+This project started with a few "nice to have" goals on the side, in
+addition to the main objective of booting the game. Here is what
+happened to each of them in the end:
+
+* **Decoding the DCS sound libraries** (`*_P2K.bin`).
+  Originally a side quest because no documented decoder existed.
+  Implemented in `tools/extract_sounds.py` (312 samples extracted from
+  SWE1 in seconds). Turned out to be far less complex than expected —
+  the format is a simple header + fixed-size entry table + concatenated
+  samples. It is now in the toolbox even though it is not strictly
+  required to run the game.
+* **Extracting the symbol table from update bundles**.
+  Same story: was expected to be hard, ended up being a 200-line
+  walker. Lives in `src/symbols.c` for runtime use and
+  `tools/sym_dump.py` for offline inspection. This one *did* end up
+  being central — every ROM-agnostic patch in Encore relies on it.
+* **Reinterleaving raw chip-by-chip ROM dumps**.
+  Documented and scripted in `tools/deinterleave_rebuild.sh`, so anyone
+  with eight `uXXX.rom` files from a real PROM dumper can rebuild a
+  loadable bank without guessing the byte layout.
+* **Round-tripping Williams' update installers**.
+  The `.exe` self-extractors are renamed ZIPs; Encore detects them and
+  rebuilds the 4 MB `update.bin` exactly the way Williams laid it out.
+  `tools/build_update_bin.py` produces byte-identical output from a
+  bundle directory.
+* **TCP serial console + TCP keyboard injection**.
+  Born from the need to script regression runs without an SDL window.
+  Now `--serial-tcp` is the proven way to drive XINA from a script,
+  and `--headless --serial-tcp` is how the regression matrix runs.
+* **Real LPT passthrough to a physical driver board**.
+  Ended up as `--lpt-device /dev/parport0`, with all the kernel-module
+  setup documented. Still waiting for cabinet validation, but the
+  emulation-side protocol is in place.
+
+---
+
+
 
 We are actively looking for:
 
