@@ -1,130 +1,120 @@
 # 42 — Cabinet Testing Call-to-Action
 
-> **You can help make Encore better.** If you own or have access to a
-> real Pinball 2000 cabinet (Revenge From Mars or Star Wars Episode I),
-> you are in a unique position to verify something no emulator run can
-> confirm: whether Encore's behaviour matches the real machine.
+> **You can help make Encore better.** Encore has been written and
+> verified entirely in software, against the Unicorn Engine on a
+> modern Linux host. The next big unknown is whether the same binary
+> behaves sensibly when it is asked to take the place of the original
+> CPU board on a real Pinball 2000 machine.
 
-## Why cabinet testing matters
+## What we are realistically asking for
 
-Encore has been developed and tested entirely in software — every result
-in these docs comes from running the game binary inside the Unicorn
-Engine emulator on a modern Linux host. That is a rigorous environment,
-but it is not the same as a real Pinball 2000 cabinet.
+We are **not** asking anyone to commit to a full bring-up of an
+unfamiliar emulator on a working cabinet. The first useful step is
+much simpler:
 
-Real hardware validation would tell us:
+> Install Encore on a stock **Debian 13 x86_64** PC, run it the way
+> you would run any other pinball emulator (no special hardware, no
+> serial cable, no LPT board), and report back what happened.
 
-* Whether the NVRAM image Encore writes is accepted by the original firmware.
-* Whether the LPT protocol (`--lpt-device`) correctly drives real lamps, coils
-  and switches.
-* Whether the DCS audio timing matches what the original DCS-2 board expects
-  when commanded over the parallel port.
-* Whether the serial console (`--serial-tcp`) behaves as the XINA shell does
-  on a real machine.
-* Whether attract mode, single-ball play, multi-ball, and game-over sequences
-  all progress correctly on actual hardware.
+In particular, what would already be a huge insight for the project:
 
-## What to test
+* Whether the Debian 13 build instructions in
+  [02-quickstart.md](02-quickstart.md) and
+  [28-build-system.md](28-build-system.md) actually work end-to-end on
+  a clean install (apt packages, build, first launch).
+* Whether the boot timing on a typical desktop PC is in the same ball
+  park as other emulators that the community already runs (i.e. does
+  it boot in something like the same number of seconds? does it stall?
+  does it consume reasonable CPU?).
+* Whether attract mode looks and sounds correct on your machine
+  compared to what you remember from a real cabinet, or from a video
+  capture of one.
+* Whether the SDL window, audio output and basic key bindings (F-keys,
+  start, flippers, credit) behave as expected without any extra setup.
 
-Work through the following sequence in order. Stop and report at any
-point where something diverges from normal cabinet behaviour.
+That alone — a "yes it built and ran on Debian 13 like a normal
+emulator" or "no, here is where it went wrong" — would tell us
+exactly which next steps are worth investing in.
 
-### 1. Boot
-- Power on the cabinet with Encore providing the software.
-- Confirm the WMS logo appears on the playfield projector.
-- Confirm attract mode begins within 60 seconds.
-- Note any error messages on the XINA serial console.
+## If you do have access to real hardware
 
-### 2. Attract mode
-- Let attract mode run for at least 5 minutes.
-- Confirm video is cycling normally.
-- Confirm DCS audio plays background music and stings.
-- Confirm no software watchdog resets occur.
+Anything beyond the Debian 13 first-run report is **bonus** at this
+stage. If you happen to own a Pinball 2000 cabinet (Revenge From Mars
+or Star Wars Episode I), or a spare driver board on the bench, the
+following extra tests would be enormously valuable, but please treat
+them as optional:
 
-### 3. Single-ball game
-- Insert a credit and start a one-player game.
-- Confirm ball launch, switch detection, scoring, and ball drain all
-  function normally through to game-over.
+* **LPT passthrough on a bench driver board.** Connect a spare driver
+  board via a parallel port and run with
+  `--lpt-device /dev/parport0`. Confirm whether switch closures are
+  read back and whether lamps and flashers respond to attract-mode
+  events. See [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md)
+  for the kernel module setup.
+* **NVRAM round-trip.** Boot, play a game, exit cleanly, boot again,
+  and confirm the high-score table and adjustments survived.
+* **DCS audio path.** Compare the audio against a known-good cabinet
+  recording — same music tracks, same speech samples, same timing.
+* **Full attract-to-game-over loop on a complete cabinet.** Only worth
+  attempting once the bench-level tests look healthy.
 
-### 4. Full game (three balls)
-- Play a complete three-ball game.
-- Check that bonus counting, NVRAM high-score registration, and
-  match sequence work end-to-end.
+## How to set up the simple Debian 13 test
 
-### 5. Multi-ball
-- Trigger a multi-ball mode (game-specific; consult the operator manual).
-- Confirm that multiple balls are tracked and the appropriate lighting
-  and audio cues fire.
-
-### 6. NVRAM persistence
-- After a full game, power-cycle the cabinet.
-- Confirm that the high-score table and adjustment settings survive the
-  power cycle (i.e. the `savedata/` NVRAM image is reloaded correctly).
-
-### 7. Audio
-- Confirm speech, music, and sound effects are timed and pitched
-  correctly compared to a known-good cabinet recording.
-- Note any samples that are missing, distorted, or play at the wrong time.
-
-### 8. LPT switches and lamps (if `--lpt-device` is available)
-- With `--lpt-device /dev/parport0` and a real driver board connected,
-  confirm that switch closures are detected and that lamps and
-  flashers respond to game events.
-
-### 9. Coil drive
-- With the driver board connected, verify that flippers, slingshots,
-  and pop bumpers fire on the correct switch activations.
-
-## How to set up
-
-1. **Build Encore** — follow [02-quickstart.md](02-quickstart.md).
-2. **Prepare your ROM folder** — follow [08-rom-loading-pipeline.md](08-rom-loading-pipeline.md)
-   and [09-update-loader.md](09-update-loader.md) to lay out the chip ROMs and
-   one update bundle.
-3. **Optional LPT passthrough** — if a real driver board is available,
-   add `--lpt-device /dev/parport0` (or whichever device node your system
-   exposes). See [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md) for
-   kernel module requirements.
-4. **Serial console** — connect a terminal to `--serial-tcp 4444` or to
-   the real RS-232 port of the machine to see XINA output.
-5. **Run** — a typical launch command:
+1. **Install build dependencies** (everything is in Debian 13's
+   official repositories):
    ```sh
-   ./build/encore --game rfm --update 260 --lpt-device /dev/parport0
+   sudo apt install build-essential libsdl2-dev libsdl2-mixer-dev \
+                    libunicorn-dev unzip git
    ```
+2. **Clone and build:**
+   ```sh
+   git clone <repo-url> Encore-Pinball2000
+   cd Encore-Pinball2000
+   make
+   ```
+3. **Drop your ROMs into `roms/swe1/` or `roms/rfm/`** as described in
+   [08-rom-loading-pipeline.md](08-rom-loading-pipeline.md).
+4. **Launch:**
+   ```sh
+   ./build/encore --game swe1
+   ./build/encore --game rfm
+   ```
+5. **Watch the first 60 seconds.** Note when the WMS/Williams logo
+   appears, when attract mode starts, and whether audio plays.
 
 ## Report template
 
-When you have results to share, please include the following
-information. A brief log excerpt is especially valuable.
+A short report is more useful than no report. The minimum we would
+love to see:
 
 ```
-Game:           [Revenge From Mars | Star Wars Episode I]
-Bundle version: [e.g. RFM v2.6]
-Host OS:        [e.g. Debian 12 x86_64]
-Encore version: [git describe output or commit hash]
-LPT device:     [/dev/parport0 | none]
+Host OS         : Debian 13 x86_64 (or other)
+Encore version  : git describe / commit hash
+Game / version  : SWE1 v1.5 / RFM v1.8 / etc.
+CLI invoked     : ./build/encore --game swe1
 
-What worked:
-  [list each test section above: ✓ pass / ✗ fail / ~ partial]
+Build           : ✓ ok / ✗ failed (paste error)
+First launch    : ✓ ok / ✗ failed (paste last 30 lines of stdout)
+Time to attract : roughly N seconds from launch to attract video
+Video           : looks right / looks wrong (describe)
+Audio           : plays music + effects / silent / distorted
+CPU usage       : reasonable / pegged at 100 % / other
 
-What failed or behaved differently from a stock cabinet:
-  [describe in detail — screenshots, video, and log excerpts welcome]
-
-XINA console log excerpt (first 50 lines or so):
-  [paste here]
+Anything that surprised you:
 ```
 
 ## Where to send reports
 
-Open an issue against this repository or contact the maintainers via
-the channel listed in the top-level README.
+Open an issue on the project repository, or use whichever
+contact channel is listed in the top-level
+[README.md](../README.md).
 
-## Background: emulator regression baseline
+## Background — what is already known
 
-Encore already passes an emulator-only regression matrix covering all
-seven known update bundles. See [26-testing-bundle-matrix.md](26-testing-bundle-matrix.md)
-for the pass criteria and current status. Cabinet testing would extend
-that baseline with real-hardware confirmation.
+Encore already passes its own software regression matrix on every
+shipping bundle (see [26-testing-bundle-matrix.md](26-testing-bundle-matrix.md)).
+A successful Debian 13 desktop test would extend that baseline
+outside the developer's own machine, and a successful bench-level
+LPT/audio test would extend it outside emulation entirely.
 
 ---
 
