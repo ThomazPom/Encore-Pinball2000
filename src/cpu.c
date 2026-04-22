@@ -697,7 +697,10 @@ void cpu_run(void)
                                   | ((uint32_t)r[a+7] << 8)
                                   | ((uint32_t)r[a+8] << 16)
                                   | ((uint32_t)r[a+9] << 24);
-                    /* Sanity: target must look like a per-build BSS slot. */
+                    /* Sanity: target must look like a per-build BSS slot.
+                     * Observed slots: SWE1 v1.5 0x3444B0, SWE1 v2.1
+                     * 0x34A714, RFM v1.6 0x36D39C, RFM v1.8 0x36D030,
+                     * RFM v2.5 0x382600, RFM v2.6 0x383330. */
                     if (slot < 0x300000u || slot >= 0x400000u) continue;
 
                     /* Replace ONLY the 5-byte CMP+JNE prologue with

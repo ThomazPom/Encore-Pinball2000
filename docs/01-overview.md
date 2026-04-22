@@ -37,7 +37,7 @@ The goal is **authenticity through simplicity**:
    have been pulled from the wild — SWE1 v1.5 / v2.1 and RFM v1.2 /
    v1.6 / v1.8 / v2.5 / v2.6. Six of the seven reach attract mode with
    full graphics and DCS audio. The oldest (RFM v1.2, 1999) dies
-   pre-XINU and is documented separately (see [26](26-testing-7-bundle-matrix.md)).
+   pre-XINU and is documented separately (see [26](26-testing-bundle-matrix.md)).
 2. **Single binary, zero dynamic discovery.** No per-bundle JSON blob,
    no Python plug-ins, no per-game #ifdef. Every bundle-specific offset
    is either pattern-scanned at boot or looked up through the update's

@@ -82,13 +82,13 @@ content, loaded from disk at boot.
 The `dcs-bong` sample (entry 0) is the startup sound confirming the
 audio subsystem initialised correctly. Its playback is logged by
 `src/sound.c` and is one of the pass criteria for the regression matrix
-(see [26-testing-7-bundle-matrix.md](26-testing-7-bundle-matrix.md)).
+(see [26-testing-bundle-matrix.md](26-testing-bundle-matrix.md)).
 
 ## Cross-references
 
 * Sound pipeline: [12-sound-pipeline.md](12-sound-pipeline.md)
 * DCS mode duality: [13-dcs-mode-duality.md](13-dcs-mode-duality.md)
-* Regression matrix: [26-testing-7-bundle-matrix.md](26-testing-7-bundle-matrix.md)
+* Regression matrix: [26-testing-bundle-matrix.md](26-testing-bundle-matrix.md)
 
 ---
 
