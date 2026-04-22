@@ -128,11 +128,17 @@ static int s_coin_high    = 0;
 static int s_coin_low     = 0;
 static int s_coin_pending = 0;
 int g_probe_col = 0;  /* DEBUG: current col for digit-key probe; [/] adjust */
-#define SCREENSHOT_DIR "/mnt/hgfs/encore_forensic/screen_captures"
+
+/* Screenshot output directory: env override, else ./screenshots/ in CWD. */
+static const char *screenshot_dir(void)
+{
+    const char *env = getenv("ENCORE_SCREENSHOT_DIR");
+    return (env && *env) ? env : "./screenshots";
+}
 
 static void ensure_screenshot_dir(void)
 {
-    mkdir(SCREENSHOT_DIR, 0777);
+    mkdir(screenshot_dir(), 0777);
 }
 
 static void save_screenshot(const char *prefix, int id)
@@ -149,8 +155,8 @@ static void save_screenshot(const char *prefix, int id)
 
     char path[320];
     snprintf(path, sizeof(path),
-             SCREENSHOT_DIR "/%s_%04d%02d%02d_%02d%02d%02d_%03ld_%03d.png",
-             prefix,
+             "%s/%s_%04d%02d%02d_%02d%02d%02d_%03ld_%03d.png",
+             screenshot_dir(), prefix,
              tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
              tm.tm_hour, tm.tm_min, tm.tm_sec,
              ts.tv_nsec / 1000000, id);

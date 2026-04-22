@@ -6,6 +6,13 @@ and **Revenge from Mars**). It bundles everything needed to boot the
 included update packages and exercise the full display + audio + LPT
 pipeline from a single self-contained folder.
 
+<p align="center">
+  <img src="docs/images/swe1-attract.png" width="45%" alt="Star Wars: Episode I attract screen running in Encore"/>
+  &nbsp;
+  <img src="docs/images/rfm-attract.png" width="45%" alt="Revenge from Mars high-scores attract screen running in Encore"/>
+</p>
+<p align="center"><sub>Left: <em>Star Wars: Episode I</em> attract logo · Right: <em>Revenge from Mars</em> high-scores screen — both captured live from Encore (640×480, headless offscreen render).</sub></p>
+
 ---
 
 ## ⚠️  Project status — read this first
