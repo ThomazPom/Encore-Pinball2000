@@ -13,6 +13,16 @@ pipeline from a single self-contained folder.
 </p>
 <p align="center"><sub>Left: <em>Star Wars: Episode I</em> attract logo · Right: <em>Revenge from Mars</em> high-scores screen — both captured live from Encore (640×480, headless offscreen render).</sub></p>
 
+<p align="center">
+  <a href="docs/README.md"><strong>📚 Documentation Index →</strong></a>
+  &nbsp;·&nbsp;
+  <a href="docs/02-quickstart.md">Quickstart</a>
+  &nbsp;·&nbsp;
+  <a href="docs/03-cli-reference.md">CLI Reference</a>
+  &nbsp;·&nbsp;
+  <a href="docs/42-cabinet-testing-call.md">Help us test on real hardware</a>
+</p>
+
 ---
 
 ## ⚠️  Project status — read this first
