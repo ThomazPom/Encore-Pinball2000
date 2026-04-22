@@ -144,12 +144,14 @@ addition to the main objective of booting the game. Here is what
 happened to each of them in the end:
 
 * **Decoding the DCS sound libraries** (`*_P2K.bin`).
-  Originally a side quest because no documented decoder existed.
-  Implemented in `tools/extract_sounds.py` (312 samples extracted from
-  SWE1 in seconds). Turned out to be far less complex than expected —
-  the format is a simple header + fixed-size entry table + concatenated
-  samples. It is now in the toolbox even though it is not strictly
-  required to run the game.
+  Originally a side quest because no documented decoder existed, and
+  also a personal one: I wanted to hear some of the sounds from my
+  dad's pinball outside of an actual game. Implemented in
+  `tools/extract_sounds.py` — 689 samples come out of SWE1 in seconds.
+  The format turned out to be far simpler than feared (a header, a
+  fixed-size entry table, then the concatenated samples), so the tool
+  is now in the toolbox even though it is not strictly required to
+  run the game.
 * **Extracting the symbol table from update bundles**.
   Same story: was expected to be hard, ended up being a 200-line
   walker. Lives in `src/symbols.c` for runtime use and

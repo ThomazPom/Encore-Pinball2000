@@ -64,8 +64,8 @@ Output:
 
 ```
 File   : roms/swe1_P2K.bin (28.4 MB)
-Version: 1  header_size: 16  entries: 312  entry_size: 72
-Extracted: 312 files → swe1_sounds/
+Version: 1  header_size: 16  entries: 689  entry_size: 72
+Extracted: 689 files → swe1_sounds/
 ```
 
 The extracted files are plain `.ogg` files, playable with any OGG-
