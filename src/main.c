@@ -690,14 +690,22 @@ int main(int argc, char **argv)
     print_banner();
     parse_args(argc, argv);
 
+    /* Resolve the game prefix early so the auto-update gate below works
+     * even when --game is omitted (default "auto"). rom_detect_game()
+     * short-circuits when a concrete prefix is already set, so the
+     * second call from rom_load_all() below is a no-op. */
+    if (rom_detect_game() != 0) {
+        fprintf(stderr, "Failed to detect game from ROMs\n");
+        return 1;
+    }
+
     /* Auto-pick latest update bundle when none specified.
      * Base ROMs alone don't reach a usable state on this platform: XINA
      * panics with "sysinit: game code overlaps 640k - 1024k hole" on RFM,
      * and DCS sound never wires up on SWE1. Real cabinets always shipped
      * with at least one update flashed; mirror that. Override with
-     * --update none|<version|path>. Only applies when --game has been set
-     * to a concrete prefix (swe1/rfm) and we're not running against a
-     * real LPT board (real cabinet may have its own flashed contents). */
+     * --update none|<version|path>. Only applies when the game prefix
+     * resolves to swe1 or rfm (whether via --game or auto-detect). */
     if (g_emu.update_file[0] == '\0' && !g_emu.update_explicit_none
         && (strcmp(g_emu.game_prefix, "swe1") == 0
             || strcmp(g_emu.game_prefix, "rfm") == 0)) {
