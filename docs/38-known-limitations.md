@@ -122,6 +122,39 @@ error on next boot. See [10-savedata.md](10-savedata.md).
 
 ---
 
+## v2.1 community-update attract clock shows wrong date
+
+The community v2.1 firmware updates (SWE1 0210, RFM 0210) draw a
+wall-clock in the lower-right of the attract screen. The clock display
+is implemented entirely in those community ROMs — earlier official
+Williams releases (SWE1 ≤ 0150, RFM ≤ 0180) do not show it.
+
+The displayed year, day-of-week and AM/PM do **not** match the host
+system clock that Encore feeds through the CMOS/RTC registers. Empirical
+probing of CMOS register `0x09` (year) shows v2.1 maps it through an
+internal table that is not a simple offset:
+
+| `cmos[0x09]` (BCD) | displayed year |
+| --- | --- |
+| `0x01` | 2001 |
+| `0x13` | 2051 |
+| `0x14` | 2025 |
+| `0x25` | 2027 |
+| `0x26` | 2001 |
+
+The day-of-week is recomputed from the (mis-read) year by the firmware,
+so feeding the correct day register has no effect, and AM/PM is
+similarly inverted in some boots. Because the relationship is not
+monotonic, no single CMOS-side compensation makes the v2.1 clock honest
+for an arbitrary host year.
+
+Encore feeds the true host time to the CMOS registers exactly as
+Williams' BIOS expected; this is a community-firmware quirk, not an
+emulator bug. Run any official update (e.g. `--update 0150` for SWE1,
+`--update 0180` for RFM) and the attract clock disappears entirely.
+
+---
+
 ## No `make install` target
 
 Encore must be copied manually to its destination. A `make install`
