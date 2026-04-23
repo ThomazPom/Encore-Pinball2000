@@ -28,24 +28,33 @@ directories are produced by `unzip` of those archives.
 > no claims about whether they reach a usable state and will not
 > investigate failures against them.
 >
-> | Game | In-scope updates | Reference-only (below baseline) |
-> |------|------------------|----------------------------------|
-> | SWE1 | v1.5, v2.1       | v1.3, v1.4                        |
-> | RFM  | v1.6, v1.8, v2.5, v2.6 | v1.2, v1.4, v1.5            |
+> | Game | In-scope updates |
+> |------|------------------|
+> | SWE1 | v1.3, v1.4, v1.5, v2.10 (community) |
+> | RFM  | v1.2, v1.4, v1.5, v1.6, v1.8, v2.50 (community), v2.60 (community) |
+>
+> Community versions (mypinballs) are supported in Encore but not
+> redistributed in the repo — see
+> [47-community-updates.md](47-community-updates.md).
 
 | # | Bundle directory pattern              | Title | Version | Scope |
 |---|---------------------------------------|-------|---------|-------|
-| 1 | `pin2000_50069_0130_*`                | SWE1  | v1.3    | reference-only |
-| 2 | `pin2000_50069_0140_*`                | SWE1  | v1.4    | reference-only |
-| 3 | `pin2000_50069_0150_*`                | SWE1  | v1.5    | **in-scope** (baseline) |
-| 4 | `pin2000_50069_0210_*`                | SWE1  | v2.1    | **in-scope** (latest) |
-| 5 | `pin2000_50070_0120_*`                | RFM   | v1.2    | reference-only (r1 chips, pre-XINU) |
-| 6 | `pin2000_50070_0140_*`                | RFM   | v1.4    | reference-only |
-| 7 | `pin2000_50070_0150_*`                | RFM   | v1.5    | reference-only |
+| 1 | `pin2000_50069_0130_*`                | SWE1  | v1.3    | **in-scope** |
+| 2 | `pin2000_50069_0140_*`                | SWE1  | v1.4    | **in-scope** |
+| 3 | `pin2000_50069_0150_*`                | SWE1  | v1.5    | **in-scope** (latest official Williams) |
+| 4 | `pin2000_50069_0210_*`                | SWE1  | v2.10   | **in-scope** (community / mypinballs — see [47](47-community-updates.md)) |
+| 5 | `pin2000_50070_0120_*`                | RFM   | v1.2    | **in-scope** (r1 chips, pre-XINU) |
+| 6 | `pin2000_50070_0140_*`                | RFM   | v1.4    | **in-scope** |
+| 7 | `pin2000_50070_0150_*`                | RFM   | v1.5    | **in-scope** |
 | 8 | `pin2000_50070_0160_*`                | RFM   | v1.6    | **in-scope** (baseline, r2) |
-| 9 | `pin2000_50070_0180_*`                | RFM   | v1.8    | **in-scope** |
-|10 | `pin2000_50070_0250_*`                | RFM   | v2.5    | **in-scope** |
-|11 | `pin2000_50070_0260_*`                | RFM   | v2.6    | **in-scope** (latest) |
+| 9 | `pin2000_50070_0180_*`                | RFM   | v1.8    | **in-scope** (latest official Williams) |
+|10 | `pin2000_50070_0250_*`                | RFM   | v2.50   | **in-scope** (community / mypinballs — see [47](47-community-updates.md)) |
+|11 | `pin2000_50070_0260_*`                | RFM   | v2.60   | **in-scope** (community / mypinballs — see [47](47-community-updates.md)) |
+
+The community/post-Williams updates (rows 4, 10 and 11) are not
+shipped with the repo — grab the latest versions from
+<https://mypinballs.com> and drop them into `./updates/` to run them
+through the same regression matrix.
 
 When `--update` is omitted, `--game swe1` and `--game rfm` automatically
 select the newest bundle for that title (equivalent to `--update latest`).

@@ -76,7 +76,7 @@ Four accepted shapes:
 * **VERSION** — a short string like `210`, `2.1`, `180`, `1.8`. Encore
   searches `./updates` (and `../updates`, `updates`) for a directory
   named `pin2000_<gid>_<vvvv>_*`, where `vvvv` is `major*100 + minor*10`
-  (so "2.1" → 0210, "1.80" → 0180). If `--game` is `swe1` or `rfm`,
+  (so "1.5" → 0150, "1.80" → 0180). If `--game` is `swe1` or `rfm`,
   only matching `gid` (50069 or 50070) is considered.
 
 Full semantics: [09-update-loader.md](09-update-loader.md).

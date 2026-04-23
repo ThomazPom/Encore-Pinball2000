@@ -71,9 +71,9 @@ bundle. See [25-game-detection-auto.md](25-game-detection-auto.md).
 
 ---
 
-## `--update: could not resolve '2.1'`
+## `--update: could not resolve '1.5'`
 
-**Cause:** No directory named `pin2000_50069_0210_*` under `./updates/`.
+**Cause:** No directory named `pin2000_50069_0150_*` under `./updates/`.
 
 **Fix:** Place the dearchived bundle under `./updates/` using the
 standard naming convention, or pass the full path:

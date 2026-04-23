@@ -36,9 +36,9 @@ static void print_banner(void)
  *   - Otherwise, treat `token` as a version string and search the bundled
  *     `./updates/` folder (also parent `../updates/`) for a bundle whose
  *     version field matches.  Accepted forms:
- *         "210"   decimal version × 10 (the on-disk 4-digit field, leading
- *                  zero allowed: "0210" or "210")
- *         "2.1"   human-readable dotted version
+ *         "150"   decimal version × 10 (the on-disk 4-digit field, leading
+ *                  zero allowed: "0150" or "150")
+ *         "1.5"   human-readable dotted version
  *         "1.80"  → "0180"
  *     The bundle naming convention is pin2000_<game_id>_<vvvv>_<date>_...
  *     If g_emu.game_prefix is set to "swe1" or "rfm", the matching bundle
@@ -61,7 +61,7 @@ static bool resolve_update_token(const char *token, char *out, size_t out_sz)
 
     bool latest = (strcasecmp(token, "latest") == 0);
 
-    /* Normalize to 4-digit version × 10 (e.g. "2.1" → "0210", "210"→"0210"). */
+    /* Normalize to 4-digit version × 10 (e.g. "1.5" → "0150", "150"→"0150"). */
     char want[8] = {0};
     const char *dot = (latest ? NULL : strchr(token, '.'));
     if (latest) {
@@ -69,7 +69,7 @@ static bool resolve_update_token(const char *token, char *out, size_t out_sz)
     } else if (dot) {
         int major = atoi(token);
         int minor = atoi(dot + 1);
-        /* For "2.1" we want "0210"; for "1.80" we want "0180". Detect if the
+        /* For "1.5" we want "0150"; for "1.80" we want "0180". Detect if the
          * caller already wrote a two-digit minor (e.g. "1.80" → minor=80)
          * vs a single-digit minor (e.g. "2.1" → minor=1, treat as 10). */
         int minor_len = 0;

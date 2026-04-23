@@ -56,26 +56,26 @@ tools/sym_dump.py SYMBOLS_ROM [options]
 ### Examples
 
 ```sh
-# List all symbols in an SWE1 v2.1 symbols ROM:
-python3 tools/sym_dump.py updates/pin2000_50069_0210_*/symbols.rom --all
+# List all symbols in an SWE1 v1.5 symbols ROM:
+python3 tools/sym_dump.py updates/pin2000_50069_0150_*/symbols.rom --all
 
 # Resolve one name:
-python3 tools/sym_dump.py updates/pin2000_50069_0210_*/symbols.rom \
+python3 tools/sym_dump.py updates/pin2000_50069_0150_*/symbols.rom \
     --lookup clkruns
 
 # Find what is near address 0x1931e6:
-python3 tools/sym_dump.py updates/pin2000_50069_0210_*/symbols.rom \
+python3 tools/sym_dump.py updates/pin2000_50069_0150_*/symbols.rom \
     --addr 0x1931e6
 
 # Find all DCS-related symbols:
-python3 tools/sym_dump.py updates/pin2000_50069_0210_*/symbols.rom \
+python3 tools/sym_dump.py updates/pin2000_50069_0150_*/symbols.rom \
     --grep dcs
 ```
 
 ### Sample output
 
 ```
-# pin2000_50069_0210_symbols.rom  entries=2341 str_base=0x4b18 hdr_n=2341 str_sz=0x6800 base=0x10000000
+# pin2000_50069_0150_symbols.rom  entries=2341 str_base=0x4b18 hdr_n=2341 str_sz=0x6800 base=0x10000000
   00191870  dcs_cmd_queue_push
   00191900  dcs_cmd_flush
   001931e4  dcs_mode_select
@@ -85,11 +85,14 @@ addr    0x1931e6                         -> 001931e4 dcs_mode_select + 0x2
 
 ## Notes on stripped tables
 
-Production RFM v1.6/v2.6 and SWE1 v1.5 ship with stripped symbol
+Production RFM v1.6 and SWE1 v1.5 ship with stripped symbol
 tables — only exported API names are present; XINU internals like
-`clkruns` and `Fatal` are absent. SWE1 v2.1 retains most of the XINU
-symbols. The script handles both cases gracefully; `--lookup` returns
-`MISS` for absent symbols.
+`clkruns` and `Fatal` are absent. Earlier versions (SWE1 v1.3/v1.4,
+RFM v1.2/v1.4/v1.5) retain more of the XINU symbols. The community
+v2.x mypinballs bundles for both titles also ship with stripped tables
+(see [47-community-updates.md](47-community-updates.md) for how to
+obtain them). The script handles both cases gracefully; `--lookup`
+returns `MISS` for absent symbols.
 
 ## Relationship to runtime symbols.c
 

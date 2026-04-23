@@ -115,6 +115,7 @@ Encore itself reads exactly **one** environment variable directly:
 | Variable | Read by | Effect if unset |
 |---|---|---|
 | `DISPLAY` | `src/display.c` | Encore refuses to open a window unless either `DISPLAY` is set OR `--headless` is passed. This protects against opening a useless window over SSH. |
+| `ENCORE_SCREENSHOT_DIR` | `src/display.c` (`screenshot_dir()`) | Override the directory where F3 captures are written. Defaults to `./screenshots/` in the CWD. The directory is created on first capture. |
 
 Everything else flows through the SDL2 stack and is documented by
 SDL itself. The most useful ones for Encore are:
@@ -133,6 +134,46 @@ Example: silent headless run for CI / smoke testing:
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
     timeout 10 ./build/encore --update 210 --headless
 ```
+
+### Scripted screenshot capture (offscreen Xvfb / nested X)
+
+Encore has no `--screenshot-at-frame` flag — `F3` is the only way to
+emit a PNG (see [4. Runtime keyboard shortcuts](#4-runtime-keyboard-shortcuts)
+and the `save_screenshot()` path in `src/display.c`). To capture
+attract / gameplay screens unattended (CI, doc generation, asset
+refresh) the recipe is:
+
+1. Render Encore against a real or virtual X display.
+2. Inject `F3` keypresses from a sidecar process.
+3. Read the PNGs back from `$ENCORE_SCREENSHOT_DIR` (or
+   `./screenshots/`).
+
+Headless box / CI? Use `Xvfb` as the offscreen display:
+
+```sh
+Xvfb :99 -screen 0 640x480x24 &        # offscreen X server
+export DISPLAY=:99
+export ENCORE_SCREENSHOT_DIR=./out
+./build/encore --game rfm --update latest &
+ENCORE_PID=$!
+sleep 8                                 # let it reach attract
+python3 tools/snap_attract.py Encore 6 4   # 6 captures, 4 s apart
+sleep 2
+kill $ENCORE_PID
+```
+
+On a developer workstation with a real X server, drop the `Xvfb`
+line and `export DISPLAY=:0` instead. `tools/snap_attract.py` is a
+~50-line `python-xlib` helper that walks the X tree, finds the first
+window whose `WM_NAME` contains a substring (default `Encore`),
+focuses it, and synthesises the requested number of `F3` presses
+spaced by the requested interval. It depends on the `python3-xlib`
+package (`pip install --break-system-packages python-xlib`, or
+`apt install python3-xlib`).
+
+This approach was used to refresh `docs/images/{swe1,rfm}-attract.png`
+after the community-update purge — see
+[47-community-updates.md](47-community-updates.md) for context.
 
 ---
 

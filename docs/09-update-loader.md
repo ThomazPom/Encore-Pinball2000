@@ -31,7 +31,7 @@ the cheapest path — zero assembly, zero concatenation.
 A directory containing the four standard ROM files:
 
 ```
-pin2000_50069_0210_…/
+pin2000_50069_0150_…/
   bootdata.rom        or   50069_bootdata.rom
   im_flsh0.rom        or   50069_im_flsh0.rom
   game.rom            or   50069_game.rom
@@ -59,7 +59,7 @@ detects it by running `unzip -l` silently; if that succeeds, the file
 is extracted to a temp directory and Form 2 runs on the result.
 
 ```sh
-./build/encore --update ./downloads/swe1_update_210.exe
+./build/encore --update ./downloads/swe1_update_150.exe
 ```
 
 ### Form 4 — a version token
@@ -80,11 +80,19 @@ Normalisation rules:
 
 | Input | Interpretation | `vvvv` |
 |---|---|---:|
-| `210` | integer, treat as already vvvv | 0210 |
-| `2.1` | major.minor_short (1-digit minor) | 0210 |
+| `150` | integer, treat as already vvvv | 0150 |
+| `1.5` | major.minor_short (1-digit minor) | 0150 |
 | `180` | integer | 0180 |
 | `1.80`| major.minor_long (2-digit minor) | 0180 |
 | `1.8` | major.minor_short | 0180 |
+| `210` | integer (community / mypinballs) | 0210 |
+| `2.1` | major.minor_short (community / mypinballs) | 0210 |
+| `260` | integer (community / mypinballs) | 0260 |
+| `2.60`| major.minor_long (community / mypinballs) | 0260 |
+
+Community-version examples assume you have dropped the corresponding
+mypinballs bundle into `./updates/` — see
+[47-community-updates.md](47-community-updates.md).
 
 The single-digit vs two-digit minor heuristic counts trailing digit
 characters after the dot.
@@ -150,7 +158,7 @@ run regardless of what's in savedata.
 
 ## Error surface
 
-* "Could not resolve `2.1`" → no directory named `pin2000_50069_0210_*`
+* "Could not resolve `1.5`" → no directory named `pin2000_50069_0150_*`
   under any search root. Fix: download the bundle or pass a full
   path.
 * "Missing bundle files" → the directory is present but one of the
@@ -171,8 +179,8 @@ inferred from the resolved bundle name).
 Examples:
 
 ```sh
-./build/encore --game swe1 --update latest      # → pin2000_50069_0210_*
-./build/encore --game rfm  --update latest      # → pin2000_50070_0260_*
+./build/encore --game swe1 --update latest      # → pin2000_50069_0150_*
+./build/encore --game rfm  --update latest      # → pin2000_50070_0180_*
 ./build/encore --update latest                  # newest bundle, any game
 ```
 
