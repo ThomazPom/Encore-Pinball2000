@@ -12,36 +12,41 @@ flag `--dcs-mode` selects which of those two paths we support.
 
 ## What actually changes between the two modes
 
-The flag name suggests "CPU patch vs natural probe", and that's
-part of it — but it is **not** the variable that determines whether
-boot itself succeeds. In practice, `--dcs-mode` flips *two*
-independent things at once:
+`--dcs-mode` selects which of two end-to-end sound paths the guest
+takes. Three underlying knobs are driven from the flag; the
+polarity of the prime/scribble is **staged** around the XINU-ready
+milestone so both modes can safely coexist with early-boot code:
 
-| | BT-107 cell prime (in `io.c:apply_sgc_patches`) | Per-tick scribble (`cpu.c`) | 5-byte CPU patch at `xinu_ready` |
-|---|---|---|---|
-| `bar4-patch` | `0x0000FFFF` | `0x0000FFFF` | **applied** (forces `dcs_mode=1`) |
-| `io-handled` | `0x00000000` | `0x00000000` | **skipped** |
+| | BT-107 cell prime (at SGC scan) | Scribble **pre-**`xinu_ready` | Scribble **post-**`xinu_ready` | 5-byte CPU patch at `xinu_ready` |
+|---|---|---|---|---|
+| `bar4-patch` | `0x0000FFFF` | `0x0000FFFF` | `0x0000FFFF` | **applied** (forces `dcs_mode=1`) |
+| `io-handled` | `0x0000FFFF` | `0x0000FFFF` | `0x00000000` | **skipped** |
 
-The CPU patch (third column) is what the flag nominally controls,
-and it only runs **after** the game reaches the XINU-ready
-milestone. The prime value (first column) is written at SGC-scan
-time, which is *before* XINU. On pre-XINU-era bundles — and on
-`--update none` — the prime value **is what gets read by early
-boot code that isn't the DCS probe**, and its polarity decides
-whether the game even reaches XINU.
+Why the prime and the pre-XINU scribble are the same across modes:
+the CMP cell the SGC scanner latches onto lives at a
+*bundle-dependent* BSS/.data address. On mature bundles (RFM v1.4+
+and SWE1 v1.5+) the cell ends up at ~`0x003170xx` and is read only
+by the late DCS probe, so priming it to `0` pre-XINU was harmless.
+On **r1-era** RFM v1.2 and **pre-release** SWE1 v1.3 the cell
+falls near `0x002c8xxx` — a region that early boot code *also*
+consults as a sentinel. Writing `0` there sent those bundles into
+a null-EIP jump (RFM v1.2) or `UC_ERR_INSN_INVALID` at
+`EIP≈0x001f2de8` (SWE1 v1.3) long before the DCS probe ever ran.
 
-So the real mental model is:
+The staged scribble resolves that: every bundle boots with the
+sentinel-safe `0xFFFF` in place, and `io-handled` only flips to
+`0x0000` once `xinu_ready` fires. The game's own DCS probe is not
+called until after that flip, so it still sees `cell != 0xFFFF`
+and returns 1 = "DCS present" — exactly what `io-handled` needs.
 
-* **Prime / scribble polarity** decides whether early boot survives,
-  and — on mature bundles — also decides whether the unmodified DCS
-  probe returns 0 or 1.
-* **CPU patch** is an independent belt-and-braces that forces the
-  DCS BAR4 path *after* XINU, regardless of what the probe did.
-
-The two effects happen to be tied to the same flag, which is why
-`io-handled` is not simply "bar4-patch minus a 5-byte rewrite" — it
-*also* flips the prime/scribble, and that is the part that can
-break boot.
+Net result: **both modes now boot on every bundle in the matrix**,
+including the three formerly-broken cases (`rfm 1.2 io-handled`,
+`swe1 1.3 io-handled`, `rfm/swe1 --update none io-handled`). On
+the three "pattern absent" bundles (`swe1 1.3`, `swe1 --update
+none`, `rfm --update none`), `io-handled` is in fact *strictly
+better* than `bar4-patch` — bar4 has no prologue to rewrite and
+cannot activate DCS, whereas io-handled's post-XINU scribble lets
+the game's own probe activate DCS naturally.
 
 ## The game's internal decision (for reference)
 
@@ -99,56 +104,56 @@ Pattern-scan source: `src/cpu.c` (see "DCS-mode override" block).
 
 ## `--dcs-mode io-handled`
 
-Skip the 5-byte patch. Prime and scribble the BT-107 cell with
-`0x00000000` instead. The probe cell is shared with the watchdog
-liveness cell — with `0x0000` in it, the natural DCS probe flips to
-"DCS present" (see [14-dcs-probe-polarity.md](14-dcs-probe-polarity.md))
-and the game initialises DCS naturally, then routes commands through
-the I/O port path (`io.c:dcs2_port_read/write`).
+Skip the 5-byte CPU patch entirely. Instead, let the game's own
+DCS probe return 1 naturally by making the probe cell read
+`!= 0xFFFF` at the moment the probe runs.
 
-This is the more faithful emulation on paper — no CPU code is
-rewritten. But the `0x0000` prime is itself a scribble, and on some
-bundles an early-boot routine reads the cell *before* the game has
-had a chance to overwrite it. On those bundles, `0x0000` derails
-boot. That is the real reason `io-handled` is not the default.
+The scribble is staged:
 
-### What breaks under `io-handled`, and why
+* Until `xinu_ready` fires, the cell is scribbled with `0x0000FFFF`
+  every tick — identical to what `bar4-patch` does pre-XINU. This
+  keeps any early-boot code that reads the cell as a sentinel
+  happy.
+* Once `xinu_ready` fires, the scribble flips to `0x00000000`. The
+  game's DCS probe (which runs from game-init code after XINU) now
+  sees `cell != 0xFFFF` → returns 1 ("DCS present") → game stores
+  `dcs_mode=1` → BAR4 command stream starts. `sound.c` handles the
+  MMIO commands exactly as in bar4-patch mode.
 
-The three observed failure points all share the same signature:
-the prime/scribble value is read by pre-XINU boot code that expects
-`0xFFFF` (or at least "not zero"), and a branch misfires:
+No CPU code is rewritten in this mode — closer to the real
+hardware path. Because the pre-XINU polarity is now `0xFFFF`
+regardless of `--dcs-mode`, every bundle in the matrix boots in
+io-handled just as reliably as in bar4-patch (see
+[docs/26](26-testing-bundle-matrix.md)).
 
-| Case                               | Behaviour                                                                                          | Root cause                                                                                                        |
-|------------------------------------|----------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|
-| RFM v1.2 + `io-handled`            | XINU never fires. Heartbeat shows `EIP=0x00000000`, `frames=0`.                                    | Prime=0 derails a pre-XINU check in the r1 firmware; boot stalls before xinu_ready. The CPU patch is never even considered. |
-| SWE1 v1.3 + `io-handled`           | `UC_ERR_INSN_INVALID` starting at `EIP≈0x001f2de8` around `exec≈10 000`.                           | Same mechanism: prime=0 causes an early-boot routine to jump into unmapped memory. Crashes in a tight error loop. |
-| `rfm --update none` + `io-handled` | exec_count ≈ 1 000, immediate death with unmapped fetches at ASCII-encoded addresses.              | Same. With no bundle to overlay, the guest is already fragile; prime=0 tips it over.                              |
+### Where io-handled beats bar4-patch
 
-Note: **SWE1 v1.3 `bar4-patch` also has no usable DCS** because the
-5-byte pattern is absent in the v1.3 build (`[init] DCS-mode pattern
-absent — no patch applied`). With bar4-patch it still **reaches
-attract and renders silently** because prime=0xFFFF lets it boot.
-With io-handled it cannot even reach attract.
+Three bundles have no 5-byte pattern for `bar4-patch` to rewrite:
 
-### Hypothesis worth testing (not yet implemented)
+* `swe1 --update 1.3` (pre-release, prologue shape differs)
+* `swe1 --update none` (base chips only, no game overlay)
+* `rfm --update none` (same)
 
-The prime value and the CPU patch are independent in principle.
-A future `io-handled` that primes with `0x0000FFFF` until xinu_ready
-and *then* switches to `0x0000` would in theory rescue the three
-cases above — early-boot checks see 0xFFFF and survive, and by the
-time the DCS probe runs the scribble has already flipped to 0.
-Has not been tried. If it works, io-handled could become the
-default.
+On those three, `bar4-patch` boots to a silent attract — there is
+nothing to patch so `dcs_mode` stays 0. Under `io-handled` the
+same bundles boot **and** produce the full DCS command stream
+(30 `[dcs] WR` events in an 18 s headless window, matching the
+mature bundles). io-handled is therefore strictly more capable on
+the "pattern absent" set, and no less capable anywhere else.
 
 ## Symptoms of getting the mode wrong
 
 * **`bar4-patch` + silent attract:** the pattern scan didn't find a
-  match. Look for `[init] DCS-mode pattern absent` in the log.
-  Only SWE1 v1.3 hits this in the current matrix. Workaround: none
-  — DCS stays silent; video still works.
-* **`io-handled` + CPU error loop / no XINU:** prime=0 broke a
-  pre-XINU check. Look for `UC_ERR_INSN_INVALID` or `EIP=0x00000000`
-  in the heartbeat. Workaround: switch to `--dcs-mode bar4-patch`.
+  match (`[init] DCS-mode pattern absent`). Affects SWE1 v1.3 and
+  both `--update none` runs. Workaround: use `--dcs-mode
+  io-handled`, which doesn't need the pattern and will activate
+  DCS naturally on those bundles.
+* **`io-handled` + CPU error loop / no XINU (historical):** was
+  caused by the pre-XINU `0x0000` scribble derailing an early
+  sentinel check on r1-era bundles. Fixed by staging the scribble
+  (always `0xFFFF` before `xinu_ready`, flip to `0x0000` after).
+  If you see this on a new build, check that the staging branch in
+  `cpu.c` is still present.
 * **Both modes silent on a bundle that should work:** the pb2kslib
   container wasn't found. Check `[snd] pb2kslib detected by shape: …`
   at boot.
@@ -164,15 +169,14 @@ default.
 means `bar4-patch` succeeded end-to-end.
 
 ```
-[sgc] watchdog suppression active: [0x00344390] primed =0x00000000 (BT-107, dcs-mode=io-handled)
+[sgc] watchdog suppression active: [0x00344390] primed =0x0000FFFF (BT-107, dcs-mode=io-handled, scribble flips post-xinu_ready)
 [irq] XINU ready: ...
 [init] DCS-mode patch SKIPPED (--dcs-mode io-handled): game uses unmodified PCI probe; UART handlers in io.c answer the I/O path.
 ```
 
-means `io-handled` cleared the pre-XINU hurdle and reached the
-skip-patch decision. If you see the `[sgc]` line but no `XINU ready`
-or skip line before `UC_ERR_INSN_INVALID`, you are hitting the
-pre-XINU prime=0 derail described above.
+means `io-handled` reached the skip-patch decision. The prime
+line shows `=0x0000FFFF` in **both** modes now — the polarity is
+what flips post-XINU in the per-tick scribble, not at prime time.
 
 ## Full pass/fail matrix
 

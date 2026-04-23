@@ -117,91 +117,69 @@ for log in *.log; do
 done | sort
 ```
 
-## Latest observed results (headless, dummy SDL drivers, 18 s timeout)
+## Latest observed results (headless, dummy SDL drivers, 15 s timeout)
 
 > *Re-run command: see "Running the matrix" above. Captured against
-> the current `main` build after the r2-ROM default fix (see
-> [11-rom-loading.md](11-rom-loading.md) — Encore now prefers
-> `rfm_u100r2.rom` / `rfm_u101r2.rom` for every RFM bundle because
-> both r1 and r2 chip files ship together and r2 is the production
-> revision).* Real-cabinet validation is still pending.
-> Community bundles (rows marked *mypinballs*) require dropping the
-> bundle into `./updates/` first — see
-> [47-community-updates.md](47-community-updates.md).
+> the current `main` build after the r2-ROM default fix and the
+> staged-scribble fix for `io-handled` (see
+> [13-dcs-mode-duality.md](13-dcs-mode-duality.md)).* Real-cabinet
+> validation is still pending. Community bundles (rows marked
+> *mypinballs*) require dropping the bundle into `./updates/`
+> first — see [47-community-updates.md](47-community-updates.md).
 
-| Bundle                      | bar4-patch                                   | io-handled                                  |
-|-----------------------------|----------------------------------------------|---------------------------------------------|
-| SWE1 v1.3                   | ⚠ boots video (vsync ≈ 782), **DCS pattern absent → silent** | ✗ `UC_ERR_INSN_INVALID` before XINU, no boot |
-| SWE1 v1.4                   | ✓ pass (vsync ≈ 792, dcs_wr = 30)            | ✓ pass (vsync ≈ 817, dcs_wr = 30)           |
-| SWE1 v1.5                   | ✓ pass                                       | ✓ pass                                      |
-| SWE1 v2.10 *(mypinballs)*   | ✓ pass                                       | ✓ pass                                      |
-| RFM v1.2                    | ✓ pass (with r2 chips)                       | ✗ stalls pre-XINU (EIP=0, dcs_mode stays 0) |
-| RFM v1.4                    | ✓ pass                                       | ✓ pass                                      |
-| RFM v1.5                    | ✓ pass                                       | ✓ pass                                      |
-| RFM v1.6                    | ✓ pass                                       | ✓ pass                                      |
-| RFM v1.8                    | ✓ pass                                       | ✓ pass                                      |
-| RFM v2.50 *(mypinballs)*    | ✓ pass                                       | ✓ pass                                      |
-| RFM v2.60 *(mypinballs)*    | ✓ pass                                       | ✓ pass                                      |
+| Bundle                      | bar4-patch                                          | io-handled                                    |
+|-----------------------------|-----------------------------------------------------|-----------------------------------------------|
+| SWE1 v1.3                   | ⚠ boots video, **DCS pattern absent → silent**      | ✓ boots video + DCS (dcs_wr = 30)             |
+| SWE1 v1.4                   | ✓ pass                                              | ✓ pass                                        |
+| SWE1 v1.5                   | ✓ pass                                              | ✓ pass                                        |
+| SWE1 v2.10 *(mypinballs)*   | ✓ pass                                              | ✓ pass                                        |
+| RFM v1.2                    | ✓ pass (with r2 chips)                              | ✓ pass (with r2 chips, staged scribble)       |
+| RFM v1.4                    | ✓ pass                                              | ✓ pass                                        |
+| RFM v1.5                    | ✓ pass                                              | ✓ pass                                        |
+| RFM v1.6                    | ✓ pass                                              | ✓ pass                                        |
+| RFM v1.8                    | ✓ pass                                              | ✓ pass                                        |
+| RFM v2.50 *(mypinballs)*    | ✓ pass                                              | ✓ pass                                        |
+| RFM v2.60 *(mypinballs)*    | ✓ pass                                              | ✓ pass                                        |
 
-**Summary: 18 / 22 bundle×mode combinations pass cleanly.** The 4
-deviations are all on the earliest pre-XINU bundles and are explained
-below.
+**Summary: 21 / 22 bundle×mode combinations pass end-to-end**
+(video + DCS). The single remaining deviation is SWE1 v1.3
+under `bar4-patch`, where the 5-byte CMP/JNE prologue the
+patcher scans for simply does not exist in the pre-release v1.3
+binary. Switching that bundle to `--dcs-mode io-handled`
+recovers full DCS on it (see row above).
 
 ### `--update none` (no flash overlay) — separate axis
 
-This row is not part of the bundle×mode matrix above, but worth
-recording because it confirms the chip ROM set alone is healthy:
+| Game | `bar4-patch` `--update none` | `io-handled` `--update none` |
+|------|------------------------------|------------------------------|
+| SWE1 | ⚠ video, **no DCS** (pattern absent) | ✓ video **+ DCS** (dcs_wr = 30) |
+| RFM  | ⚠ video, **no DCS** (pattern absent) | ✓ video **+ DCS** (dcs_wr = 30) |
 
-| Game | `--update none` result |
-|------|------------------------|
-| SWE1 | ⚠ video boots (exec ≈ 25 M, vsync ≈ 764), **no DCS writes** (pattern absent: the DCS driver code lives in the flash bundle, not in the base chips) |
-| RFM  | ⚠ video boots (exec ≈ 50 M, vsync ≈ 759), **no DCS writes** (same reason)                                                                            |
+So even on base chips alone the `io-handled` path reaches a DCS
+command stream — the chip ROMs do contain the DCS driver; what
+they lack is the 5-byte prologue bar4-patch scans for.
+`--update none` is still not a supported "play the game" mode,
+but it is no longer the dead-end it used to be.
 
-Before the r2 default fix, `--game rfm --update none` produced
-exec_count ≈ 2 000 and an immediate stall — the legacy r1 chips
-don't own a modern PCI/XINU boot path. This is fixed now.
-`--update none` is still not a supported "play the game" mode; its
-purpose is to sanity-check the base chip ROM set. To actually play,
-supply a bundle (or let the auto-picker choose the latest).
+### Why the remaining deviation?
 
-### Why the four deviations?
-
-All four share the same mechanism: the BT-107 watchdog cell is
-primed at SGC-scan time (`io.c:apply_sgc_patches`) with `0x0000`
-under `io-handled` and `0x0000FFFF` under `bar4-patch`, and that
-value is read by pre-XINU boot code — not just by the DCS probe.
-On immature firmware (pre-XINU) or with no flash overlay, a read of
-`0x0000` from that cell derails an early sanity check and the
-guest dies before reaching `xinu_ready`. See
-[13-dcs-mode-duality.md](13-dcs-mode-duality.md#what-actually-changes-between-the-two-modes)
-for the full derivation.
-
-* **SWE1 v1.3 / bar4-patch** — `[init] DCS-mode pattern absent`.
-  The 5-byte `CMP eax,1 / JNE +0x21 / MOV [slot], eax` prologue
-  does not exist in this pre-release build, so the CPU patch is a
-  no-op. Boot still reaches attract because prime=0xFFFF lets the
-  pre-XINU checks pass. DCS stays silent because the game's own
-  probe returns 0 and DCS init is skipped.
-* **SWE1 v1.3 / io-handled** — `UC_ERR_INSN_INVALID` at
-  `EIP≈0x001f2de8` around `exec≈10 000`. The CPU patch is a no-op
-  here too (pattern absent); the only variable left is the prime,
-  and prime=0 sends a pre-XINU routine into unmapped memory.
-* **RFM v1.2 / io-handled** — heartbeat shows `EIP=0x00000000`,
-  `frames=0`, `dcs_mode=0`. XINU never fires. Prime=0 breaks an
-  r1-era pre-XINU check; the CPU patch step is never reached.
-  Under `bar4-patch` the same bundle reaches xinu_ready, hits the
-  5-byte pattern at `0x001c0b9e` and boots with DCS.
-* All other bundles pass in both modes with the same `[dcs] WR`
-  activity (typically 30 writes during the 18 s window).
+**SWE1 v1.3 / bar4-patch** — `[init] DCS-mode pattern absent`.
+The 5-byte `CMP eax,1 / JNE +0x21 / MOV [slot], eax` prologue
+does not exist in this pre-release build, so the CPU patch is a
+no-op. Boot still reaches attract because prime=0xFFFF lets the
+pre-XINU checks pass, but the game's own probe returns 0 and
+DCS init is skipped. Workaround: use `--dcs-mode io-handled` for
+this bundle — it does not rely on the prologue and activates
+DCS naturally.
 
 ### Sound-pipeline failure modes (by symptom)
 
 | Symptom in log                                             | Root cause                                                              | Fix |
 |------------------------------------------------------------|-------------------------------------------------------------------------|-----|
-| `[init] DCS-mode pattern absent`                           | 5-byte prologue not present in this build (SWE1 v1.3 only)              | None — DCS stays silent; video still works under `bar4-patch` |
-| No `XINU ready` log line; `UC_ERR_INSN_INVALID` spam       | `io-handled` prime=0 derails a pre-XINU check                           | Switch to `--dcs-mode bar4-patch` |
-| `XINU ready` fires but heartbeat shows `dcs_mode=0`        | Unmodified probe returned 0 after the scribble (not yet observed in the matrix) | Switch to `--dcs-mode bar4-patch` |
-| `exec_count` < 100 K, no `vsync`                           | Base chips only (`--update none`) or the wrong `--dcs-mode` on pre-XINU | Supply `--update <version>` or use `bar4-patch` |
+| `[init] DCS-mode pattern absent`                           | 5-byte prologue not present in this build (SWE1 v1.3, `--update none`)  | Switch to `--dcs-mode io-handled` (natural probe activates DCS without the prologue) |
+| No `XINU ready`, `UC_ERR_INSN_INVALID` or `EIP=0x00000000` | Historical `io-handled` failure from pre-XINU scribble (fixed on `main`) | Verify build includes the staged-scribble branch in `cpu.c` |
+| `XINU ready` fires but heartbeat shows `dcs_mode=0`        | Probe cell never flipped to 0 (code path regression)                    | Check that cpu.c scribbles `0` post-xinu_ready in `io-handled` mode |
+| `exec_count` < 100 K, no `vsync`                           | `--update none` with a broken DCS config — shouldn't happen any more    | Supply `--update <version>` or re-check the scribble staging |
 | XINU boots, pattern hit, `[dcs] WR` count = 0              | Not yet observed — would indicate a regression in `sound.c`             | Report a bug |
 
 ## Cross-references

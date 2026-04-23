@@ -441,10 +441,20 @@ static void apply_sgc_patches(void)
      * probe ONCE during init).  In io-handled, prime=0; in bar4-patch,
      * prime=0xFFFF (the byte-patch makes the probe result moot). */
     g_emu.watchdog_flag_addr = health_addr;
-    uint32_t prime_val =
-        (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) ? 0u : 0x0000FFFFu;
+    /* Staged polarity: prime is ALWAYS 0xFFFF regardless of --dcs-mode.
+     * Rationale: the cell the scanner latches onto is at a bundle-dependent
+     * BSS address.  On mature bundles (v1.4+) it sits at 0x003170xx and is
+     * only read by the DCS probe late in game init.  On pre-XINU v1.2 and
+     * on SWE1 v1.3, the cell sits in a different slot that early boot code
+     * ALSO consults as a sentinel — priming it to 0 there sends pre-XINU
+     * into a null-EIP jump (RFM v1.2) or INSN_INVALID (SWE1 v1.3).
+     *
+     * Under io-handled, cpu.c flips the scribble to 0 once xinu_ready
+     * fires, so the game's own DCS probe (called later from game init)
+     * still sees cell != 0xFFFF and reports DCS present — what we want. */
+    uint32_t prime_val = 0x0000FFFFu;
     RAM_WR32(health_addr, prime_val);
-    LOG("sgc", "watchdog suppression active: [0x%08x] primed =0x%08x (BT-107, dcs-mode=%s)\n",
+    LOG("sgc", "watchdog suppression active: [0x%08x] primed =0x%08x (BT-107, dcs-mode=%s, scribble flips post-xinu_ready)\n",
         health_addr, prime_val,
         (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) ? "io-handled" : "bar4-patch");
 
