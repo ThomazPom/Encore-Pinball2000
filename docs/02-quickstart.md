@@ -155,6 +155,8 @@ An SDL window appears and renders the WMS boot logo, the XINU banner
 and finally the attract-mode loop. DCS audio starts when the "BONG"
 sample plays.
 
+---
+
 ## 4. ROMs and update bundles (reference — already shipped)
 
 Skip this section unless you want to load a different bundle (community
