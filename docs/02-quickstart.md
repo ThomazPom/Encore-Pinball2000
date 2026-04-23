@@ -7,7 +7,6 @@ three (and a half) brief steps:
 * **Clone and build** — `git clone`, then `make` (under four seconds).
 * **First run** — `./build/encore --game swe1 --update 0150`. ROMs and
   updates already ship in the repo.
-
 * *(optional ½ step)* — plug in a real Pinball 2000 cabinet over LPT.
 
 Each section below expands the matching step.
@@ -155,6 +154,9 @@ An SDL window appears and renders the WMS boot logo, the XINU banner
 and finally the attract-mode loop. DCS audio starts when the "BONG"
 sample plays.
 
+---
+---
+---
 ---
 
 ## 4. ROMs and update bundles (reference — already shipped)
