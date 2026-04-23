@@ -10,23 +10,36 @@ delivery.
 
 ---
 
-## Base ROMs alone do not boot
+## Base ROMs alone do not boot to a usable game
 
-The chip ROMs under `roms/` do not reach a usable state without a
-flashed update overlay. Launching `--game rfm` with `--update none`
-halts at a XINA panic:
+The chip ROMs under `roms/` do not reach a usable *game* state
+without a flashed update overlay. They still boot far enough for
+the BIOS/XINU to come up and draw frames — what they can't do is
+start the attract-mode application or DCS audio, because those
+live in the flash overlay.
 
-```
-sysinit: game code overlaps 640k - 1024k hole
-```
+Current behaviour (with the r2-ROM default fix in place):
 
-followed by an infinite loop (`jmp $`). `--game swe1 --update none`
-reaches attract-mode code paths but never wires up DCS sound.
+| Invocation                        | Observed over 18 s headless | Why |
+|-----------------------------------|-----------------------------|-----|
+| `--game swe1 --update none`       | video boots (exec ≈ 25 M, vsync ≈ 764), no DCS writes, no attract | `DCS-mode pattern absent` — the DCS driver code lives in the update bundle, not on the chips |
+| `--game rfm --update none`        | video boots (exec ≈ 50 M, vsync ≈ 759), no DCS writes, no attract | Same — plus Init2 never hands off to the game app |
 
 This mirrors real-hardware behaviour: no shipping cabinet ran with
 just the chip ROMs — every cabinet had at least one update flashed.
-Encore therefore auto-selects `--update latest` when `--game` is used
-without an explicit `--update`. Pass `--update none` to opt out.
+Encore therefore auto-selects `--update latest` when `--game` is
+used without an explicit `--update`. Pass `--update none` only to
+sanity-check the base chip ROM set (it is not a way to "play without
+an update").
+
+> **Historical note:** prior to the r2-ROM default fix,
+> `--game rfm --update none` produced `exec_count ≈ 2 000` and an
+> immediate stall. The loader was selecting the legacy r1 chip ROMs
+> because the r2 preference required a `_15` substring in the
+> savedata id, which is never present on `--no-savedata` fresh
+> boots. That bug is fixed — RFM bank 0 now prefers r2 chips
+> unconditionally, which is what shipped hardware actually uses.
+> See [35-rfm-vs-swe1.md](35-rfm-vs-swe1.md#chip-rom-revisions).
 
 ---
 
@@ -45,8 +58,12 @@ never downgrade the underlying chip ROMs. Bundles below the baseline
 * Failures under these versions are not tracked as bugs and will
   not be investigated.
 
-RFM v1.2 in particular predates the XINU port and uses r1 chip ROMs
-(`rfm_u100.rom` / `rfm_u101.rom`) with a different memory layout.
+RFM v1.2 in particular predates the XINU port. It targets the r1
+chip hardware revision (`rfm_u100.rom` / `rfm_u101.rom`), but under
+Encore it is loaded against the r2 chips (the unconditional
+bank-0 preference) and still boots cleanly under `--dcs-mode
+bar4-patch`. It is the single remaining bar4-only bundle — see
+[13-dcs-mode-duality.md](13-dcs-mode-duality.md#why-is-io-handled-not-the-default).
 
 See [26-testing-bundle-matrix.md](26-testing-bundle-matrix.md#scope-policy-in-scope-vs-reference-only)
 for the full scope table.
@@ -62,11 +79,12 @@ scribbles `0x0000` into that cell so the probe returns 1 and the game
 initialises DCS naturally, then routes commands through the emulated
 I/O ports `0x138`–`0x13F` rather than a BAR4 byte-patch.
 
-Under in-scope bundles (SWE1 v1.5, v2.1; RFM v1.6, v1.8, v2.5, v2.6)
-both `--dcs-mode bar4-patch` (default) and `--dcs-mode io-handled`
-pass the headless regression with DCS command writes observed. The
-`bar4-patch` path remains the default and the primary delivery
-because it has accumulated the most testing hours.
+Under in-scope bundles (SWE1 v1.4 / v1.5 / v2.10, RFM v1.4 / v1.5 /
+v1.6 / v1.8 / v2.50 / v2.60) both `--dcs-mode bar4-patch` (default)
+and `--dcs-mode io-handled` pass the headless regression with the
+same `[dcs] WR` count. The `bar4-patch` path remains the default —
+SWE1 v1.3 and RFM v1.2 are bar4-only. See the full matrix in
+[26-testing-bundle-matrix.md](26-testing-bundle-matrix.md#latest-observed-results-headless-dummy-sdl-drivers-18-s-timeout).
 
 **Reference:** `src/io.c:432–449`, `src/encore.h` — `ENCORE_DCS_IO_HANDLED`.
 

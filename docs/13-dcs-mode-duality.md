@@ -92,41 +92,49 @@ delegated the same way: `sound_process_cmd()` downstream.
 
 ### Why is `io-handled` not the default?
 
-It used to be a stronger claim than the data now supports. With the
-current heartbeat/IRQ pump and the I/O handlers in `io.c`, the
-io-handled path produces the same DCS write activity (`[dcs] WR`
-log lines) as `bar4-patch` on every bundle that reaches XINU.
-The two known exceptions are the earliest pre-XINU revisions:
+It used to be a stronger claim than the data now supports. With
+current-build Encore, `io-handled` produces an identical `[dcs] WR`
+count to `bar4-patch` on every bundle that reaches XINU — see the
+full pass/fail table in
+[26-testing-bundle-matrix.md](26-testing-bundle-matrix.md). Two
+pre-XINU outliers remain:
 
-* **SWE1 v1.3** (`pin2000_50069_0130_*`) — io-handled stops with
-  `UC_ERR_INSN_INVALID` very early (around `exec≈250 000`, before
-  XINU boots). This bundle also has no usable DCS path under
-  `bar4-patch` because the 5-byte CMP/JNE pattern is absent — the
-  log shows `[init] DCS-mode pattern absent`. Both modes are
-  effectively unsupported on v1.3.
-* **RFM v1.2** (`pin2000_50070_0120_*`, the r1 chips) — io-handled
-  stalls before XINU at `EIP=0x00000000` with `dcs_mode=0` even
-  after the watchdog scribble flips polarity. `bar4-patch` boots
-  v1.2 cleanly and is the only working path for that bundle.
+* **SWE1 v1.3** (`pin2000_50069_0130_*`) — io-handled crashes with
+  `UC_ERR_INSN_INVALID` around `exec ≈ 1.5 M`, before XINU. The
+  bar4-patch, as a side effect of rewriting 5 bytes at the probe
+  site, steers the guest away from the path that hits the invalid
+  instruction; without that side effect, io-handled cannot start
+  v1.3 at all. Note that v1.3 also has **no usable DCS path under
+  bar4-patch**, because the 5-byte `CMP/JNE/MOV` prologue is absent
+  in this pre-release build — bar4-patch still boots v1.3 to
+  silent attract, but io-handled does not even reach attract.
+* **RFM v1.2** (`pin2000_50070_0120_*`) — the heartbeat shows the
+  CPU is running but never reaches XINU: `EIP=0x00000000`,
+  `frames=0`, `dcs_mode=0`. This is r1-era pre-XINU firmware
+  (6/1999) whose I/O-port DCS handshake is not pumped the same way
+  as XINU-era builds. The watchdog-scribble polarity flip that
+  io-handled depends on does not convert into a clean
+  probe-returns-1 result on this bundle. `bar4-patch` bypasses
+  the probe entirely and boots cleanly.
 
-For every other shipped bundle (SWE1 v1.4 / v1.5 / v2.10, RFM v1.4 /
-v1.5 / v1.6 / v1.8 / v2.50 / v2.60), `io-handled` reaches XINU,
-maintains the same vsync rate (≈ 750–820 over 15 s) and produces
-the same `[dcs] WR` count as `bar4-patch`. See
-[26-testing-bundle-matrix.md](26-testing-bundle-matrix.md) for the
-full results table.
+For every other shipped bundle — SWE1 v1.4 / v1.5 / v2.10, RFM v1.4 /
+v1.5 / v1.6 / v1.8 / v2.50 / v2.60 — `io-handled` reaches XINU,
+holds the same vsync rate (≈ 750–820 over 15 s) and produces the
+same `[dcs] WR` count as `bar4-patch`.
 
 `bar4-patch` remains the default for two reasons:
 
-1. It works on RFM v1.2 (which io-handled does not).
-2. It is the most directly verifiable path — the 5-byte patch leaves
-   an obvious log signature (`[init] DCS-mode pattern hit`) and
-   bypasses the natural probe entirely, so the result depends on
-   fewer moving parts than the I/O handshake pump.
+1. It works on RFM v1.2 and SWE1 v1.3 (where io-handled does not).
+2. It leaves a single, unambiguous log signature
+   (`[init] DCS-mode pattern hit`) and bypasses the natural probe
+   entirely — the result depends on fewer moving parts than the
+   I/O handshake pump.
 
-When io-handled gains v1.2 boot parity, switching the default may
+When io-handled gains parity on RFM v1.2, switching the default may
 make sense because it is the more faithful emulation (no CPU code
-patching).
+patching). Until then, pick `io-handled` if you specifically want
+to exercise the unmodified-probe path, and stay on `bar4-patch`
+for everything else.
 
 ## Interaction with the watchdog scanner
 

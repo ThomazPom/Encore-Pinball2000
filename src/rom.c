@@ -260,8 +260,7 @@ static int load_raw_rom_banks(void)
         uint8_t *bank_mem = calloc(1, BANK_SIZE);
         int loaded = 0;
         bool prefer_r2 = (b == 0 &&
-                          strcmp(g_emu.game_prefix, "rfm") == 0 &&
-                          strstr(g_emu.game_id_str, "_15") != NULL);
+                          strcmp(g_emu.game_prefix, "rfm") == 0);
 
         if (!bank_mem)
             return -1;
