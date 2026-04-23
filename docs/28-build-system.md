@@ -19,7 +19,7 @@ There is no `install` target; copy `build/encore` wherever you like.
 
 ## Source files
 
-All thirteen C compilation units are listed explicitly (no glob):
+All fourteen C compilation units are listed explicitly (no glob):
 
 ```
 src/main.c       # CLI, config YAML, wiring
@@ -30,11 +30,21 @@ src/pci.c        # PCI config space 0xCF8/0xCFC
 src/io.c         # PIC, PIT, CMOS, LPT, UART, DCS UART, sgc patches
 src/bar.c        # PCI BAR0..BAR5 MMIO, SRAM, flash
 src/display.c    # SDL2 window, framebuffer rendering, keyboard input
+src/splash.c     # startup splash screen (decode + present + dismiss)
 src/sound.c      # DCS-2 sample container, SDL2_mixer playback
 src/netcon.c     # TCP bridges for COM1 and PS/2 injection
 src/lpt_pass.c   # Linux ppdev passthrough, game auto-detect
 src/symbols.c    # XINU SYMBOL TABLE reader (runtime)
-src/stb_impl.c   # stb_image_write implementation unit
+src/stb_impl.c   # stb_image + stb_image_write implementation unit
+```
+
+Plus one **embedded asset** linked verbatim into the binary by
+`ld -r -b binary` (see the `$(SPLASH_OBJ)` rule):
+
+```
+assets/splash-screen.jpg   # default startup splash — overwrite and
+                           # `make` to ship your own; full doc in
+                           # docs/49-splash-screen.md.
 ```
 
 The single shared header is `include/encore.h`. Every `.o` file depends

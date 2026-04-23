@@ -24,6 +24,7 @@ precedence.
 | `--fullscreen` | — | off | Open SDL window fullscreen |
 | `--flipscreen` | — | off | Invert the framebuffer vertically |
 | `--bpp` | `16` / `32` | `32` | Output texture depth |
+| `--splash-screen` | `none` / *PATH* | embedded | Startup splash image (see [49-splash-screen.md](49-splash-screen.md)) |
 | `--serial-tcp` | *port* | 0 | Expose COM1 as TCP bridge |
 | `--keyboard-tcp` | *port* | 0 | Inject PS/2 scancodes over TCP |
 | `--headless` | — | off | Skip SDL window & audio |
@@ -134,6 +135,26 @@ monitor rotated 180°; this matches that. Runtime toggle: `F2`.
 
 Selects the SDL texture format. `32` (default) uses ARGB8888; `16`
 uses RGB565. 24 falls back to 32 with a warning.
+
+### `--splash-screen none | PATH`
+
+Controls the image shown in the SDL window from the moment it is
+created until the guest draws its first non-zero pixel (i.e. the
+white PRISM "PLEASE WAIT — VALIDATING UPDATE" frame takes over).
+
+* default — use the JPEG embedded in the binary from
+  `assets/splash-screen.jpg`. Builders can drop in any JPEG of that
+  name and rebuild to ship a custom default; the file is linked
+  verbatim by `ld -r -b binary` (see [28-build-system.md](28-build-system.md)).
+* `none` — disable; the window starts black.
+* `PATH` — load `PATH` at runtime. Any format `stb_image` supports
+  works (JPEG, PNG, BMP, TGA, PSD, PIC, PNM). The image is letterboxed
+  to the window's aspect; it is **not** stretched. If `PATH` can't be
+  read or decoded, Encore falls back to the embedded JPEG with a
+  warning so a typo never leaves the user staring at a black window.
+
+Full design + extension notes are in
+[49-splash-screen.md](49-splash-screen.md).
 
 ## Headless / networking
 

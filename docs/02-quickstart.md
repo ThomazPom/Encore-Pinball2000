@@ -45,6 +45,13 @@ produces an 800 KB stripped binary. There are no generated files, no
 autoconf, no meson, no per-distro configuration step. See
 [28-build-system.md](28-build-system.md) for target-by-target detail.
 
+> **Make it yours in 5 seconds.** Drop any JPEG into
+> `assets/splash-screen.jpg` before `make` and Encore links it straight
+> into the binary as your startup splash — no code, no flags, no extra
+> files at runtime. End users can also point `--splash-screen PATH` at
+> any image (JPEG / PNG / BMP / TGA / …) without rebuilding. See
+> [49-splash-screen.md](49-splash-screen.md).
+
 ## 3. ROMs and update bundles
 
 The repository **already ships** every chip ROM and every dearchived
