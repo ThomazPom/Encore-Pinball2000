@@ -133,7 +133,31 @@ Then attach the serial console with `nc localhost 4444`.
 
 ## Excessive CPU usage / emulator slower than expected
 
-**Cause:** The `nulluser` idle-loop patch (BT-74) failed to apply, or
+**Cause A — Unicorn built without optimisation.** If you built
+`libunicorn` from source, check that you passed `-DCMAKE_BUILD_TYPE=Release`
+to `cmake`. Without it, CMake selects no optimisation flags at all and
+Unicorn's translator runs **5–10× slower**. Quick check:
+
+```sh
+grep CMAKE_BUILD_TYPE ~/unicorn/build/CMakeCache.txt
+# Should print: CMAKE_BUILD_TYPE:STRING=Release
+```
+
+If it's empty, rebuild:
+
+```sh
+rm -rf ~/unicorn/build
+cmake -S ~/unicorn -B ~/unicorn/build \
+      -DCMAKE_BUILD_TYPE=Release -DUNICORN_ARCH=x86
+cmake --build ~/unicorn/build -j"$(nproc)"
+sudo cmake --install ~/unicorn/build && sudo ldconfig
+cd encore && make clean && make
+```
+
+Encore should then settle at ~60 FPS in steady state (look for
+`[disp] FPS: 60.x` in the log every 5 s).
+
+**Cause B — `nulluser` idle-loop patch (BT-74) failed to apply**, or
 the SIGALRM handler is delivering ticks faster than the host can
 consume them.
 
