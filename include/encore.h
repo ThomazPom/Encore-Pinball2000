@@ -447,7 +447,7 @@ void     lpt_pulse_diag_escape(int frames);  /* one-shot diag_escape press (ente
 void     lpt_toggle_trace(void);
 void     lpt_dump_guest_switch_state(void);
 void     lpt_inject_switch(int col, uint8_t data);
-void     lpt_set_start_button(int held);  /* SPACE → Start Button (sw=2, c0 b2) */
+void     lpt_set_start_button(int held);  /* SPACE/S → Start Button (sw=2, c0 b2 = visual C1R3); LPT col-gated, bundle-agnostic */
 void     lpt_set_probe_bit(int bit, int held);  /* digit keys 0-7 → Phys[c0]/Logical[c0] bit N */
 
 /* bar.c */
