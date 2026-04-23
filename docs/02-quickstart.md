@@ -10,24 +10,14 @@ five minutes.
 
 ## 1. Install dependencies
 
-> **Debian first-user note (skip if `sudo` already works):** Debian's
-> default install does **not** add the first user to the `sudo` group,
-> so every `sudo …` in this guide will refuse with "user is not in the
-> sudoers file". Bootstrap once, then continue with the rest of the
-> doc unchanged:
->
-> ```sh
-> su -c "/usr/sbin/usermod -aG sudo $(whoami)"   # root password (set at install)
-> newgrp sudo                                    # activate in THIS shell —
->                                                #   no logout needed
-> sudo -v                                        # sanity-check (asks YOUR pwd)
-> ```
-
 ```sh
 sudo apt update
 sudo apt install -y build-essential pkg-config git \
                     libsdl2-dev libsdl2-mixer-dev unzip
 ```
+
+<sub>If `sudo` answers *"user is not in the sudoers file"* (Debian's default
+for the first user), grant yourself sudo once — `su -c "/usr/sbin/usermod -aG sudo $(whoami)" && newgrp sudo` — then re-run the line above.</sub>
 
 ### Unicorn engine
 
@@ -55,27 +45,20 @@ libsdl2-mixer ≥ 2.6.
 ### Real-cabinet prerequisites (skip if emulator-only)
 
 If you are wiring Encore to an actual Pinball 2000 cabinet via the host's
-parallel port, do **this once** before the first run — otherwise
-`--lpt-device /dev/parport0` will fail with `PPCLAIM EBUSY` /
-`Permission denied` and the cabinet will not respond:
+parallel port, do **this once** — otherwise `--lpt-device /dev/parport0`
+will fail with `PPCLAIM EBUSY` / `Permission denied`:
 
 ```sh
-sudo apt install -y parport                # usually pulled in already
-sudo modprobe ppdev parport parport_pc     # make /dev/parport0 appear
-sudo rmmod lp 2>/dev/null || true          # printer driver squats on the port
-sudo usermod -aG lp $USER                  # one-time: persist across reboots
-newgrp lp                                  # activate the group in THIS shell —
-                                           #   no logout/relogin needed; spawns
-                                           #   a subshell with lp active. Use
-                                           #   `sg lp -c './build/encore …'`
-                                           #   for a one-shot run instead.
-ls -l /dev/parport0                        # expect: crw-rw---- root lp
+sudo modprobe ppdev parport_pc                       # make /dev/parport0 appear
+sudo rmmod lp 2>/dev/null || true                    # printer driver squats on it
+sudo usermod -aG lp $USER && newgrp lp               # group access, active now
+ls -l /dev/parport0                                  # expect: crw-rw---- root lp
 ```
 
-> Why `newgrp` instead of "log out and back in": `usermod -aG` only takes
-> effect for *new* login sessions. `newgrp lp` re-execs your shell with
-> the group already applied, so the very next `./build/encore` call sees
-> the right credentials.
+`newgrp lp` activates the new group in the current shell so no logout is
+needed (`exit` returns to the parent shell; `sg lp -c './build/encore …'`
+works too as a one-shot). The `ppdev`, `parport` and `parport_pc` modules
+are already part of the stock Debian/Ubuntu kernel — nothing to apt-install.
 
 Encore runs **fully unprivileged** — no `ioperm()`, no setuid, no `/dev/port`.
 Everything goes through Linux `ppdev` ioctls, so once your user is in the

@@ -124,15 +124,12 @@ make                                                     # → ./build/encore
 ```
 
 > **Connecting a real cabinet?** Encore runs unprivileged through Linux
-> `ppdev` (no setuid, no `ioperm`), but you must be in the `lp` group
-> *and* the kernel `lp` printer driver must not be holding the port —
-> apply both **without logging out**:
-> `sudo rmmod lp; sudo usermod -aG lp $USER; newgrp lp`
-> (the `newgrp` activates the group in the current shell; `sg lp -c '…'`
-> works too for one-shot runs). On a fresh Debian where `sudo` itself
-> isn't set up, bootstrap once with
-> `su -c "/usr/sbin/usermod -aG sudo $(whoami)" && newgrp sudo`. Full
-> setup in [docs/02-quickstart.md](docs/02-quickstart.md#1-install-dependencies)
+> `ppdev` (no setuid, no `ioperm`); you just need to be in the `lp`
+> group with the kernel `lp` printer driver out of the way:
+> `sudo modprobe ppdev parport_pc; sudo rmmod lp 2>/dev/null; sudo usermod -aG lp $USER && newgrp lp`
+> — `newgrp` activates the group in the current shell, no logout. Full
+> setup and the no-`sudo`-yet bootstrap in
+> [docs/02-quickstart.md](docs/02-quickstart.md#real-cabinet-prerequisites-skip-if-emulator-only)
 > and [docs/19-real-lpt-passthrough.md](docs/19-real-lpt-passthrough.md).
 
 The chip ROMs (`./roms/`) and every dearchived original Williams update
