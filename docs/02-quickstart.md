@@ -1,7 +1,22 @@
 # 02 — Quickstart
 
-From a fresh Debian 12 / Ubuntu 24.04 install to attract mode in under
-five minutes.
+Three commands from a fresh Debian/Ubuntu install to attract mode:
+
+```sh
+# 1️⃣  install dependencies
+sudo apt install -y build-essential pkg-config git unzip \
+                    libsdl2-dev libsdl2-mixer-dev libunicorn-dev
+
+# 2️⃣  clone and build
+git clone https://github.com/ThomazPom/Encore-Pinball2000.git encore && cd encore && make
+
+# 3️⃣  run it — chip ROMs and Williams updates already ship in the repo
+./build/encore --game swe1 --update 0150
+```
+
+Each step has a section below with rationale, distro‑specific
+fallbacks and troubleshooting; jump straight to **§ 3 First run**
+if the three lines above just worked.
 
 > **Status:** Behaviour described here is based on emulator testing
 > only. Real-cabinet validation is pending — see
@@ -107,46 +122,15 @@ autoconf, no meson, no per-distro configuration step. See
 > any image (JPEG / PNG / BMP / TGA / …) without rebuilding. See
 > [49-splash-screen.md](49-splash-screen.md).
 
-## 3. ROMs and update bundles
-
-The repository **already ships** every chip ROM and every dearchived
-update bundle Encore needs — they are committed under `./roms/` and
-`./updates/`. You don't need to download or place anything for the
-default games to run.
-
-For reference, Encore needs two kinds of files per bundle:
-
-* the chip ROMs (`U100…U107` for the game banks, `U109/U110` for DCS
-  sound), which are unchanged across every update revision and are
-  loaded from `./roms/`;
-* exactly one update bundle, in any of four forms `--update` accepts
-  (see [09-update-loader.md](09-update-loader.md)):
-  * a pre-concatenated `update.bin` file,
-  * a directory containing `bootdata.rom`, `im_flsh0.rom`, `game.rom`
-    and `symbols.rom`,
-  * a Williams-branded `.exe` installer (a renamed ZIP),
-  * a **version token** like `0150`, `0180`, `1.5` or `latest`,
-    resolved against the directory names under `./updates/`
-    (e.g. `pin2000_50069_0150_…` ⇒ `--update 0150`).
-
-The canonical form is the **4-digit version field** that appears in
-every shipped bundle directory name (`0150`, `0180`, `0140`, …);
-shorter forms like `1.5`, `150`, `1.8` are accepted and normalised to
-the same `0vvv` value internally. Pass `--update none` to skip update
-loading entirely (boots straight into the chip ROMs).
-
-Only the original Williams official update bundles (1999-2003) ship
-with the repo. Community/post-Williams updates by mypinballs (SWE1
-v2.10, RFM v2.50, v2.60, …) are supported by Encore but not
-redistributed here — see [47-community-updates.md](47-community-updates.md)
-for how to install them and grab the latest versions from
-<https://mypinballs.com>.
-
-## 4. First run
+## 3. First run
 
 ```sh
 ./build/encore --game swe1 --update 0150
 ```
+
+The repository ships every chip ROM and every Williams update bundle
+needed for SWE1 and RFM, so this command works straight after `make`
+with no downloads or paths to configure (full inventory in **§ 4**).
 
 Expected output, abbreviated (every line below is what the binary
 actually prints — copy-paste from a fresh run):
@@ -176,6 +160,40 @@ actually prints — copy-paste from a fresh run):
 An SDL window appears and renders the WMS boot logo, the XINU banner
 and finally the attract-mode loop. DCS audio starts when the "BONG"
 sample plays.
+
+## 4. ROMs and update bundles (reference — already shipped)
+
+Skip this section unless you want to load a different bundle (community
+update, your own dump, etc.). For the default games, everything is
+already in place under `./roms/` and `./updates/`.
+
+For reference, Encore needs two kinds of files per bundle:
+
+* the chip ROMs (`U100…U107` for the game banks, `U109/U110` for DCS
+  sound), which are unchanged across every update revision and are
+  loaded from `./roms/`;
+* exactly one update bundle, in any of four forms `--update` accepts
+  (see [09-update-loader.md](09-update-loader.md)):
+  * a pre-concatenated `update.bin` file,
+  * a directory containing `bootdata.rom`, `im_flsh0.rom`, `game.rom`
+    and `symbols.rom`,
+  * a Williams-branded `.exe` installer (a renamed ZIP),
+  * a **version token** like `0150`, `0180`, `1.5` or `latest`,
+    resolved against the directory names under `./updates/`
+    (e.g. `pin2000_50069_0150_…` ⇒ `--update 0150`).
+
+The canonical form is the **4-digit version field** that appears in
+every shipped bundle directory name (`0150`, `0180`, `0140`, …);
+shorter forms like `1.5`, `150`, `1.8` are accepted and normalised to
+the same `0vvv` value internally. Pass `--update none` to skip update
+loading entirely (boots straight into the chip ROMs).
+
+Only the original Williams official update bundles (1999-2003) ship
+with the repo. Community/post-Williams updates by mypinballs (SWE1
+v2.10, RFM v2.50, v2.60, …) are supported by Encore but not
+redistributed here — see [47-community-updates.md](47-community-updates.md)
+for how to install them and grab the latest versions from
+<https://mypinballs.com>.
 
 ## 5. If something goes wrong
 
