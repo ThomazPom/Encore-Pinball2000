@@ -166,37 +166,43 @@ supply a bundle (or let the auto-picker choose the latest).
 
 ### Why the four deviations?
 
+All four share the same mechanism: the BT-107 watchdog cell is
+primed at SGC-scan time (`io.c:apply_sgc_patches`) with `0x0000`
+under `io-handled` and `0x0000FFFF` under `bar4-patch`, and that
+value is read by pre-XINU boot code — not just by the DCS probe.
+On immature firmware (pre-XINU) or with no flash overlay, a read of
+`0x0000` from that cell derails an early sanity check and the
+guest dies before reaching `xinu_ready`. See
+[13-dcs-mode-duality.md](13-dcs-mode-duality.md#what-actually-changes-between-the-two-modes)
+for the full derivation.
+
 * **SWE1 v1.3 / bar4-patch** — `[init] DCS-mode pattern absent`.
-  The 5-byte `CMP eax,1 / JNE +0x21 / MOV [slot], eax` prologue that
-  bar4-patch expects is not present in this pre-release build; the
-  DCS probe is a different shape there. With nothing to patch, the
-  game's own probe returns 0 and it permanently skips DCS init.
-  Video still boots and attract runs silently.
-* **SWE1 v1.3 / io-handled** — very early
-  `UC_ERR_INSN_INVALID` (around `exec ≈ 1.5 M`, pre-XINU). The
-  bundle's pre-XINU boot path executes code that the current CPU
-  emulation rejects when we do not also apply the bar4 patch.
-  Neither DCS path, nor video, reach attract in this mode.
-* **RFM v1.2 / io-handled** — the heartbeat shows the CPU is
-  running but never reaches XINU: `EIP=0x00000000`,
-  `dcs_mode=0`, `frames=0`. r1-era pre-XINU firmware (v1.2 from
-  6/1999) pumps the I/O-port DCS handshake differently than later
-  builds; the watchdog-scribble polarity flip that io-handled
-  relies on does not propagate to a clean probe-returns-1 result
-  on this build. `bar4-patch` bypasses the probe entirely and
-  works. RFM v1.2 is the single remaining bar4-only bundle.
+  The 5-byte `CMP eax,1 / JNE +0x21 / MOV [slot], eax` prologue
+  does not exist in this pre-release build, so the CPU patch is a
+  no-op. Boot still reaches attract because prime=0xFFFF lets the
+  pre-XINU checks pass. DCS stays silent because the game's own
+  probe returns 0 and DCS init is skipped.
+* **SWE1 v1.3 / io-handled** — `UC_ERR_INSN_INVALID` at
+  `EIP≈0x001f2de8` around `exec≈10 000`. The CPU patch is a no-op
+  here too (pattern absent); the only variable left is the prime,
+  and prime=0 sends a pre-XINU routine into unmapped memory.
+* **RFM v1.2 / io-handled** — heartbeat shows `EIP=0x00000000`,
+  `frames=0`, `dcs_mode=0`. XINU never fires. Prime=0 breaks an
+  r1-era pre-XINU check; the CPU patch step is never reached.
+  Under `bar4-patch` the same bundle reaches xinu_ready, hits the
+  5-byte pattern at `0x001c0b9e` and boots with DCS.
 * All other bundles pass in both modes with the same `[dcs] WR`
   activity (typically 30 writes during the 18 s window).
 
 ### Sound-pipeline failure modes (by symptom)
 
-| Symptom in log                                             | Root cause                                                | Fix |
-|------------------------------------------------------------|-----------------------------------------------------------|-----|
-| `[init] DCS-mode pattern absent`                           | Bundle's build doesn't match the 5-byte prologue scanner (SWE1 v1.3 only) | None — DCS stays silent; video still works |
-| `[init] DCS-mode patch SKIPPED (--dcs-mode io-handled)` and `dcs_mode=0` in `[hb]` | Natural probe returned 0 even after scribble (pre-XINU r1 builds) | Switch to `--dcs-mode bar4-patch` |
-| `UC_ERR_INSN_INVALID` spam before XINU                     | pre-XINU SWE1 v1.3 executing through unmapped pages when bar4 patch is not in place | Switch to `--dcs-mode bar4-patch` (patches the probe and avoids that code path) |
-| `exec_count` very low (< 100 K) and no `vsync`             | Base chips only (`--update none`) *or* legacy r1 chips being loaded instead of r2 | Supply `--update <version>` *or* remove the stale `rfm_u10Xr2.rom` files so only r2 is present |
-| XINU boots, `[dcs] WR` count = 0, but pattern was hit      | Not yet observed on any in-scope bundle                   | Would indicate a regression in `sound.c` |
+| Symptom in log                                             | Root cause                                                              | Fix |
+|------------------------------------------------------------|-------------------------------------------------------------------------|-----|
+| `[init] DCS-mode pattern absent`                           | 5-byte prologue not present in this build (SWE1 v1.3 only)              | None — DCS stays silent; video still works under `bar4-patch` |
+| No `XINU ready` log line; `UC_ERR_INSN_INVALID` spam       | `io-handled` prime=0 derails a pre-XINU check                           | Switch to `--dcs-mode bar4-patch` |
+| `XINU ready` fires but heartbeat shows `dcs_mode=0`        | Unmodified probe returned 0 after the scribble (not yet observed in the matrix) | Switch to `--dcs-mode bar4-patch` |
+| `exec_count` < 100 K, no `vsync`                           | Base chips only (`--update none`) or the wrong `--dcs-mode` on pre-XINU | Supply `--update <version>` or use `bar4-patch` |
+| XINU boots, pattern hit, `[dcs] WR` count = 0              | Not yet observed — would indicate a regression in `sound.c`             | Report a bug |
 
 ## Cross-references
 
