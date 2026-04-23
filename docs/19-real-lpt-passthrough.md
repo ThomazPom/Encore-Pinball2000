@@ -175,14 +175,35 @@ TCP for service-menu operations.
 
 ## Known hardware caveats
 
-* Laptops with a USB-to-parallel dongle: support varies widely. The
-  dongle must expose a real `/dev/parport*` (i.e. kernel driver-level
-  emulation), not a user-space libusb stack.
-* PCI parallel cards: usually work fine if the kernel detects them.
-* Old ISA parallel cards: work fine on systems old enough to still
-  have ISA.
-* On-board parallel ports of modern (post-2015) consumer motherboards:
-  usually require BIOS to be set to `ECP+EPP` mode.
+### Which device node will I get?
+
+Encore talks to whichever path you pass to `--lpt-device` (default
+`/dev/parport0`). Before plugging your dongle/card in, check what the
+kernel exposes:
+
+```sh
+ls -l /dev/parport* /dev/usb/lp*  2>/dev/null
+dmesg | grep -iE 'parport|usblp|ppdev'
+```
+
+| Hardware | Driver | Node | Encore can drive a cabinet? |
+|---|---|---|---|
+| PCIe / PCI / mPCIe LPT card (Startech, SIIG, Moschip MCS9865/9900, Sunix…) | `parport_pc` / `parport_serial` | `/dev/parport0` (or `parport1` if onboard LPT exists) | ✅ Yes — bidirectional + ppdev work as on a real port |
+| USB→LPT "printer adapter" (Prolific PL2305, Moschip MCS7705/7715, generic IEEE-1284) — what most cheap Amazon dongles are | `usblp` (USB printer class) | `/dev/usb/lp0` | ❌ **No** — `usblp` is a one-way printer pipe; it has no `PPCLAIM`, no `PPDATADIR`, no control-register write. The P2K driver-board needs all three. Replace with a PCIe LPT card. |
+| USB dongle with a true ppdev driver (rare: certain Moschip variants, Sealevel industrial adapters) | `parport_serial` over USB | `/dev/parport0` (or higher) | ✅ Same as a PCIe card |
+| Onboard LPT on modern (post-2015) consumer motherboards | `parport_pc` | `/dev/parport0` | ✅ — but BIOS must be set to `ECP+EPP` mode (some boards default to `SPP` only, which fails `PPGETMODES`) |
+| Old ISA parallel card on a system old enough to still have ISA | `parport_pc` | `/dev/parport0` | ✅ |
+
+If your only node is `/dev/usb/lp0`, **stop** — no software trick will
+make a printer-class endpoint speak the bidirectional bit-bang protocol
+the cabinet board needs. The `usblp` kernel driver does not expose the
+data-direction bit. Buy a PCIe LPT card (any Moschip MCS9865/MCS9900-based
+card is < €20 and works out of the box on Linux 5.x+).
+
+If you have a `parport1` (or higher) instead of `parport0` — typical when
+both an onboard LPT and an add-in card are present — pass
+`--lpt-device /dev/parport1` explicitly; `lpt_passthrough_open()` accepts
+any path.
 
 ---
 
