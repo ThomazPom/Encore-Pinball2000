@@ -18,21 +18,22 @@ the BIOS/XINU to come up and draw frames — what they can't do is
 start the attract-mode application or DCS audio, because those
 live in the flash overlay.
 
-Current behaviour (with the r2-ROM default fix **and** the staged-scribble fix in place):
+Current behaviour (with the r2-ROM default fix, the staged-scribble fix, and `io-handled` as the default `--dcs-mode`):
 
-| Invocation                                           | Observed over 15 s headless                                 | Why |
-|------------------------------------------------------|-------------------------------------------------------------|-----|
-| `--game swe1 --update none` (default `bar4-patch`)   | video boots, **no DCS writes**, no attract                  | `DCS-mode pattern absent` — the 5-byte prologue lives only in the update bundle |
-| `--game rfm --update none` (default `bar4-patch`)    | video boots, **no DCS writes**, no attract                  | Same |
-| `--game swe1 --update none --dcs-mode io-handled`    | video boots **and** DCS writes fire (30 in 15 s window)     | No prologue needed — natural probe activates DCS post-xinu_ready |
-| `--game rfm  --update none --dcs-mode io-handled`    | video boots **and** DCS writes fire                         | Same |
+| Invocation                                            | Observed over 15 s headless                                 | Why |
+|-------------------------------------------------------|-------------------------------------------------------------|-----|
+| `--game swe1 --update none` *(default mode)*          | video boots **and** DCS writes fire (30 in 15 s window)     | No prologue needed — natural probe activates DCS post-xinu_ready |
+| `--game rfm  --update none` *(default mode)*          | video boots **and** DCS writes fire                         | Same |
+| `--game swe1 --update none --dcs-mode bar4-patch`     | video boots, **no DCS writes**, no attract                  | `DCS-mode pattern absent` — the 5-byte prologue lives only in the update bundle |
+| `--game rfm  --update none --dcs-mode bar4-patch`     | video boots, **no DCS writes**, no attract                  | Same |
 
 This still mirrors real-hardware behaviour in that no shipping
 cabinet ran with just the chip ROMs; Encore therefore auto-selects
 `--update latest` when `--game` is used without an explicit
-`--update`. But `--update none --dcs-mode io-handled` is no longer
-the dead-end it used to be — the base chip ROM set contains enough
-DCS driver code to answer the probe and emit commands.
+`--update`. But `--update none` is no longer the dead-end it used
+to be — the base chip ROM set contains enough DCS driver code to
+answer the probe and emit commands under the default `io-handled`
+mode.
 
 > **Historical note:** prior to the r2-ROM default fix,
 > `--game rfm --update none` produced `exec_count ≈ 2 000` and an
@@ -64,8 +65,8 @@ RFM v1.2 in particular predates the XINU port. It targets the r1
 chip hardware revision (`rfm_u100.rom` / `rfm_u101.rom`), but under
 Encore it is loaded against the r2 chips (the unconditional
 bank-0 preference) and boots cleanly under **both** `--dcs-mode
-bar4-patch` and `--dcs-mode io-handled` now that the scribble is
-staged around `xinu_ready` — see
+io-handled` (default) and `--dcs-mode bar4-patch` now that the
+scribble is staged around `xinu_ready` — see
 [13-dcs-mode-duality.md](13-dcs-mode-duality.md).
 
 See [26-testing-bundle-matrix.md](26-testing-bundle-matrix.md#scope-policy-in-scope-vs-reference-only)
@@ -73,24 +74,24 @@ for the full scope table.
 
 ---
 
-## `io-handled` DCS mode — alternate audio path
+## `io-handled` DCS mode — default audio path
 
-`--dcs-mode io-handled` lets the game run the unmodified PCI detect
-probe at `0x1A2ABC`. The probe has inverted polarity (returns 1 when
-the probed cell is **not** `0xFFFF`). In `io-handled` mode the
-emulator scribbles `0x0000FFFF` into that cell pre-`xinu_ready`
-(to keep early-boot sentinel checks happy) and flips to `0x0000`
-after `xinu_ready` (so the natural DCS probe returns 1 and the
-game initialises DCS). Commands then route through the emulated
-I/O ports `0x138`–`0x13F` rather than a BAR4 byte-patch.
+`--dcs-mode io-handled` (the default since the staged-scribble fix)
+lets the game run the unmodified PCI detect probe at `0x1A2ABC`.
+The probe has inverted polarity (returns 1 when the probed cell is
+**not** `0xFFFF`). Encore scribbles `0x0000FFFF` into that cell
+pre-`xinu_ready` (to keep early-boot sentinel checks happy) and
+flips to `0x0000` after `xinu_ready` (so the natural DCS probe
+returns 1 and the game initialises DCS). Commands then route
+through the emulated I/O ports `0x138`–`0x13F`.
 
-Under every in-scope bundle **both** modes pass the headless
-regression with the same `[dcs] WR` count. `io-handled` is
-strictly more capable on the three "pattern absent" cases
-(`swe1 --update 1.3`, `swe1/rfm --update none`) where
-`bar4-patch` has no prologue to rewrite. `bar4-patch` remains
-the default for historical compatibility; switching the default
-to `io-handled` is under consideration. See the full matrix in
+Under every in-scope bundle `io-handled` passes the headless
+regression with full `[dcs] WR` audio. It is **strictly more
+capable** than `bar4-patch` on the three "pattern absent" cases
+(`swe1 --update 1.3`, `swe1/rfm --update none`) where bar4-patch
+has no prologue to rewrite. That is why `io-handled` is now the
+default; `bar4-patch` is retained for A/B regression. See the
+full matrix in
 [26-testing-bundle-matrix.md](26-testing-bundle-matrix.md#latest-observed-results-headless-dummy-sdl-drivers-15-s-timeout).
 
 **Reference:** `src/io.c` `apply_sgc_patches` (prime), `src/cpu.c`

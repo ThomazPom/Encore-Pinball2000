@@ -172,8 +172,8 @@ static int apply_option(const char *key, const char *value)
         } else {
             fprintf(stderr,
                 "[main] --dcs-mode '%s' invalid; expected bar4-patch|io-handled "
-                "(falling back to bar4-patch)\n", value);
-            g_emu.dcs_mode_choice = ENCORE_DCS_BAR4_PATCH;
+                "(falling back to io-handled)\n", value);
+            g_emu.dcs_mode_choice = ENCORE_DCS_IO_HANDLED;
         }
         return 1;
     }
@@ -528,18 +528,21 @@ print_help:
 "  --bpp 16|32            Output texture bit depth (default 32 / ARGB8888;\n"
 "                         16 = RGB565). 24 falls back to 32 with a warning.\n"
 "  --dcs-mode MODE        How the DCS-2 sound subsystem is reached.\n"
-"                           bar4-patch  (default) — pattern-scan + 5-byte\n"
-"                              CMP/JNE prologue patch at xinu_ready, forces\n"
-"                              dcs_mode=1, audio via PCI BAR4 + sound.c mixer.\n"
-"                              Proven on every bundle (SWE1 v1.5/v2.1 + RFM\n"
-"                              v1.2/1.6/1.8/2.5/2.6).\n"
-"                           io-handled — skip the patch; the game runs its\n"
-"                              unmodified PCI-detect probe. Bundles whose\n"
-"                              natural probe returns 1 use BAR4 (e.g. SWE1\n"
-"                              v1.5); the rest fall through to the DCS2 UART\n"
-"                              port handlers (0x138-0x13F) in io.c. Audio\n"
-"                              coverage on the UART-only path is partial — a\n"
-"                              full I/O handshake pump is WIP.\n"
+"                           io-handled  (default) — no CPU patch; the game\n"
+"                              runs its native PCI-detect probe, the BT-107\n"
+"                              scribble is held at 0xFFFF until xinu_ready\n"
+"                              then flipped to 0x0000, and Encore answers\n"
+"                              the DCS2 UART ports (0x138-0x13F) in io.c.\n"
+"                              Boots + plays audio on every shipped bundle\n"
+"                              (SWE1 v1.3/1.5/2.1 + RFM v1.2/1.4/1.6/1.8/\n"
+"                              2.5/2.6, plus --update none).\n"
+"                           bar4-patch — legacy: pattern-scan for the DCS\n"
+"                              probe's 5-byte CMP/JNE prologue at xinu_ready\n"
+"                              and byte-patch it to force dcs_mode=1 so audio\n"
+"                              runs through PCI BAR4 + sound.c. Fails on\n"
+"                              bundles where the prologue is absent\n"
+"                              (SWE1 v1.3, RFM --update none, SWE1 --update\n"
+"                              none). Kept for A/B regression work.\n"
 "  --config FILE.yaml     Load options from a yaml-ish file (one key:value\n"
 "                         per line; '#' starts a comment). CLI args override\n"
 "                         config; auto-loads ./encore.yaml when no CLI args.\n"

@@ -121,7 +121,7 @@ sample plays.
 |---|---|
 | `Failed to load ROMs` | Chip files missing or wrong size under `./roms/`. The repo ships these — you should only see this if you replaced the directory or pointed `--roms` at an empty path. Verify U100…U107 are present and the right sizes. |
 | `--update: could not resolve '0150'` | No directory named `pin2000_50069_0150_*` (or `_50070_` for RFM) under `./updates/`. Use `--update /full/path/to/bundle.bin` as a fallback, or `--update latest` to pick the highest-versioned shipped bundle for the selected game. |
-| Black SDL window, no DCS activity | `--dcs-mode bar4-patch` is the default and required for most bundles. If you forced `--dcs-mode io-handled` this is expected on every bundle except SWE1 v1.5. |
+| Black SDL window, no DCS activity | The default `--dcs-mode io-handled` produces audio on every shipped bundle. If you forced `--dcs-mode bar4-patch` and hit a "pattern absent" bundle (SWE1 v1.3, `--update none`), the BAR4 patch is a no-op and DCS stays silent — drop the flag to fall back to the default. |
 | Exits immediately with `SDL_Init failed` | No display. Pass `--headless`; attach with `--serial-tcp 4444` and `nc localhost 4444` to see the serial console. |
 
 See [27-troubleshooting.md](27-troubleshooting.md) for a fuller list.

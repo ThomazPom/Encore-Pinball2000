@@ -119,7 +119,7 @@ git clone https://github.com/ThomazPom/Encore-Pinball2000.git encore && cd encor
 make                                                     # → ./build/encore
 ./build/encore --game swe1                                # SWE1 with default settings
 ./build/encore --update 0150                              # SWE1 v1.5 (canonical 4-digit token)
-./build/encore --update 0180 --dcs-mode io-handled        # RFM v1.8, I/O-handled DCS
+./build/encore --update 0180 --dcs-mode bar4-patch        # RFM v1.8, legacy BAR4-patch DCS
 ./build/encore --update latest --game rfm                 # newest bundled RFM (v1.8)
 ```
 
@@ -165,7 +165,7 @@ calls, no implicit `$HOME`/`$XDG_*` behaviour.
 |------|---------|
 | `--game swe1\|rfm\|auto` | Pick title; `auto` infers from the active ROM set |
 | `--update <path\|version>` | File, directory, `.exe`, or version token (`210`, `2.6`, `latest`) |
-| `--dcs-mode bar4-patch\|io-handled` | DCS sound pipeline selector (default: `bar4-patch`) |
+| `--dcs-mode io-handled\|bar4-patch` | DCS sound pipeline selector (default: `io-handled`) |
 | `--headless` | Run without opening a window (CI / smoke testing) |
 | `--fullscreen` / `--flipscreen` / `--bpp N` | Display tweaks |
 | `--no-savedata` | Skip NVRAM / SEEPROM load (clean boot) |

@@ -307,20 +307,19 @@ typedef struct {
     bool          is_v19_update;       /* running with update flash (V1.19) */
     bool          dcs_mode_patch_attempted; /* one-shot DCS-mode BAR4 force */
     /* Sound subsystem mode selector (--dcs-mode):
-     *   ENCORE_DCS_BAR4_PATCH (default) — pattern-scan + 5-byte CMP/JNE
-     *     prologue patch at xinu_ready, forces dcs_mode=1 across every
-     *     bundle, sound is delivered via PCI BAR4 + sound.c mixer.
-     *     Currently the only path proven to deliver audio on every bundle.
-     *   ENCORE_DCS_IO_HANDLED — patch is skipped; the game runs the
-     *     unmodified PCI-detect probe and (where the PCI scan exposes
-     *     device 8) takes the natural BAR4 path; otherwise it stays in
-     *     I/O-UART mode and our existing dcs2_port_read/write handlers
-     *     in io.c (ports 0x138-0x13F) answer.  Confirmed silent today on
-     *     bundles whose probe returns 0 (game skips DCS init entirely);
-     *     more I/O-handshake research is needed for full coverage.  */
+     *   ENCORE_DCS_IO_HANDLED (default) — patch is skipped; the game runs
+     *     the unmodified PCI-detect probe and our io.c UART handlers
+     *     (ports 0x138-0x13F) answer.  Combined with the staged BT-107
+     *     scribble (0xFFFF until xinu_ready, then 0x0000), this path
+     *     boots every bundle we ship and delivers audio on all of them.
+     *   ENCORE_DCS_BAR4_PATCH — legacy path: scan for the DCS-probe
+     *     CMP/JNE prologue and byte-patch it so dcs_mode latches to 1,
+     *     forcing the PCI BAR4 path.  Kept for regression / A-B work;
+     *     fails on bundles where the 5-byte prologue is absent
+     *     (notably SWE1 v1.3 and the --update none trim set).  */
     enum {
-        ENCORE_DCS_BAR4_PATCH = 0,
-        ENCORE_DCS_IO_HANDLED = 1,
+        ENCORE_DCS_IO_HANDLED = 0,
+        ENCORE_DCS_BAR4_PATCH = 1,
     } dcs_mode_choice;
     volatile int timer_pending;       /* count of unprocessed SIGALRM ticks */
     volatile int timer_tick_queue;    /* queued IRQ0 ticks waiting for EOI */

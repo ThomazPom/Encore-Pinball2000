@@ -95,23 +95,28 @@ disk. Useful for:
 
 ## Sound
 
-### `--dcs-mode bar4-patch` (default)
+### `--dcs-mode io-handled` (default)
 
-Pattern-scans for the `CMP EAX,1 ; JNE +0x21 ; MOV [slot],EAX` idiom
-inside the game's DCS-detect probe and replaces the 5-byte CMP/JNE
-prologue with `MOV EAX,1`. Forces `dcs_mode=1` → the game takes its
-BAR4-based sound path → DCS commands are delivered through
-`sound.c`. Works on every bundle tested. Details:
+No CPU code is rewritten. Encore primes the BT-107 watchdog cell
+with `0x0000FFFF` (sentinel-safe for all bundles) and scribbles
+that value every tick until `xinu_ready` fires; from then on the
+scribble flips to `0x00000000`. The game's own DCS-detect probe
+runs *after* `xinu_ready`, sees `cell != 0xFFFF` → returns 1 →
+stores `dcs_mode=1` → game takes its BAR4 sound path normally.
+DCS commands are delivered through `sound.c`. Boots and produces
+audio on every bundle in the matrix, including the three "pattern
+absent" cases (SWE1 v1.3, RFM/SWE1 `--update none`). Details:
 [13-dcs-mode-duality.md](13-dcs-mode-duality.md).
 
-### `--dcs-mode io-handled`
+### `--dcs-mode bar4-patch` (legacy / regression)
 
-Skips the code patch; relies on the unmodified PCI probe returning 1
-naturally. Encore scribbles `0` into the shared probe cell each tick
-(see [14-dcs-probe-polarity.md](14-dcs-probe-polarity.md)), which flips
-the probe's "absent" semantics to "present". DCS commands then flow
-through the UART ports `0x138..0x13F`. Currently partial — the I/O
-command-stream pump is still WIP on some bundles.
+Pattern-scans for the `CMP EAX,1 ; JNE +0x21 ; MOV [slot],EAX`
+idiom inside the game's DCS-detect probe and replaces the 5-byte
+CMP/JNE prologue with `MOV EAX,1`. Forces `dcs_mode=1` →
+identical downstream BAR4 path. Equivalent to `io-handled` on
+every bundle that ships the prologue, but a no-op (silent attract)
+on SWE1 v1.3 and `--update none`. Kept because it makes A/B
+regression against the legacy patch path a one-flag flip.
 
 ## Display
 

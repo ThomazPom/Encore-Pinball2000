@@ -67,12 +67,14 @@ Each bundle is run in both `--dcs-mode` variants:
 
 | Mode            | Flag                      | Expected behaviour |
 |-----------------|---------------------------|--------------------|
-| `bar4-patch`    | `--dcs-mode bar4-patch`   | DCS audio via BAR4 patch (default) |
-| `io-handled`    | `--dcs-mode io-handled`   | Natural PCI probe; audio when probe returns 1 |
+| `io-handled`    | `--dcs-mode io-handled`   | Natural PCI probe; staged scribble flips post-`xinu_ready` so the probe returns 1 ("DCS present"). **Default.** |
+| `bar4-patch`    | `--dcs-mode bar4-patch`   | Legacy: 5-byte CMP/JNE prologue rewritten at `xinu_ready` to force `dcs_mode=1`. Kept for A/B regression. |
 
-`bar4-patch` is the default and is the primary delivery path.
-`io-handled` is tested to verify the alternate path does not regress
-the boot.
+`io-handled` is the default because it is **strictly more capable**
+than `bar4-patch` on the matrix: same boot success, plus audio on
+the three "pattern absent" bundles where bar4-patch has no prologue
+to rewrite. `bar4-patch` is still tested every run to catch any
+regression in the legacy patch path.
 
 ## Pass criteria
 
@@ -127,39 +129,40 @@ done | sort
 > *mypinballs*) require dropping the bundle into `./updates/`
 > first — see [47-community-updates.md](47-community-updates.md).
 
-| Bundle                      | bar4-patch                                          | io-handled                                    |
-|-----------------------------|-----------------------------------------------------|-----------------------------------------------|
-| SWE1 v1.3                   | ⚠ boots video, **DCS pattern absent → silent**      | ✓ boots video + DCS (dcs_wr = 30)             |
-| SWE1 v1.4                   | ✓ pass                                              | ✓ pass                                        |
-| SWE1 v1.5                   | ✓ pass                                              | ✓ pass                                        |
-| SWE1 v2.10 *(mypinballs)*   | ✓ pass                                              | ✓ pass                                        |
-| RFM v1.2                    | ✓ pass (with r2 chips)                              | ✓ pass (with r2 chips, staged scribble)       |
-| RFM v1.4                    | ✓ pass                                              | ✓ pass                                        |
-| RFM v1.5                    | ✓ pass                                              | ✓ pass                                        |
-| RFM v1.6                    | ✓ pass                                              | ✓ pass                                        |
-| RFM v1.8                    | ✓ pass                                              | ✓ pass                                        |
-| RFM v2.50 *(mypinballs)*    | ✓ pass                                              | ✓ pass                                        |
-| RFM v2.60 *(mypinballs)*    | ✓ pass                                              | ✓ pass                                        |
+| Bundle                      | io-handled (default)                          | bar4-patch (legacy)                                 |
+|-----------------------------|-----------------------------------------------|-----------------------------------------------------|
+| SWE1 v1.3                   | ✓ boots video + DCS (dcs_wr = 30)             | ⚠ boots video, **DCS pattern absent → silent**      |
+| SWE1 v1.4                   | ✓ pass                                        | ✓ pass                                              |
+| SWE1 v1.5                   | ✓ pass                                        | ✓ pass                                              |
+| SWE1 v2.10 *(mypinballs)*   | ✓ pass                                        | ✓ pass                                              |
+| RFM v1.2                    | ✓ pass (with r2 chips, staged scribble)       | ✓ pass (with r2 chips)                              |
+| RFM v1.4                    | ✓ pass                                        | ✓ pass                                              |
+| RFM v1.5                    | ✓ pass                                        | ✓ pass                                              |
+| RFM v1.6                    | ✓ pass                                        | ✓ pass                                              |
+| RFM v1.8                    | ✓ pass                                        | ✓ pass                                              |
+| RFM v2.50 *(mypinballs)*    | ✓ pass                                        | ✓ pass                                              |
+| RFM v2.60 *(mypinballs)*    | ✓ pass                                        | ✓ pass                                              |
 
-**Summary: 21 / 22 bundle×mode combinations pass end-to-end**
-(video + DCS). The single remaining deviation is SWE1 v1.3
-under `bar4-patch`, where the 5-byte CMP/JNE prologue the
+**Summary:** `io-handled` (default) passes **11 / 11** bundles end-
+to-end (video + DCS). `bar4-patch` passes **10 / 11**; the single
+deviation is SWE1 v1.3, where the 5-byte CMP/JNE prologue the
 patcher scans for simply does not exist in the pre-release v1.3
-binary. Switching that bundle to `--dcs-mode io-handled`
-recovers full DCS on it (see row above).
+binary. That is exactly why `io-handled` is now the default —
+nothing in the patch path is fundamentally better, and io-handled
+is more compatible.
 
 ### `--update none` (no flash overlay) — separate axis
 
-| Game | `bar4-patch` `--update none` | `io-handled` `--update none` |
-|------|------------------------------|------------------------------|
-| SWE1 | ⚠ video, **no DCS** (pattern absent) | ✓ video **+ DCS** (dcs_wr = 30) |
-| RFM  | ⚠ video, **no DCS** (pattern absent) | ✓ video **+ DCS** (dcs_wr = 30) |
+| Game | `io-handled` `--update none` (default) | `bar4-patch` `--update none` |
+|------|----------------------------------------|------------------------------|
+| SWE1 | ✓ video **+ DCS** (dcs_wr = 30)        | ⚠ video, **no DCS** (pattern absent) |
+| RFM  | ✓ video **+ DCS** (dcs_wr = 30)        | ⚠ video, **no DCS** (pattern absent) |
 
-So even on base chips alone the `io-handled` path reaches a DCS
-command stream — the chip ROMs do contain the DCS driver; what
-they lack is the 5-byte prologue bar4-patch scans for.
-`--update none` is still not a supported "play the game" mode,
-but it is no longer the dead-end it used to be.
+So even on base chips alone the default `io-handled` path reaches a
+DCS command stream — the chip ROMs do contain the DCS driver; what
+they lack is the 5-byte prologue `bar4-patch` scans for.
+`--update none` is still not a supported "play the game" mode, but
+it is no longer the dead-end it used to be.
 
 ### Why the remaining deviation?
 
@@ -168,15 +171,14 @@ The 5-byte `CMP eax,1 / JNE +0x21 / MOV [slot], eax` prologue
 does not exist in this pre-release build, so the CPU patch is a
 no-op. Boot still reaches attract because prime=0xFFFF lets the
 pre-XINU checks pass, but the game's own probe returns 0 and
-DCS init is skipped. Workaround: use `--dcs-mode io-handled` for
-this bundle — it does not rely on the prologue and activates
-DCS naturally.
+DCS init is skipped. The default `io-handled` mode does not rely
+on the prologue and activates DCS naturally on this bundle.
 
 ### Sound-pipeline failure modes (by symptom)
 
 | Symptom in log                                             | Root cause                                                              | Fix |
 |------------------------------------------------------------|-------------------------------------------------------------------------|-----|
-| `[init] DCS-mode pattern absent`                           | 5-byte prologue not present in this build (SWE1 v1.3, `--update none`)  | Switch to `--dcs-mode io-handled` (natural probe activates DCS without the prologue) |
+| `[init] DCS-mode pattern absent`                           | 5-byte prologue not present in this build (SWE1 v1.3, `--update none`)  | Use the default `--dcs-mode io-handled` (natural probe activates DCS without the prologue) |
 | No `XINU ready`, `UC_ERR_INSN_INVALID` or `EIP=0x00000000` | Historical `io-handled` failure from pre-XINU scribble (fixed on `main`) | Verify build includes the staged-scribble branch in `cpu.c` |
 | `XINU ready` fires but heartbeat shows `dcs_mode=0`        | Probe cell never flipped to 0 (code path regression)                    | Check that cpu.c scribbles `0` post-xinu_ready in `io-handled` mode |
 | `exec_count` < 100 K, no `vsync`                           | `--update none` with a broken DCS config — shouldn't happen any more    | Supply `--update <version>` or re-check the scribble staging |
