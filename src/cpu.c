@@ -777,9 +777,24 @@ void cpu_run(void)
                  * on the *natural* probe → must keep cell != 0xFFFF, so
                  * we scribble 0 instead, which yields probe → 1 → DCS
                  * detected → game writes dcs_mode=1 → audio init runs. */
-                uint32_t scribble_val =
-                    (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) ? 0u
-                                                                     : 0x0000FFFFu;
+                /* Staged scribble: keep 0xFFFF until XINU is ready.
+                 * Pre-XINU boot code on some bundles (RFM v1.2, SWE1 v1.3,
+                 * and base-chips-only --update none) reads this cell as a
+                 * boot sentinel; writing 0 there derails the early path
+                 * before xinu_ready ever fires.  After xinu_ready the game
+                 * stack is up and the only consumer of this cell is the
+                 * DCS probe inside dcs_probe(), which returns 1 when
+                 * cell != 0xFFFF.  So flip to 0 only after xinu_ready for
+                 * io-handled; keep 0xFFFF for bar4-patch (patched CMP
+                 * makes the value moot but the watchdog callee is happy). */
+                uint32_t scribble_val;
+                if (!g_emu.xinu_ready) {
+                    scribble_val = 0x0000FFFFu;
+                } else {
+                    scribble_val =
+                        (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) ? 0u
+                                                                         : 0x0000FFFFu;
+                }
                 RAM_WR32(g_emu.watchdog_flag_addr, scribble_val);
             }
             if ((g_emu.exec_count & 0x3F) == 0) {
