@@ -63,20 +63,27 @@ For reference, Encore needs two kinds of files per bundle:
   * a directory containing `bootdata.rom`, `im_flsh0.rom`, `game.rom`
     and `symbols.rom`,
   * a Williams-branded `.exe` installer (a renamed ZIP),
-  * a **version token** like `0210`, `0150`, `2.1` or `latest`,
+  * a **version token** like `0150`, `0180`, `1.5` or `latest`,
     resolved against the directory names under `./updates/`
-    (e.g. `pin2000_50069_0210_…` ⇒ `--update 0210`).
+    (e.g. `pin2000_50069_0150_…` ⇒ `--update 0150`).
 
 The canonical form is the **4-digit version field** that appears in
-every shipped bundle directory name (`0210`, `0150`, `0260`, …);
-shorter forms like `2.1`, `210`, `1.5` are accepted and normalised to
+every shipped bundle directory name (`0150`, `0180`, `0140`, …);
+shorter forms like `1.5`, `150`, `1.8` are accepted and normalised to
 the same `0vvv` value internally. Pass `--update none` to skip update
 loading entirely (boots straight into the chip ROMs).
+
+Only the original Williams official update bundles (1999-2003) ship
+with the repo. Community/post-Williams updates by mypinballs (SWE1
+v2.10, RFM v2.50, v2.60, …) are supported by Encore but not
+redistributed here — see [47-community-updates.md](47-community-updates.md)
+for how to install them and grab the latest versions from
+<https://mypinballs.com>.
 
 ## 4. First run
 
 ```sh
-./build/encore --game swe1 --update 0210
+./build/encore --game swe1 --update 0150
 ```
 
 Expected output, abbreviated (every line below is what the binary
@@ -89,7 +96,7 @@ actually prints — copy-paste from a fresh run):
 ║  Video: SDL2 | Audio: SDL2_mixer                ║
 ╚══════════════════════════════════════════════════╝
 
-[main] --update: resolved '0210' → ./updates/pin2000_50069_0210_….
+[main] --update: resolved '0150' → ./updates/pin2000_50069_0150_….
 [main] --update: bundle for SWE1 → forcing prefix=swe1
 [init] Game: swe1 | ROMs: ./roms | Savedata: ./savedata
 [rom] Bank 0 chip u100: ./roms/swe1_u100.rom
@@ -113,7 +120,7 @@ sample plays.
 | Symptom | Likely cause |
 |---|---|
 | `Failed to load ROMs` | Chip files missing or wrong size under `./roms/`. The repo ships these — you should only see this if you replaced the directory or pointed `--roms` at an empty path. Verify U100…U107 are present and the right sizes. |
-| `--update: could not resolve '0210'` | No directory named `pin2000_50069_0210_*` (or `_50070_` for RFM) under `./updates/`. Use `--update /full/path/to/bundle.bin` as a fallback, or `--update latest` to pick the highest-versioned shipped bundle for the selected game. |
+| `--update: could not resolve '0150'` | No directory named `pin2000_50069_0150_*` (or `_50070_` for RFM) under `./updates/`. Use `--update /full/path/to/bundle.bin` as a fallback, or `--update latest` to pick the highest-versioned shipped bundle for the selected game. |
 | Black SDL window, no DCS activity | `--dcs-mode bar4-patch` is the default and required for most bundles. If you forced `--dcs-mode io-handled` this is expected on every bundle except SWE1 v1.5. |
 | Exits immediately with `SDL_Init failed` | No display. Pass `--headless`; attach with `--serial-tcp 4444` and `nc localhost 4444` to see the serial console. |
 

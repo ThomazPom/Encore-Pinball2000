@@ -130,8 +130,8 @@ receives them and writes each to the appropriate flash region.
 
 The bundle directory name encodes the game ID and version:
 `pin2000_<game-id>_<version>_<date>_B_10000000`. Encore uses the
-version digits for bundle matching, e.g. `--update 260` selects
-version 2.60.
+version digits for bundle matching, e.g. `--update 180` selects
+version 1.80.
 
 See [45-official-update-manager.md](45-official-update-manager.md)
 for details of the original Update Manager.

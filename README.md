@@ -7,11 +7,11 @@ included update packages and exercise the full display + audio + LPT
 pipeline from a single self-contained folder.
 
 <p align="center">
-  <img src="docs/images/swe1-attract.png" width="45%" alt="Star Wars: Episode I attract screen running in Encore"/>
+  <img src="docs/images/swe1-attract.png" alt="Encore running Star Wars: Episode I (SWE1 v1.5 attract)" width="45%">
   &nbsp;
-  <img src="docs/images/rfm-attract.png" width="45%" alt="Revenge from Mars high-scores attract screen running in Encore"/>
+  <img src="docs/images/rfm-attract.png" alt="Encore running Revenge from Mars (RFM v1.8, Attack Mars Champion attract)" width="45%">
 </p>
-<p align="center"><sub>Left: <em>Star Wars: Episode I</em> attract logo · Right: <em>Revenge from Mars</em> high-scores screen — both captured live from Encore (640×480, headless offscreen render).</sub></p>
+<p align="center"><sub>Encore running the official Williams updates SWE1 v1.5 (left) and RFM v1.8 (right) — no community / mypinballs assets included. See <a href="docs/47-community-updates.md">community updates</a> for the post-2003 mypinballs builds.</sub></p>
 
 <p align="center">
   <a href="docs/README.md"><strong>📚 Documentation Index →</strong></a>
@@ -118,14 +118,19 @@ Build and run:
 git clone https://github.com/ThomazPom/Encore-Pinball2000.git encore && cd encore
 make                                                     # → ./build/encore
 ./build/encore --game swe1                                # SWE1 with default settings
-./build/encore --update 0210                              # SWE1 v2.1 (canonical 4-digit token)
-./build/encore --update 0260 --dcs-mode io-handled        # RFM v2.6, I/O-handled DCS
-./build/encore --update latest --game rfm                 # newest bundled RFM
+./build/encore --update 0150                              # SWE1 v1.5 (canonical 4-digit token)
+./build/encore --update 0180 --dcs-mode io-handled        # RFM v1.8, I/O-handled DCS
+./build/encore --update latest --game rfm                 # newest bundled RFM (v1.8)
 ```
 
-The chip ROMs (`./roms/`) and every dearchived update bundle
-(`./updates/`) ship with the repo — no extra downloads needed for the
-default games.
+The chip ROMs (`./roms/`) and every dearchived original Williams update
+bundle (`./updates/`) ship with the repo — no extra downloads needed
+for the default games. Community/post-Williams updates (e.g.
+mypinballs.com's enhanced firmware with extra fixes and effects) are
+not redistributed here; Encore supports them at runtime — see
+[docs/47-community-updates.md](docs/47-community-updates.md) for how
+to install them and grab the latest versions directly from
+<https://mypinballs.com>.
 
 Other useful entry points are documented in
 [docs/02-quickstart.md](docs/02-quickstart.md) and

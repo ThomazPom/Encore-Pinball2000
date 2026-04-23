@@ -123,20 +123,31 @@ convention Williams used:
 pin2000_<game_id>_<vvvv>_<yyyymmdd>_B_10000000
 ```
 
-where `vvvv = major * 100 + minor * 10` (so v2.1 → 0210, v1.80 → 0180).
+where `vvvv = major * 100 + minor * 10` (so v1.5 → 0150, v1.80 → 0180).
 The resolver normalises the user's input to 4 digits and matches
-`pin2000_<gid>_<vvvv>_`. This works across all seven dearchived
-bundles:
+`pin2000_<gid>_<vvvv>_`. This works across all eight dearchived
+original Williams bundles plus the community/post-Williams updates
+maintained by mypinballs:
 
-| gid   | vvvv | Title | Version |
-|-------|------|-------|--------:|
-| 50069 | 0150 | SWE1  |    1.5  |
-| 50069 | 0210 | SWE1  |    2.1  |
-| 50070 | 0120 | RFM   |    1.2  |
-| 50070 | 0160 | RFM   |    1.6  |
-| 50070 | 0180 | RFM   |    1.8  |
-| 50070 | 0250 | RFM   |    2.5  |
-| 50070 | 0260 | RFM   |    2.6  |
+| gid   | vvvv | Title | Version | Source |
+|-------|------|-------|--------:|--------|
+| 50069 | 0130 | SWE1  |    1.3  | Williams official |
+| 50069 | 0140 | SWE1  |    1.4  | Williams official |
+| 50069 | 0150 | SWE1  |    1.5  | Williams official |
+| 50069 | 0210 | SWE1  |    2.10 | Community (mypinballs) |
+| 50070 | 0120 | RFM   |    1.2  | Williams official |
+| 50070 | 0140 | RFM   |    1.4  | Williams official |
+| 50070 | 0150 | RFM   |    1.5  | Williams official |
+| 50070 | 0160 | RFM   |    1.6  | Williams official |
+| 50070 | 0180 | RFM   |    1.8  | Williams official |
+| 50070 | 0250 | RFM   |    2.50 | Community (mypinballs) |
+| 50070 | 0260 | RFM   |    2.60 | Community (mypinballs) |
+
+Only the original 1999-2003 Williams bundles ship with the repo.
+The community/post-Williams updates by Jim Askey load and run
+identically once dropped into `./updates/` — see
+[47-community-updates.md](47-community-updates.md) for how to install
+them and grab the latest versions from <https://mypinballs.com>.
 
 See [26-testing-bundle-matrix.md](26-testing-bundle-matrix.md) for
 the full regression results.

@@ -38,8 +38,8 @@ if (fseek(f, 0x3C, SEEK_SET) == 0 && fread(&gid, 4, 1, f) == 1) {
 
 The bundle naming convention also encodes the game ID:
 `pin2000_<game_id>_<4-digit-version>_<date>_B_10000000`.
-When resolving a version token like `2.1` the directory scan looks for
-`pin2000_50069_0210_*` (SWE1) or `pin2000_50070_0210_*` (RFM).
+When resolving a version token like `1.5` the directory scan looks for
+`pin2000_50069_0150_*` (SWE1) or `pin2000_50070_0150_*` (RFM).
 
 ```c
 /* src/main.c:82 */

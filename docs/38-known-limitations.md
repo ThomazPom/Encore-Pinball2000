@@ -124,10 +124,16 @@ error on next boot. See [10-savedata.md](10-savedata.md).
 
 ## v2.1 community-update attract clock shows wrong date
 
-The community v2.1 firmware updates (SWE1 0210, RFM 0210) draw a
-wall-clock in the lower-right of the attract screen. The clock display
-is implemented entirely in those community ROMs — earlier official
-Williams releases (SWE1 ≤ 0150, RFM ≤ 0180) do not show it.
+This limitation only applies if you load a community-built update
+(notably mypinballs's SWE1 v2.10 / RFM v2.10 — see
+[47-community-updates.md](47-community-updates.md) for how to install
+them) — the original Williams update bundles shipped with the repo do
+not exhibit it.
+
+Those community firmwares draw a wall-clock in the lower-right of the
+attract screen. The clock display is implemented entirely in those
+ROMs — earlier official Williams releases (SWE1 ≤ 0150, RFM ≤ 0180)
+do not show it.
 
 The displayed year, day-of-week and AM/PM do **not** match the host
 system clock that Encore feeds through the CMOS/RTC registers. Empirical
@@ -151,7 +157,8 @@ for an arbitrary host year.
 Encore feeds the true host time to the CMOS registers exactly as
 Williams' BIOS expected; this is a community-firmware quirk, not an
 emulator bug. Run any official update (e.g. `--update 0150` for SWE1,
-`--update 0180` for RFM) and the attract clock disappears entirely.
+`--update 0180` for RFM — both shipped with the repo) and the attract
+clock disappears entirely.
 
 ---
 

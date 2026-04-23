@@ -99,6 +99,7 @@ to whatever interests you.
 | [44](44-xina-os-deep-dive.md) | XINA OS deep dive |
 | [45](45-official-update-manager.md) | Official update manager background |
 | [46](46-function-reference.md) | Key function reference (game binary) |
+| [47](47-community-updates.md) | Community updates (mypinballs.com) |
 
 ## Conventions
 

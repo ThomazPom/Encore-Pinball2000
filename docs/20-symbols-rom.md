@@ -124,7 +124,7 @@ to #3.
 To see what a bundle ships, run:
 
 ```sh
-python3 tools/sym_dump.py --list updates/pin2000_50069_0210_*/symbols.rom | head -20
+python3 tools/sym_dump.py --list updates/pin2000_50069_0150_*/symbols.rom | head -20
 ```
 
 Output:

@@ -88,17 +88,18 @@ resolution works:
 
 ```
 updates/
-├── pin2000_50069_0150_<date>_B_10000000/   ← SWE1 v1.5
+├── pin2000_50069_0130_<date>_B_10000000/   ← SWE1 v1.3
+├── pin2000_50069_0140_<date>_B_10000000/   ← SWE1 v1.4
+├── pin2000_50069_0150_<date>_B_10000000/   ← SWE1 v1.5 (latest official Williams)
 │   ├── <game_id>_bootdata.rom
 │   ├── <game_id>_im_flsh0.rom
 │   ├── <game_id>_game.rom
 │   └── <game_id>_symbols.rom
-├── pin2000_50069_0210_<date>_B_10000000/   ← SWE1 v2.1
 ├── pin2000_50070_0120_<date>_B_10000000/   ← RFM v1.2
+├── pin2000_50070_0140_<date>_B_10000000/   ← RFM v1.4
+├── pin2000_50070_0150_<date>_B_10000000/   ← RFM v1.5
 ├── pin2000_50070_0160_<date>_B_10000000/   ← RFM v1.6
-├── pin2000_50070_0180_<date>_B_10000000/   ← RFM v1.8
-├── pin2000_50070_0250_<date>_B_10000000/   ← RFM v2.5
-└── pin2000_50070_0260_<date>_B_10000000/   ← RFM v2.6
+└── pin2000_50070_0180_<date>_B_10000000/   ← RFM v1.8 (latest official Williams)
 ```
 
 Pre-assembled `update.bin` files (from `build_update_bin.py`) can live

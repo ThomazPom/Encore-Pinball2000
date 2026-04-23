@@ -75,8 +75,8 @@ natively.
 3. Invoke as:
 
    ```
-   fupdate -p\pin2000_50070_0260_..._B_10000000\50070
-           -fpin2000_50070_0260_ COM1
+   fupdate -p\pin2000_50070_0180_..._B_10000000\50070
+           -fpin2000_50070_0180_ COM1
    ```
 
 ## 6. Alternative: VirtualBox + Windows XP (GUI method)
@@ -92,8 +92,13 @@ Original Williams updates were historically hosted at
 `http://www.planetarypinball.com/mm5/Williams/tech/pin2000/`. This
 site may no longer be active; check archive services.
 
-Community-sourced updates (from the mypinballs.com project) may also
-be available; these are not official Williams releases.
+Community-sourced updates with additional fixes and effects are
+available from <https://mypinballs.com> (the mypinballs project, run
+by Jim Askey). These are not official Williams releases — please
+download them from there directly so the version numbers stay current
+and the project stays supported. See
+[47-community-updates.md](47-community-updates.md) for how to drop
+them into Encore.
 
 ---
 
