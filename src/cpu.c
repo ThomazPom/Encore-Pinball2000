@@ -797,20 +797,7 @@ void cpu_run(void)
                 }
                 RAM_WR32(g_emu.watchdog_flag_addr, scribble_val);
             }
-            if ((g_emu.exec_count & 0x3F) == 0) {
-                RAM_WR32(0, 0);
-                /* SWE1-V1.19 only: 0x002E98C8 / 0x002E8E2C / 0x002E8E30 are SWE1
-                 * BSS slots; on RFM these addresses point at unrelated game code
-                 * or data and writing into them wedges the boot. */
-                if (g_emu.game_id == 50069u) {
-                    RAM_WR32(0x002E98C8u, 0);
-                    uint32_t dm_mode = RAM_RD32(0x002e8e2Cu);
-                    if (dm_mode == 1u && RAM_RD32(0x002e8e30u) < 2500u)
-                        RAM_WR32(0x002e8e30u, 5000u);
-                }
-            } else {
-                RAM_WR32(0, 0);
-            }
+            RAM_WR32(0, 0);
         }
 
         /* Read EIP after execution stopped */
