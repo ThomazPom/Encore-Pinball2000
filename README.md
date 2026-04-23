@@ -168,6 +168,7 @@ calls, no implicit `$HOME`/`$XDG_*` behaviour.
 | `--dcs-mode io-handled\|bar4-patch` | DCS sound pipeline selector (default: `io-handled`) |
 | `--headless` | Run without opening a window (CI / smoke testing) |
 | `--fullscreen` / `--flipscreen` / `--bpp N` | Display tweaks |
+| `--splash-screen none\|PATH` | Personalise the startup splash (or drop a JPEG into `assets/splash-screen.jpg` before `make` — see [docs/49-splash-screen.md](docs/49-splash-screen.md)) |
 | `--no-savedata` | Skip NVRAM / SEEPROM load (clean boot) |
 | `--config FILE` | Load options from a YAML config |
 | `--lpt-device /dev/parport0` | Forward the guest's LPT to a real parallel port (cabinet only) |

@@ -351,6 +351,14 @@ typedef struct {
     char          config_file[512];     /* --config FILE.yaml; "" = auto-search */
     bool          kbd_capture;          /* runtime: Alt+K toggles raw kbd capture */
 
+    /* --splash-screen handling.
+     *   splash_disabled = true → user passed `--splash-screen none`.
+     *   splash_path[0]  != 0  → load that file at startup; on failure the
+     *                           embedded JPEG is used as fallback.
+     *   both empty            → embedded assets/splash-screen.jpg is shown. */
+    bool          splash_disabled;
+    char          splash_path[512];
+
     /* Savedata */
     uint16_t      seeprom[64];          /* 93C46 SEEPROM (128 bytes) */
     uint32_t      ems[4];              /* EMS state (16 bytes) */
@@ -453,6 +461,12 @@ int  display_init(void);
 void display_update(void);
 void display_handle_events(void);
 void display_cleanup(void);
+
+/* splash.c — startup splash screen (see src/splash.c for full doc). */
+void splash_show(void);
+void splash_present(void);
+bool splash_active(void);
+void splash_dismiss(void);
 
 /* sound.c */
 int  sound_init(void);

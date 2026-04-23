@@ -178,6 +178,17 @@ static int apply_option(const char *key, const char *value)
         return 1;
     }
     if (strcmp(key, "fullscreen") == 0) { g_emu.start_fullscreen = true; return 0; }
+    if (strcmp(key, "splash-screen") == 0 && value) {
+        if (strcasecmp(value, "none") == 0) {
+            g_emu.splash_disabled = true;
+            g_emu.splash_path[0] = '\0';
+        } else {
+            g_emu.splash_disabled = false;
+            strncpy(g_emu.splash_path, value, sizeof(g_emu.splash_path) - 1);
+            g_emu.splash_path[sizeof(g_emu.splash_path) - 1] = '\0';
+        }
+        return 1;
+    }
     if (strcmp(key, "flipscreen") == 0) { g_emu.start_flipscreen = true; return 0; }
     if (strcmp(key, "bpp") == 0 && value) {
         int b = atoi(value);
@@ -527,6 +538,23 @@ print_help:
 "  --flipscreen           Start with the display Y-flipped (some cabs).\n"
 "  --bpp 16|32            Output texture bit depth (default 32 / ARGB8888;\n"
 "                         16 = RGB565). 24 falls back to 32 with a warning.\n"
+"  --splash-screen ARG    Startup splash image, shown in the SDL window\n"
+"                         from the moment it is created until the guest\n"
+"                         draws its first non-zero pixel (i.e. the white\n"
+"                         PRISM \"PLEASE WAIT — VALIDATING UPDATE\" frame\n"
+"                         takes over).\n"
+"                           (default)  use the JPEG embedded in the binary\n"
+"                                      from assets/splash-screen.jpg —\n"
+"                                      builders can drop in any JPEG of\n"
+"                                      that name and rebuild to ship a\n"
+"                                      custom default.\n"
+"                           none       disable; window starts black.\n"
+"                           PATH       load PATH at runtime (any format\n"
+"                                      stb_image supports: JPEG, PNG, BMP,\n"
+"                                      TGA, PSD, PIC, PNM). The image is\n"
+"                                      letterboxed to the window's aspect.\n"
+"                                      Falls back to the embedded JPEG if\n"
+"                                      the file can't be read.\n"
 "  --dcs-mode MODE        How the DCS-2 sound subsystem is reached.\n"
 "                           io-handled  (default) — no CPU patch; the game\n"
 "                              runs its native PCI-detect probe, the BT-107\n"

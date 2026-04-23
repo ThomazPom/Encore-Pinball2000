@@ -87,6 +87,10 @@ A latch `s_seen_nonzero_fb` triggers the first time any non-zero
 pixel appears in the scan buffer. On the transition we:
 
 * print `[disp] first non-zero framebuffer detected (fb_off=0x…)`
+* dismiss the startup splash (see
+  [49-splash-screen.md](49-splash-screen.md)) — until this frame the
+  splash texture is re-presented every cycle so the user sees the
+  embedded JPEG instead of a black window
 * save a timestamped PNG screenshot prefixed `encore_first` to the
   hardcoded `SCREENSHOT_DIR` path defined in `src/display.c`
 

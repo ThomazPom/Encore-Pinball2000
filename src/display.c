@@ -257,6 +257,12 @@ int display_init(void)
         g_emu.start_fullscreen ? " [fullscreen]" : "",
         g_emu.start_flipscreen ? " [flipscreen]" : "");
 
+    /* Pop the splash up immediately so the user has visual feedback while
+     * the CPU thread spins through PCI enumeration and the PRISM update
+     * validator. It will be dismissed automatically on the first frame
+     * the guest framebuffer contains anything (see display_update). */
+    splash_show();
+
     /* Print key bindings to stderr so the user always has the up-to-date
      * help text without digging in source. Mirrors the actual SDL key
      * routing in display_handle_events. */
@@ -357,6 +363,17 @@ void display_update(void)
         s_seen_nonzero_fb = true;
         LOG("disp", "first non-zero framebuffer detected (fb_off=0x%x, stride=%d)\n",
             fb_off, src_pitch);
+        /* Hand the window over from the startup splash to the guest. */
+        if (splash_active()) splash_dismiss();
+    }
+
+    /* While the guest framebuffer is still all zero (nothing has been
+     * drawn yet by the PRISM option ROM), keep showing the splash
+     * instead of clearing the window to black. */
+    if (splash_active() && !any_nonzero) {
+        splash_present();
+        g_emu.frame_count++;
+        return;
     }
 
     /* Upload to GPU and present */

@@ -16,12 +16,17 @@ encore/
 │   └── encore              ← compiled binary (~800 KB)
 ├── docs/                   ← this documentation tree
 ├── include/
-│   └── encore.h
+│   ├── encore.h
+│   ├── stb_image.h
+│   └── stb_image_write.h
 ├── src/
 │   ├── cpu.c  bar.c  display.c  io.c  main.c  memory.c
 │   ├── netcon.c  pci.c  rom.c  sound.c  lpt_pass.c
-│   ├── symbols.c  stb_impl.c
-│   └── stb_image_write.h
+│   └── splash.c  symbols.c  stb_impl.c
+├── assets/
+│   └── splash-screen.jpg   ← embedded into the binary at link time;
+│                             swap before `make` to ship a custom default
+│                             (see docs/49-splash-screen.md)
 ├── tools/
 │   ├── build_update_bin.py
 │   ├── deinterleave_rebuild.sh

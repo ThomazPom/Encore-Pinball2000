@@ -100,6 +100,7 @@ to whatever interests you.
 | [45](45-official-update-manager.md) | Official update manager background |
 | [46](46-function-reference.md) | Key function reference (game binary) |
 | [47](47-community-updates.md) | Community updates (mypinballs.com) |
+| [49](49-splash-screen.md) | Startup splash image (`--splash-screen`) |
 
 ## Conventions
 
