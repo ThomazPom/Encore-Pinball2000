@@ -295,7 +295,25 @@ void display_update(void)
      * g_emu.ram is the Unicorn backing store (uc_mem_map_ptr),
      * so reads are zero-overhead pointer dereferences. */
     uint32_t fb_off = g_emu.dc_fb_offset;
-    if (fb_off + FB_H * FB_STRIDE > RAM_SIZE) fb_off = 0;
+
+    /* The framebuffer is always 640x240 RGB555 line-doubled to 480, but
+     * the *stride* differs between phases:
+     *   - PRISM update validator / boot phase: 1280 bytes/row (no padding)
+     *   - Game runtime: 2048 bytes/row (padded), double-buffered via
+     *     DC_FB_ST_OFFSET = 0 / 0x78000 / 0xf0000 (one buffer = 240*2048).
+     *
+     * Latch into 2048-stride mode the first time we see DC_FB_ST_OFFSET
+     * land on a non-zero multiple of 0x78000 — that proves the game has
+     * taken over and is paging through 240*2048-byte buffers. Until then,
+     * use 1280-stride so the boot validator screen renders cleanly instead
+     * of being scrambled into dot patterns. */
+    static bool s_game_pitch = false;
+    if (!s_game_pitch && fb_off != 0 && (fb_off % 0x78000u) == 0)
+        s_game_pitch = true;
+
+    int src_pitch = s_game_pitch ? 2048 : 1280;
+
+    if (fb_off + (uint32_t)(FB_H * src_pitch) > RAM_SIZE) fb_off = 0;
     uint8_t *guest_fb = g_emu.ram + 0x800000u + fb_off;
     bool any_nonzero = false;
 
@@ -305,7 +323,7 @@ void display_update(void)
         int draw_y = s_y_flip ? (FB_H - 1 - src_y) : src_y;
         int dst_y = draw_y * 2;
 
-        uint16_t *pixels = (uint16_t *)(guest_fb + src_y * FB_STRIDE);
+        uint16_t *pixels = (uint16_t *)(guest_fb + src_y * src_pitch);
         if (bpp16) {
             uint16_t *dst1 = &g_emu.fb_pixels16[dst_y * SCREEN_W];
             uint16_t *dst2 = &g_emu.fb_pixels16[(dst_y + 1) * SCREEN_W];
@@ -337,7 +355,8 @@ void display_update(void)
 
     if (any_nonzero && !s_seen_nonzero_fb) {
         s_seen_nonzero_fb = true;
-        LOG("disp", "first non-zero framebuffer detected (fb_off=0x%x)\n", fb_off);
+        LOG("disp", "first non-zero framebuffer detected (fb_off=0x%x, stride=%d)\n",
+            fb_off, src_pitch);
     }
 
     /* Upload to GPU and present */
