@@ -8,3 +8,10 @@ savedata/
 encore_snap_*.png
 screen_captures/
 *.log
+
+# Community / post-Williams update bundles (mypinballs.com).
+# Encore supports them at runtime but does not redistribute them —
+# see docs/47-community-updates.md.
+updates/pin2000_50069_0210_*/
+updates/pin2000_50070_0250_*/
+updates/pin2000_50070_0260_*/
