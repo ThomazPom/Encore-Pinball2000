@@ -117,23 +117,41 @@ for log in *.log; do
 done | sort
 ```
 
-## Latest observed results (in-scope bundles, dummy drivers)
+## Latest observed results (headless, dummy SDL drivers, 18 s timeout)
 
-> *Caveat: results are from emulator-only testing on a single host.
-> Real-cabinet validation is pending. Reference-only bundles are
-> excluded — see scope policy above.*
+> *Re-run command: see "Running the matrix" above. Captured against
+> the current `main` build. Real-cabinet validation is still pending.*
+> Community bundles (rows marked *mypinballs*) require dropping the
+> bundle into `./updates/` first — see
+> [47-community-updates.md](47-community-updates.md).
 
-| Bundle    | bar4-patch       | io-handled         |
-|-----------|------------------|--------------------|
-| SWE1 v1.5 | ✓ pass           | ✓ pass             |
-| SWE1 v2.1 | ✓ pass           | ✓ pass             |
-| RFM v1.6  | ✓ pass           | ✓ pass             |
-| RFM v1.8  | ✓ pass           | ✓ pass             |
-| RFM v2.5  | ✓ pass           | ✓ pass             |
-| RFM v2.6  | ✓ pass           | ✓ pass             |
+| Bundle                | bar4-patch                                | io-handled                                |
+|-----------------------|-------------------------------------------|-------------------------------------------|
+| SWE1 v1.3             | ⚠ boots, but DCS pattern absent → silent | ✗ early `UC_ERR_INSN_INVALID`, no XINU   |
+| SWE1 v1.4             | ✓ pass (vsync ≈ 814, dcs_wr = 30)         | ✓ pass (vsync ≈ 797, dcs_wr = 30)         |
+| SWE1 v1.5             | ✓ pass                                    | ✓ pass                                    |
+| SWE1 v2.10 *(mypinballs)* | ✓ pass                                | ✓ pass                                    |
+| RFM v1.2 (r1)         | ✓ pass                                    | ✗ stalls before XINU (EIP=0, dcs_mode=0) |
+| RFM v1.4              | ✓ pass                                    | ✓ pass                                    |
+| RFM v1.5              | ✓ pass                                    | ✓ pass                                    |
+| RFM v1.6              | ✓ pass                                    | ✓ pass                                    |
+| RFM v1.8              | ✓ pass                                    | ✓ pass                                    |
+| RFM v2.50 *(mypinballs)* | ✓ pass                                 | ✓ pass                                    |
+| RFM v2.60 *(mypinballs)* | ✓ pass                                 | ✓ pass                                    |
 
-12/12 in-scope combinations pass cleanly. Reference-only bundles are
-not part of the supported matrix.
+**Summary: 18 / 22 combinations pass cleanly.** Of the 4 that don't:
+
+* SWE1 v1.3 has no usable DCS path in *either* mode (pattern absent
+  in bar4-patch; invalid instruction in io-handled). Bar4-patch still
+  reaches XINU and renders.
+* RFM v1.2 boots cleanly under bar4-patch but stalls in io-handled.
+
+Every other bundle — including all three community/mypinballs
+bundles — reaches XINU and produces an identical `[dcs] WR` count
+under both `--dcs-mode` settings. The previously-documented
+"`io-handled` only sometimes works" caveat applies *only* to the two
+earliest pre-XINU bundles above; see
+[13-dcs-mode-duality.md](13-dcs-mode-duality.md) for details.
 
 ## Cross-references
 

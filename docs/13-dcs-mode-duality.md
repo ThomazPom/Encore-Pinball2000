@@ -90,21 +90,43 @@ Downstream, commands flow through the I/O port path
 reset/handshake fully; the remaining sample-playback stream is
 delegated the same way: `sound_process_cmd()` downstream.
 
-### Why is io-handled not the default?
+### Why is `io-handled` not the default?
 
-Two reasons:
+It used to be a stronger claim than the data now supports. With the
+current heartbeat/IRQ pump and the I/O handlers in `io.c`, the
+io-handled path produces the same DCS write activity (`[dcs] WR`
+log lines) as `bar4-patch` on every bundle that reaches XINU.
+The two known exceptions are the earliest pre-XINU revisions:
 
-1. On bundles whose natural probe returns 0 (even after scribble),
-   the game skips DCS init entirely and stays silent. We have only
-   observed clean probe-returns-1 behaviour under emulation on a subset of bundles.
-2. The I/O port handshake pump in `io.c` currently answers the
-   reset + handshake parts but does not fully emulate every mixer /
-   multi-word command in the same way that the BAR4 path does. Some
-   samples play; some don't.
+* **SWE1 v1.3** (`pin2000_50069_0130_*`) — io-handled stops with
+  `UC_ERR_INSN_INVALID` very early (around `exec≈250 000`, before
+  XINU boots). This bundle also has no usable DCS path under
+  `bar4-patch` because the 5-byte CMP/JNE pattern is absent — the
+  log shows `[init] DCS-mode pattern absent`. Both modes are
+  effectively unsupported on v1.3.
+* **RFM v1.2** (`pin2000_50070_0120_*`, the r1 chips) — io-handled
+  stalls before XINU at `EIP=0x00000000` with `dcs_mode=0` even
+  after the watchdog scribble flips polarity. `bar4-patch` boots
+  v1.2 cleanly and is the only working path for that bundle.
 
-When the I/O path becomes feature-complete, `io-handled` will become
-the default because it is the more faithful emulation (no CPU
-code patching).
+For every other shipped bundle (SWE1 v1.4 / v1.5 / v2.10, RFM v1.4 /
+v1.5 / v1.6 / v1.8 / v2.50 / v2.60), `io-handled` reaches XINU,
+maintains the same vsync rate (≈ 750–820 over 15 s) and produces
+the same `[dcs] WR` count as `bar4-patch`. See
+[26-testing-bundle-matrix.md](26-testing-bundle-matrix.md) for the
+full results table.
+
+`bar4-patch` remains the default for two reasons:
+
+1. It works on RFM v1.2 (which io-handled does not).
+2. It is the most directly verifiable path — the 5-byte patch leaves
+   an obvious log signature (`[init] DCS-mode pattern hit`) and
+   bypasses the natural probe entirely, so the result depends on
+   fewer moving parts than the I/O handshake pump.
+
+When io-handled gains v1.2 boot parity, switching the default may
+make sense because it is the more faithful emulation (no CPU code
+patching).
 
 ## Interaction with the watchdog scanner
 
