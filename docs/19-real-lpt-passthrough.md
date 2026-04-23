@@ -29,24 +29,21 @@ Two reasons:
 One-time host configuration:
 
 ```sh
-# Debian's first user is not a sudoer by default — use `su -` instead
-# of `sudo` if needed. Inside the root shell, run the setup directly:
-su -
-  modprobe ppdev parport parport_pc
-  rmmod lp 2>/dev/null || true   # printer driver squats on /dev/parport0
-  usermod -aG lp "$(logname)"    # required for /dev/parport0 access
-  # OPTIONAL: also grant yourself sudo for the future
-  # usermod -aG sudo "$(logname)"
-  exit                            # leave root shell
+sudo modprobe ppdev parport parport_pc
+sudo rmmod lp 2>/dev/null || true   # printer driver squats on /dev/parport0
+sudo usermod -aG lp $USER            # one-time, persists across reboots
+newgrp lp                            # activate the new group in THIS shell —
+                                     #   no logout/relogin needed; spawns a
+                                     #   subshell with lp active. Use
+                                     #   `sg lp -c './build/encore …'` for a
+                                     #   one-shot run instead of a subshell.
 
-newgrp lp                         # activate the new group in THIS shell —
-                                  #   no logout/relogin needed; spawns a
-                                  #   subshell with lp active. Use
-                                  #   `sg lp -c './build/encore …'` for a
-                                  #   one-shot run instead of a subshell.
-
-ls -l /dev/parport0               # verify existence + lp-group ownership
+ls -l /dev/parport0                  # verify existence + lp-group ownership
 ```
+
+> On a fresh Debian where `sudo` itself isn't set up yet, do this once
+> first (root password is set at install time):
+> `su -c "/usr/sbin/usermod -aG sudo $(whoami)" && newgrp sudo`
 
 Once `/dev/parport0` is available, Encore can open it.
 
