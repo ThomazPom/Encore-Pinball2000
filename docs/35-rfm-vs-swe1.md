@@ -31,18 +31,26 @@ RFM shipped in two chip-ROM revisions:
 * **r2** — revised chips, used with RFM v1.6 and later. These are
   labelled `rfm_u100r2.rom` … `rfm_u107r2.rom`.
 
-`src/rom.c` handles both. When loading bank 0 for RFM the loader first
-tries r2 names and falls back to r1 names if not found:
+`src/rom.c` handles both. When loading bank 0 for RFM the loader
+always prefers r2 names (and falls back to r1 names only if the r2
+file is missing):
 
 ```c
-/* src/rom.c:119 */
-if (allow_r2) {
-    snprintf(out_path, ..., "%s/%s_u%dr2%s", roms_dir, prefix, chip, ext);
-}
+/* src/rom.c — bank 0 for RFM always prefers r2 */
+bool prefer_r2 = (b == 0 &&
+                  strcmp(g_emu.game_prefix, "rfm") == 0);
 ```
 
-The `allow_r2` flag is set for bank 0 only (`src/rom.c:262`), where the
-revision difference is most significant.
+Older builds of Encore gated the r2 preference on the savedata
+`game_id_str` containing `_15`, which meant RFM would silently fall
+back to the r1 chips whenever no savedata existed yet (fresh
+install, `--no-savedata`, `--update none`). The symptoms were
+non-obvious — black screen on `--update none`, and occasional boot
+flakiness on newer bundles that expect the r2 revision. r2 is now
+preferred unconditionally for RFM.
+
+The `allow_r2` flag is set for bank 0 only, where the revision
+difference matters; banks 1–3 only ship as `rfm_u102.rom` … `rfm_u107.rom`.
 
 ## DCS sound content
 
