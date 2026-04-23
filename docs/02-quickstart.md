@@ -12,7 +12,7 @@ five minutes.
 
 ```sh
 sudo apt update
-sudo apt install -y build-essential pkg-config cmake git \
+sudo apt install -y build-essential pkg-config git \
                     libsdl2-dev libsdl2-mixer-dev unzip
 ```
 
@@ -24,6 +24,7 @@ Encore needs **Unicorn ≥ 2.0** (we call `uc_ctl_flush_tlb`, added in 2.x).
 # Try the distro package first (Debian 12, Ubuntu 24.04, Fedora 38+):
 sudo apt install -y libunicorn-dev || {
   # Fallback (Ubuntu 22.04 etc. ship only 1.x or nothing) — build from source:
+  sudo apt install -y cmake
   git clone --depth 1 https://github.com/unicorn-engine/unicorn.git ~/unicorn
   cmake -S ~/unicorn -B ~/unicorn/build \
         -DCMAKE_BUILD_TYPE=Release -DUNICORN_ARCH=x86
