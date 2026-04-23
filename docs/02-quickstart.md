@@ -12,24 +12,31 @@ five minutes.
 
 ```sh
 sudo apt update
-sudo apt install -y \
-     build-essential pkg-config git \
-     libsdl2-dev libsdl2-mixer-dev \
-     libunicorn-dev unzip
+sudo apt install -y build-essential pkg-config cmake git \
+                    libsdl2-dev libsdl2-mixer-dev unzip
 ```
 
-Versions known to work:
+### Unicorn engine
 
-| Package         | Minimum | Tested |
-|-----------------|--------:|-------:|
-| gcc             |     10  |   12.2 |
-| libunicorn-dev  |   2.0   |    2.0 |
-| libsdl2-dev     |   2.0.20|  2.26  |
-| libsdl2-mixer-dev | 2.6   |   2.6  |
+Encore needs **Unicorn ≥ 2.0** (we call `uc_ctl_flush_tlb`, added in 2.x).
 
-Older Unicorn releases (1.x) do not implement `uc_ctl_flush_tlb`, which
-Encore calls every 64 execution batches to keep DC_TIMING2 visible to
-the VSYNC poll. Upgrade if your distro still ships 1.x.
+```sh
+# Try the distro package first (Debian 12, Ubuntu 24.04, Fedora 38+):
+sudo apt install -y libunicorn-dev || {
+  # Fallback (Ubuntu 22.04 etc. ship only 1.x or nothing) — build from source:
+  git clone --depth 1 https://github.com/unicorn-engine/unicorn.git ~/unicorn
+  cmake -S ~/unicorn -B ~/unicorn/build \
+        -DCMAKE_BUILD_TYPE=Release -DUNICORN_ARCH=x86
+  cmake --build ~/unicorn/build -j"$(nproc)"
+  sudo cmake --install ~/unicorn/build && sudo ldconfig
+}
+```
+
+> **Important:** if you build from source, keep the `-DCMAKE_BUILD_TYPE=Release`.
+> Without it Unicorn ships unoptimised and Encore runs 5–10× slower.
+
+Versions known to work: gcc ≥ 10, libunicorn ≥ 2.0, libsdl2 ≥ 2.0.20,
+libsdl2-mixer ≥ 2.6.
 
 ## 2. Clone and build
 
