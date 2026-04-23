@@ -39,6 +39,27 @@ sudo apt install -y libunicorn-dev || {
 Versions known to work: gcc ≥ 10, libunicorn ≥ 2.0, libsdl2 ≥ 2.0.20,
 libsdl2-mixer ≥ 2.6.
 
+### Real-cabinet prerequisites (skip if emulator-only)
+
+If you are wiring Encore to an actual Pinball 2000 cabinet via the host's
+parallel port, do **this once** before the first run — otherwise
+`--lpt-device /dev/parport0` will fail with `PPCLAIM EBUSY` /
+`Permission denied` and the cabinet will not respond:
+
+```sh
+sudo apt install -y parport                # usually pulled in already
+sudo modprobe ppdev parport parport_pc     # make /dev/parport0 appear
+sudo rmmod lp 2>/dev/null || true          # printer driver squats on the port
+sudo usermod -aG lp $USER                  # grant access; then log out / back in
+ls -l /dev/parport0                        # expect: crw-rw---- root lp
+```
+
+Encore runs **fully unprivileged** — no `ioperm()`, no setuid, no `/dev/port`.
+Everything goes through Linux `ppdev` ioctls, so once your user is in the
+`lp` group and the kernel `lp` driver is unloaded, `./build/encore` from a
+normal shell is enough. Full background and troubleshooting in
+[19-real-lpt-passthrough.md](19-real-lpt-passthrough.md).
+
 ## 2. Clone and build
 
 ```sh
