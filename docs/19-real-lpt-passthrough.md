@@ -30,10 +30,15 @@ One-time host configuration:
 
 ```sh
 sudo modprobe ppdev parport parport_pc
-sudo usermod -a -G lp $USER    # then log out and back in
-sudo rmmod lp                  # if the printer driver claimed the port
+sudo rmmod lp 2>/dev/null || true   # printer driver squats on /dev/parport0
+sudo usermod -aG lp $USER            # one-time, persists across reboots
+newgrp lp                            # activate the new group in THIS shell —
+                                     #   no logout/relogin needed; spawns a
+                                     #   subshell with lp active. Use
+                                     #   `sg lp -c './build/encore …'` for a
+                                     #   one-shot run instead of a subshell.
 
-ls -l /dev/parport0            # verify existence + lp-group ownership
+ls -l /dev/parport0                  # verify existence + lp-group ownership
 ```
 
 Once `/dev/parport0` is available, Encore can open it.
