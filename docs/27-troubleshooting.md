@@ -25,9 +25,10 @@ Quick diagnosis guide for the most common failure modes.
    ```
    If missing, the nulluser-idle pattern scan failed — possibly the ROM
    is corrupted or the chip-ROM interleave was not applied correctly.
-4. Verify `--dcs-mode bar4-patch` is active (default). If you passed
-   `--dcs-mode io-handled`, audio is silent and the display may stall
-   waiting for a DCS handshake on bundles that require the BAR4 path.
+4. The default `--dcs-mode io-handled` activates DCS on every shipped
+   bundle. If you forced `--dcs-mode bar4-patch` on a bundle whose
+   5-byte prologue is absent (SWE1 v1.3, `--update none`), the BAR4
+   patch is a no-op — drop the flag to fall back to the default.
 
 ---
 
@@ -54,9 +55,12 @@ Quick diagnosis guide for the most common failure modes.
    ```
    If missing, the audio subsystem failed to open (common in headless
    CI). Use `--headless` to skip audio entirely in that environment.
-4. Check that `--dcs-mode bar4-patch` is active (the default). The
-   `io-handled` path relies on the natural PCI probe which is only
-   reproducible on SWE1 v1.5 under specific conditions.
+4. Check that `--dcs-mode io-handled` is active (the default). It
+   activates DCS via the natural post-`xinu_ready` probe and works
+   on every bundle in the matrix. The legacy `bar4-patch` mode is a
+   no-op on bundles where the 5-byte CMP/JNE prologue is absent
+   (SWE1 v1.3, `--update none`), so it can produce silent attract
+   on those.
 
 ---
 

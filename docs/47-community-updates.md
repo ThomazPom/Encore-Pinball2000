@@ -62,8 +62,9 @@ directory.
 ## DCS sound, savedata, symbol tables
 
 * **DCS sound** works on community updates the same way it does on
-  official Williams updates — the bar4-patch path is the default
-  and has been the most reliable across every bundle tested. See
+  official Williams updates — the default `io-handled` path activates
+  DCS via the game's natural post-`xinu_ready` probe, which has been
+  validated on every bundle (community and official) tested. See
   [22-dcs-detection-and-modes.md](22-dcs-detection-and-modes.md).
 * **Savedata** lives in `./savedata/<game>.*` and is shared between
   versions of the same game; switching between official and

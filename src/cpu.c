@@ -979,8 +979,11 @@ handle_display:
             double elapsed = (now.tv_sec - last_time.tv_sec) +
                              (now.tv_nsec - last_time.tv_nsec) / 1e9;
 
-            /* One-shot: dump VSYNC callback code from live memory */
-            {
+            /* One-shot: dump VSYNC callback code from live memory.
+             * 0x2E8AF4 / 0x2E8B74 / 0x2E8E2C are SWE1-V1.19 BSS slots;
+             * on other bundles the reads return unrelated data, so keep
+             * the log gated on game_id to avoid noise. */
+            if (g_emu.game_id == 50069u) {
                 static int dump_count = 0;
                 if (g_emu.xinu_ready && dump_count < 4) {
                     dump_count++;
@@ -1037,8 +1040,9 @@ handle_display:
                 LOG("hb", "  PIC0: IRR=0x%02x IMR=0x%02x ISR=0x%02x  PIC1: IRR=0x%02x IMR=0x%02x ISR=0x%02x\n",
                     g_emu.pic[0].irr, g_emu.pic[0].imr, g_emu.pic[0].isr,
                     g_emu.pic[1].irr, g_emu.pic[1].imr, g_emu.pic[1].isr);
-                /* DM state — compact */
-                {
+                /* DM / DCS state — SWE1-V1.19 BSS layout. Gated on game_id
+                 * so RFM heartbeats don't print garbage for these slots. */
+                if (g_emu.game_id == 50069u) {
                     uint32_t dmm = RAM_RD32(0x2E8E2C);
                     uint32_t gxp = RAM_RD32(0x2E8B74);
                     uint32_t dcs_mode = RAM_RD32(0x3444b0);
@@ -1049,53 +1053,25 @@ handle_display:
                     LOG("hb", "  DM: mode=%u gxp=0x%x dt2=%u dcs_mode=%u dcs_st=%u dcs_cnt=%u io:ww=%u wr=%u bw=%u br=%u fr=%u\n",
                         dmm, gxp, g_emu.dc_timing2, dcs_mode, dcs_state, dcs_count,
                         ww, wr, bw, br, fr);
-                    /* V1.19 DCS state machine flags (from disassembly) */
                     uint32_t dcs_ready_flag = RAM_RD32(0x3442f4);
                     uint32_t dcs_complete   = RAM_RD32(0x3442f0);
                     uint32_t dcs_last_val   = RAM_RD32(0x344414);
                     uint32_t dcs_init_flag  = RAM_RD32(0x344410);
                     LOG("hb", "  DCS-v19: rdy=%u cpl=%u lastval=0x%x initf=0x%x\n",
                         dcs_ready_flag, dcs_complete, dcs_last_val, dcs_init_flag);
-                    /* Queue indices monitoring */
-                    {
-                        uint32_t q_wr = RAM_RD32(0x344408);
-                        uint32_t q_rd = RAM_RD32(0x34440c);
-                        uint32_t oq_wr = RAM_RD32(0x344498);
-                        uint32_t oq_rd = RAM_RD32(0x34449c);
-                        LOG("hb", "  Q: inner[wr=%u rd=%u] outer[wr=%u rd=%u]\n",
-                            q_wr, q_rd, oq_wr, oq_rd);
-                    }
-                    /* One-shot dump of guest DCS state — disabled, BAR4 mode working */
-#if 0
-                    static int s_dcs_code_dumped = 0;
-                    if (!s_dcs_code_dumped && wr >= 2) {
-                        s_dcs_code_dumped = 1;
-                        /* Extended DCS dispatch code (pre-statemachine + statemachine) */
-                        LOG("hb", "  === Guest DCS code (0x192d40-0x192fd0) ===\n");
-                        for (uint32_t a = 0x192d40; a < 0x192fd0; a += 16) {
-                            uint8_t *p = g_emu.ram + a;
-                            LOG("hb", "  %08x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-                                a, p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7],
-                                p[8],p[9],p[10],p[11],p[12],p[13],p[14],p[15]);
-                        }
-                        /* Command queue getter + DCS globals */
-                        LOG("hb", "  === Guest DCS cmd queue fn (0x191870-0x191960) ===\n");
-                        for (uint32_t a = 0x191870; a < 0x191960; a += 16) {
-                            uint8_t *p = g_emu.ram + a;
-                            LOG("hb", "  %08x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-                                a, p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7],
-                                p[8],p[9],p[10],p[11],p[12],p[13],p[14],p[15]);
-                        }
-                        LOG("hb", "  === DCS globals 0x344300-0x3444c0 ===\n");
-                        for (uint32_t a = 0x344300; a < 0x3444C0; a += 16) {
-                            uint8_t *p = g_emu.ram + a;
-                            LOG("hb", "  %08x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-                                a, p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7],
-                                p[8],p[9],p[10],p[11],p[12],p[13],p[14],p[15]);
-                        }
-                    }
-#endif
+                    uint32_t q_wr = RAM_RD32(0x344408);
+                    uint32_t q_rd = RAM_RD32(0x34440c);
+                    uint32_t oq_wr = RAM_RD32(0x344498);
+                    uint32_t oq_rd = RAM_RD32(0x34449c);
+                    LOG("hb", "  Q: inner[wr=%u rd=%u] outer[wr=%u rd=%u]\n",
+                        q_wr, q_rd, oq_wr, oq_rd);
+                } else {
+                    uint32_t ww,wr,bw,br,fr;
+                    dcs_io_get_counters(&ww,&wr,&bw,&br,&fr);
+                    LOG("hb", "  DCS-io: ww=%u wr=%u bw=%u br=%u fr=%u\n",
+                        ww, wr, bw, br, fr);
                 }
+                /* One-shot dump of guest DCS state — disabled */
                 /* Performance stats */
                 LOG("hb", "  PERF: calls=%lu/5s ok=%lu 0f3c=%lu hlt=%lu ticks=%lu bar2wr=%u\n",
                     prof_emu_calls, prof_ok, prof_0f3c, prof_hlt, prof_ticks_fired,

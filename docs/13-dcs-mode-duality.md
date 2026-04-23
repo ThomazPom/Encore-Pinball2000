@@ -74,7 +74,54 @@ to a legacy "I/O port UART" path using ports `0x138..0x13F`.
 Encore can serve either path — but **not transparently the same
 way**. Hence the flag.
 
-## `--dcs-mode bar4-patch` (default)
+## `--dcs-mode io-handled` (default)
+
+Skip the 5-byte CPU patch entirely. Instead, let the game's own
+DCS probe return 1 naturally by making the probe cell read
+`!= 0xFFFF` at the moment the probe runs.
+
+The scribble is staged:
+
+* Until `xinu_ready` fires, the cell is scribbled with `0x0000FFFF`
+  every tick — identical to what `bar4-patch` does pre-XINU. This
+  keeps any early-boot code that reads the cell as a sentinel
+  happy.
+* Once `xinu_ready` fires, the scribble flips to `0x00000000`. The
+  game's DCS probe (which runs from game-init code after XINU) now
+  sees `cell != 0xFFFF` → returns 1 ("DCS present") → game stores
+  `dcs_mode=1` → BAR4 command stream starts. `sound.c` handles the
+  MMIO commands exactly as in bar4-patch mode.
+
+No CPU code is rewritten in this mode — closer to the real
+hardware path. Because the pre-XINU polarity is `0xFFFF` regardless
+of `--dcs-mode`, every bundle in the matrix boots in io-handled
+just as reliably as in bar4-patch (see
+[docs/26](26-testing-bundle-matrix.md)).
+
+**Why this is the default.** The matrix in
+[docs/26](26-testing-bundle-matrix.md) shows that `io-handled`
+boots and produces audio on **12/12** shipped bundles, while
+`bar4-patch` only delivers audio on **9/12** (the three "pattern
+absent" cases below boot silent). io-handled is therefore strictly
+dominant: more compatible *and* closer to the real hardware path
+(no CPU code rewrite). The flag is kept so regression / A-B work
+against the legacy patch path is still trivial.
+
+### Where io-handled beats bar4-patch
+
+Three bundles have no 5-byte pattern for `bar4-patch` to rewrite:
+
+* `swe1 --update 1.3` (pre-release, prologue shape differs)
+* `swe1 --update none` (base chips only, no game overlay)
+* `rfm --update none` (same)
+
+On those three, `bar4-patch` boots to a silent attract — there is
+nothing to patch so `dcs_mode` stays 0. Under `io-handled` the
+same bundles boot **and** produce the full DCS command stream
+(30 `[dcs] WR` events in a 12 s headless window, matching the
+mature bundles).
+
+## `--dcs-mode bar4-patch` (legacy / regression)
 
 At the `xinu_ready` transition, `cpu.c` runs a pattern scan for the
 5-byte prologue:
@@ -101,45 +148,9 @@ checks expect to see — early boot survives, XINU fires, and the CPU
 patch then runs.
 
 Pattern-scan source: `src/cpu.c` (see "DCS-mode override" block).
-
-## `--dcs-mode io-handled`
-
-Skip the 5-byte CPU patch entirely. Instead, let the game's own
-DCS probe return 1 naturally by making the probe cell read
-`!= 0xFFFF` at the moment the probe runs.
-
-The scribble is staged:
-
-* Until `xinu_ready` fires, the cell is scribbled with `0x0000FFFF`
-  every tick — identical to what `bar4-patch` does pre-XINU. This
-  keeps any early-boot code that reads the cell as a sentinel
-  happy.
-* Once `xinu_ready` fires, the scribble flips to `0x00000000`. The
-  game's DCS probe (which runs from game-init code after XINU) now
-  sees `cell != 0xFFFF` → returns 1 ("DCS present") → game stores
-  `dcs_mode=1` → BAR4 command stream starts. `sound.c` handles the
-  MMIO commands exactly as in bar4-patch mode.
-
-No CPU code is rewritten in this mode — closer to the real
-hardware path. Because the pre-XINU polarity is now `0xFFFF`
-regardless of `--dcs-mode`, every bundle in the matrix boots in
-io-handled just as reliably as in bar4-patch (see
-[docs/26](26-testing-bundle-matrix.md)).
-
-### Where io-handled beats bar4-patch
-
-Three bundles have no 5-byte pattern for `bar4-patch` to rewrite:
-
-* `swe1 --update 1.3` (pre-release, prologue shape differs)
-* `swe1 --update none` (base chips only, no game overlay)
-* `rfm --update none` (same)
-
-On those three, `bar4-patch` boots to a silent attract — there is
-nothing to patch so `dcs_mode` stays 0. Under `io-handled` the
-same bundles boot **and** produce the full DCS command stream
-(30 `[dcs] WR` events in an 18 s headless window, matching the
-mature bundles). io-handled is therefore strictly more capable on
-the "pattern absent" set, and no less capable anywhere else.
+This mode is retained so an A/B against the legacy patch path
+remains a one-flag flip; it is **not** the default because it
+silently skips DCS init on bundles where the prologue is absent.
 
 ## Symptoms of getting the mode wrong
 
@@ -166,7 +177,7 @@ the "pattern absent" set, and no less capable anywhere else.
 [init] DCS-mode pattern hit @0x001931e4 slot=0x0034a714 — patched (force BAR4)
 ```
 
-means `bar4-patch` succeeded end-to-end.
+means `bar4-patch` succeeded end-to-end (note: not the default).
 
 ```
 [sgc] watchdog suppression active: [0x00344390] primed =0x0000FFFF (BT-107, dcs-mode=io-handled, scribble flips post-xinu_ready)
