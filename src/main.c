@@ -219,6 +219,10 @@ static int apply_option(const char *key, const char *value)
         g_emu.lpt_device_explicit = true;
         return 1;
     }
+    if (strcmp(key, "lpt-trace") == 0 && value) {
+        strncpy(g_emu.lpt_trace_file, value, sizeof(g_emu.lpt_trace_file) - 1);
+        return 1;
+    }
     if (strcmp(key, "update") == 0 && value) {
         if (strcasecmp(value, "none") == 0) {
             g_emu.update_file[0] = '\0';
@@ -544,6 +548,14 @@ print_help:
 "          * Combine with --serial-tcp to drive XINA over TCP while the\n"
 "            cabinet handles physical I/O.\n"
 "\n"
+"  --lpt-trace FILE       Capture every passthrough LPT cycle to FILE.\n"
+"                         One CSV line per cycle: ns,dir,reg,val.\n"
+"                         dir = R or W; reg = 0 (data), 1 (status), 2 (ctrl).\n"
+"                         Off by default. Useful when wiring a real cabinet\n"
+"                         for the first time — gives you ground truth on\n"
+"                         what the guest is actually putting on the wire and\n"
+"                         what the board is replying.\n"
+"\n"
 "════════════════════════════════════════════════════════════════════════\n"
 " Maybe-fun future ideas (not implemented — left as bread crumbs)\n"
 "════════════════════════════════════════════════════════════════════════\n"
@@ -551,7 +563,8 @@ print_help:
 "                                  (timestamps every LPT switch, kbd, serial)\n"
 "  --http PORT                     read-only status endpoint (FPS, switch\n"
 "                                  matrix, register snapshot, RAM peek)\n"
-"  --lpt-trace FILE                opt-in LPT bus trace dump\n"
+"  --lpt-trace FILE                (now implemented — see Real-cabinet\n"
+"                                  section above)\n"
 "  --xina-script FILE              type a list of XINA commands at boot\n"
 "                                  (sugar over --keyboard-tcp / --serial-tcp)\n"
 "  --net-bridge tap0               TUN/TAP for RFM internet leaderboard\n"
