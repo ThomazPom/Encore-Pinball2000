@@ -345,6 +345,15 @@ typedef struct {
 
     /* User-visible toggles (CLI / yaml config). */
     bool          no_savedata;          /* --no-savedata: skip load and save */
+    bool          cabinet_purist;       /* --cabinet-purist: experimental — when LPT
+                                         * passthrough is open, skip the optional
+                                         * sgc fixups (watchdog suppression /
+                                         * dcs-probe scribble). Only the
+                                         * structurally required mem_detect patch
+                                         * stays on. Lets a real driver board
+                                         * drive the natural code path so we can
+                                         * compare boot/timing behaviour with and
+                                         * without the shims. */
     bool          start_fullscreen;     /* --fullscreen: open SDL window in FS */
     bool          start_flipscreen;     /* --flipscreen: initial Y-flip ON */
     int           bpp;                  /* --bpp: 16 or 32 (24 falls back to 32) */

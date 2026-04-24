@@ -55,6 +55,7 @@
 #include <linux/ppdev.h>
 #include <linux/parport.h>
 #include <sys/io.h>             /* ioperm, inb, outb */
+#include <time.h>               /* clock_gettime for the µs sampler */
 #endif
 
 /* === Backend dispatch ===
@@ -69,6 +70,43 @@ static int           s_fd          = -1;        /* ppdev backend */
 static unsigned long s_io_base     = 0;         /* raw backend (data port)  */
 static uint8_t       s_ctrl_cached = 0;         /* mirrors guest's last 0x37A write */
 static int           s_dir_input   = 0;         /* current PPDATADIR / control bit-5 state */
+
+/* Per-call timing sampler — opt-in via -vv (g_log_level >= 2).
+ * Accumulates wall time spent inside lpt_passthrough_{read,write} and
+ * emits a one-line summary every SAMPLE_EVERY calls so we can quantify
+ * what real LPT round-trips actually cost on the operator's hardware
+ * (this is the "ppdev too slow / raw fast enough?" question the
+ * community keeps raising — better measured than asserted). */
+#define LPT_SAMPLE_EVERY 10000
+static uint64_t s_lpt_calls = 0;
+static uint64_t s_lpt_ns_total = 0;
+
+#ifdef __linux__
+static inline uint64_t lpt_now_ns(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+
+static inline void lpt_sample_account(uint64_t start_ns)
+{
+    if (g_log_level < 2) return;   /* zero-overhead at default verbosity */
+    uint64_t dt = lpt_now_ns() - start_ns;
+    s_lpt_ns_total += dt;
+    s_lpt_calls++;
+    if ((s_lpt_calls % LPT_SAMPLE_EVERY) == 0) {
+        double avg_us = (double)s_lpt_ns_total / (double)s_lpt_calls / 1000.0;
+        LOGV2("lpt", "timing: %llu calls, avg %.3f µs/call (%s backend)\n",
+              (unsigned long long)s_lpt_calls, avg_us,
+              s_backend == LPT_BK_RAW ? "raw" :
+              s_backend == LPT_BK_PPDEV ? "ppdev" : "none");
+    }
+}
+#else
+static inline uint64_t lpt_now_ns(void) { return 0; }
+static inline void lpt_sample_account(uint64_t start_ns) { (void)start_ns; }
+#endif
 
 static void set_dir(int input)
 {
@@ -147,7 +185,7 @@ static int raw_open(unsigned long base, bool quiet_if_missing)
 
     LOG("lpt", "*** real cabinet detected on RAW I/O 0x%lx — keyboard/F-key "
                "button emulation DISABLED ***\n", base);
-    LOG("lpt", "    raw inb/outb path; sub-µs strobes via outb(0x80)\n");
+    LOG("lpt", "    raw inb/outb path; short strobe pacing via outb(0x80) (timing not yet verified on real cabinet)\n");
     return 0;
 }
 #endif
@@ -249,23 +287,28 @@ uint8_t lpt_passthrough_read(uint8_t reg)
 {
 #ifdef __linux__
     unsigned char v = 0xFF;
+    uint64_t t0 = (g_log_level >= 2) ? lpt_now_ns() : 0;
 
     if (s_backend == LPT_BK_PPDEV) {
-        if (s_fd < 0) return v;
+        if (s_fd < 0) { lpt_sample_account(t0); return v; }
         switch (reg) {
         case 0: /* data port — flip to input so cabinet board can drive bus */
             set_dir(1);
             if (ioctl(s_fd, PPRDATA, &v) < 0)
                 LOG("lpt", "PPRDATA failed: %s\n", strerror(errno));
             set_dir(0);                        /* restore output for latch */
+            lpt_sample_account(t0);
             return v;
         case 1: /* status — always input on real LPT */
             if (ioctl(s_fd, PPRSTATUS, &v) < 0)
                 LOG("lpt", "PPRSTATUS failed: %s\n", strerror(errno));
+            lpt_sample_account(t0);
             return v;
         case 2: /* control — return cached guest-visible value */
+            lpt_sample_account(t0);
             return s_ctrl_cached;
         default:
+            lpt_sample_account(t0);
             return 0xFF;
         }
     } else if (s_backend == LPT_BK_RAW) {
@@ -274,15 +317,21 @@ uint8_t lpt_passthrough_read(uint8_t reg)
             set_dir(1);
             v = inb(s_io_base + 0);
             set_dir(0);
+            lpt_sample_account(t0);
             return v;
         case 1:
-            return inb(s_io_base + 1);
+            v = inb(s_io_base + 1);
+            lpt_sample_account(t0);
+            return v;
         case 2:
+            lpt_sample_account(t0);
             return s_ctrl_cached;             /* cached guest-visible byte */
         default:
+            lpt_sample_account(t0);
             return 0xFF;
         }
     }
+    lpt_sample_account(t0);
     return v;
 #else
     (void)reg;
@@ -293,14 +342,16 @@ uint8_t lpt_passthrough_read(uint8_t reg)
 void lpt_passthrough_write(uint8_t reg, uint8_t val)
 {
 #ifdef __linux__
+    uint64_t t0 = (g_log_level >= 2) ? lpt_now_ns() : 0;
     if (s_backend == LPT_BK_PPDEV) {
-        if (s_fd < 0) return;
+        if (s_fd < 0) { lpt_sample_account(t0); return; }
         unsigned char v = val;
         switch (reg) {
         case 0: /* data port — must be in output mode for the latch to hold */
             set_dir(0);
             if (ioctl(s_fd, PPWDATA, &v) < 0)
                 LOG("lpt", "PPWDATA failed: %s\n", strerror(errno));
+            lpt_sample_account(t0);
             return;
         case 2: /* control — cache and forward verbatim. Direction (bit 5) is
                  * managed by encore around data-port accesses; P2K-driver
@@ -308,8 +359,10 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
             s_ctrl_cached = val;
             if (ioctl(s_fd, PPWCONTROL, &v) < 0)
                 LOG("lpt", "PPWCONTROL failed: %s\n", strerror(errno));
+            lpt_sample_account(t0);
             return;
         default:
+            lpt_sample_account(t0);
             return;
         }
     } else if (s_backend == LPT_BK_RAW) {
@@ -317,6 +370,7 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
         case 0:
             set_dir(0);
             outb(val, s_io_base + 0);
+            lpt_sample_account(t0);
             return;
         case 2:
             /* Cache the guest-visible byte; bit 5 (direction) is managed
@@ -324,8 +378,10 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
             s_ctrl_cached = val;
             outb((uint8_t)((val & ~0x20u) | (s_dir_input ? 0x20u : 0u)),
                  s_io_base + 2);
+            lpt_sample_account(t0);
             return;
         default:
+            lpt_sample_account(t0);
             return;
         }
     }

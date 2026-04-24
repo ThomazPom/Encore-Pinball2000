@@ -175,6 +175,7 @@ static int apply_option(const char *key, const char *value)
         return 0;
     }
     if (strcmp(key, "no-savedata") == 0) { g_emu.no_savedata = true; return 0; }
+    if (strcmp(key, "cabinet-purist") == 0) { g_emu.cabinet_purist = true; return 0; }
     if (strcmp(key, "dcs-mode") == 0 && value) {
         if (strcmp(value, "bar4-patch") == 0) {
             g_emu.dcs_mode_choice = ENCORE_DCS_BAR4_PATCH;
@@ -583,6 +584,16 @@ print_help:
 "════════════════════════════════════════════════════════════════════════\n"
 "  --no-savedata          Don't load NVRAM/SEEPROM at boot AND don't save\n"
 "                         on exit. Useful for fresh-state regression runs.\n"
+"  --cabinet-purist       EXPERIMENTAL — when used together with an open\n"
+"                         LPT passthrough (--lpt-device 0xBASE or\n"
+"                         /dev/parportN), skip the optional sgc fixups\n"
+"                         (watchdog suppression / dcs-probe scribble) so\n"
+"                         the natural pci_watchdog_bone() path runs and\n"
+"                         the real driver board actually drives the\n"
+"                         decision. The structural mem_detect 4MB→14MB\n"
+"                         patch is kept (without it the guest stack\n"
+"                         overflows before graphics). Useful for A/B\n"
+"                         comparisons with vs. without the shims.\n"
 "  --fullscreen           Open the SDL window fullscreen at startup.\n"
 "  --flipscreen           Start with the display Y-flipped (some cabs).\n"
 "  --bpp 16|32            Output texture bit depth (default 32 / ARGB8888;\n"
