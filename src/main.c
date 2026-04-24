@@ -223,6 +223,10 @@ static int apply_option(const char *key, const char *value)
         strncpy(g_emu.lpt_trace_file, value, sizeof(g_emu.lpt_trace_file) - 1);
         return 1;
     }
+    if (strcmp(key, "lpt-purist") == 0) {
+        g_emu.lpt_purist = true;
+        return value ? 1 : 0;
+    }
     if (strcmp(key, "update") == 0 && value) {
         if (strcasecmp(value, "none") == 0) {
             g_emu.update_file[0] = '\0';
@@ -555,6 +559,21 @@ print_help:
 "                         for the first time — gives you ground truth on\n"
 "                         what the guest is actually putting on the wire and\n"
 "                         what the board is replying.\n"
+"\n"
+"  --lpt-purist           Forward the guest's CTL byte (LPT base+2) verbatim\n"
+"                         to the host — including bit 5 (PC parallel-port\n"
+"                         direction). The default raw backend strips bit 5\n"
+"                         from guest CTL writes and toggles it itself around\n"
+"                         data-port reads. The documented Pinball 2000 driver-\n"
+"                         board protocol expects the guest to drive bit 5\n"
+"                         itself (it writes 0x29 to CTL before reading data),\n"
+"                         and Encore's bit-5 management can fight that\n"
+"                         sequence — causing brief bus contention and possibly\n"
+"                         the watchdog/blanking failures real cabinets hit.\n"
+"                         Purist mode trusts the original XINA driver code\n"
+"                         and removes that interference. Try this first if\n"
+"                         the default raw path is silent on a real board.\n"
+"                         (Implies --lpt-device 0xBASE; ignored on ppdev.)\n"
 "\n"
 "════════════════════════════════════════════════════════════════════════\n"
 " Maybe-fun future ideas (not implemented — left as bread crumbs)\n"
