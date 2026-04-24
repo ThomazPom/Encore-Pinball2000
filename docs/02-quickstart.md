@@ -1,22 +1,21 @@
 # 02 — Quickstart
 
-Three commands from a fresh Debian/Ubuntu install to attract mode:
+From a fresh Debian/Ubuntu install to Pinball 2000 attract mode in
+three (and a half) brief steps:
 
-```sh
-# 1️⃣  install dependencies
-sudo apt install -y build-essential pkg-config git unzip \
-                    libsdl2-dev libsdl2-mixer-dev libunicorn-dev
+1. **Install dependencies** — one `apt install` line covers Debian 12 /
+   Ubuntu 24.04 / Fedora 38+; on older distros (Ubuntu 22.04, RHEL, …)
+   the same script transparently builds Unicorn 2.x from source.
+2. **Clone and build** — `git clone`, then `make` (under four seconds,
+   single 800 KB binary, no autoconf / meson / per-distro tweaks).
+3. **First run** — `./build/encore --game swe1 --update 0150`. Every
+   chip ROM and every Williams update bundle ship in the repo; nothing
+   to download or place by hand.
+3. ½ ⋅ *(optional)* — connect a real Pinball 2000 cabinet over LPT
+   (one extra `modprobe` + `usermod -aG lp` block).
 
-# 2️⃣  clone and build
-git clone https://github.com/ThomazPom/Encore-Pinball2000.git encore && cd encore && make
-
-# 3️⃣  run it — chip ROMs and Williams updates already ship in the repo
-./build/encore --game swe1 --update 0150
-```
-
-Each step has a section below with rationale, distro‑specific
-fallbacks and troubleshooting; jump straight to **§ 3 First run**
-if the three lines above just worked.
+Each section below expands the matching step with rationale and
+distro-specific fallbacks.
 
 > **Status:** Behaviour described here is based on emulator testing
 > only. Real-cabinet validation is pending — see
