@@ -90,6 +90,19 @@ static int           s_dir_input   = 0;         /* current PPDATADIR / control b
 static uint64_t s_lpt_calls = 0;
 static uint64_t s_lpt_ns_total = 0;
 
+/* Blanking-watchdog gap detector — purely diagnostic, opt-in via -vv.
+ * The documented PB2K driver-board protocol (see docs/48-…) requires the
+ * Switch-Column register (P2K index 0x05) to be strobed within ~2.5 ms or
+ * on-board blanking is asserted and all power outputs go dark. We can't
+ * decode the index sequence from outside without state, but every documented
+ * write sequence starts with a data-port write to base+0. So a long gap
+ * between consecutive data-port writes is a strong proxy for "guest is not
+ * keeping the watchdog fed". One-shot warning so we don't spam if the gap
+ * keeps recurring. */
+#define LPT_BLANKING_WARN_NS  (2500ull * 1000ull)   /* 2.5 ms */
+static uint64_t s_last_data_write_ns = 0;
+static int      s_blanking_warned    = 0;
+
 #ifdef __linux__
 static inline uint64_t lpt_now_ns(void)
 {
@@ -112,9 +125,31 @@ static inline void lpt_sample_account(uint64_t start_ns)
               s_backend == LPT_BK_PPDEV ? "ppdev" : "none");
     }
 }
+
+/* Update + check blanking-window gap. Call from every guest write to LPT
+ * data port (base+0). One-shot warn at -vv when gap >2.5 ms — the documented
+ * threshold at which the on-board blanking circuit kills outputs. */
+static inline void lpt_blanking_check(void)
+{
+    if (g_log_level < 2) return;   /* zero-overhead at default verbosity */
+    uint64_t now = lpt_now_ns();
+    if (s_last_data_write_ns != 0 && !s_blanking_warned) {
+        uint64_t gap = now - s_last_data_write_ns;
+        if (gap > LPT_BLANKING_WARN_NS) {
+            LOGV2("lpt",
+                  "WARNING: %.2f ms gap between LPT data writes — exceeds the "
+                  "~2.5 ms PB2K blanking window; outputs may have been disabled "
+                  "on a real cabinet (see docs/48-lpt-protocol-references.md)\n",
+                  (double)gap / 1.0e6);
+            s_blanking_warned = 1;
+        }
+    }
+    s_last_data_write_ns = now;
+}
 #else
 static inline uint64_t lpt_now_ns(void) { return 0; }
 static inline void lpt_sample_account(uint64_t start_ns) { (void)start_ns; }
+static inline void lpt_blanking_check(void) {}
 #endif
 
 static void set_dir(int input)
@@ -357,6 +392,7 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
         unsigned char v = val;
         switch (reg) {
         case 0: /* data port — must be in output mode for the latch to hold */
+            lpt_blanking_check();
             set_dir(0);
             if (ioctl(s_fd, PPWDATA, &v) < 0)
                 LOG("lpt", "PPWDATA failed: %s\n", strerror(errno));
@@ -377,6 +413,7 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
     } else if (s_backend == LPT_BK_RAW) {
         switch (reg) {
         case 0:
+            lpt_blanking_check();
             set_dir(0);
             outb(val, s_io_base + 0);
             lpt_sample_account(t0);
