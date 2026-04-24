@@ -15,9 +15,9 @@ cabinet through the host parallel port.
 > cabinet, see [42-cabinet-testing-call.md](42-cabinet-testing-call.md)
 > to learn how to help verify.
 
-This tree contains 47 documents, grouped by subsystem. Read the first
-three in order if you are new to the project; afterwards jump straight
-to whatever interests you.
+This tree is grouped by subsystem. Read the first three documents in
+order if you are new to the project; afterwards jump straight to
+whatever interests you.
 
 ## Getting started
 
@@ -25,7 +25,7 @@ to whatever interests you.
 |---|---|---|
 | [01](01-overview.md)  | What Encore is, goals, 10 000-foot architecture |
 | [02](02-quickstart.md) | Build from source, run your first bundle |
-| [03](03-cli-reference.md) | Every CLI flag with a worked example |
+| [03](03-cli-reference.md) | CLI option map and links to deeper references |
 | [04](04-config-yaml.md) | The YAML-ish config file loader |
 
 ## Architecture
@@ -51,7 +51,7 @@ to whatever interests you.
 | [16](16-irq-pic.md) | PIC state machine, IRQ routing, EOI, timer |
 | [17](17-vblank.md) | How VBLANK is delivered and why 57 Hz |
 | [18](18-lpt-emulation.md) | Virtual matrix: switches, coils, lamps |
-| [19](19-real-lpt-passthrough.md) | `--lpt-device /dev/parport0`, Alt+K capture |
+| [19](19-real-lpt-passthrough.md) | Real-cabinet LPT passthrough and diagnostics |
 
 ## Symbols and patches
 
