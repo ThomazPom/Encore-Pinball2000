@@ -1,10 +1,22 @@
 /*
- * lpt_pass.c — Real LPT passthrough via Linux ppdev.
+ * lpt_pass.c — Real LPT passthrough via Linux ppdev OR raw I/O.
  *
  * When active, all guest accesses to ports 0x378/0x379/0x37A are forwarded
- * to a physical parallel port (e.g. /dev/parport0). The emulated driver-board
- * state machine in io.c is bypassed for response generation, so the real
- * Pinball 2000 cabinet sees genuine guest-driven LPT traffic.
+ * to a physical parallel port. Two backends are supported:
+ *
+ *   - "ppdev"  → /dev/parportN via Linux ppdev (unprivileged, lp group).
+ *                Default backend, selected when --lpt-device is a path.
+ *
+ *   - "raw"    → ioperm()+inb/outb on a literal I/O base (e.g. 0x378).
+ *                Mirrors what nucore did (binary RE: ioperm(base,3,1) +
+ *                ioperm(0x80,1,1) + raw `in`/`out` per byte). Selected when
+ *                --lpt-device argument parses as a hex/decimal address.
+ *                Requires CAP_SYS_RAWIO (i.e. root, or one-time
+ *                `setcap cap_sys_rawio+ep ./build/encore`).
+ *
+ * The emulated driver-board state machine in io.c is bypassed for response
+ * generation, so the real Pinball 2000 cabinet sees genuine guest-driven
+ * LPT traffic regardless of backend choice.
  *
  * Direction policy — matches P2K-driver ground truth (binary RE):
  *   P2K-driver's LPT data-port read handler (sub @ 0x8059688) gates
@@ -42,20 +54,40 @@
 #ifdef __linux__
 #include <linux/ppdev.h>
 #include <linux/parport.h>
+#include <sys/io.h>             /* ioperm, inb, outb */
 #endif
 
-static int     s_fd          = -1;
-static uint8_t s_ctrl_cached = 0;       /* mirrors guest's last 0x37A write */
-static int     s_dir_input   = 0;       /* current PPDATADIR state          */
+/* === Backend dispatch ===
+ *
+ * Two implementations behind the same lpt_passthrough_{open,close,read,write}
+ * façade. s_backend selects which is active; both paths share s_ctrl_cached
+ * (guest-visible control byte) and the direction-flip discipline. */
+typedef enum { LPT_BK_NONE = 0, LPT_BK_PPDEV, LPT_BK_RAW } lpt_backend_t;
+
+static lpt_backend_t s_backend     = LPT_BK_NONE;
+static int           s_fd          = -1;        /* ppdev backend */
+static unsigned long s_io_base     = 0;         /* raw backend (data port)  */
+static uint8_t       s_ctrl_cached = 0;         /* mirrors guest's last 0x37A write */
+static int           s_dir_input   = 0;         /* current PPDATADIR / control bit-5 state */
 
 static void set_dir(int input)
 {
 #ifdef __linux__
-    if (s_fd < 0) return;
     if (s_dir_input == !!input) return;
-    int dir = input ? 1 : 0;
-    if (ioctl(s_fd, PPDATADIR, &dir) == 0)
+    if (s_backend == LPT_BK_PPDEV) {
+        if (s_fd < 0) return;
+        int dir = input ? 1 : 0;
+        if (ioctl(s_fd, PPDATADIR, &dir) == 0)
+            s_dir_input = !!input;
+    } else if (s_backend == LPT_BK_RAW) {
+        /* Bit 5 of the SPP control register tristates the host data drivers
+         * on PC-style chipsets — same effect as PPDATADIR over ppdev. We
+         * read-modify-write so the other guest-visible control bits are
+         * preserved verbatim. */
+        uint8_t c = (uint8_t)((s_ctrl_cached & ~0x20u) | (input ? 0x20u : 0u));
+        outb(c, s_io_base + 2);
         s_dir_input = !!input;
+    }
 #else
     (void)input;
 #endif
@@ -63,12 +95,67 @@ static void set_dir(int input)
 
 bool lpt_passthrough_active(void)
 {
-    return s_fd >= 0;
+    return s_backend != LPT_BK_NONE;
 }
 
-/* Open + claim the device. Returns 0 on success, -1 on failure.
- * Caller decides whether failure is fatal (explicit --lpt-device) or
- * a silent fallback (default path attempted, no device present). */
+/* Parse "0xNNN" (hex) or pure decimal as an I/O base; returns true and sets
+ * *out on success. Anything containing '/' or non-numeric chars (after an
+ * optional 0x prefix) is rejected → caller falls through to ppdev path. */
+static bool parse_io_base(const char *s, unsigned long *out)
+{
+    if (!s || !*s) return false;
+    if (strchr(s, '/')) return false;        /* obvious device path */
+    char *end = NULL;
+    int base = (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) ? 16 : 10;
+    unsigned long v = strtoul(s, &end, base);
+    if (!end || *end != '\0') return false;
+    if (v == 0 || v > 0xFFFFu - 2u) return false;  /* must fit + 2 */
+    *out = v;
+    return true;
+}
+
+#ifdef __linux__
+/* Raw backend: claim base..base+2 (data/status/control) plus 0x80 for sub-µs
+ * I/O delays (mirrors nucore's binary: ioperm(base,3,1) + ioperm(0x80,1,1)).
+ * Returns 0 on success, -1 on failure. EPERM / EACCES → not root; logged
+ * with the setcap remediation suggestion. */
+static int raw_open(unsigned long base, bool quiet_if_missing)
+{
+    if (ioperm(base, 3, 1) != 0) {
+        if (!quiet_if_missing || (errno != EPERM && errno != EACCES))
+            LOG("lpt", "raw: ioperm(0x%lx,3,1) failed: %s%s\n",
+                base, strerror(errno),
+                (errno == EPERM || errno == EACCES)
+                    ? " (run as root, or "
+                      "`sudo setcap cap_sys_rawio+ep ./build/encore`)"
+                    : "");
+        return -1;
+    }
+    /* Port 0x80 is the legacy POST/diagnostic port — used as a ~1 µs I/O
+     * delay primitive (`outb 0,0x80`). Failure here is non-fatal: we can
+     * still drive the LPT, we just lose the fine-grained delay knob. */
+    if (ioperm(0x80, 1, 1) != 0)
+        LOG("lpt", "raw: ioperm(0x80,1,1) failed: %s "
+                   "(I/O-delay port unavailable, harmless)\n",
+            strerror(errno));
+
+    s_io_base     = base;
+    s_backend     = LPT_BK_RAW;
+    s_ctrl_cached = 0;
+    s_dir_input   = -1;
+    set_dir(0);                                /* idle = output (host drives latch) */
+
+    LOG("lpt", "*** real cabinet detected on RAW I/O 0x%lx — keyboard/F-key "
+               "button emulation DISABLED ***\n", base);
+    LOG("lpt", "    raw inb/outb path; sub-µs strobes via outb(0x80)\n");
+    return 0;
+}
+#endif
+
+/* Open + claim the LPT. `device` is either a path (→ ppdev) or a hex/decimal
+ * I/O base address (→ raw, requires CAP_SYS_RAWIO). Returns 0 on success,
+ * -1 on failure. Caller decides whether failure is fatal (explicit
+ * --lpt-device) or a silent fallback (default path attempted, no device). */
 int lpt_passthrough_open(const char *device, bool quiet_if_missing)
 {
 #ifndef __linux__
@@ -80,6 +167,13 @@ int lpt_passthrough_open(const char *device, bool quiet_if_missing)
         !strcmp(device, "emu")  || !strcmp(device, "emulate"))
         return -1;
 
+    /* Raw backend: --lpt-device 0x378 (or any decimal/hex I/O base).
+     * Mirrors nucore's `-parallel 0x378` behavior. */
+    unsigned long base = 0;
+    if (parse_io_base(device, &base))
+        return raw_open(base, quiet_if_missing);
+
+    /* ppdev backend: --lpt-device /dev/parport0 (default). */
     int fd = open(device, O_RDWR);
     if (fd < 0) {
         /* Default-mode probe: stay quiet on ENOENT/EACCES so users without
@@ -117,14 +211,15 @@ int lpt_passthrough_open(const char *device, bool quiet_if_missing)
         return -1;
     }
 
-    s_fd = fd;
+    s_fd          = fd;
+    s_backend     = LPT_BK_PPDEV;
     s_ctrl_cached = 0;
-    s_dir_input = -1;          /* force first set_dir() to take effect */
-    set_dir(0);                /* idle = output (data latch holds bus) */
+    s_dir_input   = -1;          /* force first set_dir() to take effect */
+    set_dir(0);                  /* idle = output (data latch holds bus) */
 
     LOG("lpt", "*** real cabinet detected on %s — keyboard/F-key button "
                "emulation DISABLED ***\n", device);
-    LOG("lpt", "    guest LPT traffic forwarded to hardware; cabinet drives "
+    LOG("lpt", "    guest LPT traffic forwarded via ppdev; cabinet drives "
                "switch matrix\n");
     return 0;
 #endif
@@ -133,10 +228,18 @@ int lpt_passthrough_open(const char *device, bool quiet_if_missing)
 void lpt_passthrough_close(void)
 {
 #ifdef __linux__
-    if (s_fd < 0) return;
-    (void)ioctl(s_fd, PPRELEASE);
-    close(s_fd);
-    s_fd = -1;
+    if (s_backend == LPT_BK_PPDEV && s_fd >= 0) {
+        (void)ioctl(s_fd, PPRELEASE);
+        close(s_fd);
+        s_fd = -1;
+    } else if (s_backend == LPT_BK_RAW) {
+        /* Best-effort release. Failure here is harmless: we're exiting. */
+        (void)ioperm(s_io_base, 3, 0);
+        (void)ioperm(0x80, 1, 0);
+    } else {
+        return;
+    }
+    s_backend = LPT_BK_NONE;
     LOG("lpt", "passthrough released\n");
 #endif
 }
@@ -147,24 +250,41 @@ uint8_t lpt_passthrough_read(uint8_t reg)
 {
 #ifdef __linux__
     unsigned char v = 0xFF;
-    if (s_fd < 0) return v;
 
-    switch (reg) {
-    case 0: /* data port — flip to input so cabinet board can drive bus */
-        set_dir(1);
-        if (ioctl(s_fd, PPRDATA, &v) < 0)
-            LOG("lpt", "PPRDATA failed: %s\n", strerror(errno));
-        set_dir(0);                            /* restore output for latch */
-        return v;
-    case 1: /* status — always input on real LPT */
-        if (ioctl(s_fd, PPRSTATUS, &v) < 0)
-            LOG("lpt", "PPRSTATUS failed: %s\n", strerror(errno));
-        return v;
-    case 2: /* control — return cached guest-visible value */
-        return s_ctrl_cached;
-    default:
-        return 0xFF;
+    if (s_backend == LPT_BK_PPDEV) {
+        if (s_fd < 0) return v;
+        switch (reg) {
+        case 0: /* data port — flip to input so cabinet board can drive bus */
+            set_dir(1);
+            if (ioctl(s_fd, PPRDATA, &v) < 0)
+                LOG("lpt", "PPRDATA failed: %s\n", strerror(errno));
+            set_dir(0);                        /* restore output for latch */
+            return v;
+        case 1: /* status — always input on real LPT */
+            if (ioctl(s_fd, PPRSTATUS, &v) < 0)
+                LOG("lpt", "PPRSTATUS failed: %s\n", strerror(errno));
+            return v;
+        case 2: /* control — return cached guest-visible value */
+            return s_ctrl_cached;
+        default:
+            return 0xFF;
+        }
+    } else if (s_backend == LPT_BK_RAW) {
+        switch (reg) {
+        case 0:
+            set_dir(1);
+            v = inb(s_io_base + 0);
+            set_dir(0);
+            return v;
+        case 1:
+            return inb(s_io_base + 1);
+        case 2:
+            return s_ctrl_cached;             /* cached guest-visible byte */
+        default:
+            return 0xFF;
+        }
     }
+    return v;
 #else
     (void)reg;
     return 0xFF;
@@ -174,24 +294,41 @@ uint8_t lpt_passthrough_read(uint8_t reg)
 void lpt_passthrough_write(uint8_t reg, uint8_t val)
 {
 #ifdef __linux__
-    if (s_fd < 0) return;
-    unsigned char v = val;
-
-    switch (reg) {
-    case 0: /* data port — must be in output mode for the latch to hold */
-        set_dir(0);
-        if (ioctl(s_fd, PPWDATA, &v) < 0)
-            LOG("lpt", "PPWDATA failed: %s\n", strerror(errno));
-        return;
-    case 2: /* control — cache and forward verbatim. Direction (bit 5) is
-             * managed by encore around data-port accesses; P2K-driver
-             * confirms the P2K driver never writes bit 5 itself. */
-        s_ctrl_cached = val;
-        if (ioctl(s_fd, PPWCONTROL, &v) < 0)
-            LOG("lpt", "PPWCONTROL failed: %s\n", strerror(errno));
-        return;
-    default:
-        return;
+    if (s_backend == LPT_BK_PPDEV) {
+        if (s_fd < 0) return;
+        unsigned char v = val;
+        switch (reg) {
+        case 0: /* data port — must be in output mode for the latch to hold */
+            set_dir(0);
+            if (ioctl(s_fd, PPWDATA, &v) < 0)
+                LOG("lpt", "PPWDATA failed: %s\n", strerror(errno));
+            return;
+        case 2: /* control — cache and forward verbatim. Direction (bit 5) is
+                 * managed by encore around data-port accesses; P2K-driver
+                 * confirms the P2K driver never writes bit 5 itself. */
+            s_ctrl_cached = val;
+            if (ioctl(s_fd, PPWCONTROL, &v) < 0)
+                LOG("lpt", "PPWCONTROL failed: %s\n", strerror(errno));
+            return;
+        default:
+            return;
+        }
+    } else if (s_backend == LPT_BK_RAW) {
+        switch (reg) {
+        case 0:
+            set_dir(0);
+            outb(val, s_io_base + 0);
+            return;
+        case 2:
+            /* Cache the guest-visible byte; bit 5 (direction) is managed
+             * internally by set_dir() — preserve guest's other bits. */
+            s_ctrl_cached = val;
+            outb((uint8_t)((val & ~0x20u) | (s_dir_input ? 0x20u : 0u)),
+                 s_io_base + 2);
+            return;
+        default:
+            return;
+        }
     }
 #else
     (void)reg; (void)val;
