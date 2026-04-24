@@ -10,6 +10,19 @@ five minutes.
 
 ## 1. Install dependencies
 
+> **Debian first-user note (skip if `sudo` already works):** Debian's
+> default install does **not** add the first user to the `sudo` group,
+> so every `sudo …` in this guide will refuse with "user is not in the
+> sudoers file". Bootstrap once, then continue with the rest of the
+> doc unchanged:
+>
+> ```sh
+> su -c "/usr/sbin/usermod -aG sudo $(whoami)"   # root password (set at install)
+> newgrp sudo                                    # activate in THIS shell —
+>                                                #   no logout needed
+> sudo -v                                        # sanity-check (asks YOUR pwd)
+> ```
+
 ```sh
 sudo apt update
 sudo apt install -y build-essential pkg-config git \
@@ -47,27 +60,13 @@ parallel port, do **this once** before the first run — otherwise
 `Permission denied` and the cabinet will not respond:
 
 ```sh
-# If `sudo` says "user is not in the sudoers file" (Debian default —
-# the first user is NOT a sudoer), become root with su instead. The
-# block below works for both cases: a sudoer can prefix each line with
-# `sudo`; a non-sudoer runs the whole `su -` block as root in one go.
-
-su -                                       # enter root shell (Debian root pwd)
-  apt install -y parport                   # usually pulled in already
-  modprobe ppdev parport parport_pc        # make /dev/parport0 appear
-  rmmod lp 2>/dev/null || true             # printer driver squats on the port
-  usermod -aG sudo "$SUDO_USER" 2>/dev/null \
-      || usermod -aG sudo "$(logname)"     # OPTIONAL: grant yourself sudo
-                                           #          for the future
-  usermod -aG lp   "$SUDO_USER" 2>/dev/null \
-      || usermod -aG lp   "$(logname)"     # REQUIRED: /dev/parport0 access
-  exit                                     # leave root shell
-
-newgrp lp                                  # activate lp in THIS shell —
-                                           #   no logout/relogin needed;
-                                           #   spawns a subshell with lp
-                                           #   active. Use `exit` to return
-                                           #   to the parent shell. Use
+sudo apt install -y parport                # usually pulled in already
+sudo modprobe ppdev parport parport_pc     # make /dev/parport0 appear
+sudo rmmod lp 2>/dev/null || true          # printer driver squats on the port
+sudo usermod -aG lp $USER                  # one-time: persist across reboots
+newgrp lp                                  # activate the group in THIS shell —
+                                           #   no logout/relogin needed; spawns
+                                           #   a subshell with lp active. Use
                                            #   `sg lp -c './build/encore …'`
                                            #   for a one-shot run instead.
 ls -l /dev/parport0                        # expect: crw-rw---- root lp
