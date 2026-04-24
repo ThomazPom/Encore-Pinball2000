@@ -69,7 +69,7 @@ unrelated reasons.
 | Argument | Backend | Privilege | Per-byte cost | When to use |
 |---|---|---|---|---|
 | `/dev/parport0` (path) | ppdev | unprivileged (`lp` group) | ~1–3 µs (ioctl + driver) | Default. Simplest install. |
-| `0x378` (hex/decimal base) | raw `inb`/`outb` | needs `CAP_SYS_RAWIO` (root or one-time `setcap`) | one x86 instruction (~50 ns) | Real cabinets where ppdev pacing isn't tight enough. Mirrors what nucore did. |
+| `0x378` (hex/decimal base) | raw `inb`/`outb` | needs `CAP_SYS_RAWIO` (root or one-time `setcap`) | one x86 instruction (~50 ns) | Real cabinets where ppdev pacing isn't tight enough. |
 
 To use the raw backend without sudo:
 
@@ -79,9 +79,9 @@ sudo setcap cap_sys_rawio+ep ./build/encore   # one-time, persists
 ```
 
 The raw backend additionally claims port `0x80` (legacy POST/diagnostic
-port) for sub-µs I/O delay between strobes — same trick nucore uses
-(`outb 0,0x80` ≈ 1 µs on stock chipsets). If `ioperm(0x80,…)` fails,
-encore continues; only the fine-grained delay is lost.
+port) for sub-µs I/O delay between strobes (`outb 0,0x80` ≈ 1 µs on
+stock chipsets). If `ioperm(0x80,…)` fails, encore continues; only the
+fine-grained delay is lost.
 
 The raw backend does **not** care whether `parport_pc` or `lp` is
 loaded — it talks to the I/O bus directly, bypassing both. You still

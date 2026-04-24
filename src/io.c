@@ -299,7 +299,7 @@ static void apply_sgc_patches(void)
         return;
     }
     uint32_t str_addr = scan_base + str_off;  /* guest physical address */
-    LOG("sgc", "watchdog scan: string at 0x%08x\n", str_addr);
+    LOGV("sgc", "watchdog scan: string at 0x%08x\n", str_addr);
 
     /* 2. Find PUSH imm32 <str_addr> (opcode 0x68 + LE32 == str_addr) */
     uint32_t push_off = 0;
@@ -323,7 +323,7 @@ static void apply_sgc_patches(void)
         free(buf);
         return;
     }
-    LOG("sgc", "watchdog scan: PUSH at 0x%08x\n", scan_base + push_off);
+    LOGV("sgc", "watchdog scan: PUSH at 0x%08x\n", scan_base + push_off);
 
     /* 3. Resolve the CALL before the string PUSH to find pci_read_watchdog.
      *    Scan backward from push_off for CALL rel32 (E8 xx xx xx xx).
@@ -354,7 +354,7 @@ static void apply_sgc_patches(void)
     memcpy(&call_rel, buf + call_off + 1, 4);
     uint32_t callee_guest = (uint32_t)((int64_t)(scan_base + call_off + 5) + call_rel);
     uint32_t callee_off   = callee_guest - scan_base;  /* offset within buf */
-    LOG("sgc", "watchdog scan: CALL at 0x%08x → callee 0x%08x\n",
+    LOGV("sgc", "watchdog scan: CALL at 0x%08x → callee 0x%08x\n",
         scan_base + call_off, callee_guest);
 
     /* 4. In the callee, find CMP [addr32], 0xFFFF → 81 3D <addr32> FF FF 00 00.
@@ -413,7 +413,7 @@ static void apply_sgc_patches(void)
                 memcpy(&cand, p + 2, 4);
                 if (cand >= 0x100000u && cand < 0x1000000u) {
                     health_addr = cand;
-                    LOG("sgc", "watchdog health reg: CMP [0x%08x],0xFFFF at 0x%08x\n",
+                    LOGV("sgc", "watchdog health reg: CMP [0x%08x],0xFFFF at 0x%08x\n",
                         health_addr, scan_base + off);
                     break;
                 }
@@ -515,7 +515,7 @@ static void apply_sgc_patches(void)
         idle_code[3] = 0xFC;
         for (int i = 4; i < 64; i++) idle_code[i] = 0x90; /* NOP pad */
         uc_mem_write(g_emu.uc, 0x00FF0000u, idle_code, 64);
-        LOG("sgc", "prnull idle code @ 0xFF0000 (STI+HLT+JMP)\n");
+        LOGV("sgc", "prnull idle code @ 0xFF0000 (STI+HLT+JMP)\n");
     }
 
     /* === BT-74: Patch nulluser idle loop JMP$ → HLT+JMP (game-agnostic) ===
@@ -549,7 +549,7 @@ static void apply_sgc_patches(void)
                 uint32_t patch_at = scan_base2 + off + 12;
                 uint8_t patch[3] = { 0xF4, 0xEB, 0xFD };
                 uc_mem_write(g_emu.uc, patch_at, patch, 3);
-                LOG("sgc", "BT-74: nulluser idle JMP$ → HLT+JMP at 0x%08x\n", patch_at);
+                LOGV("sgc", "BT-74: nulluser idle JMP$ → HLT+JMP at 0x%08x\n", patch_at);
                 hits++;
             }
         }
@@ -590,7 +590,7 @@ static void apply_sgc_patches(void)
             0xCF,                   /* IRET */
         };
         uc_mem_write(g_emu.uc, 0x00020000u, stub, sizeof(stub));
-        LOG("sgc", "IRET+EOI stub at phys 0x20000 (address 0 left as zero sentinel)\n");
+        LOGV("sgc", "IRET+EOI stub at phys 0x20000 (address 0 left as zero sentinel)\n");
     }
 }
 

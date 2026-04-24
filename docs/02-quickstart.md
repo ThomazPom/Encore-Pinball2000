@@ -102,9 +102,9 @@ sudo setcap cap_sys_rawio+ep ./build/encore        # one-time
                                                    # cat /proc/ioports | grep parport
 ```
 
-This mirrors what `nucore` does: direct `inb`/`outb` on the LPT base,
-plus `outb 0x80` for ISA-bus delays. Needs `CAP_SYS_RAWIO` (the
-`setcap` line above grants it once, no daily `sudo`). See
+Direct `inb`/`outb` on the LPT base, plus `outb 0x80` for ISA-bus
+delays. Needs `CAP_SYS_RAWIO` (the `setcap` line above grants it
+once, no daily `sudo`). See
 [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md#backends-ppdev-vs-raw-io)
 for the trade-off table.
 </details>

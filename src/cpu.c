@@ -415,7 +415,7 @@ static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *u
         static uint32_t vs_call = 0;
         vs_call++;
         if (vs_call <= 5)
-            LOG("vsync", "callback #%u\n", vs_call);
+            LOGV("vsync", "callback #%u\n", vs_call);
         break;
     }
     default:
@@ -1003,7 +1003,7 @@ handle_display:
                 uint32_t gate = RAM_RD32(0x2D7274u);
                 uint32_t tinit = RAM_RD32(0x335980u);     /* timer init flag */
                 uint32_t tick_cycle = RAM_RD32(0x3358D0u); /* tick counter */
-                LOG("hb", "exec=%lu EIP=0x%08x post=0x%02x vsync=%u frames=%d irq_ok=%u\n",
+                LOGV("hb", "exec=%lu EIP=0x%08x post=0x%02x vsync=%u frames=%d irq_ok=%u\n",
                     (unsigned long)g_emu.exec_count, eip, g_emu.post_code,
                     g_emu.vsync_count, g_emu.frame_count, g_emu.irq_ok_count);
                 {
@@ -1018,26 +1018,26 @@ handle_display:
                             char hex[64*3+8]; int p = 0;
                             for (int i = 0; i < 64; i++)
                                 p += snprintf(hex+p, sizeof(hex)-p, "%02x ", buf[i]);
-                            LOG("hb", "  STUCK bytes @0x%08x: %s\n", base, hex);
+                            LOGV("hb", "  STUCK bytes @0x%08x: %s\n", base, hex);
                             uint32_t esp = 0, regs[8];
                             uc_reg_read(g_emu.uc, UC_X86_REG_ESP, &esp);
                             static const int rids[8] = {UC_X86_REG_EAX,UC_X86_REG_ECX,UC_X86_REG_EDX,UC_X86_REG_EBX,UC_X86_REG_ESP,UC_X86_REG_EBP,UC_X86_REG_ESI,UC_X86_REG_EDI};
                             for (int i = 0; i < 8; i++) uc_reg_read(g_emu.uc, rids[i], &regs[i]);
-                            LOG("hb", "  STUCK regs: eax=%08x ecx=%08x edx=%08x ebx=%08x esp=%08x ebp=%08x esi=%08x edi=%08x\n",
+                            LOGV("hb", "  STUCK regs: eax=%08x ecx=%08x edx=%08x ebx=%08x esp=%08x ebp=%08x esi=%08x edi=%08x\n",
                                 regs[0],regs[1],regs[2],regs[3],regs[4],regs[5],regs[6],regs[7]);
                             uint8_t stk[32];
                             if (uc_mem_read(g_emu.uc, esp, stk, 32) == UC_ERR_OK) {
                                 p = 0;
                                 for (int i = 0; i < 32; i++) p += snprintf(hex+p, sizeof(hex)-p, "%02x ", stk[i]);
-                                LOG("hb", "  STUCK stack @esp: %s\n", hex);
+                                LOGV("hb", "  STUCK stack @esp: %s\n", hex);
                             }
                         }
                     }
                 }
-                LOG("hb", "  preempt=%u nproc=%u guards=%u/%u/%u tinit=%u tcyc=%u\n",
+                LOGV("hb", "  preempt=%u nproc=%u guards=%u/%u/%u tinit=%u tcyc=%u\n",
                     preempt, nproc, guard1, guard2, gate, tinit, tick_cycle);
                 /* PIC state for diagnostics */
-                LOG("hb", "  PIC0: IRR=0x%02x IMR=0x%02x ISR=0x%02x  PIC1: IRR=0x%02x IMR=0x%02x ISR=0x%02x\n",
+                LOGV("hb", "  PIC0: IRR=0x%02x IMR=0x%02x ISR=0x%02x  PIC1: IRR=0x%02x IMR=0x%02x ISR=0x%02x\n",
                     g_emu.pic[0].irr, g_emu.pic[0].imr, g_emu.pic[0].isr,
                     g_emu.pic[1].irr, g_emu.pic[1].imr, g_emu.pic[1].isr);
                 /* DM / DCS state — SWE1-V1.19 BSS layout. Gated on game_id
@@ -1050,30 +1050,30 @@ handle_display:
                     uint32_t dcs_count = RAM_RD32(0x3442f8);
                     uint32_t ww,wr,bw,br,fr;
                     dcs_io_get_counters(&ww,&wr,&bw,&br,&fr);
-                    LOG("hb", "  DM: mode=%u gxp=0x%x dt2=%u dcs_mode=%u dcs_st=%u dcs_cnt=%u io:ww=%u wr=%u bw=%u br=%u fr=%u\n",
+                    LOGV("hb", "  DM: mode=%u gxp=0x%x dt2=%u dcs_mode=%u dcs_st=%u dcs_cnt=%u io:ww=%u wr=%u bw=%u br=%u fr=%u\n",
                         dmm, gxp, g_emu.dc_timing2, dcs_mode, dcs_state, dcs_count,
                         ww, wr, bw, br, fr);
                     uint32_t dcs_ready_flag = RAM_RD32(0x3442f4);
                     uint32_t dcs_complete   = RAM_RD32(0x3442f0);
                     uint32_t dcs_last_val   = RAM_RD32(0x344414);
                     uint32_t dcs_init_flag  = RAM_RD32(0x344410);
-                    LOG("hb", "  DCS-v19: rdy=%u cpl=%u lastval=0x%x initf=0x%x\n",
+                    LOGV("hb", "  DCS-v19: rdy=%u cpl=%u lastval=0x%x initf=0x%x\n",
                         dcs_ready_flag, dcs_complete, dcs_last_val, dcs_init_flag);
                     uint32_t q_wr = RAM_RD32(0x344408);
                     uint32_t q_rd = RAM_RD32(0x34440c);
                     uint32_t oq_wr = RAM_RD32(0x344498);
                     uint32_t oq_rd = RAM_RD32(0x34449c);
-                    LOG("hb", "  Q: inner[wr=%u rd=%u] outer[wr=%u rd=%u]\n",
+                    LOGV("hb", "  Q: inner[wr=%u rd=%u] outer[wr=%u rd=%u]\n",
                         q_wr, q_rd, oq_wr, oq_rd);
                 } else {
                     uint32_t ww,wr,bw,br,fr;
                     dcs_io_get_counters(&ww,&wr,&bw,&br,&fr);
-                    LOG("hb", "  DCS-io: ww=%u wr=%u bw=%u br=%u fr=%u\n",
+                    LOGV("hb", "  DCS-io: ww=%u wr=%u bw=%u br=%u fr=%u\n",
                         ww, wr, bw, br, fr);
                 }
                 /* One-shot dump of guest DCS state — disabled */
                 /* Performance stats */
-                LOG("hb", "  PERF: calls=%lu/5s ok=%lu 0f3c=%lu hlt=%lu ticks=%lu bar2wr=%u\n",
+                LOGV("hb", "  PERF: calls=%lu/5s ok=%lu 0f3c=%lu hlt=%lu ticks=%lu bar2wr=%u\n",
                     prof_emu_calls, prof_ok, prof_0f3c, prof_hlt, prof_ticks_fired,
                     g_emu.bar2_wr_count);
                 prof_emu_calls = prof_0f3c = prof_hlt = prof_other_err = prof_ok = 0;
@@ -1085,7 +1085,7 @@ handle_display:
                 if (!proctab_dumped && nproc >= 35) {
                     proctab_dumped = 1;
                     uint32_t currpid = RAM_RD32(0x2FC8BCu);
-                    LOG("hb", "  proctab: currpid=%u nproc=%u\n", currpid, nproc);
+                    LOGV("hb", "  proctab: currpid=%u nproc=%u\n", currpid, nproc);
                     for (uint32_t pid = 0; pid < 70; pid++) {
                         uint32_t pe = 0x2FC8C4u + pid * 232u;
                         uint8_t ps = RAM_RD8(pe);
@@ -1097,7 +1097,7 @@ handle_display:
                             if (pn[i] && ((uint8_t)pn[i] < 0x20 || (uint8_t)pn[i] > 0x7e))
                                 pn[i] = '.';
                         const char *sn[] = {"FREE","CURR","RDY","RECV","SLP","SUSP","WAIT","RTIM"};
-                        LOG("hb", "    pid%-3u %-4s fn=%08x '%s'\n",
+                        LOGV("hb", "    pid%-3u %-4s fn=%08x '%s'\n",
                             pid, ps<8?sn[ps]:"??", pfn, pn);
                     }
                 }

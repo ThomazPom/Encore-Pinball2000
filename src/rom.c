@@ -164,9 +164,14 @@ static int detect_game_id_from_prefix(const char *prefix)
 
 int rom_detect_game(void)
 {
+    /* Called twice during init (early discovery + full load). Suppress the
+     * banner messages on subsequent calls so the log isn't doubled. */
+    static bool s_announced = false;
+    #define ROM_LOG(fmt, ...) do { if (!s_announced) LOG("rom", fmt, ##__VA_ARGS__); } while(0)
+
     /* If user specified --game, use that. */
     if (g_emu.game_prefix[0] && strcmp(g_emu.game_prefix, "auto") != 0) {
-        LOG("rom", "Game override: %s\n", g_emu.game_prefix);
+        ROM_LOG("Game override: %s\n", g_emu.game_prefix);
     } else {
 
     /* Scan roms_dir for raw bank0 chip files first, then prebuilt bank files. */
@@ -197,17 +202,17 @@ int rom_detect_game(void)
     closedir(d);
 
     copy_cstr(g_emu.game_prefix, sizeof(g_emu.game_prefix), found_prefix);
-    LOG("rom", "Auto-detected ROM prefix: %s\n", g_emu.game_prefix);
+    ROM_LOG("Auto-detected ROM prefix: %s\n", g_emu.game_prefix);
 
     } /* end of auto-detect block */
 
     g_emu.game_id = detect_game_id_from_prefix(g_emu.game_prefix);
     if (g_emu.game_id == GAME_ID_SWE1)
-        LOG("rom", "Game ID: %u → Star Wars Episode I\n", g_emu.game_id);
+        ROM_LOG("Game ID: %u → Star Wars Episode I\n", g_emu.game_id);
     else if (g_emu.game_id == GAME_ID_RFM)
-        LOG("rom", "Game ID: %u → Revenge From Mars\n", g_emu.game_id);
+        ROM_LOG("Game ID: %u → Revenge From Mars\n", g_emu.game_id);
     else if (g_emu.game_id != 0)
-        LOG("rom", "Game ID: %u (unknown game)\n", g_emu.game_id);
+        ROM_LOG("Game ID: %u (unknown game)\n", g_emu.game_id);
 
     /* Build game_id_str for savedata naming (e.g. "swe1_14", "rfm_15").
      * Scan savedata dir for files matching prefix to get version suffix. */
@@ -238,8 +243,10 @@ int rom_detect_game(void)
         if (!found_id)
             copy_cstr(g_emu.game_id_str, sizeof(g_emu.game_id_str), g_emu.game_prefix);
     }
-    LOG("rom", "Save data ID: %s\n", g_emu.game_id_str);
+    ROM_LOG("Save data ID: %s\n", g_emu.game_id_str);
 
+    s_announced = true;
+    #undef ROM_LOG
     return 0;
 }
 
@@ -282,7 +289,7 @@ static int load_raw_rom_banks(void)
             fclose(fp);
             loaded++;
             any++;
-            LOG("rom", "Bank %d chip u%d: %s\n", b, chips[b][c], path);
+            LOGV("rom", "Bank %d chip u%d: %s\n", b, chips[b][c], path);
         }
 
         if (loaded == 2) {
@@ -327,7 +334,7 @@ static int load_raw_dcs_rom(void)
         interleave_file(buf, c, fp);
         fclose(fp);
         loaded++;
-        LOG("rom", "DCS chip u%d: %s\n", chip, path);
+        LOGV("rom", "DCS chip u%d: %s\n", chip, path);
     }
 
     if (loaded == 2) {

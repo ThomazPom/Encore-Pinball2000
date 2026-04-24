@@ -88,7 +88,7 @@ static void seeprom_init_default(void)
     g_emu.seeprom[46] = 0x9242; g_emu.seeprom[47] = 0x4078;
 
     s_ee.do_bit = 1;  /* pull-up default */
-    LOG("plx", "EEPROM pre-populated with PRISM config (48 words)\n");
+    LOG_ONCE("plx", "EEPROM pre-populated with PRISM config (48 words)\n");
 }
 
 /* Process CNTRL register write for SEEPROM bit-bang */
@@ -226,7 +226,7 @@ static void dcs_serial_process_command(int continuing)
             s_dcs_serial.audio_active = 0;
             if (s_dcs_serial.cntrl_bit1 && s_dcs_serial.cntrl_bit2) return;
             s_dcs_serial.audio_ready = 1;
-            LOG("dcs-serial", "cmd=0x%02x → READY flag set!\n", s_dcs_serial.param);
+            LOGV("dcs-serial", "cmd=0x%02x → READY flag set!\n", s_dcs_serial.param);
             return;
         default:
             return;
@@ -285,7 +285,7 @@ static void dcs_serial_process_plx50(uint32_t val)
                 s_dcs_serial.bit_cnt = 0;
                 s_dcs_serial.byte_complete = 1;
                 s_dcs_serial.param = (int)s_dcs_serial.shift_reg;
-                LOG("dcs-serial", "byte assembled: 0x%02x (cls=%d sub=0x%02x)\n",
+                LOGV("dcs-serial", "byte assembled: 0x%02x (cls=%d sub=0x%02x)\n",
                     s_dcs_serial.param,
                     (s_dcs_serial.param >> 6) & 3,
                     s_dcs_serial.param & 0x3f);
@@ -565,7 +565,7 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
                 }
                 static int s_dcs_rd = 0;
                 if (++s_dcs_rd <= 30)
-                    LOG("dcs", "RD off=0 val=0x%04x size=%d cnt=%d left=%d\n",
+                    LOGV("dcs", "RD off=0 val=0x%04x size=%d cnt=%d left=%d\n",
                         val, size, s_dcs_rd, g_emu.dcs_resp.count);
             }
         } else if (off == 2) {
@@ -581,7 +581,7 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
             val = f;
             static int s_dcs_flag_rd = 0;
             if (++s_dcs_flag_rd <= 30 || (s_dcs_flag_rd % 100000 == 0))
-                LOG("dcs", "RD off=2 flags=0x%04x size=%d cnt=%d q=%d\n",
+                LOGV("dcs", "RD off=2 flags=0x%04x size=%d cnt=%d q=%d\n",
                     val, size, s_dcs_flag_rd, g_emu.dcs_resp.count);
         } else {
             val = 0;
@@ -627,14 +627,14 @@ static void gp_execute_blt(uc_engine *uc)
 
     if (src_off + copy_bytes > fb_size || dst_off + copy_bytes > fb_size) {
         if (s_gp_blt_count < 50)
-            LOG("gp", "BLT #%u OOB: src=0x%x dst=0x%x size=%u\n",
+            LOGV("gp", "BLT #%u OOB: src=0x%x dst=0x%x size=%u\n",
                 s_gp_blt_count, src_off, dst_off, copy_bytes);
         s_gp_blt_count++;
         return;
     }
 
     if (s_gp_blt_count < 20)
-        LOG("gp", "BLT #%u: src(%u,%u) dst(%u,%u) w=%u mode=%s\n",
+        LOGV("gp", "BLT #%u: src(%u,%u) dst(%u,%u) w=%u mode=%s\n",
             s_gp_blt_count, s_gp_src_x, s_gp_src_y,
             s_gp_dst_x, s_gp_dst_y, s_gp_width,
             s_gp_transparent ? "transparent" : "memcpy");
@@ -774,10 +774,10 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
             if (off >= 0x3C && off <= 0x48) {
                 int cs_num = (off - 0x3C) / 4;
                 uint32_t base = val & ~1u;
-                LOG("plx", "CS%d = 0x%08x (enable=%d)\n", cs_num, base, val & 1);
+                LOGV("plx", "CS%d = 0x%08x (enable=%d)\n", cs_num, base, val & 1);
             }
             else if (off == 0x20) {
-                LOG("plx", "LAS3BA = 0x%08x (bank0)\n", val & ~1u);
+                LOGV("plx", "LAS3BA = 0x%08x (bank0)\n", val & ~1u);
             }
 
             static int s_plx_log = 0;
@@ -903,7 +903,7 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
 
             static int s_dcs_wr = 0;
             if (++s_dcs_wr <= 30)
-                LOG("dcs", "WR off=0 cmd=0x%04x size=%d active=%d pending=%d cnt=%d\n",
+                LOGV("dcs", "WR off=0 cmd=0x%04x size=%d active=%d pending=%d cnt=%d\n",
                     cmd, size, g_emu.dcs_active, g_emu.dcs_pending, s_dcs_wr);
 
             if (g_emu.dcs_active && cmd == 0x0E) {
@@ -950,7 +950,7 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
             static int s_dcs_log = 0;
             if (s_dcs_log < 80) {
                 s_dcs_log++;
-                LOG("dcs", "cmd=0x%04x\n", cmd);
+                LOGV("dcs", "cmd=0x%04x\n", cmd);
             }
 
             /* Command dispatch */
@@ -958,12 +958,12 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
             case 0x5800:
                 /* DCS board reset — respond with 0x1000 ("I'm alive") */
                 dcs_enqueue_response(0x1000);
-                LOG("dcs", "RESET 0x5800 → 0x1000\n");
+                LOGV("dcs", "RESET 0x5800 → 0x1000\n");
                 break;
             case 0x5A00:
                 /* DCS init continue — respond with success */
                 dcs_enqueue_response(0x1000);
-                LOG("dcs", "RESET 0x5A00 → 0x1000\n");
+                LOGV("dcs", "RESET 0x5A00 → 0x1000\n");
                 break;
             case 0x3A:
                 {

@@ -8,9 +8,9 @@
  *                Default backend, selected when --lpt-device is a path.
  *
  *   - "raw"    → ioperm()+inb/outb on a literal I/O base (e.g. 0x378).
- *                Mirrors what nucore did (binary RE: ioperm(base,3,1) +
- *                ioperm(0x80,1,1) + raw `in`/`out` per byte). Selected when
- *                --lpt-device argument parses as a hex/decimal address.
+ *                ioperm(base,3,1) + ioperm(0x80,1,1) + raw `in`/`out` per
+ *                byte. Selected when --lpt-device argument parses as a
+ *                hex/decimal address.
  *                Requires CAP_SYS_RAWIO (i.e. root, or one-time
  *                `setcap cap_sys_rawio+ep ./build/encore`).
  *
@@ -116,7 +116,7 @@ static bool parse_io_base(const char *s, unsigned long *out)
 
 #ifdef __linux__
 /* Raw backend: claim base..base+2 (data/status/control) plus 0x80 for sub-µs
- * I/O delays (mirrors nucore's binary: ioperm(base,3,1) + ioperm(0x80,1,1)).
+ * I/O delays via ioperm(base,3,1) + ioperm(0x80,1,1).
  * Returns 0 on success, -1 on failure. EPERM / EACCES → not root; logged
  * with the setcap remediation suggestion. */
 static int raw_open(unsigned long base, bool quiet_if_missing)
@@ -167,8 +167,7 @@ int lpt_passthrough_open(const char *device, bool quiet_if_missing)
         !strcmp(device, "emu")  || !strcmp(device, "emulate"))
         return -1;
 
-    /* Raw backend: --lpt-device 0x378 (or any decimal/hex I/O base).
-     * Mirrors nucore's `-parallel 0x378` behavior. */
+    /* Raw backend: --lpt-device 0x378 (or any decimal/hex I/O base). */
     unsigned long base = 0;
     if (parse_io_base(device, &base))
         return raw_open(base, quiet_if_missing);
