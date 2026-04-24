@@ -136,14 +136,14 @@ static void seeprom_process_write(uint32_t cntrl_val)
                     s_ee.bits = 0;
                     s_ee.shift = g_emu.seeprom[s_ee.addr];
                     s_ee.do_bit = 0;  /* dummy "0" bit before data */
-                    LOG("ee", "READ addr=%d → 0x%04x\n", s_ee.addr, s_ee.shift);
+                    LOGV("ee", "READ addr=%d → 0x%04x\n", s_ee.addr, s_ee.shift);
                 } else if (s_ee.opcode == 1) { /* WRITE (opcode 01) */
                     s_ee.state = 4;
                     s_ee.bits = 0;
                     s_ee.shift = 0;
-                    LOG("ee", "WRITE addr=%d start\n", s_ee.addr);
+                    LOGV("ee", "WRITE addr=%d start\n", s_ee.addr);
                 } else {
-                    LOG("ee", "MISC op=%d addr=%d\n", s_ee.opcode, s_ee.addr);
+                    LOGV("ee", "MISC op=%d addr=%d\n", s_ee.opcode, s_ee.addr);
                     /* EWEN/EWDS/ERAL/WRAL — simplified: acknowledge */
                     s_ee.state = 0;
                     s_ee.do_bit = 1;
@@ -166,7 +166,7 @@ static void seeprom_process_write(uint32_t cntrl_val)
             s_ee.bits++;
             if (s_ee.bits >= 16) {
                 g_emu.seeprom[s_ee.addr] = s_ee.shift;
-                LOG("ee", "WRITE addr=%d ← 0x%04x\n", s_ee.addr, s_ee.shift);
+                LOGV("ee", "WRITE addr=%d ← 0x%04x\n", s_ee.addr, s_ee.shift);
                 s_ee.state = 0;
                 s_ee.do_bit = 1;  /* ready */
             }
@@ -445,11 +445,11 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
     static uint32_t bar2_rd_total = 0, bar4_rd_total = 0;
     if (a >= WMS_BAR2 && a < WMS_BAR2 + 0x01000000u) {
         if (++bar2_rd_total <= 10)
-            LOG("BAR2", "READ #%u addr=0x%08x size=%d\n", bar2_rd_total, a, size);
+            LOGV("BAR2", "READ #%u addr=0x%08x size=%d\n", bar2_rd_total, a, size);
     }
     if (a >= WMS_BAR4 && a < WMS_BAR4 + BAR4_SIZE) {
         if (++bar4_rd_total <= 10)
-            LOG("BAR4", "READ #%u addr=0x%08x size=%d\n", bar4_rd_total, a, size);
+            LOGV("BAR4", "READ #%u addr=0x%08x size=%d\n", bar4_rd_total, a, size);
     }
 
     if (a >= GX_BASE && a < GX_BASE + GX_BASE_SIZE) {
@@ -508,7 +508,7 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
             }
             if (off < 0x60 && plx_rd_cnt < 500) {
                 plx_rd_cnt++;
-                LOG("plx", "RD off=0x%02x size=%u val=0x%08x (#%d)\n", off, size, val, plx_rd_cnt);
+                LOGV("plx", "RD off=0x%02x size=%u val=0x%08x (#%d)\n", off, size, val, plx_rd_cnt);
             }
         }
         else {
@@ -674,18 +674,18 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
     static int mmio_wr_cnt = 0;
     if (mmio_wr_cnt < 50) {
         mmio_wr_cnt++;
-        LOG("mmio", "WRITE addr=0x%08x size=%d val=0x%08x\n", a, size, val);
+        LOGV("mmio", "WRITE addr=0x%08x size=%d val=0x%08x\n", a, size, val);
     }
 
     /* Dedicated BAR2/BAR4 write counters - never throttled */
     static uint32_t bar2_wr_total = 0, bar4_wr_total = 0;
     if (a >= WMS_BAR2 && a < WMS_BAR2 + 0x01000000u) {
         if (++bar2_wr_total <= 10)
-            LOG("BAR2", "WRITE #%u addr=0x%08x size=%d val=0x%x\n", bar2_wr_total, a, size, val);
+            LOGV("BAR2", "WRITE #%u addr=0x%08x size=%d val=0x%x\n", bar2_wr_total, a, size, val);
     }
     if (a >= WMS_BAR4 && a < WMS_BAR4 + BAR4_SIZE) {
         if (++bar4_wr_total <= 10)
-            LOG("BAR4", "WRITE #%u addr=0x%08x size=%d val=0x%x\n", bar4_wr_total, a, size, val);
+            LOGV("BAR4", "WRITE #%u addr=0x%08x size=%d val=0x%x\n", bar4_wr_total, a, size, val);
     }
 
     if (a >= GX_BASE && a < GX_BASE + GX_BASE_SIZE) {
@@ -693,7 +693,7 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
         static int gx_wr_cnt = 0;
         if (gx_wr_cnt < 30 && off < 0x800000) {
             gx_wr_cnt++;
-            LOG("gx", "WRITE off=0x%x val=0x%x (reg)\n", off, val);
+            LOGV("gx", "WRITE off=0x%x val=0x%x (reg)\n", off, val);
         }
 
         if (off >= 0x800000 && off < 0xC00000) {
@@ -713,7 +713,7 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
             static int fb_off_log_count = 0;
             if (val != prev_fb_off) {
                 if (fb_off_log_count < 20)
-                    LOG("dc", "DC_FB_ST_OFFSET changed: 0x%x → 0x%x\n", prev_fb_off, val);
+                    LOGV("dc", "DC_FB_ST_OFFSET changed: 0x%x → 0x%x\n", prev_fb_off, val);
                 prev_fb_off = val;
                 fb_off_log_count++;
             }
@@ -783,7 +783,7 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
             static int s_plx_log = 0;
             if (s_plx_log < 40) {
                 s_plx_log++;
-                LOG("plx", "WR off=0x%02x val=0x%08x\n", off, val);
+                LOGV("plx", "WR off=0x%02x val=0x%08x\n", off, val);
             }
         }
     }
@@ -806,7 +806,7 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
         /* XINU boot detection: first byte write at offset ≥ 0x1b14 = framebuffer
          * write = XINU has booted and is rendering text. Activate LPT. */
         if (size == 1 && off >= 0x1b14 && !g_emu.lpt_active) {
-            LOG("bar2", "XINU boot detected (first BAR2 write at off=0x%x) — activating LPT\n", off);
+            LOGV("bar2", "XINU boot detected (first BAR2 write at off=0x%x) — activating LPT\n", off);
             lpt_activate();
         }
 
@@ -823,14 +823,14 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
             s_textbuf[s_textpos++] = (char)val;
             if (s_textpos >= 127 || val == '\n') {
                 s_textbuf[s_textpos] = '\0';
-                if (s_textpos > 0) LOG("vid", "%s\n", s_textbuf);
+                if (s_textpos > 0) LOGV("vid", "%s\n", s_textbuf);
                 s_textpos = 0;
             }
         }
 
         /* Log early BAR2 writes for debugging */
         if (g_emu.bar2_wr_count <= 30) {
-            LOG("bar2", "WR #%u off=0x%x sz=%d val=0x%x\n",
+            LOGV("bar2", "WR #%u off=0x%x sz=%d val=0x%x\n",
                 g_emu.bar2_wr_count, off, size, val);
         }
     }
