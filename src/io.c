@@ -760,6 +760,10 @@ static uint8_t s_coin_door_closed = 1;
  * it acts as ENTER/select. */
 static int     s_enter_pulse = 0;
 
+/* set by display.c via [ and ] keys; needed at case 0x04 to gate the
+ * probe-bit OR to the column actually being polled. */
+extern int g_probe_col;
+
 /* Mirrors P2K calculateBitwiseSumBasedOnInput */
 static int calc_bitwise_sum(uint8_t val)
 {
@@ -771,22 +775,20 @@ static int calc_bitwise_sum(uint8_t val)
     return has_bit + sum;
 }
 
-/* LPT switch matrix — RE-VERIFIED from SWE1 ROM table @ 0x2e3018:
+/* LPT switch matrix — RE-VERIFIED from SWE1 v1.5 game.rom SwitchInit
+ * table @ guest 0x2e3018 (file offset 0x1e3018 since game.rom loads at
+ * 0x100000). Entry stride is 0x30 bytes; per entry: name pointer at
+ * +0x14, callback pointer at +0x2c. Entry index N == sw_num (no
+ * off-by-one — confirmed by walking every named slot end-to-end).
  *
- *   The SwitchInit table has a subtle off-by-one quirk: for entry index N
- *   the *name strings* (offsets +0x14..+0x20) describe sw_num = N, but
- *   the *callback pointer* at +0x2c is actually entry (N+1)'s first
- *   field — i.e. each entry's REAL stride begins at +0x2c of the previous
- *   one. So the swd_*_proc symbols line up with the strings of entry N+1.
- *   Double-check by following a few: entry 1 cb=swd_start_button_proc /
- *   entry 2 names=["Start Button"] → sw_num=2 IS Start Button. ✓
- *
- *   Authoritative map (sw_num → col,bit → meaning):
- *     sw= 2  c0 b2  Start Button
- *     sw=64  c8 b0  Left   Coin Slot
- *     sw=65  c8 b1  Center Coin Slot
- *     sw=66  c8 b2  Right  Coin Slot
- *     sw=67  c8 b3  4th    Coin Option
+ *   Authoritative map (sw_num → col,bit → meaning → in-game Switch
+ *   Test cell C{col+1}.R{bit+1}, displayed as "Switch CR"):
+ *     sw= 2  c0 b2  Start Button          → C1R3  ("Switch 13")
+ *     sw= 4  c0 b4  Left  Drop Target     → C1R5
+ *     sw=64  c8 b0  Left   Coin Slot      → C9R1
+ *     sw=65  c8 b1  Center Coin Slot      → C9R2
+ *     sw=66  c8 b2  Right  Coin Slot      → C9R3
+ *     sw=67  c8 b3  4th    Coin Option    → C9R4
  *     sw=72  c9 b0  'Escape' button (= Service Credits in attract)
  *     sw=73  c9 b1  'Down'   button (= Volume −     in attract)
  *     sw=74  c9 b2  'Up'     button (= Volume +     in attract)
@@ -805,7 +807,16 @@ static int calc_bitwise_sum(uint8_t val)
  *     col 10 → opcode 0x01  (push ebx=1)
  *     col 11 → opcode 0x02  (push 2)
  *     col 0..7 → opcode 0x04 + col selected via opcode 0x05 latch
- */
+ *
+ *   Cross-talk pitfall (learned the hard way — see Switch Test
+ *   screenshot encore_snap_20260424_002716_632_003.png): opcode 0x04
+ *   used to return s_rendering_status[1] for EVERY col 0..7, so OR-ing
+ *   a single bit there lit that bit across the whole row in the game's
+ *   view and triggered "ROW N SHORTED TO GROUND". Fixed by reading the
+ *   col-select latch (s_rendering_data_val written via opcode 0x05),
+ *   decoding it with calc_bitwise_sum() (returns col+1 for one-hot),
+ *   and gating per-switch injections to the matching column only —
+ *   bundle-agnostic, no per-game RAM scribbling needed. */
 static uint8_t retrieve_rendering_status(uint8_t opcode)
 {
     uint8_t result = 0;
@@ -831,18 +842,25 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
         break;
     }
     case 0x04: {
-        /* Physical[0..7] matrix scan. The i386 POC always returns
-         * s_rendering_status[1] regardless of selected col, so all 8
-         * cols end up with the same byte. To inject Start Button
-         * (sw=2, col 0, bit 2) we OR bit 2 unconditionally — which
-         * also lights bit 2 in cols 1..7 (Right Bank Lower / Trough 2
-         * / Shield Tgt / Upper Jet / unused), but those are harmless
-         * in attract mode where the user is pressing Start.
-         * Probe bits (digit-key debug) override bit 2 with whatever
-         * bit s_probe_bit selects so we can find the real Start. */
-        uint8_t v = s_rendering_status[1];
-        if (s_probe_held) v |= (uint8_t)(1u << s_probe_bit);
-        else if (s_start_button_held) v |= 0x04;
+        /* Physical[0..7] matrix scan. The game writes a one-hot col
+         * selector via opcode 0x05 (s_rendering_data_val) before
+         * polling this opcode. calc_bitwise_sum() of that latch yields
+         * (col + 1) for col 0..7, so we can route per-switch
+         * injections to ONLY the column the game is actually asking
+         * about — no more "ROW N SHORTED TO GROUND" cross-talk.
+         *
+         * Storage: the POC stores per-col writeback state at
+         * s_rendering_status[col+1] via opcode 0x08, so slot[1] holds
+         * col 0's last write, slot[2] col 1, etc. Returning the
+         * matching slot keeps faithful POC behaviour while letting us
+         * gate Start / probe injections per-column. */
+        int sel  = calc_bitwise_sum(s_rendering_data_val);   /* 1..8 if one-hot */
+        int col  = (sel >= 1 && sel <= 8) ? (sel - 1) : 0;   /* fall back to col 0 */
+        int slot = (sel >= 1 && sel <= 8) ? sel : 1;
+        uint8_t v = s_rendering_status[slot & 7];
+        if (s_start_button_held && col == 0) v |= (uint8_t)(1u << 2);   /* sw=2 */
+        if (s_probe_held && col == g_probe_col)
+            v |= (uint8_t)(1u << s_probe_bit);
         result = v;
         break;
     }
@@ -906,12 +924,20 @@ void lpt_set_host_input(uint8_t buttons, uint8_t switches)
 
 void lpt_set_start_button(int held)
 {
-    /* LPT-only Start button injection. The state flag is read in
-     * retrieve_rendering_status case 0x04 (matrix col 0) where bit 2
-     * is OR'd in while held. The game's switch consumer then sees a
-     * normal sw=2 press. No CPU/RAM patching — if the game doesn't
-     * act on it (gameplay state preconditions), we don't fight it. */
-    s_start_button_held = held ? 1 : 0;
+    /* Start Button = sw_num 2 in SwitchInit (col 0, bit 2 = visual
+     * C1R3, displayed as "Switch 13" in the Switch Test grid). The
+     * actual injection happens in retrieve_rendering_status() case
+     * 0x04, gated on the latched col-select == col 0 — so no row
+     * cross-talk and no per-bundle RAM writes. Works on every game
+     * (SWE1 / RFM / IST) because the LPT POC protocol is identical. */
+    static int s_prev_held = 0;
+    int new_held = held ? 1 : 0;
+    s_start_button_held = (uint8_t)new_held;
+    if (new_held != s_prev_held) {
+        fprintf(stderr, "[lpt] Start Button %s (sw=2, c0 b2)\n",
+                new_held ? "PRESSED" : "released");
+        s_prev_held = new_held;
+    }
 }
 
 /* Debug probe: temporarily wire one bit of Physical[Cn] / Logical[Cn]
