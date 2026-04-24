@@ -62,6 +62,27 @@ sudo apt install -y libunicorn-dev || {
 Versions known to work: gcc ≥ 10, libunicorn ≥ 2.0, libsdl2 ≥ 2.0.20,
 libsdl2-mixer ≥ 2.6.
 
+## 2. Clone and build
+
+```sh
+git clone https://github.com/ThomazPom/Encore-Pinball2000.git encore
+cd encore
+make                                  # produces ./build/encore
+```
+
+The build is a single non-parallel invocation of `gcc` over thirteen C
+sources. It typically finishes in a few seconds on a modern machine and
+produces an 800 KB stripped binary. There are no generated files, no
+autoconf, no meson, no per-distro configuration step. See
+[28-build-system.md](28-build-system.md) for target-by-target detail.
+
+> **Make it yours in 5 seconds.** Drop any JPEG into
+> `assets/splash-screen.jpg` before `make` and Encore links it straight
+> into the binary as your startup splash — no code, no flags, no extra
+> files at runtime. End users can also point `--splash-screen PATH` at
+> any image (JPEG / PNG / BMP / TGA / …) without rebuilding. See
+> [49-splash-screen.md](49-splash-screen.md).
+
 <details>
 <summary><b>🔽 ONLY IF — you’re wiring Encore to a real Pinball 2000 cabinet (skip for emulator-only use)</b></summary>
 
@@ -121,27 +142,6 @@ fix. If you see `/dev/parport1` instead of `parport0`, pass
 `--lpt-device /dev/parport1`. Full compatibility table in
 [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md#which-device-node-will-i-get).
 </details>
-
-## 2. Clone and build
-
-```sh
-git clone https://github.com/ThomazPom/Encore-Pinball2000.git encore
-cd encore
-make                                  # produces ./build/encore
-```
-
-The build is a single non-parallel invocation of `gcc` over thirteen C
-sources. It typically finishes in a few seconds on a modern machine and
-produces an 800 KB stripped binary. There are no generated files, no
-autoconf, no meson, no per-distro configuration step. See
-[28-build-system.md](28-build-system.md) for target-by-target detail.
-
-> **Make it yours in 5 seconds.** Drop any JPEG into
-> `assets/splash-screen.jpg` before `make` and Encore links it straight
-> into the binary as your startup splash — no code, no flags, no extra
-> files at runtime. End users can also point `--splash-screen PATH` at
-> any image (JPEG / PNG / BMP / TGA / …) without rebuilding. See
-> [49-splash-screen.md](49-splash-screen.md).
 
 ## 3. First run
 
