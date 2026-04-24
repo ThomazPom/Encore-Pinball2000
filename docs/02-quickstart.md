@@ -4,7 +4,7 @@ From a fresh Debian/Ubuntu install to Pinball 2000 attract mode in
 three (and a half) brief steps:
 
 * **Install dependencies** — one `apt install` line.
-* **Clone and build** — `git clone`, then `make` (under four seconds).
+* **Clone and build** — `git clone`, then `make` (typically a few seconds on a modern machine).
 * **First run** — `./build/encore --game swe1 --update 0150`. ROMs and
   updates already ship in the repo.
 * *(optional ½ step)* — plug in a real Pinball 2000 cabinet over LPT.
@@ -131,7 +131,7 @@ make                                  # produces ./build/encore
 ```
 
 The build is a single non-parallel invocation of `gcc` over thirteen C
-sources. On a modest laptop it completes in under four seconds and
+sources. It typically finishes in a few seconds on a modern machine and
 produces an 800 KB stripped binary. There are no generated files, no
 autoconf, no meson, no per-distro configuration step. See
 [28-build-system.md](28-build-system.md) for target-by-target detail.
