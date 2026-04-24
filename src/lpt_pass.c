@@ -521,9 +521,10 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
             if (ioctl(s_fd, PPWDATA, &v) < 0)
                 LOG("lpt", "PPWDATA failed: %s\n", strerror(errno));
             break;
-        case 2: /* control — cache and forward verbatim. Direction (bit 5) is
-                 * managed by encore around data-port accesses; P2K-driver
-                 * confirms the P2K driver never writes bit 5 itself. */
+        case 2: /* control — cache and forward verbatim. ppdev manages PC-side
+                 * direction via PPDATADIR (set_dir); bit 5 of the byte we
+                 * pass here is ignored by the kernel driver, which is why
+                 * --lpt-purist is a no-op on the ppdev backend. */
             s_ctrl_cached = val;
             if (ioctl(s_fd, PPWCONTROL, &v) < 0)
                 LOG("lpt", "PPWCONTROL failed: %s\n", strerror(errno));

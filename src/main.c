@@ -225,7 +225,7 @@ static int apply_option(const char *key, const char *value)
     }
     if (strcmp(key, "lpt-purist") == 0) {
         g_emu.lpt_purist = true;
-        return value ? 1 : 0;
+        return 0;
     }
     if (strcmp(key, "update") == 0 && value) {
         if (strcasecmp(value, "none") == 0) {
