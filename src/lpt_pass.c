@@ -41,6 +41,15 @@
  *     semantics vary across kernels; cache is what the guest just wrote).
  *   - Cleanup releases + closes the device. Signal handlers set
  *     g_emu.running=false so main loop exits and runs cleanup normally.
+ *
+ * TODO (real-cabinet, untested): the documented PB2K driver-board protocol
+ * (see docs/48-lpt-protocol-references.md and PinballDiag) requires the
+ * switch-column register (P2K index 0x05) to be strobed within ~2.5 ms or
+ * the on-board blanking circuit disables all power outputs. Whether the
+ * guest's natural XINA traffic produces fast-enough 0x05 writes through the
+ * host's LPT hardware is unknown until measured on a real cabinet; the
+ * `-vv` µs sampler below is a first step. A future host-side blanking
+ * keepalive may be needed if the natural path is too slow.
  */
 #include "encore.h"
 
