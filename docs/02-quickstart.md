@@ -65,6 +65,29 @@ libsdl2-mixer ≥ 2.6.
 <details>
 <summary><b>🔽 ONLY IF — you’re wiring Encore to a real Pinball 2000 cabinet (skip for emulator-only use)</b></summary>
 
+Two backends are available. **The raw `inb`/`outb` backend is
+recommended for real cabinets** — it gives sub-µs strobe timing that
+the driver board's protocol relies on. The `ppdev` backend is a
+fallback when raw access can't be granted (locked-down hosts, etc.).
+
+### Recommended: raw I/O backend
+
+Pass the LPT I/O base address (not a `/dev/...` path):
+
+```sh
+cat /proc/ioports | grep parport                   # find your base, e.g. 0x378
+sudo setcap cap_sys_rawio+ep ./build/encore        # one-time, no daily sudo
+./build/encore --game swe1 --lpt-device 0x378
+```
+
+Direct `inb`/`outb` on the LPT base, plus `outb 0x80` for ISA-bus
+delays. Needs `CAP_SYS_RAWIO` (the `setcap` line above grants it
+once). See
+[19-real-lpt-passthrough.md](19-real-lpt-passthrough.md#backends-ppdev-vs-raw-io)
+for the trade-off table.
+
+### Fallback: `ppdev` backend
+
 Without these, `--lpt-device /dev/parport0` fails with `PPCLAIM EBUSY`
 or `Permission denied` and the cabinet doesn't respond:
 
@@ -73,12 +96,14 @@ sudo modprobe ppdev parport_pc                       # make /dev/parport0 appear
 sudo rmmod lp 2>/dev/null || true                    # printer driver squats on it
 sudo usermod -aG lp $USER && newgrp lp               # group access, active now
 ls -l /dev/parport* /dev/usb/lp* 2>/dev/null         # find your device node
+./build/encore --game swe1 --lpt-device /dev/parport0
 ```
 
 `newgrp lp` activates the new group in the current shell so no logout is
 needed (`sg lp -c './build/encore …'` works too as a one-shot). The
 `ppdev`, `parport` and `parport_pc` modules ship with the stock
-Debian/Ubuntu kernel — nothing to apt-install.
+Debian/Ubuntu kernel — nothing to apt-install. This path is **fully
+unprivileged** — no `ioperm()`, no setuid, no `/dev/port`.
 
 **USB→LPT dongle?** If `ls` shows `/dev/usb/lp0` but no `/dev/parport*`,
 your adapter is printer-class only and **cannot** drive the cabinet
@@ -87,26 +112,6 @@ support). A PCIe LPT card (Moschip MCS9865/9900, ~€20) is the cheap
 fix. If you see `/dev/parport1` instead of `parport0`, pass
 `--lpt-device /dev/parport1`. Full compatibility table in
 [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md#which-device-node-will-i-get).
-
-Encore runs **fully unprivileged** in this default `ppdev` mode — no
-`ioperm()`, no setuid, no `/dev/port`. Everything goes through Linux
-`ppdev` ioctls, so once your user is in the `lp` group and the kernel
-`lp` driver is unloaded, `./build/encore` from a normal shell is enough.
-
-**Faster raw I/O backend** — if `ppdev` pacing is too slow for your
-driver board (sub-µs strobes), pass an I/O base instead of a path:
-
-```sh
-sudo setcap cap_sys_rawio+ep ./build/encore        # one-time
-./build/encore --game swe1 --lpt-device 0x378      # find base via:
-                                                   # cat /proc/ioports | grep parport
-```
-
-Direct `inb`/`outb` on the LPT base, plus `outb 0x80` for ISA-bus
-delays. Needs `CAP_SYS_RAWIO` (the `setcap` line above grants it
-once, no daily `sudo`). See
-[19-real-lpt-passthrough.md](19-real-lpt-passthrough.md#backends-ppdev-vs-raw-io)
-for the trade-off table.
 </details>
 
 ## 2. Clone and build
