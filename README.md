@@ -105,44 +105,15 @@ the full design rationale, see **[docs/01-overview.md](docs/01-overview.md)**.
 
 ## Quick start
 
-Prerequisites (Debian 12 / Ubuntu 24.04 reference):
+> [!IMPORTANT]
+> **Start here: [docs/02-quickstart.md](docs/02-quickstart.md)**
+>
+> The quickstart is the maintained source of truth for dependencies,
+> Unicorn setup, first run commands, and real-cabinet / LPT notes. The
+> README intentionally does not duplicate those steps so setup advice
+> cannot drift out of date in two places.
 
-```sh
-sudo apt install -y build-essential pkg-config \
-                    libsdl2-dev libsdl2-mixer-dev libunicorn-dev
-```
-
-Build and run:
-
-```sh
-git clone https://github.com/ThomazPom/Encore-Pinball2000.git encore && cd encore
-make                                                     # → ./build/encore
-./build/encore --game swe1                                # SWE1 with default settings
-./build/encore --update 0150                              # SWE1 v1.5 (canonical 4-digit token)
-./build/encore --update 0180 --dcs-mode bar4-patch        # RFM v1.8, legacy BAR4-patch DCS
-./build/encore --update latest --game rfm                 # newest bundled RFM (v1.8)
-```
-
-> **Connecting a real cabinet?** Encore runs unprivileged through Linux
-> `ppdev` (no setuid, no `ioperm`); you just need to be in the `lp`
-> group with the kernel `lp` printer driver out of the way:
-> `sudo modprobe ppdev parport_pc; sudo rmmod lp 2>/dev/null; sudo usermod -aG lp $USER && newgrp lp`
-> — `newgrp` activates the group in the current shell, no logout. Full
-> setup and the no-`sudo`-yet bootstrap in
-> [docs/02-quickstart.md](docs/02-quickstart.md#real-cabinet-prerequisites-skip-if-emulator-only)
-> and [docs/19-real-lpt-passthrough.md](docs/19-real-lpt-passthrough.md).
-
-The chip ROMs (`./roms/`) and every dearchived original Williams update
-bundle (`./updates/`) ship with the repo — no extra downloads needed
-for the default games. Community/post-Williams updates (e.g.
-mypinballs.com's enhanced firmware with extra fixes and effects) are
-not redistributed here; Encore supports them at runtime — see
-[docs/47-community-updates.md](docs/47-community-updates.md) for how
-to install them and grab the latest versions directly from
-<https://mypinballs.com>.
-
-Other useful entry points are documented in
-[docs/02-quickstart.md](docs/02-quickstart.md) and
+For flags and worked examples after the first boot, see
 [docs/03-cli-reference.md](docs/03-cli-reference.md).
 
 ---
