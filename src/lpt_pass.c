@@ -305,11 +305,16 @@ static int raw_open(unsigned long base, bool quiet_if_missing)
     s_ctrl_cached = 0;
     s_dir_input   = -1;
     raw_arm_ecr(base);                         /* must precede first set_dir() */
-    set_dir(0);                                /* idle = output (host drives latch) */
+    if (!g_emu.lpt_purist)
+        set_dir(0);                            /* idle = output (host drives latch) */
 
     LOG("lpt", "*** real cabinet detected on RAW I/O 0x%lx — keyboard/F-key "
                "button emulation DISABLED ***\n", base);
-    LOG("lpt", "    raw inb/outb path; short strobe pacing via outb(0x80) (timing not yet verified on real cabinet)\n");
+    LOG("lpt", "    raw inb/outb path; short strobe pacing via outb(0x80) "
+               "(timing not yet verified on real cabinet)\n");
+    if (g_emu.lpt_purist)
+        LOG("lpt", "    purist mode: CTL forwarded verbatim, guest XINA "
+                   "drives bus direction (per documented P2K protocol)\n");
     return 0;
 }
 #endif
@@ -471,9 +476,16 @@ uint8_t lpt_passthrough_read(uint8_t reg)
     } else if (s_backend == LPT_BK_RAW) {
         switch (reg) {
         case 0:
-            set_dir(1);
-            v = inb(s_io_base + 0);
-            set_dir(0);
+            if (!g_emu.lpt_purist) {
+                set_dir(1);
+                v = inb(s_io_base + 0);
+                set_dir(0);
+            } else {
+                /* Trust the guest: per the documented P2K protocol it has
+                 * already written 0x29 to CTL, putting both PC and board
+                 * buffer in the right direction for this read. */
+                v = inb(s_io_base + 0);
+            }
             break;
         case 1:
             v = inb(s_io_base + 1);
@@ -523,15 +535,25 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
         switch (reg) {
         case 0:
             lpt_blanking_check();
-            set_dir(0);
+            if (!g_emu.lpt_purist) set_dir(0);
             outb(val, s_io_base + 0);
             break;
         case 2:
-            /* Cache the guest-visible byte; bit 5 (direction) is managed
-             * internally by set_dir() — preserve guest's other bits. */
             s_ctrl_cached = val;
-            outb((uint8_t)((val & ~0x20u) | (s_dir_input ? 0x20u : 0u)),
-                 s_io_base + 2);
+            if (g_emu.lpt_purist) {
+                /* Forward verbatim — including bit 5. The documented P2K
+                 * protocol explicitly writes 0x29 to CTL (bit 5 set) before
+                 * reading data; trust the original XINA driver code to drive
+                 * direction itself. */
+                outb(val, s_io_base + 2);
+            } else {
+                /* Default: encore manages bit 5 (direction). Preserve guest's
+                 * other bits but force bit 5 to match our tracked direction
+                 * state. May fight the documented P2K protocol on real boards
+                 * — try --lpt-purist if the cabinet stays silent. */
+                outb((uint8_t)((val & ~0x20u) | (s_dir_input ? 0x20u : 0u)),
+                     s_io_base + 2);
+            }
             break;
         default:
             break;
