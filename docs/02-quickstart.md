@@ -65,10 +65,14 @@ libsdl2-mixer ≥ 2.6.
 <details>
 <summary><b>🔽 ONLY IF — you’re wiring Encore to a real Pinball 2000 cabinet (skip for emulator-only use)</b></summary>
 
-Two backends are available. **The raw `inb`/`outb` backend is
-recommended for real cabinets** — it gives sub-µs strobe timing that
-the driver board's protocol relies on. The `ppdev` backend is a
-fallback when raw access can't be granted (locked-down hosts, etc.).
+Two backends are available. **Use the raw `inb`/`outb` backend for any
+real cabinet.** Community feedback is consistent: the driver-board
+protocol depends on sub-µs data/status/control turnaround, and `ppdev`'s
+ioctl + kernel-driver round-trip (typically ~1–3 µs per byte) is too
+slow to keep up — strobes get missed and the board doesn't respond
+reliably. The `ppdev` backend is kept only as a no-cabinet smoke-test
+path (loopback wiring, logic-analyser captures); it is not expected to
+drive a real PB2K driver board.
 
 ### Recommended: raw I/O backend
 
@@ -86,7 +90,11 @@ once). See
 [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md#backends-ppdev-vs-raw-io)
 for the trade-off table.
 
-### Fallback: `ppdev` backend
+### Fallback (no real cabinet): `ppdev` backend
+
+`ppdev` is too slow for an actual driver board (see above), but it's
+useful for bench testing — loopback rigs, logic-analyser captures,
+or hosts where `CAP_SYS_RAWIO` cannot be granted at all.
 
 Without these, `--lpt-device /dev/parport0` fails with `PPCLAIM EBUSY`
 or `Permission denied` and the cabinet doesn't respond:
