@@ -17,7 +17,7 @@ sudo apt install -y build-essential pkg-config git \
 ```
 
 <details>
-<summary><b>🔐 “user is not in the sudoers file” on a fresh Debian? — one-time fix</b></summary>
+<summary><b>⚠️ ADDITIONAL STEP MAYBE NEEDED — 🔐 “user is not in the sudoers file” on a fresh Debian (one-time fix)</b></summary>
 
 Debian's default install does not add the first user to the `sudo` group.
 Grant yourself sudo once (root password is set at install time), then
@@ -55,7 +55,7 @@ Versions known to work: gcc ≥ 10, libunicorn ≥ 2.0, libsdl2 ≥ 2.0.20,
 libsdl2-mixer ≥ 2.6.
 
 <details>
-<summary><b>🕹️ Wiring Encore to a real Pinball 2000 cabinet? — one-time host setup (skip if emulator-only)</b></summary>
+<summary><b>⚠️ ADDITIONAL STEP MAYBE NEEDED — 🕹️ wiring Encore to a real Pinball 2000 cabinet (one-time host setup, skip if emulator-only)</b></summary>
 
 Without these, `--lpt-device /dev/parport0` fails with `PPCLAIM EBUSY`
 or `Permission denied` and the cabinet doesn't respond:
