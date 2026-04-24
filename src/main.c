@@ -14,7 +14,7 @@
 #include <ctype.h>
 
 EncoreState g_emu;
-int g_log_verbose = 0;
+int g_log_level = 0;
 
 static void on_term_signal(int sig)
 {
@@ -164,7 +164,16 @@ static int apply_option(const char *key, const char *value)
         g_emu.keyboard_tcp_port = atoi(value); return 1;
     }
     if (strcmp(key, "headless") == 0) { g_emu.headless = true; return 0; }
-    if (strcmp(key, "verbose") == 0) { g_log_verbose = 1; return 0; }
+    if (strcmp(key, "verbose") == 0) {
+        /* --verbose            → level 1
+         * --verbose=N or --verbose N → level N (0..3+) */
+        if (value && value[0] >= '0' && value[0] <= '9') {
+            g_log_level = atoi(value);
+            return 1;
+        }
+        if (g_log_level < 1) g_log_level = 1;
+        return 0;
+    }
     if (strcmp(key, "no-savedata") == 0) { g_emu.no_savedata = true; return 0; }
     if (strcmp(key, "dcs-mode") == 0 && value) {
         if (strcmp(value, "bar4-patch") == 0) {
@@ -347,7 +356,15 @@ static void parse_args(int argc, char **argv)
 
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
-        if (strcmp(a, "-v") == 0) { g_log_verbose = 1; continue; }
+        /* -v, -vv, -vvv, … → log level (count of v's, capped at 9) */
+        if (a[0] == '-' && a[1] == 'v' && a[2] != '-') {
+            int lvl = 0;
+            for (const char *p = a + 1; *p == 'v' && lvl < 9; ++p) lvl++;
+            if (lvl > 0 && (size_t)(lvl + 1) == strlen(a)) {
+                if (lvl > g_log_level) g_log_level = lvl;
+                continue;
+            }
+        }
         if (strcmp(a, "-h") == 0) goto print_help;
         if (strncmp(a, "--", 2) != 0) continue;
         const char *key = a + 2;
@@ -374,9 +391,18 @@ print_help:
 "  --game swe1|rfm|auto   Game selection (default: auto-detect from ROMs)\n"
 "  --roms /path           ROM directory (default: ./roms)\n"
 "  --savedata /path       Save data directory\n"
-"  -v, --verbose          Verbose logging (per-write MMIO/PCI/PLX traces,\n"
-"                         Init2 checkpoints, PIC/EE/IRQ/PIT chatter, etc.).\n"
-"                         Default is quiet — only init/save/error messages.\n"
+"  -v, -vv, -vvv          Increase log verbosity by level (cumulative).\n"
+"  --verbose[=N]            Level 0 = quiet idle (default).\n"
+"                           Level 1 (-v)   = init details, state transitions.\n"
+"                                            No measurable perf cost.\n"
+"                           Level 2 (-vv)  = runtime periodic events\n"
+"                                            (heartbeat, BLT, dcs writes,\n"
+"                                            LPT polls, guest UART chatter).\n"
+"                                            Modest perf cost.\n"
+"                           Level 3 (-vvv) = per-MMIO / per-instruction trace\n"
+"                                            (mmio/PCI/PIC/PIT/IRQ/BAR2/4).\n"
+"                                            Significant perf cost — debug\n"
+"                                            only, slows guest noticeably.\n"
 "  -h, --help             Show this help\n"
 "\n"
 "════════════════════════════════════════════════════════════════════════\n"

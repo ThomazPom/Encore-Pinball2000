@@ -226,7 +226,7 @@ static void dcs_serial_process_command(int continuing)
             s_dcs_serial.audio_active = 0;
             if (s_dcs_serial.cntrl_bit1 && s_dcs_serial.cntrl_bit2) return;
             s_dcs_serial.audio_ready = 1;
-            LOGV("dcs-serial", "cmd=0x%02x → READY flag set!\n", s_dcs_serial.param);
+            LOGV2("dcs-serial", "cmd=0x%02x → READY flag set!\n", s_dcs_serial.param);
             return;
         default:
             return;
@@ -285,7 +285,7 @@ static void dcs_serial_process_plx50(uint32_t val)
                 s_dcs_serial.bit_cnt = 0;
                 s_dcs_serial.byte_complete = 1;
                 s_dcs_serial.param = (int)s_dcs_serial.shift_reg;
-                LOGV("dcs-serial", "byte assembled: 0x%02x (cls=%d sub=0x%02x)\n",
+                LOGV2("dcs-serial", "byte assembled: 0x%02x (cls=%d sub=0x%02x)\n",
                     s_dcs_serial.param,
                     (s_dcs_serial.param >> 6) & 3,
                     s_dcs_serial.param & 0x3f);
@@ -445,11 +445,11 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
     static uint32_t bar2_rd_total = 0, bar4_rd_total = 0;
     if (a >= WMS_BAR2 && a < WMS_BAR2 + 0x01000000u) {
         if (++bar2_rd_total <= 10)
-            LOGV("BAR2", "READ #%u addr=0x%08x size=%d\n", bar2_rd_total, a, size);
+            LOGV3("BAR2", "READ #%u addr=0x%08x size=%d\n", bar2_rd_total, a, size);
     }
     if (a >= WMS_BAR4 && a < WMS_BAR4 + BAR4_SIZE) {
         if (++bar4_rd_total <= 10)
-            LOGV("BAR4", "READ #%u addr=0x%08x size=%d\n", bar4_rd_total, a, size);
+            LOGV3("BAR4", "READ #%u addr=0x%08x size=%d\n", bar4_rd_total, a, size);
     }
 
     if (a >= GX_BASE && a < GX_BASE + GX_BASE_SIZE) {
@@ -565,7 +565,7 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
                 }
                 static int s_dcs_rd = 0;
                 if (++s_dcs_rd <= 30)
-                    LOGV("dcs", "RD off=0 val=0x%04x size=%d cnt=%d left=%d\n",
+                    LOGV2("dcs", "RD off=0 val=0x%04x size=%d cnt=%d left=%d\n",
                         val, size, s_dcs_rd, g_emu.dcs_resp.count);
             }
         } else if (off == 2) {
@@ -581,7 +581,7 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
             val = f;
             static int s_dcs_flag_rd = 0;
             if (++s_dcs_flag_rd <= 30 || (s_dcs_flag_rd % 100000 == 0))
-                LOGV("dcs", "RD off=2 flags=0x%04x size=%d cnt=%d q=%d\n",
+                LOGV2("dcs", "RD off=2 flags=0x%04x size=%d cnt=%d q=%d\n",
                     val, size, s_dcs_flag_rd, g_emu.dcs_resp.count);
         } else {
             val = 0;
@@ -627,14 +627,14 @@ static void gp_execute_blt(uc_engine *uc)
 
     if (src_off + copy_bytes > fb_size || dst_off + copy_bytes > fb_size) {
         if (s_gp_blt_count < 50)
-            LOGV("gp", "BLT #%u OOB: src=0x%x dst=0x%x size=%u\n",
+            LOGV2("gp", "BLT #%u OOB: src=0x%x dst=0x%x size=%u\n",
                 s_gp_blt_count, src_off, dst_off, copy_bytes);
         s_gp_blt_count++;
         return;
     }
 
     if (s_gp_blt_count < 20)
-        LOGV("gp", "BLT #%u: src(%u,%u) dst(%u,%u) w=%u mode=%s\n",
+        LOGV2("gp", "BLT #%u: src(%u,%u) dst(%u,%u) w=%u mode=%s\n",
             s_gp_blt_count, s_gp_src_x, s_gp_src_y,
             s_gp_dst_x, s_gp_dst_y, s_gp_width,
             s_gp_transparent ? "transparent" : "memcpy");
@@ -674,18 +674,18 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
     static int mmio_wr_cnt = 0;
     if (mmio_wr_cnt < 50) {
         mmio_wr_cnt++;
-        LOGV("mmio", "WRITE addr=0x%08x size=%d val=0x%08x\n", a, size, val);
+        LOGV3("mmio", "WRITE addr=0x%08x size=%d val=0x%08x\n", a, size, val);
     }
 
     /* Dedicated BAR2/BAR4 write counters - never throttled */
     static uint32_t bar2_wr_total = 0, bar4_wr_total = 0;
     if (a >= WMS_BAR2 && a < WMS_BAR2 + 0x01000000u) {
         if (++bar2_wr_total <= 10)
-            LOGV("BAR2", "WRITE #%u addr=0x%08x size=%d val=0x%x\n", bar2_wr_total, a, size, val);
+            LOGV3("BAR2", "WRITE #%u addr=0x%08x size=%d val=0x%x\n", bar2_wr_total, a, size, val);
     }
     if (a >= WMS_BAR4 && a < WMS_BAR4 + BAR4_SIZE) {
         if (++bar4_wr_total <= 10)
-            LOGV("BAR4", "WRITE #%u addr=0x%08x size=%d val=0x%x\n", bar4_wr_total, a, size, val);
+            LOGV3("BAR4", "WRITE #%u addr=0x%08x size=%d val=0x%x\n", bar4_wr_total, a, size, val);
     }
 
     if (a >= GX_BASE && a < GX_BASE + GX_BASE_SIZE) {
@@ -693,7 +693,7 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
         static int gx_wr_cnt = 0;
         if (gx_wr_cnt < 30 && off < 0x800000) {
             gx_wr_cnt++;
-            LOGV("gx", "WRITE off=0x%x val=0x%x (reg)\n", off, val);
+            LOGV3("gx", "WRITE off=0x%x val=0x%x (reg)\n", off, val);
         }
 
         if (off >= 0x800000 && off < 0xC00000) {
@@ -713,7 +713,7 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
             static int fb_off_log_count = 0;
             if (val != prev_fb_off) {
                 if (fb_off_log_count < 20)
-                    LOGV("dc", "DC_FB_ST_OFFSET changed: 0x%x → 0x%x\n", prev_fb_off, val);
+                    LOGV3("dc", "DC_FB_ST_OFFSET changed: 0x%x → 0x%x\n", prev_fb_off, val);
                 prev_fb_off = val;
                 fb_off_log_count++;
             }
@@ -806,7 +806,7 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
         /* XINU boot detection: first byte write at offset ≥ 0x1b14 = framebuffer
          * write = XINU has booted and is rendering text. Activate LPT. */
         if (size == 1 && off >= 0x1b14 && !g_emu.lpt_active) {
-            LOGV("bar2", "XINU boot detected (first BAR2 write at off=0x%x) — activating LPT\n", off);
+            LOGV3("bar2", "XINU boot detected (first BAR2 write at off=0x%x) — activating LPT\n", off);
             lpt_activate();
         }
 
@@ -823,14 +823,14 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
             s_textbuf[s_textpos++] = (char)val;
             if (s_textpos >= 127 || val == '\n') {
                 s_textbuf[s_textpos] = '\0';
-                if (s_textpos > 0) LOGV("vid", "%s\n", s_textbuf);
+                if (s_textpos > 0) LOGV3("vid", "%s\n", s_textbuf);
                 s_textpos = 0;
             }
         }
 
         /* Log early BAR2 writes for debugging */
         if (g_emu.bar2_wr_count <= 30) {
-            LOGV("bar2", "WR #%u off=0x%x sz=%d val=0x%x\n",
+            LOGV3("bar2", "WR #%u off=0x%x sz=%d val=0x%x\n",
                 g_emu.bar2_wr_count, off, size, val);
         }
     }
@@ -903,7 +903,7 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
 
             static int s_dcs_wr = 0;
             if (++s_dcs_wr <= 30)
-                LOGV("dcs", "WR off=0 cmd=0x%04x size=%d active=%d pending=%d cnt=%d\n",
+                LOGV2("dcs", "WR off=0 cmd=0x%04x size=%d active=%d pending=%d cnt=%d\n",
                     cmd, size, g_emu.dcs_active, g_emu.dcs_pending, s_dcs_wr);
 
             if (g_emu.dcs_active && cmd == 0x0E) {
@@ -950,7 +950,7 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
             static int s_dcs_log = 0;
             if (s_dcs_log < 80) {
                 s_dcs_log++;
-                LOGV("dcs", "cmd=0x%04x\n", cmd);
+                LOGV2("dcs", "cmd=0x%04x\n", cmd);
             }
 
             /* Command dispatch */
@@ -958,12 +958,12 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
             case 0x5800:
                 /* DCS board reset — respond with 0x1000 ("I'm alive") */
                 dcs_enqueue_response(0x1000);
-                LOGV("dcs", "RESET 0x5800 → 0x1000\n");
+                LOGV2("dcs", "RESET 0x5800 → 0x1000\n");
                 break;
             case 0x5A00:
                 /* DCS init continue — respond with success */
                 dcs_enqueue_response(0x1000);
-                LOGV("dcs", "RESET 0x5A00 → 0x1000\n");
+                LOGV2("dcs", "RESET 0x5A00 → 0x1000\n");
                 break;
             case 0x3A:
                 {
