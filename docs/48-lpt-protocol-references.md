@@ -40,7 +40,27 @@ reference stays available even if upstream disappears.
   [`test_thread.cpp`](references/PinballDiag/test_thread.cpp)) that hammers
   register `0x05` and a lamp test (vendored
   [`test.cpp`](references/PinballDiag/test.cpp)) that uses ~100 µs column
-  dwell.
+  dwell. PinballDiag needs this loop because it is a **standalone**
+  diagnostic — see §8 for why an emulator running the actual game does not.
+
+### 2.1. Cross-check against another P2K emulator
+
+A separate, closed-source PB2K emulator (call it the "reference binary"
+in this doc — its name is intentionally unmentioned in the repo) is
+based on a QEMU fork. Its real-LPT path was inspected via objdump:
+
+- Registration: `qemu_register_ioport_{read,write}(0x378, len=3, …)`
+  installs handlers at fixed addresses in the binary.
+- Write handler: `port = real_base + (guest_port - 0x378); host_outb(port, val)`.
+- Read handler: `port = real_base + (guest_port - 0x378); return host_inb(port)`.
+- Host primitives: `0x8058f08` is a naked `OUT dx,al`; `0x8058eeb` is a
+  naked `IN al,dx`. No CTL rewriting, no `usleep`, no host-side timing
+  layer, no periodic refresh thread.
+
+This is the strongest available evidence that the documented
+explicit-direction protocol (the guest writes `0x29` to CTL itself
+before each read) is meant to flow through the host port unaltered.
+Encore's raw backend now matches this since `f81eb88`.
 
 ## 3. Parallel-port mapping (logical view)
 
@@ -163,19 +183,45 @@ In rough order of safety and diagnostic value:
 
 - The current raw backend (`--lpt-device 0xBASE`) successfully opens on a
   tester's PCIe card at `0x3100`. That part is no longer the bottleneck.
-- The current code path generates LPT writes from the guest's port I/O. It
-  does **not** yet implement an explicit blanking heartbeat from the host
-  side. Whether the guest's natural XINA traffic produces fast-enough `0x05`
-  strobes through the host's LPT card is unknown until measured on real
-  hardware (the µs sampler added on the experimental branch is a first step).
-- The `--cabinet-purist` flag (experimental branch) disables the in-emulator
-  watchdog suppression so the original code path is exercised end-to-end on
-  real hardware, instead of being short-circuited by the boot patch.
+- Since `f81eb88`, the raw backend forwards the guest's CTL byte (LPT
+  base+2) to the host **verbatim** by default — including bit 5 — so the
+  guest's documented `0x29 → read → 0x00` sequence reaches the wire
+  intact. This matches what the reference QEMU-based emulator does: its
+  real-LPT handler is a naked `outb` (objdump-confirmed: `mov dx,port;
+  mov al,val; out dx,al; ret` at `0x8058f08`), with no CTL rewriting and
+  no host-side timing layer.
+- The previous "Encore manages bit 5 around data reads" behaviour is
+  preserved as `--lpt-managed-dir` (raw backend only) for diagnosis. It
+  can fight the documented protocol on real boards.
+- The `--cabinet-purist` flag disables the in-emulator watchdog
+  suppression so the original code path is exercised end-to-end on real
+  hardware. CTL forwarding is verbatim by default now, so `--cabinet-purist`
+  no longer needs to imply a separate LPT-mode flag.
 
-Implementing a host-side `0x05` keepalive will probably be needed before a
-real cabinet can boot past `pci_watchdog_bone()`. That work is intentionally
-deferred until someone with a spare driver board can validate it on a logic
-analyzer, as recommended in the PinballDiag wiki.
+### On a "host-side 0x05 keepalive"
+
+An earlier draft of this page suggested Encore would probably need to
+add a host-side `0x05` keepalive thread to satisfy the 2.5 ms blanking
+window. That is now **considered unlikely to be the right fix**:
+
+- The reference emulator's real-LPT path has no host-side keepalive
+  thread (objdump-confirmed: there is no extra timer or thread between
+  guest `outb` and the host port). It nevertheless boots real cabinets.
+- The PinballDiag keepalive thread exists because PinballDiag is a
+  **standalone diagnostic** — there is no game running to issue switch-
+  column strobes, so PinballDiag must generate them itself. When a P2K
+  game is actually running, the guest XINA driver's natural switch-
+  matrix scan **is** the keepalive.
+- If a real cabinet still trips `pci_watchdog_bone()` on Encore, the
+  more likely root causes are (a) host-side latency between guest
+  `outb` and the wire, and (b) Encore's own boot patches blocking the
+  natural code path; `--cabinet-purist` removes (b), and the verbatim
+  CTL forwarding addresses one source of (a). A host-side keepalive
+  would mask, not fix, any remaining gap.
+
+The `-vv` LPT µs sampler exists to measure the actual gap between
+guest `0x05` strobes on a real cabinet so this assumption can be
+checked rather than guessed at.
 
 ## 9. Other useful pages
 

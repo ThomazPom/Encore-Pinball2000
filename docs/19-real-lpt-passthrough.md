@@ -93,33 +93,72 @@ same time, but kernel-side mutual exclusion isn't an issue.
 
 ## Implementation: direction management
 
-The real-hardware LPT protocol is "implicit-direction": the driver
-board decides when to drive the data lines back based on the
-currently-latched opcode. The host CPU must flip its own port to
-input *before* reading, otherwise there is bus contention.
+The documented Pinball 2000 protocol is **explicit-direction**: the
+guest XINA driver writes `0x29` to the control register (LPT base+2)
+before each data read — that single byte simultaneously sets the PC
+parallel-port direction (bit 5), the driver-board data-buffer
+direction (bit 3), and the index-decode enable (bit 0). The board
+then drives the data lines back, the guest reads from base+0, and
+the guest restores `0x00` to base+2.
 
-Encore unconditionally flips `PPDATADIR` to input around every data-
-port *read* and back to output immediately afterwards:
+Because the guest already issues the right CTL bytes, the safest
+host-side policy is to forward them verbatim — exactly what the
+reference QEMU-based emulator does. objdump of its binary confirms
+the real-LPT write handler is a naked `outb` (`mov dx,port; mov al,val;
+out dx,al; ret`); no CTL rewriting, no `usleep`, no host-side
+direction tracking.
+
+### Raw backend (default — verbatim)
+
+Since `f81eb88`, the raw backend mirrors that policy:
 
 ```c
-static void set_dir(int input);  /* tracks current state in s_dir_input */
+case 0:  /* data */
+    outb(val, base+0);          // verbatim, no dir flip
+case 2:  /* control */
+    s_ctrl_cached = val;
+    outb(val, base+2);          // verbatim, including bit 5
+```
 
+The guest's own 0x29 → read → 0x00 sequence does the direction
+juggling. This is what the documented protocol expects and what
+PinballDiag also does (it builds its CTL byte from named bits in a
+shadow and writes the whole thing).
+
+### Raw backend with `--lpt-managed-dir` (opt-in legacy)
+
+The previous default — Encore strips bit 5 from every guest CTL write
+and toggles its own tracked direction state around data reads — is
+preserved as an explicit opt-in for diagnosis:
+
+```sh
+./build/encore --lpt-device 0x378 --lpt-managed-dir
+```
+
+Use only if you suspect the guest's CTL sequence is broken. It can
+fight the documented protocol on real boards.
+
+### ppdev backend (kernel-managed direction)
+
+ppdev's kernel driver ignores bit 5 of the byte you pass to
+`PPWCONTROL`; direction is set explicitly via the `PPDATADIR` ioctl.
+Encore therefore still wraps reads with `set_dir(input)` /
+`set_dir(output)` for the ppdev path:
+
+```c
 uint8_t lpt_passthrough_read(uint8_t reg)
 {
-    if (reg == 0 /* data port 0x378 */) {
-        set_dir(1);                   // input
-        read from /dev/parport0
+    if (reg == 0 /* data */) {
+        set_dir(1);                   // PPDATADIR = input
+        ioctl(fd, PPRDATA, &v);
         set_dir(0);                   // back to output
-    } else if (reg == 1 /* status 0x379 */) { /* no dir flip */ }
-    else if (reg == 2 /* ctrl  0x37A */) { /* return cached */ }
+    }
+    /* status, control: no dir flip */
 }
 ```
 
-This policy matches what the real driver binary does — consistent with what
-reverse engineering of its own LPT handler shows, which gates the data read
-on a pair of `renderingFlags` bits and never touches control-register
-bit 5 (the canonical PC "direction bit"). The P2K protocol is
-**implicit-direction**.
+This is a kernel-API quirk, not an Encore choice — `--lpt-managed-dir`
+is a no-op on ppdev because direction is managed regardless.
 
 ## Control register mirroring
 
