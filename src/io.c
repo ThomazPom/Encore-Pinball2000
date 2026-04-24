@@ -83,7 +83,7 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
             switch (pic->icw_step) {
             case 1: /* ICW2: vector base */
                 pic->icw2 = val & 0xF8;
-                LOGV("pic", "PIC%d ICW2=0x%02x (vec base)\n", idx, pic->icw2);
+                LOGV3("pic", "PIC%d ICW2=0x%02x (vec base)\n", idx, pic->icw2);
                 if (pic->icw1 & 0x02) {
                     /* SNGL=1: no ICW3, skip to ICW4 or done */
                     if (pic->icw1 & 0x01) {
@@ -116,7 +116,7 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
             static int s_imr_log_cnt = 0;
             s_imr_log_cnt++;
             if (s_imr_log_cnt <= 20)
-                LOGV("pic", "PIC%d IMR=0x%02x (cnt=%d, prev=0x%02x)\n",
+                LOGV3("pic", "PIC%d IMR=0x%02x (cnt=%d, prev=0x%02x)\n",
                     idx, val, s_imr_log_cnt, pic->imr);
             /* x64 POC BT-71 / i386 POC BT-130 compatibility:
              * After XINU boots, XINU's restore() does OUT 0x21, saved|base_mask.
@@ -137,7 +137,7 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
             pic->imr = 0;
             pic->isr = 0;
             pic->irr = 0;
-            LOGV("pic", "PIC%d ICW1=0x%02x (SNGL=%d IC4=%d)\n",
+            LOGV3("pic", "PIC%d ICW1=0x%02x (SNGL=%d IC4=%d)\n",
                 idx, val, (val >> 1) & 1, val & 1);
         } else if (val == 0x20) {
             /* Non-specific EOI */
@@ -150,7 +150,7 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
             }
             static int eoi_log = 0;
             if (++eoi_log <= 20 || (eoi_log % 200 == 0))
-                LOGV("pic", "PIC%d EOI: ISR 0x%02x→0x%02x (cnt=%d)\n",
+                LOGV3("pic", "PIC%d EOI: ISR 0x%02x→0x%02x (cnt=%d)\n",
                     idx, old_isr, pic->isr, eoi_log);
         } else if (val == 0x60) {
             /* Specific EOI for IRQ0 */
@@ -210,7 +210,7 @@ static void pit_write(uint16_t port, uint8_t val)
             g_emu.pit.latch[ch] = g_emu.pit.count[ch];
             g_emu.pit.latched[ch] = true;
         }
-        LOGV("pit", "CMD: ch=%d rw=%d mode=%d val=0x%02x\n",
+        LOGV3("pit", "CMD: ch=%d rw=%d mode=%d val=0x%02x\n",
             ch, g_emu.pit.rw_mode[ch], g_emu.pit.mode[ch], val);
     } else {
         int ch = port - PORT_PIT_CH0;
@@ -223,7 +223,7 @@ static void pit_write(uint16_t port, uint8_t val)
             g_emu.pit.access_lo[ch] = 0;
             if (ch == 0) {
                 uint16_t div = g_emu.pit.count[0];
-                LOGV("pit", "CH0 divisor=%u → %u Hz\n",
+                LOGV3("pit", "CH0 divisor=%u → %u Hz\n",
                     div, div ? 1193182u / div : 0);
             }
         }
@@ -1162,8 +1162,9 @@ static uint32_t lpt_read(uint16_t port)
     case 0: { /* Data port read */
         s_lpt_rd_cnt++;
         /* Periodic auto-dump of guest switch state for self-diagnosis.
-         * Triggered every ~12k reads (~once per few seconds in attract). */
-        if ((s_lpt_rd_cnt % 12000) == 0) lpt_dump_guest_switch_state();
+         * Triggered every ~12k reads (~once per few seconds in attract).
+         * Level-2+ only — silent at default and at -v. */
+        if (g_log_level >= 2 && (s_lpt_rd_cnt % 12000) == 0) lpt_dump_guest_switch_state();
         uint8_t val;
         int gated = (s_rendering_flags & 0x01) && (s_rendering_flags & 0x08);
         if (gated) {
@@ -1172,7 +1173,7 @@ static uint32_t lpt_read(uint16_t port)
             val = g_emu.lpt_data;
         }
         if (s_lpt_rd_cnt <= 30 || (s_lpt_rd_cnt % 5000) == 0)
-            LOG("lpt", "rd col=0x%02x val=0x%02x ctrl=0x%02x cnt=%d\n",
+            LOGV2("lpt", "rd col=0x%02x val=0x%02x ctrl=0x%02x cnt=%d\n",
                     s_data_for_rendering, val, s_rendering_flags, s_lpt_rd_cnt);
         /* Trace only interesting reads to keep file small and fast */
         if (s_lpt_trace_enabled && s_lpt_trace &&
@@ -1276,8 +1277,45 @@ static void uart_write(uint16_t port, uint8_t val)
         /* Detect milestones in UART output */
         if (val == '\n' && g_emu.uart_pos > 1) {
             g_emu.uart_buf[g_emu.uart_pos] = '\0';
-            /* Print UART lines */
-            LOG("uart", "%s", g_emu.uart_buf);
+            /* Print UART lines, with two reduction passes:
+             *   - heuristic filter (active at log levels 0..1): after the
+             *     game has booted, only surface error-shaped lines and
+             *     boot banners; routine guest debug ("swd Debug:",
+             *     "Data Stored:") is downgraded to LOGV2 so the log
+             *     settles into a quiet idle state.
+             *   - consecutive-duplicate dedup (active at levels 0..2):
+             *     collapses repeated identical lines to "(xN)".
+             * Level 3 (-vvv) shows every guest UART line raw. */
+            {
+                static char s_uart_prev[1024];
+                static int  s_uart_dup_count = 0;
+                bool show = true;
+                if (g_log_level < 2 && g_emu.game_started) {
+                    /* Heuristic: keep error-shaped lines, suppress chatter. */
+                    show = (strstr(g_emu.uart_buf, "***") != NULL ||
+                            strstr(g_emu.uart_buf, "Fatal") != NULL ||
+                            strstr(g_emu.uart_buf, "fatal") != NULL ||
+                            strstr(g_emu.uart_buf, "panic") != NULL ||
+                            strstr(g_emu.uart_buf, "Panic") != NULL ||
+                            strstr(g_emu.uart_buf, "ERROR") != NULL ||
+                            strstr(g_emu.uart_buf, "Error") != NULL ||
+                            strstr(g_emu.uart_buf, "XINA") != NULL ||
+                            strstr(g_emu.uart_buf, "XINU") != NULL ||
+                            strstr(g_emu.uart_buf, "monitor commands") != NULL);
+                }
+                if (!show) {
+                    LOGV2("uart", "%s", g_emu.uart_buf);
+                } else if (g_log_level < 3 && strcmp(g_emu.uart_buf, s_uart_prev) == 0) {
+                    s_uart_dup_count++;
+                } else {
+                    if (s_uart_dup_count > 0)
+                        LOG("uart", "    (last line repeated %d more time%s)\n",
+                            s_uart_dup_count, s_uart_dup_count == 1 ? "" : "s");
+                    s_uart_dup_count = 0;
+                    LOG("uart", "%s", g_emu.uart_buf);
+                    snprintf(s_uart_prev, sizeof(s_uart_prev), "%s", g_emu.uart_buf);
+                }
+            }
 
             /* Detect game code start — apply patches once */
             if (!g_emu.game_started &&

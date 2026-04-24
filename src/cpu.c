@@ -282,7 +282,7 @@ void cpu_inject_interrupt(uint8_t vector)
     inject_ok++;
     g_emu.irq_ok_count = inject_ok;
     if (inject_ok <= 5 || (inject_ok % 100 == 0)) {
-        LOGV("irq", "vec=0x%02x → handler=0x%08x EIP=0x%08x (ok=%d blk=%d stub=%d)\n",
+        LOGV3("irq", "vec=0x%02x → handler=0x%08x EIP=0x%08x (ok=%d blk=%d stub=%d)\n",
             vector, handler, eip, inject_ok, inject_blocked, inject_stub);
     }
 
@@ -316,7 +316,7 @@ void cpu_inject_interrupt(uint8_t vector)
         uint32_t act_eip, act_esp;
         uc_reg_read(uc, UC_X86_REG_EIP, &act_eip);
         uc_reg_read(uc, UC_X86_REG_ESP, &act_esp);
-        LOGV("irq", "  frame: [ESP+0]=0x%08x [+4]=0x%08x [+8]=0x%08x ESP=0x%08x→handler=0x%08x\n",
+        LOGV3("irq", "  frame: [ESP+0]=0x%08x [+4]=0x%08x [+8]=0x%08x ESP=0x%08x→handler=0x%08x\n",
             v_eip, v_cs, v_ef, act_esp, act_eip);
     }
 }
@@ -368,37 +368,37 @@ static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *u
     uc_reg_read(uc, UC_X86_REG_ESP, &esp);
 
     switch ((uint32_t)addr) {
-    case 0x801BF: LOGV("trace", "Entry 0x801BF (INT19 handler)\n"); break;
-    case 0x801C9: LOGV("trace", "PM switch at 0x801C9\n"); break;
-    case 0x801D9: LOGV("trace", "PM entry 0x801D9\n"); break;
-    case 0x801ED: LOGV("trace", "Second reloc call 0x801ED\n"); break;
-    case 0x801F2: LOGV("trace", "Second Init2 call 0x801F2\n"); break;
-    case 0x801F7: LOGV("trace", "!!! GARBLED 0x801F7 reached !!!\n"); break;
-    case 0x808FC: LOGV("trace", "Init2 enter ESP=0x%08x\n", esp); break;
-    case 0x80904: LOGV("trace", "Init2 sub-calls start\n"); break;
-    case 0x80922: LOGV("trace", "Pre PCI-enum push\n"); break;
-    case 0x80929: LOGV("trace", "Post PCI-enum EAX=0x%08x → EBX\n", eax); break;
-    case 0x80933: LOGV("trace", "Call 0x83488 (1st) EBX=%d\n", ebx); break;
-    case 0x80959: LOGV("trace", "Call 0x83488 (2nd)\n"); break;
-    case 0x80981: LOGV("trace", "Update check: CMP EBX(%d), 1\n", ebx); break;
-    case 0x8098A: LOGV("trace", "UPDATE PATH: MOV EBX=0x12000000\n"); break;
-    case 0x809A4: LOGV("trace", "Validate boot data call\n"); break;
-    case 0x809AC: LOGV("trace", "Boot data result EAX=%d\n", eax); break;
-    case 0x809CF: LOGV("trace", "GameID check: flash[0x3C]=0x%08x vs BAR5\n", eax); break;
-    case 0x80A56: LOGV("trace", "GAME ENTRY: EAX=[EBX+0x48]=0x%08x\n", eax); break;
-    case 0x80A5E: LOGV("trace", ">>> CALL EAX (game jump!) EAX=0x%08x\n", eax); break;
-    case 0x80A98: LOGV("trace", "FAIL: boot data bad\n"); break;
-    case 0x80B9C: LOGV("trace", "NO UPDATE path at 0x80B9C\n"); break;
-    case 0x83B20: LOGV("trace", "PCI enum 0x83B20 enter\n"); break;
+    case 0x801BF: LOGV3("trace", "Entry 0x801BF (INT19 handler)\n"); break;
+    case 0x801C9: LOGV3("trace", "PM switch at 0x801C9\n"); break;
+    case 0x801D9: LOGV3("trace", "PM entry 0x801D9\n"); break;
+    case 0x801ED: LOGV3("trace", "Second reloc call 0x801ED\n"); break;
+    case 0x801F2: LOGV3("trace", "Second Init2 call 0x801F2\n"); break;
+    case 0x801F7: LOGV3("trace", "!!! GARBLED 0x801F7 reached !!!\n"); break;
+    case 0x808FC: LOGV3("trace", "Init2 enter ESP=0x%08x\n", esp); break;
+    case 0x80904: LOGV3("trace", "Init2 sub-calls start\n"); break;
+    case 0x80922: LOGV3("trace", "Pre PCI-enum push\n"); break;
+    case 0x80929: LOGV3("trace", "Post PCI-enum EAX=0x%08x → EBX\n", eax); break;
+    case 0x80933: LOGV3("trace", "Call 0x83488 (1st) EBX=%d\n", ebx); break;
+    case 0x80959: LOGV3("trace", "Call 0x83488 (2nd)\n"); break;
+    case 0x80981: LOGV3("trace", "Update check: CMP EBX(%d), 1\n", ebx); break;
+    case 0x8098A: LOGV3("trace", "UPDATE PATH: MOV EBX=0x12000000\n"); break;
+    case 0x809A4: LOGV3("trace", "Validate boot data call\n"); break;
+    case 0x809AC: LOGV3("trace", "Boot data result EAX=%d\n", eax); break;
+    case 0x809CF: LOGV3("trace", "GameID check: flash[0x3C]=0x%08x vs BAR5\n", eax); break;
+    case 0x80A56: LOGV3("trace", "GAME ENTRY: EAX=[EBX+0x48]=0x%08x\n", eax); break;
+    case 0x80A5E: LOGV3("trace", ">>> CALL EAX (game jump!) EAX=0x%08x\n", eax); break;
+    case 0x80A98: LOGV3("trace", "FAIL: boot data bad\n"); break;
+    case 0x80B9C: LOGV3("trace", "NO UPDATE path at 0x80B9C\n"); break;
+    case 0x83B20: LOGV3("trace", "PCI enum 0x83B20 enter\n"); break;
     case 0x83B29: {
         uint8_t guard;
         uc_mem_read(uc, 0x86CB0, &guard, 1);
-        LOGV("trace", "PCI enum guard=[0x86CB0]=%d\n", guard);
+        LOGV3("trace", "PCI enum guard=[0x86CB0]=%d\n", guard);
         break;
     }
-    case 0x83DC5: LOGV("trace", "PCI enum success EAX=1\n"); break;
-    case 0x83DD6: LOGV("trace", "PCI enum FAIL EAX=-1\n"); break;
-    case 0x100000: LOGV("trace", "*** GAME CODE ENTRY at 0x100000! ***\n"); break;
+    case 0x83DC5: LOGV3("trace", "PCI enum success EAX=1\n"); break;
+    case 0x83DD6: LOGV3("trace", "PCI enum FAIL EAX=-1\n"); break;
+    case 0x100000: LOGV3("trace", "*** GAME CODE ENTRY at 0x100000! ***\n"); break;
     case 0x24780C: {
         /* NonFatal() called — read string arg from [ESP+4], caller from [ESP] */
         uint32_t ret_addr, str_ptr;
@@ -415,12 +415,12 @@ static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *u
         static uint32_t vs_call = 0;
         vs_call++;
         if (vs_call <= 5)
-            LOGV("vsync", "callback #%u\n", vs_call);
+            LOGV2("vsync", "callback #%u\n", vs_call);
         break;
     }
     default:
         if (addr >= 0x88000 && addr < 0x8B000) {
-            LOGV("trace", "!!! STACK EXEC addr=0x%08x ESP=0x%08x !!!\n",
+            LOGV3("trace", "!!! STACK EXEC addr=0x%08x ESP=0x%08x !!!\n",
                 (uint32_t)addr, esp);
         }
         break;
@@ -440,7 +440,7 @@ static void hook_dcs_mode_write(uc_engine *uc, uc_mem_type type,
     uint32_t retaddr = 0;
     if (esp >= 4 && esp < 0x01000000)
         retaddr = *(uint32_t *)(g_emu.ram + esp);
-    LOGV("watch", "dcs_mode WRITE addr=0x%llx size=%d val=%lld "
+    LOGV3("watch", "dcs_mode WRITE addr=0x%llx size=%d val=%lld "
         "EIP=0x%08x ret=0x%08x\n",
         (unsigned long long)addr, size, (long long)value, eip, retaddr);
 
@@ -448,9 +448,9 @@ static void hook_dcs_mode_write(uc_engine *uc, uc_mem_type type,
     if (size == 4 && eip > 0x100000) {
         uint32_t start = (eip > 0x80) ? eip - 0x80 : 0;
         uint8_t *code = g_emu.ram + start;
-        LOGV("watch", "--- code dump %08x-%08x ---\n", start, start + 0x100);
+        LOGV3("watch", "--- code dump %08x-%08x ---\n", start, start + 0x100);
         for (int i = 0; i < 0x100; i += 16) {
-            LOGV("watch", "%08x: %02x %02x %02x %02x %02x %02x %02x %02x "
+            LOGV3("watch", "%08x: %02x %02x %02x %02x %02x %02x %02x %02x "
                 "%02x %02x %02x %02x %02x %02x %02x %02x\n",
                 start + i,
                 code[i+0], code[i+1], code[i+2], code[i+3],
@@ -459,10 +459,10 @@ static void hook_dcs_mode_write(uc_engine *uc, uc_mem_type type,
                 code[i+12], code[i+13], code[i+14], code[i+15]);
         }
         /* Also dump stack for call trace */
-        LOGV("watch", "--- stack @ESP=0x%08x ---\n", esp);
+        LOGV3("watch", "--- stack @ESP=0x%08x ---\n", esp);
         for (int i = 0; i < 8; i++) {
             uint32_t sv = *(uint32_t *)(g_emu.ram + esp + i*4);
-            LOGV("watch", "  [ESP+%02x] = 0x%08x\n", i*4, sv);
+            LOGV3("watch", "  [ESP+%02x] = 0x%08x\n", i*4, sv);
         }
     }
 }
@@ -571,7 +571,7 @@ void cpu_run(void)
                 if (handler > 0x100000u) {
                     if (g_emu.clkint_ready_exec == 0) {
                         g_emu.clkint_ready_exec = g_emu.exec_count;
-                        LOGV("irq", "clkint detected: IDT[0x20]=0x%08x EIP=0x%08x exec=%u\n",
+                        LOGV3("irq", "clkint detected: IDT[0x20]=0x%08x EIP=0x%08x exec=%u\n",
                             handler, eip, (unsigned)g_emu.exec_count);
                     }
                     if (g_emu.xinu_booted &&
@@ -581,7 +581,7 @@ void cpu_run(void)
                         uc_x86_mmr idtr;
                         uc_reg_read(uc, UC_X86_REG_IDTR, &idtr);
                         g_emu.idt_base = (uint32_t)idtr.base;
-                        LOGV("irq", "XINU ready: timer injection enabled EIP=0x%08x exec=%u idt_base=0x%x\n",
+                        LOGV3("irq", "XINU ready: timer injection enabled EIP=0x%08x exec=%u idt_base=0x%x\n",
                             eip, (unsigned)g_emu.exec_count, g_emu.idt_base);
 
                         /* Install Cyrix 0F3C emulator at 0x500 and patch IDT[6]. */
@@ -629,7 +629,7 @@ void cpu_run(void)
                         }
                     }
                 } else if (g_emu.exec_count % 5000 == 0) {
-                    LOGV("irq", "waiting for clkint: IDT[0x20]=0x%08x EIP=0x%08x exec=%u xinu_booted=%d\n",
+                    LOGV3("irq", "waiting for clkint: IDT[0x20]=0x%08x EIP=0x%08x exec=%u xinu_booted=%d\n",
                         handler, eip, (unsigned)g_emu.exec_count, g_emu.xinu_booted);
                 }
             }
@@ -816,7 +816,7 @@ void cpu_run(void)
                 static int inv_cnt = 0;
                 inv_cnt++;
                 if (inv_cnt <= 30 || (inv_cnt % 10000) == 0)
-                    LOG("cpu", "INSN_INVALID #%d EIP=0x%08x bytes=%02x %02x %02x %02x\n",
+                    LOGV("cpu", "INSN_INVALID #%d EIP=0x%08x bytes=%02x %02x %02x %02x\n",
                         inv_cnt, eip, insn[0], insn[1], insn[2], insn[3]);
                 if (insn[0] == 0xF4) {
                     prof_hlt++;
@@ -828,7 +828,7 @@ void cpu_run(void)
                     if (eip == 0x227238u || eip == 0x1CF800u || eip == 0x1D96AEu) {
                         static int s_fatal_redir = 0;
                         if (s_fatal_redir < 20)
-                            LOG("cpu", "Fatal/panic HLT @0x%08x → prnull idle (#%d)\n",
+                            LOGV("cpu", "Fatal/panic HLT @0x%08x → prnull idle (#%d)\n",
                                 eip, ++s_fatal_redir);
                         eip = 0xFF0000u;
                         eip_dirty = 1;
@@ -1003,7 +1003,7 @@ handle_display:
                 uint32_t gate = RAM_RD32(0x2D7274u);
                 uint32_t tinit = RAM_RD32(0x335980u);     /* timer init flag */
                 uint32_t tick_cycle = RAM_RD32(0x3358D0u); /* tick counter */
-                LOGV("hb", "exec=%lu EIP=0x%08x post=0x%02x vsync=%u frames=%d irq_ok=%u\n",
+                LOGV2("hb", "exec=%lu EIP=0x%08x post=0x%02x vsync=%u frames=%d irq_ok=%u\n",
                     (unsigned long)g_emu.exec_count, eip, g_emu.post_code,
                     g_emu.vsync_count, g_emu.frame_count, g_emu.irq_ok_count);
                 {
@@ -1018,26 +1018,26 @@ handle_display:
                             char hex[64*3+8]; int p = 0;
                             for (int i = 0; i < 64; i++)
                                 p += snprintf(hex+p, sizeof(hex)-p, "%02x ", buf[i]);
-                            LOGV("hb", "  STUCK bytes @0x%08x: %s\n", base, hex);
+                            LOGV2("hb", "  STUCK bytes @0x%08x: %s\n", base, hex);
                             uint32_t esp = 0, regs[8];
                             uc_reg_read(g_emu.uc, UC_X86_REG_ESP, &esp);
                             static const int rids[8] = {UC_X86_REG_EAX,UC_X86_REG_ECX,UC_X86_REG_EDX,UC_X86_REG_EBX,UC_X86_REG_ESP,UC_X86_REG_EBP,UC_X86_REG_ESI,UC_X86_REG_EDI};
                             for (int i = 0; i < 8; i++) uc_reg_read(g_emu.uc, rids[i], &regs[i]);
-                            LOGV("hb", "  STUCK regs: eax=%08x ecx=%08x edx=%08x ebx=%08x esp=%08x ebp=%08x esi=%08x edi=%08x\n",
+                            LOGV2("hb", "  STUCK regs: eax=%08x ecx=%08x edx=%08x ebx=%08x esp=%08x ebp=%08x esi=%08x edi=%08x\n",
                                 regs[0],regs[1],regs[2],regs[3],regs[4],regs[5],regs[6],regs[7]);
                             uint8_t stk[32];
                             if (uc_mem_read(g_emu.uc, esp, stk, 32) == UC_ERR_OK) {
                                 p = 0;
                                 for (int i = 0; i < 32; i++) p += snprintf(hex+p, sizeof(hex)-p, "%02x ", stk[i]);
-                                LOGV("hb", "  STUCK stack @esp: %s\n", hex);
+                                LOGV2("hb", "  STUCK stack @esp: %s\n", hex);
                             }
                         }
                     }
                 }
-                LOGV("hb", "  preempt=%u nproc=%u guards=%u/%u/%u tinit=%u tcyc=%u\n",
+                LOGV2("hb", "  preempt=%u nproc=%u guards=%u/%u/%u tinit=%u tcyc=%u\n",
                     preempt, nproc, guard1, guard2, gate, tinit, tick_cycle);
                 /* PIC state for diagnostics */
-                LOGV("hb", "  PIC0: IRR=0x%02x IMR=0x%02x ISR=0x%02x  PIC1: IRR=0x%02x IMR=0x%02x ISR=0x%02x\n",
+                LOGV2("hb", "  PIC0: IRR=0x%02x IMR=0x%02x ISR=0x%02x  PIC1: IRR=0x%02x IMR=0x%02x ISR=0x%02x\n",
                     g_emu.pic[0].irr, g_emu.pic[0].imr, g_emu.pic[0].isr,
                     g_emu.pic[1].irr, g_emu.pic[1].imr, g_emu.pic[1].isr);
                 /* DM / DCS state — SWE1-V1.19 BSS layout. Gated on game_id
@@ -1050,30 +1050,30 @@ handle_display:
                     uint32_t dcs_count = RAM_RD32(0x3442f8);
                     uint32_t ww,wr,bw,br,fr;
                     dcs_io_get_counters(&ww,&wr,&bw,&br,&fr);
-                    LOGV("hb", "  DM: mode=%u gxp=0x%x dt2=%u dcs_mode=%u dcs_st=%u dcs_cnt=%u io:ww=%u wr=%u bw=%u br=%u fr=%u\n",
+                    LOGV2("hb", "  DM: mode=%u gxp=0x%x dt2=%u dcs_mode=%u dcs_st=%u dcs_cnt=%u io:ww=%u wr=%u bw=%u br=%u fr=%u\n",
                         dmm, gxp, g_emu.dc_timing2, dcs_mode, dcs_state, dcs_count,
                         ww, wr, bw, br, fr);
                     uint32_t dcs_ready_flag = RAM_RD32(0x3442f4);
                     uint32_t dcs_complete   = RAM_RD32(0x3442f0);
                     uint32_t dcs_last_val   = RAM_RD32(0x344414);
                     uint32_t dcs_init_flag  = RAM_RD32(0x344410);
-                    LOGV("hb", "  DCS-v19: rdy=%u cpl=%u lastval=0x%x initf=0x%x\n",
+                    LOGV2("hb", "  DCS-v19: rdy=%u cpl=%u lastval=0x%x initf=0x%x\n",
                         dcs_ready_flag, dcs_complete, dcs_last_val, dcs_init_flag);
                     uint32_t q_wr = RAM_RD32(0x344408);
                     uint32_t q_rd = RAM_RD32(0x34440c);
                     uint32_t oq_wr = RAM_RD32(0x344498);
                     uint32_t oq_rd = RAM_RD32(0x34449c);
-                    LOGV("hb", "  Q: inner[wr=%u rd=%u] outer[wr=%u rd=%u]\n",
+                    LOGV2("hb", "  Q: inner[wr=%u rd=%u] outer[wr=%u rd=%u]\n",
                         q_wr, q_rd, oq_wr, oq_rd);
                 } else {
                     uint32_t ww,wr,bw,br,fr;
                     dcs_io_get_counters(&ww,&wr,&bw,&br,&fr);
-                    LOGV("hb", "  DCS-io: ww=%u wr=%u bw=%u br=%u fr=%u\n",
+                    LOGV2("hb", "  DCS-io: ww=%u wr=%u bw=%u br=%u fr=%u\n",
                         ww, wr, bw, br, fr);
                 }
                 /* One-shot dump of guest DCS state — disabled */
                 /* Performance stats */
-                LOGV("hb", "  PERF: calls=%lu/5s ok=%lu 0f3c=%lu hlt=%lu ticks=%lu bar2wr=%u\n",
+                LOGV2("hb", "  PERF: calls=%lu/5s ok=%lu 0f3c=%lu hlt=%lu ticks=%lu bar2wr=%u\n",
                     prof_emu_calls, prof_ok, prof_0f3c, prof_hlt, prof_ticks_fired,
                     g_emu.bar2_wr_count);
                 prof_emu_calls = prof_0f3c = prof_hlt = prof_other_err = prof_ok = 0;
@@ -1085,7 +1085,7 @@ handle_display:
                 if (!proctab_dumped && nproc >= 35) {
                     proctab_dumped = 1;
                     uint32_t currpid = RAM_RD32(0x2FC8BCu);
-                    LOGV("hb", "  proctab: currpid=%u nproc=%u\n", currpid, nproc);
+                    LOGV2("hb", "  proctab: currpid=%u nproc=%u\n", currpid, nproc);
                     for (uint32_t pid = 0; pid < 70; pid++) {
                         uint32_t pe = 0x2FC8C4u + pid * 232u;
                         uint8_t ps = RAM_RD8(pe);
@@ -1097,7 +1097,7 @@ handle_display:
                             if (pn[i] && ((uint8_t)pn[i] < 0x20 || (uint8_t)pn[i] > 0x7e))
                                 pn[i] = '.';
                         const char *sn[] = {"FREE","CURR","RDY","RECV","SLP","SUSP","WAIT","RTIM"};
-                        LOGV("hb", "    pid%-3u %-4s fn=%08x '%s'\n",
+                        LOGV2("hb", "    pid%-3u %-4s fn=%08x '%s'\n",
                             pid, ps<8?sn[ps]:"??", pfn, pn);
                     }
                 }

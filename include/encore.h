@@ -516,13 +516,27 @@ uint32_t sym_count(void);
 /* =========================================================================
  * Logging
  * ========================================================================= */
-extern int g_log_verbose;  /* 0 = default (quiet), 1 = --verbose / -v */
+/* Log level (0..3+):
+ *   0 = default (quiet idle)
+ *   1 = -v / --verbose=1 — init details + state transitions (cheap, no perf cost)
+ *   2 = -vv / --verbose=2 — runtime periodic events (some I/O cost)
+ *   3 = -vvv / --verbose=3 — per-MMIO / per-instruction trace (slow)
+ *
+ * `g_log_verbose` is kept as a backward-compat alias meaning "level >= 1". */
+extern int g_log_level;
+#define g_log_verbose (g_log_level >= 1)
 #define LOG(tag, fmt, ...) fprintf(stdout, "[" tag "] " fmt, ##__VA_ARGS__)
-/* Verbose-only: suppressed unless --verbose is passed. Use for high-frequency
- * diagnostics (per-write MMIO/PCI/PLX traces, Init2 checkpoint trace, etc.)
- * that are useful for debugging but spammy for end users. */
+/* LOGV  — level 1+: init details, one-shot state, low-frequency events.
+ * LOGV2 — level 2+: runtime periodic events (heartbeat, BLT ops, dcs writes).
+ * LOGV3 — level 3+: per-MMIO/per-instruction traces (perf-impacting). */
 #define LOGV(tag, fmt, ...) do { \
-    if (g_log_verbose) fprintf(stdout, "[" tag "] " fmt, ##__VA_ARGS__); \
+    if (g_log_level >= 1) fprintf(stdout, "[" tag "] " fmt, ##__VA_ARGS__); \
+} while(0)
+#define LOGV2(tag, fmt, ...) do { \
+    if (g_log_level >= 2) fprintf(stdout, "[" tag "] " fmt, ##__VA_ARGS__); \
+} while(0)
+#define LOGV3(tag, fmt, ...) do { \
+    if (g_log_level >= 3) fprintf(stdout, "[" tag "] " fmt, ##__VA_ARGS__); \
 } while(0)
 #define LOG_ONCE(tag, fmt, ...) do { \
     static int _done = 0; \
