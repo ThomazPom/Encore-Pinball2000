@@ -52,13 +52,22 @@ will fail with `PPCLAIM EBUSY` / `Permission denied`:
 sudo modprobe ppdev parport_pc                       # make /dev/parport0 appear
 sudo rmmod lp 2>/dev/null || true                    # printer driver squats on it
 sudo usermod -aG lp $USER && newgrp lp               # group access, active now
-ls -l /dev/parport0                                  # expect: crw-rw---- root lp
+ls -l /dev/parport* /dev/usb/lp* 2>/dev/null         # find your device node
 ```
 
 `newgrp lp` activates the new group in the current shell so no logout is
 needed (`exit` returns to the parent shell; `sg lp -c './build/encore …'`
 works too as a one-shot). The `ppdev`, `parport` and `parport_pc` modules
 are already part of the stock Debian/Ubuntu kernel — nothing to apt-install.
+
+> **USB→LPT dongle?** If `ls` shows `/dev/usb/lp0` but no `/dev/parport*`,
+> your adapter is printer-class only and **cannot** drive the cabinet
+> (the `usblp` kernel driver has no bidirectional / control-register
+> support). A PCIe LPT card (Moschip MCS9865/9900, ~€20) is the cheap
+> fix. If you see `/dev/parport1` instead of `parport0` (e.g. add-in
+> card alongside onboard LPT), pass `--lpt-device /dev/parport1`. Full
+> compatibility table in
+> [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md#which-device-node-will-i-get).
 
 Encore runs **fully unprivileged** — no `ioperm()`, no setuid, no `/dev/port`.
 Everything goes through Linux `ppdev` ioctls, so once your user is in the
