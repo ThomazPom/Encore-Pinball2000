@@ -79,13 +79,20 @@ static int           s_fd          = -1;        /* ppdev backend */
 static unsigned long s_io_base     = 0;         /* raw backend (data port)  */
 static uint8_t       s_ctrl_cached = 0;         /* mirrors guest's last 0x37A write */
 static int           s_dir_input   = 0;         /* current PPDATADIR / control bit-5 state */
+static int           s_ecr_armed   = 0;         /* raw backend: did ioperm(BASE+0x402) succeed? */
+
+/* --lpt-trace FILE: bus-cycle CSV log for real-cabinet bring-up.
+ * One line per cycle, format: ns_monotonic,dir,reg,val   (dir = R|W).
+ * Opened lazily in lpt_passthrough_open(), flushed on close.
+ * Off completely (zero overhead) if the user did not pass --lpt-trace. */
+static FILE   *s_trace_fp        = NULL;
+static uint64_t s_trace_cycles   = 0;
 
 /* Per-call timing sampler — opt-in via -vv (g_log_level >= 2).
  * Accumulates wall time spent inside lpt_passthrough_{read,write} and
  * emits a one-line summary every SAMPLE_EVERY calls so we can quantify
  * what real LPT round-trips actually cost on the operator's hardware
- * (this is the "ppdev too slow / raw fast enough?" question the
- * community keeps raising — better measured than asserted). */
+ * (better measured than asserted). */
 #define LPT_SAMPLE_EVERY 10000
 static uint64_t s_lpt_calls = 0;
 static uint64_t s_lpt_ns_total = 0;
@@ -150,6 +157,78 @@ static inline void lpt_blanking_check(void)
 static inline uint64_t lpt_now_ns(void) { return 0; }
 static inline void lpt_sample_account(uint64_t start_ns) { (void)start_ns; }
 static inline void lpt_blanking_check(void) {}
+#endif
+
+/* === Trace helpers ===
+ * Cheap fast-path check (single null compare) so the cycle hot path stays
+ * tight when no trace file was requested. */
+static inline void lpt_trace_cycle(char dir, uint8_t reg, uint8_t val)
+{
+#ifdef __linux__
+    if (!s_trace_fp) return;
+    fprintf(s_trace_fp, "%llu,%c,%u,0x%02x\n",
+            (unsigned long long)lpt_now_ns(), dir, reg, val);
+    s_trace_cycles++;
+    /* Periodic flush: enough to survive a SIGKILL during bring-up but not
+     * so often that we throttle the bus. */
+    if ((s_trace_cycles & 0x3FF) == 0) fflush(s_trace_fp);
+#else
+    (void)dir; (void)reg; (void)val;
+#endif
+}
+
+#ifdef __linux__
+/* Raw backend only: arm the SuperI/O ECR (Extended Control Register) at
+ * BASE+0x402 into PS/2 (bidirectional) mode. Without this, on most modern
+ * PCIe LPT cards and on the original Cyrix MediaGX SuperI/O the data port
+ * stays in unidirectional SPP mode and CTL bit-5 (DIRECTION) is ignored —
+ * meaning every guest read of the data port returns whatever the host
+ * driver is fighting the board to put on the bus. PinballDiag does this
+ * unconditionally; we mirror it. Best-effort: if BASE+0x402 isn't usable
+ * (some software-emulated parports don't expose it) we fall back to
+ * standard SPP and hope the kernel/firmware already configured it. */
+static void raw_arm_ecr(unsigned long base)
+{
+    s_ecr_armed = 0;
+    if (ioperm(base + 0x402, 1, 1) != 0) {
+        LOGV("lpt", "raw: ioperm(0x%lx+0x402,1,1) failed: %s "
+                    "(no ECR access — staying in SPP, bidirectional reads "
+                    "may not work)\n",
+             base, strerror(errno));
+        return;
+    }
+    uint8_t ecr = inb(base + 0x402);
+    /* Mode is the upper 3 bits (7..5). Mode 1 = PS/2 / bidirectional.
+     * Preserve the lower 5 bits (FIFO/IRQ/DMA flags). */
+    uint8_t want = (uint8_t)((ecr & 0x1F) | 0x20);
+    outb(want, base + 0x402);
+    /* Read-back sanity: some chipsets reject mode changes outside an
+     * idle window. Note but do not fail (tester can still drive the
+     * port; bidirectional reads may just be unreliable). */
+    uint8_t got = inb(base + 0x402);
+    if ((got & 0xE0) != 0x20) {
+        LOG("lpt", "raw: ECR mode-set rejected "
+                   "(was=0x%02x wrote=0x%02x got=0x%02x) — bidirectional "
+                   "reads may return floating bus; check chipset\n",
+            ecr, want, got);
+    } else {
+        LOG("lpt", "raw: ECR @0x%lx armed PS/2 mode (was=0x%02x → 0x%02x) — "
+                   "bidirectional reads enabled\n",
+            base + 0x402, ecr, got);
+        s_ecr_armed = 1;
+    }
+}
+
+static void raw_disarm_ecr(unsigned long base)
+{
+    if (!s_ecr_armed) return;
+    /* Best-effort restore to SPP (mode 0) so we don't leave the next
+     * process surprised. Failure is harmless. */
+    uint8_t ecr = inb(base + 0x402);
+    outb((uint8_t)(ecr & 0x1F), base + 0x402);
+    (void)ioperm(base + 0x402, 1, 0);
+    s_ecr_armed = 0;
+}
 #endif
 
 static void set_dir(int input)
@@ -225,6 +304,7 @@ static int raw_open(unsigned long base, bool quiet_if_missing)
     s_backend     = LPT_BK_RAW;
     s_ctrl_cached = 0;
     s_dir_input   = -1;
+    raw_arm_ecr(base);                         /* must precede first set_dir() */
     set_dir(0);                                /* idle = output (host drives latch) */
 
     LOG("lpt", "*** real cabinet detected on RAW I/O 0x%lx — keyboard/F-key "
@@ -251,8 +331,23 @@ int lpt_passthrough_open(const char *device, bool quiet_if_missing)
 
     /* Raw backend: --lpt-device 0x378 (or any decimal/hex I/O base). */
     unsigned long base = 0;
-    if (parse_io_base(device, &base))
-        return raw_open(base, quiet_if_missing);
+    if (parse_io_base(device, &base)) {
+        int rc = raw_open(base, quiet_if_missing);
+        if (rc == 0 && g_emu.lpt_trace_file[0]) {
+            s_trace_fp = fopen(g_emu.lpt_trace_file, "w");
+            if (s_trace_fp) {
+                fprintf(s_trace_fp,
+                        "# Encore LPT passthrough trace — base=raw 0x%lx\n"
+                        "# format: ns_monotonic,dir,reg,val\n", base);
+                LOG("lpt", "trace: writing bus cycles to %s\n",
+                    g_emu.lpt_trace_file);
+            } else {
+                LOG("lpt", "trace: fopen(%s) failed: %s\n",
+                    g_emu.lpt_trace_file, strerror(errno));
+            }
+        }
+        return rc;
+    }
 
     /* ppdev backend: --lpt-device /dev/parport0 (default). */
     int fd = open(device, O_RDWR);
@@ -302,6 +397,19 @@ int lpt_passthrough_open(const char *device, bool quiet_if_missing)
                "emulation DISABLED ***\n", device);
     LOG("lpt", "    guest LPT traffic forwarded via ppdev; cabinet drives "
                "switch matrix\n");
+    if (g_emu.lpt_trace_file[0]) {
+        s_trace_fp = fopen(g_emu.lpt_trace_file, "w");
+        if (s_trace_fp) {
+            fprintf(s_trace_fp,
+                    "# Encore LPT passthrough trace — backend=ppdev dev=%s\n"
+                    "# format: ns_monotonic,dir,reg,val\n", device);
+            LOG("lpt", "trace: writing bus cycles to %s\n",
+                g_emu.lpt_trace_file);
+        } else {
+            LOG("lpt", "trace: fopen(%s) failed: %s\n",
+                g_emu.lpt_trace_file, strerror(errno));
+        }
+    }
     return 0;
 #endif
 }
@@ -315,10 +423,17 @@ void lpt_passthrough_close(void)
         s_fd = -1;
     } else if (s_backend == LPT_BK_RAW) {
         /* Best-effort release. Failure here is harmless: we're exiting. */
+        raw_disarm_ecr(s_io_base);
         (void)ioperm(s_io_base, 3, 0);
         (void)ioperm(0x80, 1, 0);
     } else {
         return;
+    }
+    if (s_trace_fp) {
+        LOG("lpt", "trace: %llu bus cycles captured to %s\n",
+            (unsigned long long)s_trace_cycles, g_emu.lpt_trace_file);
+        fclose(s_trace_fp);
+        s_trace_fp = NULL;
     }
     s_backend = LPT_BK_NONE;
     LOG("lpt", "passthrough released\n");
@@ -341,19 +456,17 @@ uint8_t lpt_passthrough_read(uint8_t reg)
             if (ioctl(s_fd, PPRDATA, &v) < 0)
                 LOG("lpt", "PPRDATA failed: %s\n", strerror(errno));
             set_dir(0);                        /* restore output for latch */
-            lpt_sample_account(t0);
-            return v;
+            break;
         case 1: /* status — always input on real LPT */
             if (ioctl(s_fd, PPRSTATUS, &v) < 0)
                 LOG("lpt", "PPRSTATUS failed: %s\n", strerror(errno));
-            lpt_sample_account(t0);
-            return v;
+            break;
         case 2: /* control — return cached guest-visible value */
-            lpt_sample_account(t0);
-            return s_ctrl_cached;
+            v = s_ctrl_cached;
+            break;
         default:
-            lpt_sample_account(t0);
-            return 0xFF;
+            v = 0xFF;
+            break;
         }
     } else if (s_backend == LPT_BK_RAW) {
         switch (reg) {
@@ -361,21 +474,20 @@ uint8_t lpt_passthrough_read(uint8_t reg)
             set_dir(1);
             v = inb(s_io_base + 0);
             set_dir(0);
-            lpt_sample_account(t0);
-            return v;
+            break;
         case 1:
             v = inb(s_io_base + 1);
-            lpt_sample_account(t0);
-            return v;
+            break;
         case 2:
-            lpt_sample_account(t0);
-            return s_ctrl_cached;             /* cached guest-visible byte */
+            v = s_ctrl_cached;             /* cached guest-visible byte */
+            break;
         default:
-            lpt_sample_account(t0);
-            return 0xFF;
+            v = 0xFF;
+            break;
         }
     }
     lpt_sample_account(t0);
+    lpt_trace_cycle('R', reg, v);
     return v;
 #else
     (void)reg;
@@ -396,19 +508,16 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
             set_dir(0);
             if (ioctl(s_fd, PPWDATA, &v) < 0)
                 LOG("lpt", "PPWDATA failed: %s\n", strerror(errno));
-            lpt_sample_account(t0);
-            return;
+            break;
         case 2: /* control — cache and forward verbatim. Direction (bit 5) is
                  * managed by encore around data-port accesses; P2K-driver
                  * confirms the P2K driver never writes bit 5 itself. */
             s_ctrl_cached = val;
             if (ioctl(s_fd, PPWCONTROL, &v) < 0)
                 LOG("lpt", "PPWCONTROL failed: %s\n", strerror(errno));
-            lpt_sample_account(t0);
-            return;
+            break;
         default:
-            lpt_sample_account(t0);
-            return;
+            break;
         }
     } else if (s_backend == LPT_BK_RAW) {
         switch (reg) {
@@ -416,21 +525,20 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
             lpt_blanking_check();
             set_dir(0);
             outb(val, s_io_base + 0);
-            lpt_sample_account(t0);
-            return;
+            break;
         case 2:
             /* Cache the guest-visible byte; bit 5 (direction) is managed
              * internally by set_dir() — preserve guest's other bits. */
             s_ctrl_cached = val;
             outb((uint8_t)((val & ~0x20u) | (s_dir_input ? 0x20u : 0u)),
                  s_io_base + 2);
-            lpt_sample_account(t0);
-            return;
+            break;
         default:
-            lpt_sample_account(t0);
-            return;
+            break;
         }
     }
+    lpt_sample_account(t0);
+    lpt_trace_cycle('W', reg, val);
 #else
     (void)reg; (void)val;
 #endif
