@@ -450,6 +450,47 @@ void lpt_passthrough_close(void)
 
 /* === Guest I/O forwarding === */
 
+/* One-shot board reset pulse on /INIT.
+ *
+ * Issued exactly once at activation, before the guest CPU starts driving
+ * the bus:
+ *
+ *     CTL <- 0x00      (drop /INIT, deassert all strobes)
+ *     sleep ≥100 µs    (datasheet hold)
+ *     CTL <- 0x04      (raise /INIT, idle state)
+ *
+ * Brings the driver-board logic out of any half-initialised state left by
+ * power-on or by a previous host probe (notably, raw_arm_ecr() above
+ * touches BASE+0x402 to set the parport mode, which can leave the bus in
+ * a non-idle direction). The 100 µs hold matches the documented P2K bus
+ * cycle granularity already used by the auto-detect path below.
+ *
+ * No-op when passthrough is inactive or the backend is not open. The
+ * cached guest-visible CTL byte is updated to 0x04 via the public write
+ * path so the next guest IN reflects what the wire is actually holding,
+ * and so the pulse appears in --lpt-trace CSVs like any other CTL cycle.
+ */
+void lpt_passthrough_reset_pulse(void)
+{
+#ifdef __linux__
+    if (s_backend == LPT_BK_NONE) return;
+
+    /* Public write path so the trace file and µs accounting record this
+     * pulse identically to any other guest-issued CTL cycle. */
+    lpt_passthrough_write(2, 0x00);
+
+    /* nanosleep avoids the deprecated usleep() and the optional <unistd.h>
+     * dependency. 100 µs is the granularity already used by the bus_read /
+     * bus_write helpers in the auto-detect path below. */
+    struct timespec ts = { 0, 100 * 1000 };
+    (void)nanosleep(&ts, NULL);
+
+    lpt_passthrough_write(2, 0x04);
+
+    LOGV("lpt", "init pulse: CTL 0x00 → (100µs) → 0x04 (board reset)\n");
+#endif
+}
+
 uint8_t lpt_passthrough_read(uint8_t reg)
 {
 #ifdef __linux__

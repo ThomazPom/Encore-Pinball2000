@@ -228,6 +228,28 @@ clean exit this runs. On SIGKILL or segfault it does not — the port
 may remain claimed. A re-run of Encore re-claims it successfully; a
 reboot or `rmmod ppdev ; modprobe ppdev` is a harder reset.
 
+## Activation handshake (board reset pulse)
+
+When the LPT path activates (after the boot trigger fires; see
+`lpt_activate()` in `src/io.c`), Encore issues a one-shot reset pulse
+on /INIT before the guest CPU starts driving the bus:
+
+```
+CTL ← 0x00         # drop /INIT, deassert all strobes
+sleep 100 µs       # ≥100 µs hold (datasheet minimum is much smaller)
+CTL ← 0x04         # raise /INIT, idle state
+```
+
+This brings the driver-board logic out of any half-initialised state
+left by power-on or by a previous host probe (the raw backend's
+`raw_arm_ecr()` touches base+0x402, which can leave the parport in a
+non-idle direction). The 100 µs hold matches the bus-cycle granularity
+used by the auto-detect bit-banging helpers further down in
+`src/lpt_pass.c`. Implementation: `lpt_passthrough_reset_pulse()`.
+
+The pulse is recorded in the `--lpt-trace` CSV like any other CTL
+cycle, so it is visible when diffing traces.
+
 ## Coexistence with `--serial-tcp`
 
 Both are fine at the same time. The serial path is UART/TCP; the LPT

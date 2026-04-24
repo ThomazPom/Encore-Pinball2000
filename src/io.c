@@ -1065,6 +1065,10 @@ void lpt_activate(void)
          * lpt_passthrough_active()). The activation message must not
          * imply that we layer a higher-level decoder on top of the wire. */
         LOG("lpt", "activated — direct passthrough to host LPT (no on-the-fly decoding)\n");
+        /* One-shot reset pulse on /INIT (CTL=0x00, 100µs, CTL=0x04) — brings
+         * the driver board to a known idle state before the guest CPU starts
+         * driving the bus. Safe no-op if the backend is unexpectedly closed. */
+        lpt_passthrough_reset_pulse();
     } else {
         LOG("lpt", "activated — emulated decoder (latch echo + active-low; no real board)\n");
     }
