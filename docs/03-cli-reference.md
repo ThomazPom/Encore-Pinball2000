@@ -1,209 +1,190 @@
-# 03 — CLI Reference
+# 03 - CLI Reference
 
-Every option accepted by `encore` is listed below, in the order they
-appear in `src/main.c` `apply_option()` / the `--help` screen. Every
-option also works as a `key: value` line inside a YAML config file;
-see [04-config-yaml.md](04-config-yaml.md) for the loader rules and
-precedence.
+This page is a compact map of the options accepted by the current
+command-line parser. The implementation lives in `src/main.c`:
+
+* `parse_args()` handles command-line syntax, `-v` shortcuts, `-h`, and
+  the `--config` pre-pass.
+* `apply_option()` is the shared option table used by both CLI parsing
+  and `encore.yaml`.
+
+If this page and `src/main.c` disagree, `src/main.c` wins.
 
 > **Status:** Behaviour described here is based on emulator testing
-> only. Real-cabinet validation is pending — see
-> [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
-> how to help verify.
+> only. Real-cabinet validation is still in progress; see
+> [42-cabinet-testing-call.md](42-cabinet-testing-call.md).
 
-## Summary table
+## Syntax
 
-| Flag | Argument | Default | Purpose |
-|---|---|---|---|
-| `--game` | `swe1` / `rfm` / `auto` | `auto` | Which title to boot |
-| `--roms` | *path* | `./roms` | Chip-ROM directory |
-| `--savedata` | *path* | `./savedata` | NVRAM/SEEPROM output |
-| `--update` | *file / dir / version* | — | Force an update bundle |
-| `--no-savedata` | — | off | Skip load *and* save |
-| `--dcs-mode` | `bar4-patch` / `io-handled` | `io-handled` | Sound topology |
-| `--fullscreen` | — | off | Open SDL window fullscreen |
-| `--flipscreen` | — | off | Invert the framebuffer vertically |
-| `--bpp` | `16` / `32` | `32` | Output texture depth |
-| `--splash-screen` | `none` / *PATH* | embedded | Startup splash image (see [49-splash-screen.md](49-splash-screen.md)) |
-| `--serial-tcp` | *port* | 0 | Expose COM1 as TCP bridge |
-| `--keyboard-tcp` | *port* | 0 | Inject PS/2 scancodes over TCP |
-| `--headless` | — | off | Skip SDL window & audio |
-| `--lpt-device` | *path* / `none` | (auto) | Real cabinet passthrough |
-| `--config` | *file.yaml* | — | Explicit config load |
-| `-h`, `--help` | — | — | Full help + examples |
-
-## Game / paths
-
-### `--game swe1 | rfm | auto`
-
-Selects which title to auto-detect chip ROMs for and which savedata ID
-to use. `auto` (default) resolves as follows:
-
-1. If `--update FILE` was given, `game_id` is read at file offset
-   `0x3C`. 50069 ⇒ SWE1, 50070 ⇒ RFM.
-2. Else, if a real LPT cabinet was opened, `lpt_passthrough_detect_game`
-   bit-bangs a 3-register probe and classifies the playfield.
-3. Else, defaults to `swe1` (the single-developer's daily driver).
-
-Example:
+Most options use separate arguments:
 
 ```sh
-./build/encore --game rfm
-./build/encore --game auto --lpt-device /dev/parport0  # board says which
+./build/encore --game swe1 --update latest
+./build/encore --roms ./roms --savedata ./savedata
 ```
 
-### `--roms /path` and `--savedata /path`
+Current parser notes:
 
-Override the default `./roms` and `./savedata` search roots. Both must
-be writable directories — the savedata loader will `mkdir -p` as
-needed, but the ROM loader does *not* create `roms/`. See
-[08-rom-loading-pipeline.md](08-rom-loading-pipeline.md) for the
-expected sub-structure.
+* Short verbosity forms are `-v`, `-vv`, `-vvv`, and so on.
+* Long options with values use `--flag value`.
+* `--flag=value` is not split by the current parser; use the space
+  form even if older help text or comments imply equals-form support.
+* `--config FILE` is loaded before the rest of the command line, so
+  later CLI flags override config values.
+* With no CLI arguments, `./encore.yaml` is auto-loaded if present.
 
-## Update bundle
+Config-file details are in [04-config-yaml.md](04-config-yaml.md).
 
-### `--update FILE | DIR | installer.exe | VERSION`
+## Source Of Truth
 
-Four accepted shapes:
+For accepted options, `src/main.c` `apply_option()` is authoritative.
+`parse_args()` defines the CLI syntax around that table, including
+`--config`, `-h`, and the compact `-v` forms.
 
-* **FILE** — a pre-built concatenated `update.bin` (any name, any path).
-* **DIR** — a directory containing the four component ROMs
-  (`*_bootdata.rom`, `*_im_flsh0.rom`, `*_game.rom`, `*_symbols.rom`).
-  Encore assembles them on the fly, bit-for-bit identical to
-  `tools/build_update_bin.py`.
-* **installer.exe** — a Williams-branded installer (actually a ZIP).
-  `unzip` is invoked in a temp directory and the four ROMs are picked
-  out.
-* **VERSION** — a short string like `210`, `2.1`, `180`, `1.8`. Encore
-  searches `./updates` (and `../updates`, `updates`) for a directory
-  named `pin2000_<gid>_<vvvv>_*`, where `vvvv` is `major*100 + minor*10`
-  (so "1.5" → 0150, "1.80" → 0180). If `--game` is `swe1` or `rfm`,
-  only matching `gid` (50069 or 50070) is considered.
+`./build/encore --help` is still useful as a runtime cheat sheet, but it
+is not the parser source of truth. If help text, comments, this page, and
+`apply_option()` disagree, trust `apply_option()`.
 
-Full semantics: [09-update-loader.md](09-update-loader.md).
+## Common Invocations
 
-## Savedata
+```sh
+./build/encore --game swe1
+./build/encore --game rfm --update latest
+./build/encore --headless --serial-tcp 4444
+./build/encore --lpt-device none
+```
 
-### `--no-savedata`
+Real-cabinet examples change as hardware testing improves. Use
+[19-real-lpt-passthrough.md](19-real-lpt-passthrough.md) for the current
+LPT setup and testing guidance.
 
-Skip both the load at boot *and* the save at clean exit. The emulator
-still writes to its in-memory NVRAM/SEEPROM/EMS state, but nothing hits
-disk. Useful for:
+## Accepted Options
 
-* CI pipelines (deterministic state every run);
-* regression burn-in across many configurations;
-* preserving a known-good save while experimenting.
+| Option | Value | Purpose |
+|---|---|---|
+| `--game` | `swe1`, `rfm`, `auto` | Select the game family. |
+| `--roms` | path | Override the ROM directory. |
+| `--savedata` | path | Override the save-data directory. |
+| `--update` | path, version token, `latest`, `none` | Select or disable update loading. |
+| `--no-savedata` | none | Skip save-data load and save. |
+| `--dcs-mode` | `io-handled`, `bar4-patch` | Select the DCS bring-up path. |
+| `--fullscreen` | none | Start SDL fullscreen. |
+| `--flipscreen` | none | Start with vertical display flip enabled. |
+| `--bpp` | `16`, `32` | Select output texture bit depth. |
+| `--splash-screen` | `none`, path | Override or disable the startup splash. |
+| `--serial-tcp` | port | Bridge emulated COM1 over localhost TCP. |
+| `--keyboard-tcp` | port | Inject keyboard bytes over localhost TCP. |
+| `--headless` | none | Skip SDL display and audio init. |
+| `--lpt-device` | path, `0xBASE`, `none`, `emu` | Select real LPT passthrough or force emulation. |
+| `--lpt-trace` | file | Capture passthrough LPT bus cycles to CSV. |
+| `--lpt-managed-dir` | none | Legacy raw-LPT direction-management diagnostic. |
+| `--lpt-purist` | none | Back-compat alias; currently a no-op. |
+| `--lpt-bus-pace` | `auto`, microseconds | Control real-LPT bus pacing. |
+| `--cabinet-purist` | none | Skip selected bring-up shims while real LPT is open. |
+| `--config` | file | Load a small `key: value` config file. |
+| `--verbose` | optional level as next argument | Set verbose logging; use `--verbose 2`, not `--verbose=2`. |
+| `-v`, `-vv`, `-vvv` | none | Increase verbose logging by count of `v`s. |
+| `-h`, `--help` | none | Print runtime help. |
 
-## Sound
+## Option Groups
 
-### `--dcs-mode io-handled` (default)
+### Game, ROMs, Updates
 
-No CPU code is rewritten. Encore primes the BT-107 watchdog cell
-with `0x0000FFFF` (sentinel-safe for all bundles) and scribbles
-that value every tick until `xinu_ready` fires; from then on the
-scribble flips to `0x00000000`. The game's own DCS-detect probe
-runs *after* `xinu_ready`, sees `cell != 0xFFFF` → returns 1 →
-stores `dcs_mode=1` → game takes its BAR4 sound path normally.
-DCS commands are delivered through `sound.c`. Boots and produces
-audio on every bundle in the matrix, including the three "pattern
-absent" cases (SWE1 v1.3, RFM/SWE1 `--update none`). Details:
-[13-dcs-mode-duality.md](13-dcs-mode-duality.md).
+Use `--game`, `--roms`, `--savedata`, and `--update` for boot input
+selection. The detailed update resolver rules are intentionally kept in
+[09-update-loader.md](09-update-loader.md), because that path evolves
+with ROM/update handling.
 
-### `--dcs-mode bar4-patch` (legacy / regression)
+Related docs:
 
-Pattern-scans for the `CMP EAX,1 ; JNE +0x21 ; MOV [slot],EAX`
-idiom inside the game's DCS-detect probe and replaces the 5-byte
-CMP/JNE prologue with `MOV EAX,1`. Forces `dcs_mode=1` →
-identical downstream BAR4 path. Equivalent to `io-handled` on
-every bundle that ships the prologue, but a no-op (silent attract)
-on SWE1 v1.3 and `--update none`. Kept because it makes A/B
-regression against the legacy patch path a one-flag flip.
+| Topic | Document |
+|---|---|
+| ROM loading | [08-rom-loading-pipeline.md](08-rom-loading-pipeline.md) |
+| Update loading | [09-update-loader.md](09-update-loader.md) |
+| Save data | [10-savedata.md](10-savedata.md) |
+| Community updates | [47-community-updates.md](47-community-updates.md) |
 
-## Display
+### Display And Local UI
 
-### `--fullscreen`
+Use `--fullscreen`, `--flipscreen`, `--bpp`, and `--splash-screen` for
+startup display behaviour. Runtime keyboard controls are documented
+separately so this page does not duplicate the live cheat sheet.
 
-Pass `SDL_WINDOW_FULLSCREEN_DESKTOP` when creating the window. Can also
-be toggled at runtime with `F11` or `ALT+ENTER`.
+Related docs:
 
-### `--flipscreen`
+| Topic | Document |
+|---|---|
+| Display pipeline | [11-display-pipeline.md](11-display-pipeline.md) |
+| Keyboard guide | [36-cli-keyboard-guide.md](36-cli-keyboard-guide.md) |
+| Splash screen | [49-splash-screen.md](49-splash-screen.md) |
 
-Begin with a vertically-flipped framebuffer. Some cabinets ship with the
-monitor rotated 180°; this matches that. Runtime toggle: `F2`.
+### Headless And Network Console
 
-### `--bpp 16 | 32`
+Use `--headless` for non-SDL runs, usually together with
+`--serial-tcp`. `--keyboard-tcp` is available for keyboard-byte
+injection, but serial is the more reliable control path for scripted
+XINA sessions.
 
-Selects the SDL texture format. `32` (default) uses ARGB8888; `16`
-uses RGB565. 24 falls back to 32 with a warning.
+Related docs:
 
-### `--splash-screen none | PATH`
+| Topic | Document |
+|---|---|
+| Runtime environment | [41-build-env-and-runtime.md](41-build-env-and-runtime.md) |
+| Keyboard guide | [36-cli-keyboard-guide.md](36-cli-keyboard-guide.md) |
 
-Controls the image shown in the SDL window from the moment it is
-created until the guest draws its first non-zero pixel (i.e. the
-white PRISM "PLEASE WAIT — VALIDATING UPDATE" frame takes over).
+### DCS Audio
 
-* default — use the JPEG embedded in the binary from
-  `assets/splash-screen.jpg`. Builders can drop in any JPEG of that
-  name and rebuild to ship a custom default; the file is linked
-  verbatim by `ld -r -b binary` (see [28-build-system.md](28-build-system.md)).
-* `none` — disable; the window starts black.
-* `PATH` — load `PATH` at runtime. Any format `stb_image` supports
-  works (JPEG, PNG, BMP, TGA, PSD, PIC, PNM). The image is letterboxed
-  to the window's aspect; it is **not** stretched. If `PATH` can't be
-  read or decoded, Encore falls back to the embedded JPEG with a
-  warning so a typo never leaves the user staring at a black window.
+Use `--dcs-mode` only when comparing sound bring-up paths or debugging
+regressions. The default is chosen in code; this page avoids restating
+bundle-specific claims that belong in the DCS docs and regression
+matrix.
 
-Full design + extension notes are in
-[49-splash-screen.md](49-splash-screen.md).
+Related docs:
 
-## Headless / networking
+| Topic | Document |
+|---|---|
+| Sound pipeline | [12-sound-pipeline.md](12-sound-pipeline.md) |
+| DCS mode details | [13-dcs-mode-duality.md](13-dcs-mode-duality.md) |
+| Regression matrix | [26-testing-bundle-matrix.md](26-testing-bundle-matrix.md) |
 
-### `--serial-tcp PORT`
+### Real LPT / Cabinet
 
-Listen on `127.0.0.1:PORT` and bridge bidirectionally to the emulated
-COM1 UART at I/O 0x3F8. One client at a time; new connection replaces
-the old one. Used for XINA shell access — see
-[36-cli-keyboard-guide.md](36-cli-keyboard-guide.md) for example
-sessions.
+Use `--lpt-device` to select the passthrough backend:
 
-### `--keyboard-tcp PORT`
+| Form | Meaning |
+|---|---|
+| `/dev/parportN` | Linux ppdev backend. |
+| `0xBASE` | Raw `inb` / `outb` backend. |
+| `none`, `emu` | Force emulated LPT path. |
 
-Listen on `127.0.0.1:PORT` and convert inbound ASCII bytes into PS/2
-Set-1 scancodes dropped into port 0x60. Experimental: the KBC stub
-only answers the BIOS self-test commands, so key-input reception in
-XINA depends on its driver's probing behaviour.
+The real-cabinet flags are intentionally documented in the LPT docs,
+where protocol and safety notes can stay together:
 
-### `--headless`
+| Option | Read |
+|---|---|
+| `--lpt-device` | [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md) |
+| `--lpt-trace` | [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md) |
+| `--lpt-managed-dir` | [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md) |
+| `--lpt-bus-pace` | [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md#bus-pacing---lpt-bus-pace) |
+| `--cabinet-purist` | [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md) |
+| Protocol references | [48-lpt-protocol-references.md](48-lpt-protocol-references.md) |
 
-Skip SDL window *and* audio initialization. Useful for CI runners and
-for deploying Encore on a server. Combine with `--serial-tcp` to
-preserve observability.
+### Config And Logging
 
-## Real cabinet
+`--config FILE` and `encore.yaml` feed the same `apply_option()` path as
+the CLI, so supported keys track the accepted long options. Boolean
+flags become `key: true` in config files.
 
-### `--lpt-device PATH | none | emu`
+Logging uses either `--verbose LEVEL` or short `-v` forms. Higher levels
+are intended for diagnostics and can perturb timing-sensitive tests.
 
-Drive a physical Pinball 2000 driver board through Linux `ppdev`.
-Without this flag, Encore silently probes `/dev/parport0` and uses it
-if present; with it set explicitly, a missing device is a fatal error
-(so you do not accidentally emulate when you wanted hardware).
+Related docs:
 
-See [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md) for
-the kernel module / permissions recipe.
-
-## Config / help
-
-### `--config FILE.yaml`
-
-Load options from a simple `key: value` file. CLI wins on conflicts.
-When no CLI args are given, `./encore.yaml` is auto-loaded if it
-exists. Full grammar: [04-config-yaml.md](04-config-yaml.md).
-
-### `--help` / `-h`
-
-Prints the full 200-line help with worked examples. The help screen
-is authoritative — if it disagrees with this document, the code wins.
+| Topic | Document |
+|---|---|
+| Config loader | [04-config-yaml.md](04-config-yaml.md) |
+| Build/runtime environment | [41-build-env-and-runtime.md](41-build-env-and-runtime.md) |
 
 ---
 
-← [Back to documentation index](README.md) · [Back to project README](../README.md)
+[Back to documentation index](README.md) | [Back to project README](../README.md)
