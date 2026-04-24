@@ -62,6 +62,32 @@ silently fell back to emulation" class of bugs.
 force emulation. Useful on a laptop that has a `/dev/parport0` for
 unrelated reasons.
 
+## Backends: ppdev vs raw I/O
+
+`--lpt-device` selects the backend by argument format:
+
+| Argument | Backend | Privilege | Per-byte cost | When to use |
+|---|---|---|---|---|
+| `/dev/parport0` (path) | ppdev | unprivileged (`lp` group) | ~1–3 µs (ioctl + driver) | Default. Simplest install. |
+| `0x378` (hex/decimal base) | raw `inb`/`outb` | needs `CAP_SYS_RAWIO` (root or one-time `setcap`) | one x86 instruction (~50 ns) | Real cabinets where ppdev pacing isn't tight enough. Mirrors what nucore did. |
+
+To use the raw backend without sudo:
+
+```sh
+sudo setcap cap_sys_rawio+ep ./build/encore   # one-time, persists
+./build/encore --game swe1 --lpt-device 0x378
+```
+
+The raw backend additionally claims port `0x80` (legacy POST/diagnostic
+port) for sub-µs I/O delay between strobes — same trick nucore uses
+(`outb 0,0x80` ≈ 1 µs on stock chipsets). If `ioperm(0x80,…)` fails,
+encore continues; only the fine-grained delay is lost.
+
+The raw backend does **not** care whether `parport_pc` or `lp` is
+loaded — it talks to the I/O bus directly, bypassing both. You still
+shouldn't have another userspace process touching the same port at the
+same time, but kernel-side mutual exclusion isn't an issue.
+
 ## Implementation: direction management
 
 The real-hardware LPT protocol is "implicit-direction": the driver
