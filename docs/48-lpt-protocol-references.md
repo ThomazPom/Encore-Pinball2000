@@ -23,20 +23,24 @@ documented target, not as a description of Encore's current behavior.
 
 [`boilerbots/PinballDiag`](https://github.com/boilerbots/PinballDiag)
 ([wiki](https://github.com/boilerbots/PinballDiag/wiki)) is a Linux C++
-diagnostic that drives a real Power Driver Board over the parallel port:
+diagnostic that drives a real Power Driver Board over the parallel port. A
+local mirror (BSD 3-Clause) is kept in
+[`docs/references/PinballDiag/`](references/PinballDiag/NOTICE.md) so the
+reference stays available even if upstream disappears.
 
 - Uses `ioperm()` + raw `inb`/`outb`. Also writes the extended mode register at
   `BASE + 0x402` to put the port into the right mode.
 - Treats `STROBE` (`0x01`) and `SELECT` (`0x08`) as **inverted** PC control
-  bits — be careful when comparing pseudocode below to the actual outb values.
+  bits; `INIT` (`0x04`) is not inverted. Use a shadow `ctl` byte with named
+  bits and only ever write that — see vendored
+  [`hw.h`](references/PinballDiag/hw.h) and
+  [`hw.cpp`](references/PinballDiag/hw.cpp).
 - Uses a busy-wait on `CLOCK_MONOTONIC_RAW` for sub-microsecond strobe holds.
-- Includes a watchdog-keepalive loop that hammers register `0x05` and a lamp
-  test that uses ~100 µs column dwell.
-
-Most useful files: [`hw.cpp`](https://raw.githubusercontent.com/boilerbots/PinballDiag/master/hw.cpp),
-[`hw.h`](https://raw.githubusercontent.com/boilerbots/PinballDiag/master/hw.h),
-[`test.cpp`](https://raw.githubusercontent.com/boilerbots/PinballDiag/master/test.cpp),
-[`test_thread.cpp`](https://raw.githubusercontent.com/boilerbots/PinballDiag/master/test_thread.cpp).
+- Includes a watchdog-keepalive loop (vendored
+  [`test_thread.cpp`](references/PinballDiag/test_thread.cpp)) that hammers
+  register `0x05` and a lamp test (vendored
+  [`test.cpp`](references/PinballDiag/test.cpp)) that uses ~100 µs column
+  dwell.
 
 ## 3. Parallel-port mapping (logical view)
 
