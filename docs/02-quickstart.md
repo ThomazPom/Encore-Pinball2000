@@ -88,10 +88,25 @@ fix. If you see `/dev/parport1` instead of `parport0`, pass
 `--lpt-device /dev/parport1`. Full compatibility table in
 [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md#which-device-node-will-i-get).
 
-Encore runs **fully unprivileged** — no `ioperm()`, no setuid, no
-`/dev/port`. Everything goes through Linux `ppdev` ioctls, so once
-your user is in the `lp` group and the kernel `lp` driver is
-unloaded, `./build/encore` from a normal shell is enough.
+Encore runs **fully unprivileged** in this default `ppdev` mode — no
+`ioperm()`, no setuid, no `/dev/port`. Everything goes through Linux
+`ppdev` ioctls, so once your user is in the `lp` group and the kernel
+`lp` driver is unloaded, `./build/encore` from a normal shell is enough.
+
+**Faster raw I/O backend** — if `ppdev` pacing is too slow for your
+driver board (sub-µs strobes), pass an I/O base instead of a path:
+
+```sh
+sudo setcap cap_sys_rawio+ep ./build/encore        # one-time
+./build/encore --game swe1 --lpt-device 0x378      # find base via:
+                                                   # cat /proc/ioports | grep parport
+```
+
+This mirrors what `nucore` does: direct `inb`/`outb` on the LPT base,
+plus `outb 0x80` for ISA-bus delays. Needs `CAP_SYS_RAWIO` (the
+`setcap` line above grants it once, no daily `sudo`). See
+[19-real-lpt-passthrough.md](19-real-lpt-passthrough.md#backends-ppdev-vs-raw-io)
+for the trade-off table.
 </details>
 
 ## 2. Clone and build
@@ -153,6 +168,11 @@ actually prints — copy-paste from a fresh run):
 An SDL window appears and renders the WMS boot logo, the XINU banner
 and finally the attract-mode loop. DCS audio starts when the "BONG"
 sample plays.
+
+The expected output is around ~150 lines (rom load, memory map, save
+status, boot data validation). For deep diagnostics — per-write
+MMIO/PCI/PLX traces, Init2 checkpoints, PIC/EE/IRQ chatter — re-run
+with `-v` (or `--verbose`); expect ~1000 extra lines.
 
 ---
 ---

@@ -83,7 +83,7 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
             switch (pic->icw_step) {
             case 1: /* ICW2: vector base */
                 pic->icw2 = val & 0xF8;
-                LOG("pic", "PIC%d ICW2=0x%02x (vec base)\n", idx, pic->icw2);
+                LOGV("pic", "PIC%d ICW2=0x%02x (vec base)\n", idx, pic->icw2);
                 if (pic->icw1 & 0x02) {
                     /* SNGL=1: no ICW3, skip to ICW4 or done */
                     if (pic->icw1 & 0x01) {
@@ -116,7 +116,7 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
             static int s_imr_log_cnt = 0;
             s_imr_log_cnt++;
             if (s_imr_log_cnt <= 20)
-                LOG("pic", "PIC%d IMR=0x%02x (cnt=%d, prev=0x%02x)\n",
+                LOGV("pic", "PIC%d IMR=0x%02x (cnt=%d, prev=0x%02x)\n",
                     idx, val, s_imr_log_cnt, pic->imr);
             /* x64 POC BT-71 / i386 POC BT-130 compatibility:
              * After XINU boots, XINU's restore() does OUT 0x21, saved|base_mask.
@@ -137,7 +137,7 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
             pic->imr = 0;
             pic->isr = 0;
             pic->irr = 0;
-            LOG("pic", "PIC%d ICW1=0x%02x (SNGL=%d IC4=%d)\n",
+            LOGV("pic", "PIC%d ICW1=0x%02x (SNGL=%d IC4=%d)\n",
                 idx, val, (val >> 1) & 1, val & 1);
         } else if (val == 0x20) {
             /* Non-specific EOI */
@@ -150,7 +150,7 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
             }
             static int eoi_log = 0;
             if (++eoi_log <= 20 || (eoi_log % 200 == 0))
-                LOG("pic", "PIC%d EOI: ISR 0x%02x→0x%02x (cnt=%d)\n",
+                LOGV("pic", "PIC%d EOI: ISR 0x%02x→0x%02x (cnt=%d)\n",
                     idx, old_isr, pic->isr, eoi_log);
         } else if (val == 0x60) {
             /* Specific EOI for IRQ0 */
@@ -210,7 +210,7 @@ static void pit_write(uint16_t port, uint8_t val)
             g_emu.pit.latch[ch] = g_emu.pit.count[ch];
             g_emu.pit.latched[ch] = true;
         }
-        LOG("pit", "CMD: ch=%d rw=%d mode=%d val=0x%02x\n",
+        LOGV("pit", "CMD: ch=%d rw=%d mode=%d val=0x%02x\n",
             ch, g_emu.pit.rw_mode[ch], g_emu.pit.mode[ch], val);
     } else {
         int ch = port - PORT_PIT_CH0;
@@ -223,7 +223,7 @@ static void pit_write(uint16_t port, uint8_t val)
             g_emu.pit.access_lo[ch] = 0;
             if (ch == 0) {
                 uint16_t div = g_emu.pit.count[0];
-                LOG("pit", "CH0 divisor=%u → %u Hz\n",
+                LOGV("pit", "CH0 divisor=%u → %u Hz\n",
                     div, div ? 1193182u / div : 0);
             }
         }

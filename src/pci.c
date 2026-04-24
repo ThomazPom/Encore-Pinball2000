@@ -71,7 +71,7 @@ void pci_write(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg, uint32_t val)
     static int s_log = 0;
     if (s_log < 50) {
         s_log++;
-        LOG("pci", "write dev=%d reg=0x%02x val=0x%08x%s\n",
+        LOGV("pci", "write dev=%d reg=0x%02x val=0x%08x%s\n",
             dev, reg, val, (val == 0xFFFFFFFFu) ? " (size probe)" : "");
     }
 }

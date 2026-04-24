@@ -282,7 +282,7 @@ void cpu_inject_interrupt(uint8_t vector)
     inject_ok++;
     g_emu.irq_ok_count = inject_ok;
     if (inject_ok <= 5 || (inject_ok % 100 == 0)) {
-        LOG("irq", "vec=0x%02x → handler=0x%08x EIP=0x%08x (ok=%d blk=%d stub=%d)\n",
+        LOGV("irq", "vec=0x%02x → handler=0x%08x EIP=0x%08x (ok=%d blk=%d stub=%d)\n",
             vector, handler, eip, inject_ok, inject_blocked, inject_stub);
     }
 
@@ -316,7 +316,7 @@ void cpu_inject_interrupt(uint8_t vector)
         uint32_t act_eip, act_esp;
         uc_reg_read(uc, UC_X86_REG_EIP, &act_eip);
         uc_reg_read(uc, UC_X86_REG_ESP, &act_esp);
-        LOG("irq", "  frame: [ESP+0]=0x%08x [+4]=0x%08x [+8]=0x%08x ESP=0x%08x→handler=0x%08x\n",
+        LOGV("irq", "  frame: [ESP+0]=0x%08x [+4]=0x%08x [+8]=0x%08x ESP=0x%08x→handler=0x%08x\n",
             v_eip, v_cs, v_ef, act_esp, act_eip);
     }
 }
@@ -368,37 +368,37 @@ static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *u
     uc_reg_read(uc, UC_X86_REG_ESP, &esp);
 
     switch ((uint32_t)addr) {
-    case 0x801BF: LOG("trace", "Entry 0x801BF (INT19 handler)\n"); break;
-    case 0x801C9: LOG("trace", "PM switch at 0x801C9\n"); break;
-    case 0x801D9: LOG("trace", "PM entry 0x801D9\n"); break;
-    case 0x801ED: LOG("trace", "Second reloc call 0x801ED\n"); break;
-    case 0x801F2: LOG("trace", "Second Init2 call 0x801F2\n"); break;
-    case 0x801F7: LOG("trace", "!!! GARBLED 0x801F7 reached !!!\n"); break;
-    case 0x808FC: LOG("trace", "Init2 enter ESP=0x%08x\n", esp); break;
-    case 0x80904: LOG("trace", "Init2 sub-calls start\n"); break;
-    case 0x80922: LOG("trace", "Pre PCI-enum push\n"); break;
-    case 0x80929: LOG("trace", "Post PCI-enum EAX=0x%08x → EBX\n", eax); break;
-    case 0x80933: LOG("trace", "Call 0x83488 (1st) EBX=%d\n", ebx); break;
-    case 0x80959: LOG("trace", "Call 0x83488 (2nd)\n"); break;
-    case 0x80981: LOG("trace", "Update check: CMP EBX(%d), 1\n", ebx); break;
-    case 0x8098A: LOG("trace", "UPDATE PATH: MOV EBX=0x12000000\n"); break;
-    case 0x809A4: LOG("trace", "Validate boot data call\n"); break;
-    case 0x809AC: LOG("trace", "Boot data result EAX=%d\n", eax); break;
-    case 0x809CF: LOG("trace", "GameID check: flash[0x3C]=0x%08x vs BAR5\n", eax); break;
-    case 0x80A56: LOG("trace", "GAME ENTRY: EAX=[EBX+0x48]=0x%08x\n", eax); break;
-    case 0x80A5E: LOG("trace", ">>> CALL EAX (game jump!) EAX=0x%08x\n", eax); break;
-    case 0x80A98: LOG("trace", "FAIL: boot data bad\n"); break;
-    case 0x80B9C: LOG("trace", "NO UPDATE path at 0x80B9C\n"); break;
-    case 0x83B20: LOG("trace", "PCI enum 0x83B20 enter\n"); break;
+    case 0x801BF: LOGV("trace", "Entry 0x801BF (INT19 handler)\n"); break;
+    case 0x801C9: LOGV("trace", "PM switch at 0x801C9\n"); break;
+    case 0x801D9: LOGV("trace", "PM entry 0x801D9\n"); break;
+    case 0x801ED: LOGV("trace", "Second reloc call 0x801ED\n"); break;
+    case 0x801F2: LOGV("trace", "Second Init2 call 0x801F2\n"); break;
+    case 0x801F7: LOGV("trace", "!!! GARBLED 0x801F7 reached !!!\n"); break;
+    case 0x808FC: LOGV("trace", "Init2 enter ESP=0x%08x\n", esp); break;
+    case 0x80904: LOGV("trace", "Init2 sub-calls start\n"); break;
+    case 0x80922: LOGV("trace", "Pre PCI-enum push\n"); break;
+    case 0x80929: LOGV("trace", "Post PCI-enum EAX=0x%08x → EBX\n", eax); break;
+    case 0x80933: LOGV("trace", "Call 0x83488 (1st) EBX=%d\n", ebx); break;
+    case 0x80959: LOGV("trace", "Call 0x83488 (2nd)\n"); break;
+    case 0x80981: LOGV("trace", "Update check: CMP EBX(%d), 1\n", ebx); break;
+    case 0x8098A: LOGV("trace", "UPDATE PATH: MOV EBX=0x12000000\n"); break;
+    case 0x809A4: LOGV("trace", "Validate boot data call\n"); break;
+    case 0x809AC: LOGV("trace", "Boot data result EAX=%d\n", eax); break;
+    case 0x809CF: LOGV("trace", "GameID check: flash[0x3C]=0x%08x vs BAR5\n", eax); break;
+    case 0x80A56: LOGV("trace", "GAME ENTRY: EAX=[EBX+0x48]=0x%08x\n", eax); break;
+    case 0x80A5E: LOGV("trace", ">>> CALL EAX (game jump!) EAX=0x%08x\n", eax); break;
+    case 0x80A98: LOGV("trace", "FAIL: boot data bad\n"); break;
+    case 0x80B9C: LOGV("trace", "NO UPDATE path at 0x80B9C\n"); break;
+    case 0x83B20: LOGV("trace", "PCI enum 0x83B20 enter\n"); break;
     case 0x83B29: {
         uint8_t guard;
         uc_mem_read(uc, 0x86CB0, &guard, 1);
-        LOG("trace", "PCI enum guard=[0x86CB0]=%d\n", guard);
+        LOGV("trace", "PCI enum guard=[0x86CB0]=%d\n", guard);
         break;
     }
-    case 0x83DC5: LOG("trace", "PCI enum success EAX=1\n"); break;
-    case 0x83DD6: LOG("trace", "PCI enum FAIL EAX=-1\n"); break;
-    case 0x100000: LOG("trace", "*** GAME CODE ENTRY at 0x100000! ***\n"); break;
+    case 0x83DC5: LOGV("trace", "PCI enum success EAX=1\n"); break;
+    case 0x83DD6: LOGV("trace", "PCI enum FAIL EAX=-1\n"); break;
+    case 0x100000: LOGV("trace", "*** GAME CODE ENTRY at 0x100000! ***\n"); break;
     case 0x24780C: {
         /* NonFatal() called — read string arg from [ESP+4], caller from [ESP] */
         uint32_t ret_addr, str_ptr;
@@ -420,7 +420,7 @@ static void hook_code_trace(uc_engine *uc, uint64_t addr, uint32_t size, void *u
     }
     default:
         if (addr >= 0x88000 && addr < 0x8B000) {
-            LOG("trace", "!!! STACK EXEC addr=0x%08x ESP=0x%08x !!!\n",
+            LOGV("trace", "!!! STACK EXEC addr=0x%08x ESP=0x%08x !!!\n",
                 (uint32_t)addr, esp);
         }
         break;
@@ -440,7 +440,7 @@ static void hook_dcs_mode_write(uc_engine *uc, uc_mem_type type,
     uint32_t retaddr = 0;
     if (esp >= 4 && esp < 0x01000000)
         retaddr = *(uint32_t *)(g_emu.ram + esp);
-    LOG("watch", "dcs_mode WRITE addr=0x%llx size=%d val=%lld "
+    LOGV("watch", "dcs_mode WRITE addr=0x%llx size=%d val=%lld "
         "EIP=0x%08x ret=0x%08x\n",
         (unsigned long long)addr, size, (long long)value, eip, retaddr);
 
@@ -448,9 +448,9 @@ static void hook_dcs_mode_write(uc_engine *uc, uc_mem_type type,
     if (size == 4 && eip > 0x100000) {
         uint32_t start = (eip > 0x80) ? eip - 0x80 : 0;
         uint8_t *code = g_emu.ram + start;
-        LOG("watch", "--- code dump %08x-%08x ---\n", start, start + 0x100);
+        LOGV("watch", "--- code dump %08x-%08x ---\n", start, start + 0x100);
         for (int i = 0; i < 0x100; i += 16) {
-            LOG("watch", "%08x: %02x %02x %02x %02x %02x %02x %02x %02x "
+            LOGV("watch", "%08x: %02x %02x %02x %02x %02x %02x %02x %02x "
                 "%02x %02x %02x %02x %02x %02x %02x %02x\n",
                 start + i,
                 code[i+0], code[i+1], code[i+2], code[i+3],
@@ -459,10 +459,10 @@ static void hook_dcs_mode_write(uc_engine *uc, uc_mem_type type,
                 code[i+12], code[i+13], code[i+14], code[i+15]);
         }
         /* Also dump stack for call trace */
-        LOG("watch", "--- stack @ESP=0x%08x ---\n", esp);
+        LOGV("watch", "--- stack @ESP=0x%08x ---\n", esp);
         for (int i = 0; i < 8; i++) {
             uint32_t sv = *(uint32_t *)(g_emu.ram + esp + i*4);
-            LOG("watch", "  [ESP+%02x] = 0x%08x\n", i*4, sv);
+            LOGV("watch", "  [ESP+%02x] = 0x%08x\n", i*4, sv);
         }
     }
 }
@@ -571,7 +571,7 @@ void cpu_run(void)
                 if (handler > 0x100000u) {
                     if (g_emu.clkint_ready_exec == 0) {
                         g_emu.clkint_ready_exec = g_emu.exec_count;
-                        LOG("irq", "clkint detected: IDT[0x20]=0x%08x EIP=0x%08x exec=%u\n",
+                        LOGV("irq", "clkint detected: IDT[0x20]=0x%08x EIP=0x%08x exec=%u\n",
                             handler, eip, (unsigned)g_emu.exec_count);
                     }
                     if (g_emu.xinu_booted &&
@@ -581,7 +581,7 @@ void cpu_run(void)
                         uc_x86_mmr idtr;
                         uc_reg_read(uc, UC_X86_REG_IDTR, &idtr);
                         g_emu.idt_base = (uint32_t)idtr.base;
-                        LOG("irq", "XINU ready: timer injection enabled EIP=0x%08x exec=%u idt_base=0x%x\n",
+                        LOGV("irq", "XINU ready: timer injection enabled EIP=0x%08x exec=%u idt_base=0x%x\n",
                             eip, (unsigned)g_emu.exec_count, g_emu.idt_base);
 
                         /* Install Cyrix 0F3C emulator at 0x500 and patch IDT[6]. */
@@ -629,7 +629,7 @@ void cpu_run(void)
                         }
                     }
                 } else if (g_emu.exec_count % 5000 == 0) {
-                    LOG("irq", "waiting for clkint: IDT[0x20]=0x%08x EIP=0x%08x exec=%u xinu_booted=%d\n",
+                    LOGV("irq", "waiting for clkint: IDT[0x20]=0x%08x EIP=0x%08x exec=%u xinu_booted=%d\n",
                         handler, eip, (unsigned)g_emu.exec_count, g_emu.xinu_booted);
                 }
             }
@@ -990,7 +990,7 @@ handle_display:
                     uint32_t enable = RAM_RD32(0x2E8AF4);
                     uint32_t gxptr = RAM_RD32(0x2E8B74);
                     uint32_t dm_mode_v = RAM_RD32(0x2E8E2C);
-                    LOG("dbg", "VSYNC enable=0x%x gx_ptr=0x%x dm_mode=%u (exec=%lu)\n",
+                    LOGV("dbg", "VSYNC enable=0x%x gx_ptr=0x%x dm_mode=%u (exec=%lu)\n",
                         enable, gxptr, dm_mode_v, g_emu.exec_count);
                 }
             }

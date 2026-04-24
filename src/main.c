@@ -14,6 +14,7 @@
 #include <ctype.h>
 
 EncoreState g_emu;
+int g_log_verbose = 0;
 
 static void on_term_signal(int sig)
 {
@@ -163,6 +164,7 @@ static int apply_option(const char *key, const char *value)
         g_emu.keyboard_tcp_port = atoi(value); return 1;
     }
     if (strcmp(key, "headless") == 0) { g_emu.headless = true; return 0; }
+    if (strcmp(key, "verbose") == 0) { g_log_verbose = 1; return 0; }
     if (strcmp(key, "no-savedata") == 0) { g_emu.no_savedata = true; return 0; }
     if (strcmp(key, "dcs-mode") == 0 && value) {
         if (strcmp(value, "bar4-patch") == 0) {
@@ -345,10 +347,12 @@ static void parse_args(int argc, char **argv)
 
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
+        if (strcmp(a, "-v") == 0) { g_log_verbose = 1; continue; }
+        if (strcmp(a, "-h") == 0) goto print_help;
         if (strncmp(a, "--", 2) != 0) continue;
         const char *key = a + 2;
         if (strcmp(key, "config") == 0) { i++; continue; } /* already handled */
-        if (strcmp(key, "help") == 0 || strcmp(a, "-h") == 0) {
+        if (strcmp(key, "help") == 0) {
             goto print_help;
         }
         const char *val = (i + 1 < argc && argv[i + 1][0] != '-') ? argv[i + 1] : NULL;
@@ -370,6 +374,9 @@ print_help:
 "  --game swe1|rfm|auto   Game selection (default: auto-detect from ROMs)\n"
 "  --roms /path           ROM directory (default: ./roms)\n"
 "  --savedata /path       Save data directory\n"
+"  -v, --verbose          Verbose logging (per-write MMIO/PCI/PLX traces,\n"
+"                         Init2 checkpoints, PIC/EE/IRQ/PIT chatter, etc.).\n"
+"                         Default is quiet — only init/save/error messages.\n"
 "  -h, --help             Show this help\n"
 "\n"
 "════════════════════════════════════════════════════════════════════════\n"

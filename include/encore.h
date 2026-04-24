@@ -516,7 +516,14 @@ uint32_t sym_count(void);
 /* =========================================================================
  * Logging
  * ========================================================================= */
+extern int g_log_verbose;  /* 0 = default (quiet), 1 = --verbose / -v */
 #define LOG(tag, fmt, ...) fprintf(stdout, "[" tag "] " fmt, ##__VA_ARGS__)
+/* Verbose-only: suppressed unless --verbose is passed. Use for high-frequency
+ * diagnostics (per-write MMIO/PCI/PLX traces, Init2 checkpoint trace, etc.)
+ * that are useful for debugging but spammy for end users. */
+#define LOGV(tag, fmt, ...) do { \
+    if (g_log_verbose) fprintf(stdout, "[" tag "] " fmt, ##__VA_ARGS__); \
+} while(0)
 #define LOG_ONCE(tag, fmt, ...) do { \
     static int _done = 0; \
     if (!_done) { _done = 1; LOG(tag, fmt, ##__VA_ARGS__); } \
