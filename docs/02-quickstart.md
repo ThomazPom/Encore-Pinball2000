@@ -33,27 +33,23 @@ sudo -v                                        # sanity check (asks YOUR pwd)
 ### Unicorn engine
 
 Encore needs **Unicorn ≥ 2.0** (we call `uc_ctl_flush_tlb`, added in 2.x).
-The distro package works on Debian 12, Ubuntu 24.04 and Fedora 38+:
+One copy-paste covers both cases — distro package if available, source
+build as a transparent fallback (Ubuntu 22.04, RHEL, …):
 
 ```sh
-sudo apt install -y libunicorn-dev
+sudo apt install -y libunicorn-dev || {
+  # Fallback — build Unicorn 2.x from source:
+  sudo apt install -y cmake
+  git clone --depth 1 https://github.com/unicorn-engine/unicorn.git ~/unicorn
+  cmake -S ~/unicorn -B ~/unicorn/build \
+        -DCMAKE_BUILD_TYPE=Release -DUNICORN_ARCH=x86
+  cmake --build ~/unicorn/build -j"$(nproc)"
+  sudo cmake --install ~/unicorn/build && sudo ldconfig
+}
 ```
 
-<details>
-<summary><b>📦 No <code>libunicorn-dev</code> ≥ 2.0 in your distro? — build from source (Ubuntu 22.04, RHEL, …)</b></summary>
-
-```sh
-sudo apt install -y cmake
-git clone --depth 1 https://github.com/unicorn-engine/unicorn.git ~/unicorn
-cmake -S ~/unicorn -B ~/unicorn/build \
-      -DCMAKE_BUILD_TYPE=Release -DUNICORN_ARCH=x86
-cmake --build ~/unicorn/build -j"$(nproc)"
-sudo cmake --install ~/unicorn/build && sudo ldconfig
-```
-
-> **Important:** keep `-DCMAKE_BUILD_TYPE=Release`. Without it Unicorn
-> ships unoptimised and Encore runs 5–10× slower.
-</details>
+> **Important:** if you build from source, keep `-DCMAKE_BUILD_TYPE=Release`.
+> Without it Unicorn ships unoptimised and Encore runs 5–10× slower.
 
 Versions known to work: gcc ≥ 10, libunicorn ≥ 2.0, libsdl2 ≥ 2.0.20,
 libsdl2-mixer ≥ 2.6.
