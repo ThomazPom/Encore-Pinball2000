@@ -9,7 +9,10 @@ Source: `src/lpt_pass.c` (343 lines), also the `--lpt-device` CLI flag.
 > **Status:** Behaviour described here is based on emulator testing
 > only. Real-cabinet validation is pending — see
 > [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
-> how to help verify.
+> how to help verify, and
+> [docs/48-lpt-protocol-references.md](48-lpt-protocol-references.md) for
+> the public protocol/register documentation that this code is meant to
+> match.
 
 ## Why real-cabinet mode at all?
 

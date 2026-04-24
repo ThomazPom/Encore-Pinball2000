@@ -116,6 +116,13 @@ A successful Debian 13 desktop test would extend that baseline
 outside the developer's own machine, and a successful bench-level
 LPT/audio test would extend it outside emulation entirely.
 
+For the public PB2K Power-Driver-Board parallel-port protocol, register
+map, and timing constraints (notably the ~2.5 ms blanking heartbeat on
+index `0x05`), see
+[48-lpt-protocol-references.md](48-lpt-protocol-references.md). That page
+also lists a working public reference implementation (PinballDiag) which
+is a useful comparison point for any bench testing.
+
 ---
 
 ← [Back to documentation index](README.md) · [Back to project README](../README.md)
