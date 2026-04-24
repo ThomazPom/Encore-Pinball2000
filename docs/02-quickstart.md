@@ -17,7 +17,7 @@ sudo apt install -y build-essential pkg-config git \
 ```
 
 <details>
-<summary><sub><i>“user is not in the sudoers file” on a fresh Debian? — one-time fix</i></sub></summary>
+<summary><b>🔐 “user is not in the sudoers file” on a fresh Debian? — one-time fix</b></summary>
 
 Debian's default install does not add the first user to the `sudo` group.
 Grant yourself sudo once (root password is set at install time), then
@@ -40,7 +40,7 @@ sudo apt install -y libunicorn-dev
 ```
 
 <details>
-<summary><sub><i>No <code>libunicorn-dev</code> ≥ 2.0 in your distro? — build from source (Ubuntu 22.04, RHEL, …)</i></sub></summary>
+<summary><b>📦 No <code>libunicorn-dev</code> ≥ 2.0 in your distro? — build from source (Ubuntu 22.04, RHEL, …)</b></summary>
 
 ```sh
 sudo apt install -y cmake
@@ -59,7 +59,7 @@ Versions known to work: gcc ≥ 10, libunicorn ≥ 2.0, libsdl2 ≥ 2.0.20,
 libsdl2-mixer ≥ 2.6.
 
 <details>
-<summary><b>Wiring Encore to a real Pinball 2000 cabinet?</b> — one-time host setup (skip if emulator-only)</summary>
+<summary><b>🕹️ Wiring Encore to a real Pinball 2000 cabinet? — one-time host setup (skip if emulator-only)</b></summary>
 
 Without these, `--lpt-device /dev/parport0` fails with `PPCLAIM EBUSY`
 or `Permission denied` and the cabinet doesn't respond:
