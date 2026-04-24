@@ -25,7 +25,7 @@ static int map_region(uc_engine *uc, uint64_t addr, uint64_t size, uint32_t perm
             return -1;
         }
     }
-    LOG("mem", "%-18s 0x%08lx  %lu KB\n", name, (unsigned long)addr,
+    LOGV("mem", "%-18s 0x%08lx  %lu KB\n", name, (unsigned long)addr,
         (unsigned long)(size >> 10));
     return 0;
 }
@@ -51,7 +51,7 @@ int memory_init(void)
                     uc_strerror(e));
             return -1;
         }
-        LOG("mem", "%-18s 0x%08x  %u MB (direct-mapped)\n", "RAM",
+        LOGV("mem", "%-18s 0x%08x  %u MB (direct-mapped)\n", "RAM",
             GUEST_RAM, RAM_SIZE >> 20);
     }
 
@@ -63,7 +63,7 @@ int memory_init(void)
 
         /* Shadow at 0xF0000 (within RAM, overwrite) */
         uc_mem_write(uc, GUEST_BIOS_SHADOW, g_emu.bios, g_emu.bios_size);
-        LOG("mem", "%-18s 0x%08x  %lu KB (shadow)\n", "BIOS",
+        LOGV("mem", "%-18s 0x%08x  %lu KB (shadow)\n", "BIOS",
             GUEST_BIOS_SHADOW, (unsigned long)(g_emu.bios_size >> 10));
     }
 
@@ -71,7 +71,7 @@ int memory_init(void)
     if (g_emu.rom_banks[0] && g_emu.rom_sizes[0] >= PRISM_ROM_SIZE) {
         if (g_emu.rom_banks[0][0] == 0x55 && g_emu.rom_banks[0][1] == 0xAA) {
             uc_mem_write(uc, GUEST_OPTION_ROM, g_emu.rom_banks[0], PRISM_ROM_SIZE);
-            LOG("mem", "%-18s 0x%08x  %lu KB (55 AA verified)\n", "PRISM option ROM",
+            LOGV("mem", "%-18s 0x%08x  %lu KB (55 AA verified)\n", "PRISM option ROM",
                 GUEST_OPTION_ROM, (unsigned long)(PRISM_ROM_SIZE >> 10));
         }
     }
@@ -132,7 +132,7 @@ int memory_init(void)
             fprintf(stderr, "[mem] Failed to direct-map GX FB: %s\n", uc_strerror(e));
             return -1;
         }
-        LOG("mem", "%-18s 0x%08x  %u MB (direct→RAM+0x800000)\n",
+        LOGV("mem", "%-18s 0x%08x  %u MB (direct→RAM+0x800000)\n",
             "GX FB", GX_FB, 8 >> 1);
     }
 
