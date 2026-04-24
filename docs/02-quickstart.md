@@ -16,37 +16,53 @@ sudo apt install -y build-essential pkg-config git \
                     libsdl2-dev libsdl2-mixer-dev unzip
 ```
 
-<sub>If `sudo` answers *"user is not in the sudoers file"* (Debian's default
-for the first user), grant yourself sudo once — `su -c "/usr/sbin/usermod -aG sudo $(whoami)" && newgrp sudo` — then re-run the line above.</sub>
+<details>
+<summary><sub><i>“user is not in the sudoers file” on a fresh Debian? — one-time fix</i></sub></summary>
+
+Debian's default install does not add the first user to the `sudo` group.
+Grant yourself sudo once (root password is set at install time), then
+re-run the command above:
+
+```sh
+su -c "/usr/sbin/usermod -aG sudo $(whoami)"
+newgrp sudo                                    # active in THIS shell, no logout
+sudo -v                                        # sanity check (asks YOUR pwd)
+```
+</details>
 
 ### Unicorn engine
 
 Encore needs **Unicorn ≥ 2.0** (we call `uc_ctl_flush_tlb`, added in 2.x).
+The distro package works on Debian 12, Ubuntu 24.04 and Fedora 38+:
 
 ```sh
-# Try the distro package first (Debian 12, Ubuntu 24.04, Fedora 38+):
-sudo apt install -y libunicorn-dev || {
-  # Fallback (Ubuntu 22.04 etc. ship only 1.x or nothing) — build from source:
-  sudo apt install -y cmake
-  git clone --depth 1 https://github.com/unicorn-engine/unicorn.git ~/unicorn
-  cmake -S ~/unicorn -B ~/unicorn/build \
-        -DCMAKE_BUILD_TYPE=Release -DUNICORN_ARCH=x86
-  cmake --build ~/unicorn/build -j"$(nproc)"
-  sudo cmake --install ~/unicorn/build && sudo ldconfig
-}
+sudo apt install -y libunicorn-dev
 ```
 
-> **Important:** if you build from source, keep the `-DCMAKE_BUILD_TYPE=Release`.
-> Without it Unicorn ships unoptimised and Encore runs 5–10× slower.
+<details>
+<summary><sub><i>No <code>libunicorn-dev</code> ≥ 2.0 in your distro? — build from source (Ubuntu 22.04, RHEL, …)</i></sub></summary>
+
+```sh
+sudo apt install -y cmake
+git clone --depth 1 https://github.com/unicorn-engine/unicorn.git ~/unicorn
+cmake -S ~/unicorn -B ~/unicorn/build \
+      -DCMAKE_BUILD_TYPE=Release -DUNICORN_ARCH=x86
+cmake --build ~/unicorn/build -j"$(nproc)"
+sudo cmake --install ~/unicorn/build && sudo ldconfig
+```
+
+> **Important:** keep `-DCMAKE_BUILD_TYPE=Release`. Without it Unicorn
+> ships unoptimised and Encore runs 5–10× slower.
+</details>
 
 Versions known to work: gcc ≥ 10, libunicorn ≥ 2.0, libsdl2 ≥ 2.0.20,
 libsdl2-mixer ≥ 2.6.
 
-### Real-cabinet prerequisites (skip if emulator-only)
+<details>
+<summary><b>Wiring Encore to a real Pinball 2000 cabinet?</b> — one-time host setup (skip if emulator-only)</summary>
 
-If you are wiring Encore to an actual Pinball 2000 cabinet via the host's
-parallel port, do **this once** — otherwise `--lpt-device /dev/parport0`
-will fail with `PPCLAIM EBUSY` / `Permission denied`:
+Without these, `--lpt-device /dev/parport0` fails with `PPCLAIM EBUSY`
+or `Permission denied` and the cabinet doesn't respond:
 
 ```sh
 sudo modprobe ppdev parport_pc                       # make /dev/parport0 appear
@@ -56,24 +72,23 @@ ls -l /dev/parport* /dev/usb/lp* 2>/dev/null         # find your device node
 ```
 
 `newgrp lp` activates the new group in the current shell so no logout is
-needed (`exit` returns to the parent shell; `sg lp -c './build/encore …'`
-works too as a one-shot). The `ppdev`, `parport` and `parport_pc` modules
-are already part of the stock Debian/Ubuntu kernel — nothing to apt-install.
+needed (`sg lp -c './build/encore …'` works too as a one-shot). The
+`ppdev`, `parport` and `parport_pc` modules ship with the stock
+Debian/Ubuntu kernel — nothing to apt-install.
 
-> **USB→LPT dongle?** If `ls` shows `/dev/usb/lp0` but no `/dev/parport*`,
-> your adapter is printer-class only and **cannot** drive the cabinet
-> (the `usblp` kernel driver has no bidirectional / control-register
-> support). A PCIe LPT card (Moschip MCS9865/9900, ~€20) is the cheap
-> fix. If you see `/dev/parport1` instead of `parport0` (e.g. add-in
-> card alongside onboard LPT), pass `--lpt-device /dev/parport1`. Full
-> compatibility table in
-> [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md#which-device-node-will-i-get).
+**USB→LPT dongle?** If `ls` shows `/dev/usb/lp0` but no `/dev/parport*`,
+your adapter is printer-class only and **cannot** drive the cabinet
+(the `usblp` kernel driver has no bidirectional / control-register
+support). A PCIe LPT card (Moschip MCS9865/9900, ~€20) is the cheap
+fix. If you see `/dev/parport1` instead of `parport0`, pass
+`--lpt-device /dev/parport1`. Full compatibility table in
+[19-real-lpt-passthrough.md](19-real-lpt-passthrough.md#which-device-node-will-i-get).
 
-Encore runs **fully unprivileged** — no `ioperm()`, no setuid, no `/dev/port`.
-Everything goes through Linux `ppdev` ioctls, so once your user is in the
-`lp` group and the kernel `lp` driver is unloaded, `./build/encore` from a
-normal shell is enough. Full background and troubleshooting in
-[19-real-lpt-passthrough.md](19-real-lpt-passthrough.md).
+Encore runs **fully unprivileged** — no `ioperm()`, no setuid, no
+`/dev/port`. Everything goes through Linux `ppdev` ioctls, so once
+your user is in the `lp` group and the kernel `lp` driver is
+unloaded, `./build/encore` from a normal shell is enough.
+</details>
 
 ## 2. Clone and build
 
