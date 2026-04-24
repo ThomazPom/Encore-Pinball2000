@@ -175,7 +175,13 @@ static int apply_option(const char *key, const char *value)
         return 0;
     }
     if (strcmp(key, "no-savedata") == 0) { g_emu.no_savedata = true; return 0; }
-    if (strcmp(key, "cabinet-purist") == 0) { g_emu.cabinet_purist = true; return 0; }
+    if (strcmp(key, "cabinet-purist") == 0) {
+        g_emu.cabinet_purist = true;
+        /* Composability: cabinet-purist already trusts the real board for
+         * watchdog/blanking; trust it for the LPT bus direction too. */
+        g_emu.lpt_purist = true;
+        return 0;
+    }
     if (strcmp(key, "dcs-mode") == 0 && value) {
         if (strcmp(value, "bar4-patch") == 0) {
             g_emu.dcs_mode_choice = ENCORE_DCS_BAR4_PATCH;
@@ -618,14 +624,19 @@ print_help:
 "                         on exit. Useful for fresh-state regression runs.\n"
 "  --cabinet-purist       EXPERIMENTAL — when used together with an open\n"
 "                         LPT passthrough (--lpt-device 0xBASE or\n"
-"                         /dev/parportN), skip the optional sgc fixups\n"
-"                         (watchdog suppression / dcs-probe scribble) so\n"
-"                         the natural pci_watchdog_bone() path runs and\n"
-"                         the real driver board actually drives the\n"
-"                         decision. The structural mem_detect 4MB→14MB\n"
-"                         patch is kept (without it the guest stack\n"
-"                         overflows before graphics). Useful for A/B\n"
-"                         comparisons with vs. without the shims.\n"
+"                         /dev/parportN), trust the real board + the\n"
+"                         original guest code as much as possible:\n"
+"                           * skip the optional sgc fixups (watchdog\n"
+"                             suppression / dcs-probe scribble) so the\n"
+"                             natural pci_watchdog_bone() path runs;\n"
+"                           * implies --lpt-purist (CTL forwarded verbatim,\n"
+"                             host-side direction management disabled).\n"
+"                         The structural mem_detect 4MB→14MB patch is\n"
+"                         still applied — it works around a Unicorn /\n"
+"                         MediaGX memory-controller emulation gap, not a\n"
+"                         hardware fact, so a real cabinet doesn't change\n"
+"                         it. Useful for A/B comparisons with vs. without\n"
+"                         Encore's bring-up shims active.\n"
 "  --fullscreen           Open the SDL window fullscreen at startup.\n"
 "  --flipscreen           Start with the display Y-flipped (some cabs).\n"
 "  --bpp 16|32            Output texture bit depth (default 32 / ARGB8888;\n"
