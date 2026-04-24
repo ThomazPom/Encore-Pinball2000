@@ -305,16 +305,19 @@ static int raw_open(unsigned long base, bool quiet_if_missing)
     s_ctrl_cached = 0;
     s_dir_input   = -1;
     raw_arm_ecr(base);                         /* must precede first set_dir() */
-    if (!g_emu.lpt_purist)
-        set_dir(0);                            /* idle = output (host drives latch) */
+    if (g_emu.lpt_managed_dir)
+        set_dir(0);                            /* legacy: idle = output (host drives latch) */
 
     LOG("lpt", "*** real cabinet detected on RAW I/O 0x%lx — keyboard/F-key "
                "button emulation DISABLED ***\n", base);
     LOG("lpt", "    raw inb/outb path; short strobe pacing via outb(0x80) "
                "(timing not yet verified on real cabinet)\n");
-    if (g_emu.lpt_purist)
-        LOG("lpt", "    purist mode: CTL forwarded verbatim, guest XINA "
-                   "drives bus direction (per documented P2K protocol)\n");
+    if (g_emu.lpt_managed_dir)
+        LOG("lpt", "    legacy mode (--lpt-managed-dir): Encore rewrites CTL "
+                   "bit 5 around data-port reads (may fight guest XINA)\n");
+    else
+        LOG("lpt", "    CTL forwarded verbatim — guest XINA drives bus "
+                   "direction (matches documented PB2K protocol)\n");
     return 0;
 }
 #endif
@@ -476,12 +479,13 @@ uint8_t lpt_passthrough_read(uint8_t reg)
     } else if (s_backend == LPT_BK_RAW) {
         switch (reg) {
         case 0:
-            if (!g_emu.lpt_purist) {
+            if (g_emu.lpt_managed_dir) {
                 set_dir(1);
                 v = inb(s_io_base + 0);
                 set_dir(0);
             } else {
-                /* Trust the guest: per the documented P2K protocol it has
+                /* Verbatim path (default, matches reference binary):
+                 * trust the guest — per the documented P2K protocol it has
                  * already written 0x29 to CTL, putting both PC and board
                  * buffer in the right direction for this read. */
                 v = inb(s_io_base + 0);
@@ -523,8 +527,8 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
             break;
         case 2: /* control — cache and forward verbatim. ppdev manages PC-side
                  * direction via PPDATADIR (set_dir); bit 5 of the byte we
-                 * pass here is ignored by the kernel driver, which is why
-                 * --lpt-purist is a no-op on the ppdev backend. */
+                 * pass here is ignored by the kernel driver, so the
+                 * --lpt-managed-dir flag is a no-op on the ppdev backend. */
             s_ctrl_cached = val;
             if (ioctl(s_fd, PPWCONTROL, &v) < 0)
                 LOG("lpt", "PPWCONTROL failed: %s\n", strerror(errno));
@@ -536,22 +540,24 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
         switch (reg) {
         case 0:
             lpt_blanking_check();
-            if (!g_emu.lpt_purist) set_dir(0);
+            if (g_emu.lpt_managed_dir) set_dir(0);
             outb(val, s_io_base + 0);
             break;
         case 2:
             s_ctrl_cached = val;
-            if (g_emu.lpt_purist) {
-                /* Forward verbatim — including bit 5. The documented P2K
-                 * protocol explicitly writes 0x29 to CTL (bit 5 set) before
-                 * reading data; trust the original XINA driver code to drive
-                 * direction itself. */
+            if (!g_emu.lpt_managed_dir) {
+                /* Default: forward verbatim — including bit 5. The documented
+                 * P2K protocol explicitly writes 0x29 to CTL (bit 5 set)
+                 * before reading data; trust the original XINA driver code
+                 * to drive direction itself. This matches what the reference
+                 * QEMU-based emulator does in its real-LPT path (objdump
+                 * confirmed: naked outb at 0x8058f08, no CTL rewriting). */
                 outb(val, s_io_base + 2);
             } else {
-                /* Default: encore manages bit 5 (direction). Preserve guest's
-                 * other bits but force bit 5 to match our tracked direction
-                 * state. May fight the documented P2K protocol on real boards
-                 * — try --lpt-purist if the cabinet stays silent. */
+                /* Legacy --lpt-managed-dir: Encore rewrites bit 5 from its
+                 * tracked direction state. Kept as an opt-in for diagnosing
+                 * cabinets where the guest's CTL sequence is suspect. May
+                 * fight the documented protocol — prefer the default. */
                 outb((uint8_t)((val & ~0x20u) | (s_dir_input ? 0x20u : 0u)),
                      s_io_base + 2);
             }

@@ -267,7 +267,10 @@ typedef struct {
     char     lpt_device[256];         /* passthrough device path; "" = default, "none" = force emulation */
     bool     lpt_device_explicit;     /* user gave --lpt-device → fail hard if open fails */
     char     lpt_trace_file[512];     /* --lpt-trace FILE: capture every passthrough LPT cycle to disk */
-    bool     lpt_purist;              /* --lpt-purist: forward CTL verbatim, no host-side direction mgmt */
+    bool     lpt_managed_dir;         /* --lpt-managed-dir: legacy mode where Encore rewrites CTL bit 5
+                                       *   to track read/write direction. Default OFF: CTL is forwarded
+                                       *   verbatim (matches the documented PB2K driver-board protocol
+                                       *   and what an unmodified XINA driver expects). */
     bool     update_explicit_none;    /* user gave --update none → skip auto-pick */
     char     update_file[512];        /* explicit update.bin path; empty → default search */
 

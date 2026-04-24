@@ -177,9 +177,8 @@ static int apply_option(const char *key, const char *value)
     if (strcmp(key, "no-savedata") == 0) { g_emu.no_savedata = true; return 0; }
     if (strcmp(key, "cabinet-purist") == 0) {
         g_emu.cabinet_purist = true;
-        /* Composability: cabinet-purist already trusts the real board for
-         * watchdog/blanking; trust it for the LPT bus direction too. */
-        g_emu.lpt_purist = true;
+        /* CTL forwarding is already verbatim by default — no LPT flag to set
+         * here. Cabinet-purist only changes the sgc fixup decisions. */
         return 0;
     }
     if (strcmp(key, "dcs-mode") == 0 && value) {
@@ -230,7 +229,13 @@ static int apply_option(const char *key, const char *value)
         return 1;
     }
     if (strcmp(key, "lpt-purist") == 0) {
-        g_emu.lpt_purist = true;
+        /* Back-compat no-op: verbatim CTL forwarding is now the default
+         * for the raw backend. Use --lpt-managed-dir to opt back into the
+         * legacy "Encore rewrites bit 5" behaviour. */
+        return 0;
+    }
+    if (strcmp(key, "lpt-managed-dir") == 0) {
+        g_emu.lpt_managed_dir = true;
         return 0;
     }
     if (strcmp(key, "update") == 0 && value) {
@@ -566,20 +571,22 @@ print_help:
 "                         what the guest is actually putting on the wire and\n"
 "                         what the board is replying.\n"
 "\n"
-"  --lpt-purist           Forward the guest's CTL byte (LPT base+2) verbatim\n"
-"                         to the host — including bit 5 (PC parallel-port\n"
-"                         direction). The default raw backend strips bit 5\n"
-"                         from guest CTL writes and toggles it itself around\n"
-"                         data-port reads. The documented Pinball 2000 driver-\n"
-"                         board protocol expects the guest to drive bit 5\n"
-"                         itself (it writes 0x29 to CTL before reading data),\n"
-"                         and Encore's bit-5 management can fight that\n"
-"                         sequence — causing brief bus contention and possibly\n"
-"                         the watchdog/blanking failures real cabinets hit.\n"
-"                         Purist mode trusts the original XINA driver code\n"
-"                         and removes that interference. Try this first if\n"
-"                         the default raw path is silent on a real board.\n"
-"                         (Implies --lpt-device 0xBASE; ignored on ppdev.)\n"
+"  --lpt-managed-dir      Legacy raw-backend mode: Encore strips bit 5 from\n"
+"                         every guest CTL write and toggles it itself around\n"
+"                         data-port reads. The default (verbatim) matches\n"
+"                         what the reference QEMU-based emulator does and\n"
+"                         what the documented PB2K driver-board protocol\n"
+"                         expects (the guest writes 0x29 to CTL before\n"
+"                         reading data — bit 5 must reach the wire intact).\n"
+"                         Only enable this if you are intentionally\n"
+"                         diagnosing a cabinet whose CTL sequence you\n"
+"                         suspect; it can otherwise fight the guest XINA\n"
+"                         driver and cause silent boards or watchdog trips.\n"
+"                         (Ignored on the ppdev backend — kernel manages\n"
+"                         direction via PPDATADIR.)\n"
+"\n"
+"  --lpt-purist           Back-compat alias accepted but no-op: verbatim CTL\n"
+"                         forwarding is now the raw backend's default.\n"
 "\n"
 "════════════════════════════════════════════════════════════════════════\n"
 " Maybe-fun future ideas (not implemented — left as bread crumbs)\n"
@@ -628,9 +635,9 @@ print_help:
 "                         original guest code as much as possible:\n"
 "                           * skip the optional sgc fixups (watchdog\n"
 "                             suppression / dcs-probe scribble) so the\n"
-"                             natural pci_watchdog_bone() path runs;\n"
-"                           * implies --lpt-purist (CTL forwarded verbatim,\n"
-"                             host-side direction management disabled).\n"
+"                             natural pci_watchdog_bone() path runs.\n"
+"                         (CTL is already forwarded verbatim by default —\n"
+"                         no extra LPT flag is implied.)\n"
 "                         The structural mem_detect 4MB→14MB patch is\n"
 "                         still applied — it works around a Unicorn /\n"
 "                         MediaGX memory-controller emulation gap, not a\n"
