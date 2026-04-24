@@ -453,6 +453,11 @@ void     lpt_passthrough_close(void);
 bool     lpt_passthrough_active(void);
 uint8_t  lpt_passthrough_read(uint8_t reg);
 void     lpt_passthrough_write(uint8_t reg, uint8_t val);
+/* One-shot reset pulse on /INIT: CTL=0x00, sleep ~100µs, CTL=0x04. Issued once
+ * at activation to bring the driver board out of any half-initialised state
+ * left by power-on or by a previous host probe. No-op if passthrough inactive.
+ * Establishes a known idle bus state before the guest CPU starts driving. */
+void     lpt_passthrough_reset_pulse(void);
 int      lpt_passthrough_detect_game(char *out, size_t out_sz);
 void     lpt_set_host_input(uint8_t buttons, uint8_t switches);
 void     lpt_toggle_coin_door(void);
