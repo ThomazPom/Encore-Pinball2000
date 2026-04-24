@@ -441,22 +441,24 @@ static void apply_sgc_patches(void)
      * probe ONCE during init).  In io-handled, prime=0; in bar4-patch,
      * prime=0xFFFF (the byte-patch makes the probe result moot). */
     g_emu.watchdog_flag_addr = health_addr;
-    /* Staged polarity: prime is ALWAYS 0xFFFF regardless of --dcs-mode.
-     * Rationale: the cell the scanner latches onto is at a bundle-dependent
-     * BSS address.  On mature bundles (v1.4+) it sits at 0x003170xx and is
-     * only read by the DCS probe late in game init.  On pre-XINU v1.2 and
-     * on SWE1 v1.3, the cell sits in a different slot that early boot code
-     * ALSO consults as a sentinel — priming it to 0 there sends pre-XINU
-     * into a null-EIP jump (RFM v1.2) or INSN_INVALID (SWE1 v1.3).
-     *
-     * Under io-handled, cpu.c flips the scribble to 0 once xinu_ready
-     * fires, so the game's own DCS probe (called later from game init)
-     * still sees cell != 0xFFFF and reports DCS present — what we want. */
-    uint32_t prime_val = 0x0000FFFFu;
-    RAM_WR32(health_addr, prime_val);
-    LOG("sgc", "watchdog suppression active: [0x%08x] primed =0x%08x (BT-107, dcs-mode=%s, scribble flips post-xinu_ready)\n",
-        health_addr, prime_val,
-        (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) ? "io-handled" : "bar4-patch");
+    /* Cabinet-purist: when the user explicitly opted in via --cabinet-purist
+     * AND a real LPT board is open, we leave the watchdog cell completely
+     * alone. Rationale: on real hardware the driver-board responses drive
+     * the natural pci_watchdog_bone() path; our suppression scribble only
+     * makes sense when no board is present. This is experimental — it
+     * lets us A/B compare boot behaviour with vs. without the shim while
+     * a real board is wired in. */
+    if (g_emu.cabinet_purist && lpt_passthrough_active()) {
+        g_emu.watchdog_flag_addr = 0;
+        LOG("sgc", "watchdog suppression DISABLED (cabinet-purist + LPT passthrough): "
+                   "letting natural pci_watchdog_bone path run\n");
+    } else {
+        uint32_t prime_val = 0x0000FFFFu;
+        RAM_WR32(health_addr, prime_val);
+        LOG("sgc", "watchdog suppression active: [0x%08x] primed =0x%08x (BT-107, dcs-mode=%s, scribble flips post-xinu_ready)\n",
+            health_addr, prime_val,
+            (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) ? "io-handled" : "bar4-patch");
+    }
 
     /* === BT-130: mem_detect() patch ===
      * XINU's mem_detect() returns 0x400 pages (4MB) in our emulator because the
@@ -1056,7 +1058,16 @@ void lpt_activate(void)
     s_coin_door_closed = 1;
     s_enter_pulse      = 0;
 
-    LOG("lpt", "activated — i386 POC opcode protocol (latch echo + active-low)\n");
+    if (lpt_passthrough_active()) {
+        /* In passthrough mode the emulated state machine below is dormant —
+         * every guest read/write is forwarded directly to the host LPT
+         * registers (see lpt_read/lpt_write early-return on
+         * lpt_passthrough_active()). The activation message must not
+         * imply that we layer a higher-level decoder on top of the wire. */
+        LOG("lpt", "activated — direct passthrough to host LPT (no on-the-fly decoding)\n");
+    } else {
+        LOG("lpt", "activated — emulated decoder (latch echo + active-low; no real board)\n");
+    }
 }
 
 static FILE *s_lpt_trace = NULL;
