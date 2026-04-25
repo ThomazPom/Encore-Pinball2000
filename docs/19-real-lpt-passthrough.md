@@ -257,7 +257,55 @@ used by the auto-detect bit-banging helpers further down in
 `src/lpt_pass.c`. Implementation: `lpt_passthrough_reset_pulse()`.
 
 The pulse is recorded in the `--lpt-trace` CSV like any other CTL
-cycle, so it is visible when diffing traces.
+cycle, so it is visible when diffing traces. The bus-event decoder
+(see below) is also reset at this boundary, so per-register counters
+and the watchdog-feed gap detector report on guest activity, not on
+the boot probe traffic that preceded handoff.
+
+## Trace files (`--lpt-trace` and `--lpt-bus-trace`)
+
+Two independent CSV files can be opened at the same time during
+real-cabinet bring-up:
+
+`--lpt-trace FILE` — raw LPT cycles, one per `inb`/`outb` the guest
+performs:
+
+```
+ns_monotonic,dir,reg,val
+1234567890,W,0,0x05
+1234567990,W,2,0x00
+1234568090,W,2,0x04
+…
+```
+
+`reg` is the LPT register (0=data, 1=status, 2=control); `dir` is `R`
+or `W`. This is the ground truth on what hits the wire.
+
+`--lpt-bus-trace FILE` — decoded P2K driver-board bus events, one per
+documented bus cycle. The decoder watches the LPT byte stream for the
+documented address-latch (`CTL` bit 2 rising) / data-strobe (`CTL`
+bit 0 rising) / read-arm (`CTL=0x2D`) sequences and reconstructs
+which bus register the guest is actually writing or reading:
+
+```
+ns_monotonic,BUS,dir,reg,val
+1234568090,BUS,W,0x05,0x80
+1234572190,BUS,R,0x04,0xff
+…
+```
+
+Bus-trace lines carry an explicit `BUS` token in the second column so
+that consumers of the raw `--lpt-trace` 4-column format never see them
+even if the two files were merged.
+
+When `-vv` is set, the bus decoder also feeds a watchdog-gap detector
+that warns once if more than ~2.5 ms elapses between bus writes to
+register `0x05` (the documented `SW_COL`/blanking-watchdog keepalive
+line — see [docs/48 §5](48-lpt-protocol-references.md) and
+[docs/51 §3](51-power-driver-board.md)). On close, a per-register
+write/read summary is dumped at the same verbosity. Both are useful
+for confirming that the guest's natural traffic is keeping the board
+alive rather than tripping its blanking circuit.
 
 ## Bus pacing (`--lpt-bus-pace`)
 
