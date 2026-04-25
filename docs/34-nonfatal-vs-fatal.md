@@ -24,7 +24,7 @@ Encore's log these appear as:
 ```
 
 Encore installs a code-trace hook on the `NonFatal` function
-(`src/cpu.c:138`) to capture and log the string argument before the
+(`src/cpu.c`) to capture and log the string argument before the
 function executes. The hook reads the string pointer from `[ESP+4]` and
 the caller return address from `[ESP]`.
 
@@ -44,14 +44,14 @@ display. Under emulation it typically lands in a tight `HLT` or
 
 Encore has three strategies for taming Fatal calls:
 
-1. **prnull redirect** (`src/cpu.c:826`): If a `HLT` is encountered at
+1. **prnull redirect** (`src/cpu.c`): If a `HLT` is encountered at
    an address that looks like a Fatal/panic path (outside the normal
    `nulluser` idle range), Encore logs it and redirects EIP to the
    prnull idle stub at `0xFF0000`. The game continues from there as
    if it were idle, which is often enough to let the next scheduler
    tick pick up a live thread.
 
-2. **IRET+EOI stub at 0x20000** (`src/cpu.c:29`): The PIC vector base
+2. **IRET+EOI stub at 0x20000** (`src/cpu.c`): The PIC vector base
    is initially programmed to `0x08`; spurious interrupts before the
    IDT is installed would jump to `0x20000` where a stub `STI; IRET`
    sequence lives. This prevents a fetch-fault from a dead handler
@@ -65,7 +65,7 @@ Encore has three strategies for taming Fatal calls:
 
 ## Invalid memory access handling
 
-The Unicorn `UC_HOOK_MEM_INVALID` callback (`src/cpu.c:1153`) fires
+The Unicorn `UC_HOOK_MEM_INVALID` callback (`src/cpu.c`) fires
 on unmapped reads, writes, or instruction fetches. The handler:
 
 1. Logs the access type, address, and current EIP.
@@ -79,7 +79,7 @@ subsequent ones are throttled to every 10 000 occurrences to avoid log
 flooding:
 
 ```c
-/* src/cpu.c:813 */
+/* src/cpu.c */
 if (inv_cnt <= 30 || (inv_cnt % 10000) == 0)
     LOG("cpu", "[%d] invalid mem ... EIP=0x%08x insn %02x %02x ...\n", ...);
 ```

@@ -17,7 +17,7 @@ Unicorn does not expose hardware timers; each call to `uc_emu_start`
 runs a fixed slice of guest instructions and then returns.
 
 ```c
-/* src/cpu.c:750 */
+/* src/cpu.c */
 size_t batch = 200000;
 uc_err err = uc_emu_start(uc, eip, 0, 0, batch);
 ```
@@ -50,7 +50,7 @@ The observed divisor at runtime is approximately 298, giving:
 1 193 182 / 298 ≈ 4003 Hz
 ```
 
-Encore converts this to nanoseconds per tick (`src/cpu.c:511`):
+Encore converts this to nanoseconds per tick (`src/cpu.c`):
 
 ```c
 uint64_t pit_period_ns = (uint64_t)div * 838;
@@ -71,7 +71,7 @@ of **~57 Hz** (17.5 ms per frame), matching the original Pinball 2000
 hardware (see [17-vblank.md](17-vblank.md)):
 
 ```c
-/* src/cpu.c:526 */
+/* src/cpu.c */
 if (now_ns - last_vsync_ns >= 17500000ULL) { /* ~57 Hz = 17.5ms */
     last_vsync_ns += 17500000ULL;
     g_emu.vsync_count++;
@@ -89,7 +89,7 @@ output is logged every 5 seconds:
 [disp] FPS: 57.0 (285 frames / 5000 ms)
 ```
 
-`COIN_HIGH_FRAMES 6` in `src/display.c:124` — 6 frames at 60 fps ≈ 100 ms
+`COIN_HIGH_FRAMES 6` in `src/display.c` — 6 frames at 60 fps ≈ 100 ms
 high-level on the coin line — is based on the 60 fps approximation but
 the actual VBLANK rate means the coin pulse lasts ~105 ms, which is
 within the acceptable range for the game's debounce logic.

@@ -35,7 +35,7 @@ Encore's memory map mirrors this layout and is defined at the top of
 | `0x40800000` |    4 MB | MMIO | MediaGX framebuffer region |
 | `0xFFFF0000` |   64 KB | direct RAM | BIOS reset vector mapping |
 
-The MMIO dispatcher is `src/bar.c`, around 1000 lines. It splits on
+The MMIO dispatcher is `src/bar.c`. It splits on
 the high 8 bits of the faulting address to pick a bank.
 
 ## RAM

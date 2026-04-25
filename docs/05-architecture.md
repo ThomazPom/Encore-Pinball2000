@@ -10,27 +10,28 @@ deep dives.
 > [docs/42-cabinet-testing-call.md](42-cabinet-testing-call.md) for
 > how to help verify.
 
-## The thirteen compilation units
+## The compilation units
 
 ```
-src/main.c       855  CLI, config, wiring, boot-assist stubs
-src/cpu.c       1203  Unicorn loop, IRQ inject, patch scans, HLT redirection
-src/memory.c     161  Unicorn memory-region mapping
-src/rom.c        963  Chip-ROM de-interleave, bundle load, savedata
-src/pci.c         77  Raw PCI config-space read/write
-src/io.c        1921  PIC, PIT, CMOS, UART, LPT, DCS-UART, SGC patches
-src/bar.c       1012  PCI BAR0..BAR5 MMIO dispatcher
-src/display.c    595  SDL2 window, framebuffer blit, SDL event pump
-src/sound.c      537  SDL2_mixer init, DCS cmd dispatch, sample container
-src/netcon.c     300  TCP ↔ UART and TCP ↔ PS/2 bridges
-src/lpt_pass.c   343  Linux ppdev real-cabinet passthrough
-src/symbols.c    207  XINU SYMBOL TABLE index + lookup
-src/stb_impl.c     3  stb_image_write implementation unit (header-only)
+src/main.c       CLI, config, wiring, boot-assist stubs
+src/cpu.c        Unicorn loop, IRQ inject, patch scans, HLT redirection
+src/memory.c     Unicorn memory-region mapping
+src/rom.c        Chip-ROM de-interleave, bundle load, savedata
+src/pci.c        Raw PCI config-space read/write
+src/io.c         PIC, PIT, CMOS, UART, LPT, DCS-UART, SGC patches
+src/bar.c        PCI BAR0..BAR5 MMIO dispatcher
+src/display.c    SDL2 window, framebuffer blit, SDL event pump
+src/sound.c      SDL2_mixer init, DCS cmd dispatch, sample container
+src/netcon.c     TCP ↔ UART and TCP ↔ PS/2 bridges
+src/lpt_pass.c   Linux ppdev / raw-port real-cabinet passthrough
+src/symbols.c    XINU SYMBOL TABLE index + lookup
+src/splash.c     Optional splash-screen renderer
+src/stb_impl.c   stb_image_write implementation unit (header-only)
 ```
 
-Plus one header: `include/encore.h`, 511 lines — the entire
-cross-file contract. There is one global, `EncoreState g_emu`, defined
-in `main.c` and used everywhere.
+Plus one header: `include/encore.h` — the entire cross-file contract.
+There is one global, `EncoreState g_emu`, defined in `main.c` and
+used everywhere.
 
 ## Process model
 

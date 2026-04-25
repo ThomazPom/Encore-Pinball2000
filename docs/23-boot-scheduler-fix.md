@@ -49,7 +49,7 @@ C6 05 <addr32> 01   ; MOV byte ptr [clkruns], 1
 EB FE               ; JMP $  ← patched out
 ```
 
-`apply_sgc_patches()` (`src/io.c:511`) scans the range `0x200000`–
+`apply_sgc_patches()` (`src/io.c`) scans the range `0x200000`–
 `0x400000` for this 9-byte pattern. When found, it overwrites the
 `EB FE` with `F4 EB FD` (`HLT; JMP -3`):
 
@@ -66,7 +66,7 @@ fires normally on the next tick.
 
 Internal bug-tracker numbering used during development. BT-74 was the
 74th recorded behavioural fix. The designation is kept in comments for
-cross-reference with the git history (`src/io.c:542`).
+cross-reference with the git history (`src/io.c`).
 
 ## Effect on every bundle
 
@@ -89,7 +89,7 @@ and is therefore unaffected. See [38-known-limitations.md](38-known-limitations.
 addresses for SWE1 V1.12 (`clkruns`, `pstate`, `sched_en`, `tick_init`).
 It was deleted in the 2026-04-21 minimisation pass after BT-74 proved
 sufficient. The function is commemorated in a comment block at
-`src/io.c:587` so the git-bisect history remains traceable.
+`src/io.c` so the git-bisect history remains traceable.
 
 ## Cross-references
 

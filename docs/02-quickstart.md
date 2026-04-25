@@ -70,7 +70,7 @@ cd encore
 make                                  # produces ./build/encore
 ```
 
-The build is a single non-parallel invocation of `gcc` over thirteen C
+The build is a single non-parallel invocation of `gcc` over the C
 sources. It typically finishes in a few seconds on a modern machine and
 produces an 800 KB stripped binary. There are no generated files, no
 autoconf, no meson, no per-distro configuration step. See

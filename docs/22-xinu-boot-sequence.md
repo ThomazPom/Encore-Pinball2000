@@ -111,14 +111,14 @@ if (!g_emu.xinu_ready) {
 ```
 
 The "XINU" string is detected by the UART receive hook in `io.c`
-(`src/io.c:1254`). The 50-batch delay lets XINU finish its own startup
+(`src/io.c`). The 50-batch delay lets XINU finish its own startup
 before the first IRQ0 is injected into the IDT handler.
 
 ## Cross-references
 
 * XINU ready flag: `include/encore.h` — `xinu_ready`, `xinu_booted`
 * nulluser patch: `src/io.c` — `apply_sgc_patches`, BT-74 block
-* prnull stub: `src/io.c:499`
+* prnull stub: `src/io.c`
 * Scheduler discovery: [23-boot-scheduler-fix.md](23-boot-scheduler-fix.md)
 * IRQ injection and PIC: [16-irq-pic.md](16-irq-pic.md)
 * VBLANK timing: [17-vblank.md](17-vblank.md)

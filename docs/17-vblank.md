@@ -18,7 +18,7 @@ guest's programmed refresh rate.
 
 ## The wall-clock generator
 
-In `src/cpu.c:523-547`:
+In `src/cpu.c`:
 
 ```c
 static uint64_t last_vsync_ns = 0;

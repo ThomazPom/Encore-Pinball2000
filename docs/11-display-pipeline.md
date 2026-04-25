@@ -3,7 +3,7 @@
 Encore's video path is a straight line: guest MediaGX framebuffer →
 `display_update()` → host ARGB buffer → SDL texture → window.
 
-Source: `src/display.c` (595 lines).
+Source: `src/display.c`.
 
 > **Status:** Behaviour described here is based on emulator testing
 > only. Real-cabinet validation is pending — see

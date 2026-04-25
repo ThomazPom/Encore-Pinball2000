@@ -106,14 +106,10 @@ to whatever interests you.
 
 ## Conventions
 
-* Every file reference is a repository-relative path (`src/io.c:443` means
-  line 443 of `src/io.c` in this checkout).
+* Every file reference is a repository-relative path (`src/io.c`).
+  Line numbers are deliberately omitted — they go stale the instant
+  code moves; refer to functions or features by name instead.
 * Guest physical addresses are always hex with `0x` prefix; host
   pointers are avoided in docs because they are meaningless across runs.
 * Code excerpts are copied verbatim from the current checkout. When the
   code changes, update the doc in the same commit.
-
-## Authorship
-
-The project is maintained by a single developer. The commit history,
-including any trailers, is the ground truth for attribution.

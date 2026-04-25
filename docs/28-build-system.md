@@ -19,7 +19,7 @@ There is no `install` target; copy `build/encore` wherever you like.
 
 ## Source files
 
-All fourteen C compilation units are listed explicitly (no glob):
+All C compilation units are listed explicitly (no glob):
 
 ```
 src/main.c       # CLI, config YAML, wiring
