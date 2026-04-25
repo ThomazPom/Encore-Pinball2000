@@ -792,6 +792,40 @@ static inline uint64_t pdb_now_ns(void)
     return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
 }
 
+/* Forensic side-channel tracer — emit one CSV row per bus event that
+ * lands in retrieve_rendering_status / process_data_command. Gated by
+ * the ENCORE_PDB_TRACE_CSV env var so it costs nothing in normal runs.
+ * Format matches lpt_emu_v2's [bus-evt] log so the two traces can be
+ * diffed directly to compare Encore-emulating-SWE1 against an
+ * external host running the same ROM on the same logical wire. */
+static FILE *s_pdb_trace_fp   = NULL;
+static int   s_pdb_trace_init = 0;
+static uint64_t s_pdb_trace_t0 = 0;
+
+static void pdb_trace_open_once(void)
+{
+    if (s_pdb_trace_init) return;
+    s_pdb_trace_init = 1;
+    const char *p = getenv("ENCORE_PDB_TRACE_CSV");
+    if (!p || !*p) return;
+    s_pdb_trace_fp = fopen(p, "w");
+    if (!s_pdb_trace_fp) return;
+    setvbuf(s_pdb_trace_fp, NULL, _IOLBF, 0);
+    fprintf(s_pdb_trace_fp, "us_delta,dir,reg,value\n");
+}
+
+static void pdb_trace_emit(char dir, uint8_t reg, uint8_t val)
+{
+    if (!s_pdb_trace_init) pdb_trace_open_once();
+    if (!s_pdb_trace_fp) return;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    uint64_t now = (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
+    if (s_pdb_trace_t0 == 0) s_pdb_trace_t0 = now;
+    fprintf(s_pdb_trace_fp, "%llu,%c,0x%02X,0x%02X\n",
+            (unsigned long long)(now - s_pdb_trace_t0), dir, reg, val);
+}
+
 /* Mirrors P2K calculateBitwiseSumBasedOnInput */
 static int calc_bitwise_sum(uint8_t val)
 {
@@ -940,12 +974,14 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
         break;
     default: result = 0x00; break;
     }
+    pdb_trace_emit('R', opcode, result);
     return result;
 }
 
 /* i386 POC process_data_command — verbatim copy */
 static void process_data_command(uint8_t opcode, uint8_t data)
 {
+    pdb_trace_emit('W', opcode, data);
     switch (opcode) {
     case 0x05:
         s_rendering_data_val = data; s_data_flag1 = 1;
