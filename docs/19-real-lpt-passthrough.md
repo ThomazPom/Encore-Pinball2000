@@ -69,10 +69,18 @@ unrelated reasons.
 
 `--lpt-device` selects the backend by argument format:
 
-| Argument | Backend | Privilege | Per-byte cost | When to use |
+| Argument | Backend | Privilege | Per-byte cost (host) | When to use |
 |---|---|---|---|---|
-| `/dev/parport0` (path) | ppdev | unprivileged (`lp` group) | ~1–3 µs (ioctl + driver) | Default. Simplest install. |
-| `0x378` (hex/decimal base) | raw `inb`/`outb` | needs `CAP_SYS_RAWIO` (root or one-time `setcap`) | one x86 instruction (~50 ns) | Real cabinets where ppdev pacing isn't tight enough. |
+| `/dev/parport0` (path) | ppdev | unprivileged (`lp` group) | ~1–3 µs (ioctl + driver) | Default. Simplest install, no `setcap` dance, plays nice with udev. |
+| `0x378` (hex/decimal base) | raw `inb`/`outb` | needs `CAP_SYS_RAWIO` (root or one-time `setcap`) | one x86 instruction (~50 ns) | When ppdev is unavailable (no `parport_pc`, custom kernel) or you want to bypass the kernel driver entirely for tracing. |
+
+> **Note on per-byte cost.** Don't pick a backend on these numbers.
+> Even the slow path (ppdev at ~3 µs/byte) is more than an order of
+> magnitude faster than the cabinet driver board's settling window
+> (~80 µs minimum, see `--lpt-bus-pace` below). Whatever the host
+> backend saves, we pad back out so the level shifters get a stable
+> bus. The two backends differ in install ergonomics and tracing,
+> not in correctness or wire speed.
 
 To use the raw backend without sudo:
 
@@ -83,8 +91,9 @@ sudo setcap cap_sys_rawio+ep ./build/encore   # one-time, persists
 
 The raw backend additionally claims port `0x80` (legacy POST/diagnostic
 port) for sub-µs I/O delay between strobes (`outb 0,0x80` ≈ 1 µs on
-stock chipsets). If `ioperm(0x80,…)` fails, encore continues; only the
-fine-grained delay is lost.
+stock chipsets). With `--lpt-bus-pace` doing the millisecond-scale
+pacing this is mostly cosmetic, but the call is harmless if it
+succeeds and a no-op if it doesn't.
 
 The raw backend does **not** care whether `parport_pc` or `lp` is
 loaded — it talks to the I/O bus directly, bypassing both. You still
