@@ -115,6 +115,5 @@ to whatever interests you.
 
 ## Authorship
 
-The entire project — code, documentation, tooling — is the work of a
-single developer. There is no team, no corporate backer, no AI coauthor.
-The commit history is the ground truth for attribution.
+The project is maintained by a single developer. The commit history,
+including any trailers, is the ground truth for attribution.
