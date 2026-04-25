@@ -83,24 +83,27 @@ needed.
 
 ## Boot behaviour differences
 
-### SWE1 v1.5 and v2.1
+### SWE1 v1.5 and v2.10
 
-Both boot to attract mode in `bar4-patch` mode. SWE1 v1.5 is also the
-only bundle observed to reach DCS audio under emulation via `io-handled` mode (natural
-probe path).
+Both boot to attract mode under the default `io-handled` mode and
+under the legacy `bar4-patch` mode.
 
-### RFM v1.6, v1.8, v2.5, v2.6
+### RFM v1.6, v1.8, v2.50, v2.60
 
-All four reach attract mode in `bar4-patch` mode. The `io-handled` path
-boots graphics but is audio-silent due to the natural probe returning 0
-on these bundles (the watchdog scribble value must be carefully aligned
-for the probe to succeed; see [13-dcs-mode-duality.md](13-dcs-mode-duality.md)).
+All four boot to attract mode under both `io-handled` (default) and
+`bar4-patch`. Earlier notes claimed the `io-handled` path was
+audio-silent on these bundles; that was true before the staged
+watchdog-scribble fix landed. With staged scribble (see
+[13-dcs-mode-duality.md](13-dcs-mode-duality.md)) the natural probe
+succeeds post-`xinu_ready` and DCS writes fire.
 
 ### RFM v1.2 (1999)
 
-The oldest known bundle. It uses r1 chip ROMs and a pre-XINU codebase.
-It reaches a crash state before XINU `sysinit` completes. Serial output
-is visible; the crash is documented in
+The oldest known bundle. Uses r1 chip ROMs and a pre-XINU codebase.
+With the r2-chip default and staged-scribble fix it now reaches attract
+mode under both DCS modes, but it lives below the chip-ROM baseline
+and is treated as reference-only by the loader; see
+[26-testing-bundle-matrix.md](26-testing-bundle-matrix.md) and
 [38-known-limitations.md](38-known-limitations.md).
 
 ## game_id auto-detection

@@ -37,8 +37,10 @@ used everywhere.
 
 Encore is single-threaded-ish. There is one Unicorn thread (the main
 thread); `SDL_mixer` and the kernel ppdev driver spawn their own
-helpers internally, but we do not manage them. No `pthread_create`
-calls exist in the repository.
+helpers internally, but we do not manage them. The only `pthread_create`
+we own is in `src/sound.c`, which kicks off the SDL_mixer / `Mix_OpenAudio`
+init off the main thread so a slow audio device does not stall boot.
+Once it joins, audio runs through SDL_mixer's own thread.
 
 The main thread alternates between three kinds of work:
 
