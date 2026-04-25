@@ -766,6 +766,32 @@ static int     s_enter_pulse = 0;
  * probe-bit OR to the column actually being polled. */
 extern int g_probe_col;
 
+/* ---- PDB watchdog / SOL_D state model (docs/51 §3 + §5.8) -------------
+ * The 555 blanking watchdog on the real Power Driver Board is retriggered
+ * by every write to index register 0x05 (SW_COL). If the PC stops writing
+ * 0x05 for longer than the 555's RC time constant (~2.5 ms documented,
+ * board-to-board variation), BLANKING asserts and SW_SYS (0x0F) bit 6
+ * (BLANKING_OK) drops to 0. We model the timer in software so the
+ * emulated path behaves like a real cabinet for guests that poll 0x0F
+ * looking for the watchdog state.
+ *
+ * SOL_D (0x0D) bits 4 and 5 are the Health LED and the +50 V coil-power
+ * relay respectively — the safest visible-feedback writes per doc 51 §5.8.
+ * We track their current latched state and log transitions so an operator
+ * running --lpt-device none still sees "Health LED ON" / "+50 V relay
+ * engaged" when the guest exercises them. */
+#define PDB_WATCHDOG_GAP_NS  (2500ULL * 1000ULL)   /* 2.5 ms — doc 51 §3 */
+static uint64_t s_pdb_last_05_write_ns = 0;
+static uint8_t  s_pdb_health_led       = 0;
+static uint8_t  s_pdb_relay_50v        = 0;
+
+static inline uint64_t pdb_now_ns(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+}
+
 /* Mirrors P2K calculateBitwiseSumBasedOnInput */
 static int calc_bitwise_sum(uint8_t val)
 {
@@ -879,10 +905,31 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
      * These are auxiliary status reads (data flags / strobe).
      * Returning a constant 0xFF here causes the game to read phantom
      * switch/volume bits as active. */
-    case 0x0F:
-        result = (s_data_flag1 << 6) | (s_data_bit6 << 7);
-        s_data_bit6 = !s_data_bit6;
+    case 0x0F: {
+        /* SW_SYS (doc 51 §3):
+         *   bit 6 = BLANKING_OK — set if a write to SW_COL (0x05) landed
+         *           within the watchdog window. Drops to 0 if the guest
+         *           stops scanning the switch matrix.
+         *   bit 7 = zero-cross latch. Cleared on read. We toggle it on
+         *           every poll so the guest sees alternating values
+         *           (close enough to the 100/120 Hz mains-derived strobe
+         *           for the boot path; the coil-firing scheduler does
+         *           not run in the emulated-only mode).
+         * The historic s_data_flag1 path (sticky "saw any 0x05 write")
+         * is preserved as a fallback before the first guest 0x05 write
+         * lands so early polls don't see BLANKING_OK=0 and bail out. */
+        uint8_t bok;
+        if (s_pdb_last_05_write_ns == 0) {
+            bok = s_data_flag1;        /* boot grace period */
+        } else {
+            uint64_t now = pdb_now_ns();
+            uint64_t gap = now - s_pdb_last_05_write_ns;
+            bok = (gap < PDB_WATCHDOG_GAP_NS) ? 1u : 0u;
+        }
+        result = (uint8_t)((bok << 6) | (s_data_bit6 << 7));
+        s_data_bit6 = !s_data_bit6;    /* zero-cross latch clear-on-read */
         break;
+    }
     case 0x10:
     case 0x11:
         result = s_data_bit6 ? 0x00 : 0xFF;
@@ -902,6 +949,10 @@ static void process_data_command(uint8_t opcode, uint8_t data)
     switch (opcode) {
     case 0x05:
         s_rendering_data_val = data; s_data_flag1 = 1;
+        /* SW_COL keepalive — every write retriggers the on-board 555
+         * blanking watchdog (doc 51 §3). Stamp the timestamp so a 0x0F
+         * read can compute the real watchdog gap. */
+        s_pdb_last_05_write_ns = pdb_now_ns();
         break;
     case 0x06: s_data_val2 = data; break;
     case 0x07: s_data_val3 = data; break;
@@ -922,6 +973,21 @@ static void process_data_command(uint8_t opcode, uint8_t data)
         s_data_flag2 = (data & 0x20) >> 5;
         s_data_bit6  = (data & 0x80) >> 7;
         s_data_flag7 = s_data_flag2 ? (s_data_flag7 | (data & 0x0F)) : 0;
+        /* SOL_D bit 4 = Health LED, bit 5 = +50 V coil-power relay
+         * (doc 51 §5.8). Log transitions so operators running
+         * --lpt-device none still see the visible-feedback writes the
+         * guest performs during boot/test. */
+        uint8_t new_led   = new_bit4;
+        uint8_t new_relay = (uint8_t)((data & 0x20) >> 5);
+        if (new_led != s_pdb_health_led) {
+            s_pdb_health_led = new_led;
+            LOG("lpt", "PDB Health LED %s\n", new_led ? "ON" : "OFF");
+        }
+        if (new_relay != s_pdb_relay_50v) {
+            s_pdb_relay_50v = new_relay;
+            LOG("lpt", "PDB +50V coil relay %s\n",
+                new_relay ? "ENGAGED (click)" : "DISENGAGED");
+        }
         break;
     }
     }
@@ -1059,6 +1125,12 @@ void lpt_activate(void)
     s_data_flag2 = 0;
     s_data_bit4 = 0;
     s_data_bit6 = 0;
+
+    /* PDB model state — fresh on every (re)activation so a re-detect
+     * doesn't carry stale watchdog timing or LED/relay levels across. */
+    s_pdb_last_05_write_ns = 0;
+    s_pdb_health_led       = 0;
+    s_pdb_relay_50v        = 0;
 
     /* Idle = 0x00 across the matrix scan store. Coin door starts CLOSED
      * so the "OPEN COIN DOOR" overlay is gone and play is enabled. F4
