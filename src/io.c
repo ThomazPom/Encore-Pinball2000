@@ -1080,7 +1080,10 @@ static void process_data_command(uint8_t opcode, uint8_t data)
         uint8_t new_relay = (uint8_t)((data & 0x20) >> 5);
         if (new_led != s_pdb_health_led) {
             s_pdb_health_led = new_led;
-            LOG("lpt", "PDB Health LED %s\n", new_led ? "ON" : "OFF");
+            /* Health-LED toggles ~1 Hz forever once boot completes.
+             * Demoted to LOGV: the first transition is interesting,
+             * the next 137 in a 60 s run are pure noise. -v shows them. */
+            LOGV("lpt", "PDB Health LED %s\n", new_led ? "ON" : "OFF");
         }
         if (new_relay != s_pdb_relay_50v) {
             s_pdb_relay_50v = new_relay;
@@ -1497,6 +1500,15 @@ static void uart_write(uint16_t port, uint8_t val)
                             strstr(g_emu.uart_buf, "XINA") != NULL ||
                             strstr(g_emu.uart_buf, "XINU") != NULL ||
                             strstr(g_emu.uart_buf, "monitor commands") != NULL);
+                    /* XINU pedantry: clkint legitimately calls resched on
+                     * preempt ticks; XINU prints this NonFatal whenever
+                     * resched runs while its in-interrupt-handler flag
+                     * ([0x002f7d98]) is set. Confirmed cosmetic — not a
+                     * real fault. Mute at default verbosity to keep the
+                     * UART stream readable. -vv shows it again. */
+                    if (show && strstr(g_emu.uart_buf,
+                            "resched: called from interrupt handler") != NULL)
+                        show = false;
                 }
                 if (!show) {
                     LOGV2("uart", "%s", g_emu.uart_buf);
