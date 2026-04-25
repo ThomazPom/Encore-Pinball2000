@@ -29,7 +29,7 @@ When `--update FILE` is given, `main.c` reads four bytes at offset
 once the binary is mapped at guest base `0x8000`):
 
 ```c
-/* src/main.c:203 */
+/* src/main.c */
 if (fseek(f, 0x3C, SEEK_SET) == 0 && fread(&gid, 4, 1, f) == 1) {
     if (gid == 50069u)       → prefix = "swe1"
     else if (gid == 50070u)  → prefix = "rfm"
@@ -42,7 +42,7 @@ When resolving a version token like `1.5` the directory scan looks for
 `pin2000_50069_0150_*` (SWE1) or `pin2000_50070_0150_*` (RFM).
 
 ```c
-/* src/main.c:82 */
+/* src/main.c */
 if (strcmp(g_emu.game_prefix, "swe1") == 0) want_gid = "50069";
 else if (strcmp(g_emu.game_prefix, "rfm") == 0) want_gid = "50070";
 ```
@@ -50,13 +50,13 @@ else if (strcmp(g_emu.game_prefix, "rfm") == 0) want_gid = "50070";
 ### 2. LPT board auto-detect (real-cabinet mode)
 
 When `--lpt-device` opens a physical parallel-port device,
-`lpt_passthrough_detect_game()` (`src/lpt_pass.c:268`) bit-bangs a
+`lpt_passthrough_detect_game()` (`src/lpt_pass.c`) bit-bangs a
 three-register probe sequence ported from the original P2K driver. The
 board responds differently depending on which title's playfield is
 connected, and the function returns `"swe1"` or `"rfm"` accordingly.
 
 ```c
-/* src/main.c:785 */
+/* src/main.c */
 if (lpt_passthrough_detect_game(detected, sizeof(detected)) == 0) {
     LOG("init", "LPT board auto-detect → %s\n", detected);
     strncpy(g_emu.game_prefix, detected, ...);
@@ -69,7 +69,7 @@ present because the cabinet wiring is authoritative.
 ### 3. Default fallback
 
 If neither a bundle file nor a real LPT board is available, the prefix
-defaults to `"swe1"` (`src/main.c:799`). SWE1 is the more common
+defaults to `"swe1"` (`src/main.c`). SWE1 is the more common
 installation at the time of writing and is used as the developer's
 daily-driver title.
 

@@ -6,7 +6,7 @@ containing a plain symbol table. Williams used it internally for
 post-mortem analysis; Encore uses it at runtime to avoid hard-coding
 bundle-specific addresses.
 
-Source: `src/symbols.c` (207 lines), offline dumper:
+Source: `src/symbols.c`, offline dumper:
 `tools/sym_dump.py`.
 
 ## File format

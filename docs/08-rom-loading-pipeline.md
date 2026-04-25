@@ -5,7 +5,7 @@ card, plus an optional "update" flash image burned by the service tool.
 Encore loads both from the host filesystem and assembles them into the
 guest memory map.
 
-Source of truth: `src/rom.c` (963 lines).
+Source of truth: `src/rom.c`.
 
 > **Status:** Behaviour described here is based on emulator testing
 > only. Real-cabinet validation is pending — see

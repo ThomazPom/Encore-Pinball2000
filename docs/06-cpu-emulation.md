@@ -5,7 +5,7 @@ inside **Unicorn Engine 2.x**, which is itself a stripped-down QEMU
 TCG packaged as a library. This document covers only the wrapper
 logic around Unicorn that turns "an i386 JIT" into "a PC".
 
-Source of truth: `src/cpu.c`, 1203 lines.
+Source of truth: `src/cpu.c`.
 
 > **Status:** Behaviour described here is based on emulator testing
 > only. Real-cabinet validation is pending — see

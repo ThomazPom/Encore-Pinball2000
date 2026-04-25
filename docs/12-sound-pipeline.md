@@ -7,7 +7,7 @@ Encore's audio subsystem has two jobs:
 2. When a command-stream request arrives, play back a matching
    WAV-encoded sample through SDL2_mixer.
 
-Source: `src/sound.c` (537 lines).
+Source: `src/sound.c`.
 
 > **Status:** Behaviour described here is based on emulator testing
 > only. Real-cabinet validation is pending — see

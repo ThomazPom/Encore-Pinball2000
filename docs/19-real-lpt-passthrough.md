@@ -4,7 +4,7 @@ Encore can drive an actual Pinball 2000 cabinet driver board through
 the host machine's parallel port. This doc covers everything needed
 to set it up and the design choices behind the implementation.
 
-Source: `src/lpt_pass.c` (343 lines), also the `--lpt-device` CLI flag.
+Source: `src/lpt_pass.c`, also the `--lpt-device` CLI flag.
 
 > **Status:** Behaviour described here is based on emulator testing
 > only. Real-cabinet validation is pending — see

@@ -118,7 +118,7 @@ scancodes (right-side `Ctrl`, `Alt`, some navigation keys) are mapped
 in the scancode table but the E0 prefix byte is not injected. Only the
 bare scancode is sent. This means `RCtrl` and `RAlt` arrive as `LCtrl`
 and `LAlt` on the guest side. This is noted in the `--help` text
-(`src/main.c:381`).
+(`src/main.c`).
 
 ---
 

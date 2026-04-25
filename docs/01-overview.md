@@ -46,8 +46,8 @@ The goal is **authenticity through simplicity**:
    every LPT access to a physical Pinball 2000 driver board. The
    emulated switch matrix falls silent so the real playfield owns the
    I/O.
-4. **Small, legible, hackable.** ≈ 8 000 lines of C across thirteen files.
-   Any technically-minded contributor should be able to read the entire
+4. **Small, legible, hackable.** Compact C codebase. Any
+   technically-minded contributor should be able to read the entire
    source in an afternoon.
 
 ## 10 000-foot architecture
