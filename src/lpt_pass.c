@@ -129,17 +129,16 @@ static uint64_t s_lpt_calls = 0;
 static uint64_t s_lpt_ns_total = 0;
 
 /* Blanking-watchdog gap detector — purely diagnostic, opt-in via -vv.
- * The documented PB2K driver-board protocol (see docs/48-…) requires the
- * Switch-Column register (P2K index 0x05) to be strobed within ~2.5 ms or
- * on-board blanking is asserted and all power outputs go dark. We can't
- * decode the index sequence from outside without state, but every documented
- * write sequence starts with a data-port write to base+0. So a long gap
- * between consecutive data-port writes is a strong proxy for "guest is not
- * keeping the watchdog fed". One-shot warning so we don't spam if the gap
- * keeps recurring. */
+ * The documented PB2K driver-board protocol (see docs/48-… and docs/51-…)
+ * requires the Switch-Column register (P2K bus index 0x05) to be strobed
+ * within ~2.5 ms or the on-board 555-based blanking circuit asserts and all
+ * power outputs go dark. We track the gap between actual *bus-decoded*
+ * writes to register 0x05 (not raw LPT data-port writes — every bus cycle
+ * does 2+ of those, so that proxy is meaningless). One-shot warning to
+ * avoid spamming if the gap keeps recurring; re-armed at activation. */
 #define LPT_BLANKING_WARN_NS  (2500ull * 1000ull)   /* 2.5 ms */
-static uint64_t s_last_data_write_ns = 0;
-static int      s_blanking_warned    = 0;
+static uint64_t s_last_reg_05_write_ns = 0;
+static int      s_blanking_warned      = 0;
 
 #ifdef __linux__
 static inline uint64_t lpt_now_ns(void)
@@ -164,30 +163,31 @@ static inline void lpt_sample_account(uint64_t start_ns)
     }
 }
 
-/* Update + check blanking-window gap. Call from every guest write to LPT
- * data port (base+0). One-shot warn at -vv when gap >2.5 ms — the documented
- * threshold at which the on-board blanking circuit kills outputs. */
-static inline void lpt_blanking_check(void)
+/* Update + check blanking-window gap. Called from the bus decoder on every
+ * decoded WRITE to bus register 0x05 (SW_COL — the watchdog keepalive
+ * line). One-shot warn at -vv when the gap exceeds the documented ~2.5 ms
+ * threshold; re-armed by lpt_bus_decode_reset() at activation. */
+static inline void lpt_blanking_check(uint64_t now_ns)
 {
     if (g_log_level < 2) return;   /* zero-overhead at default verbosity */
-    uint64_t now = lpt_now_ns();
-    if (s_last_data_write_ns != 0 && !s_blanking_warned) {
-        uint64_t gap = now - s_last_data_write_ns;
+    if (s_last_reg_05_write_ns != 0 && !s_blanking_warned) {
+        uint64_t gap = now_ns - s_last_reg_05_write_ns;
         if (gap > LPT_BLANKING_WARN_NS) {
             LOGV2("lpt",
-                  "WARNING: %.2f ms gap between LPT data writes — exceeds the "
-                  "~2.5 ms PB2K blanking window; outputs may have been disabled "
-                  "on a real cabinet (see docs/48-lpt-protocol-references.md)\n",
+                  "WARNING: %.2f ms since last bus write to reg 0x05 "
+                  "(SW_COL / watchdog keepalive) — exceeds the ~2.5 ms PB2K "
+                  "blanking window; outputs may have been disabled on a real "
+                  "cabinet (see docs/48 §5, docs/51 §3)\n",
                   (double)gap / 1.0e6);
             s_blanking_warned = 1;
         }
     }
-    s_last_data_write_ns = now;
+    s_last_reg_05_write_ns = now_ns;
 }
 #else
 static inline uint64_t lpt_now_ns(void) { return 0; }
 static inline void lpt_sample_account(uint64_t start_ns) { (void)start_ns; }
-static inline void lpt_blanking_check(void) {}
+static inline void lpt_blanking_check(uint64_t now_ns) { (void)now_ns; }
 #endif
 
 /* === Trace helpers ===
@@ -207,6 +207,157 @@ static inline void lpt_trace_cycle(char dir, uint8_t reg, uint8_t val)
     (void)dir; (void)reg; (void)val;
 #endif
 }
+
+/* === P2K driver-board bus decoder ===
+ *
+ * Reconstructs documented P2K bus events (writes/reads of board registers
+ * 0x00..0x11) from the raw LPT byte stream. Driven from the same lpt_trace
+ * call sites so it sees every cycle. The protocol is the same one
+ * implemented in bus_write/bus_read further down (the auto-detect path) and
+ * documented in docs/48 §4–5 + docs/51 §2:
+ *
+ *   bus_write(addr, val) = DATA←addr, CTL←0, [≥80µs], CTL←4 (addr latch),
+ *                          DATA←val,  CTL←5 (data strobe), [≥80µs], CTL←4
+ *   bus_read(addr)       = DATA←addr, CTL←0, [≥80µs], CTL←4 (addr latch),
+ *                          CTL←0x2D (read arm: bit5=DIR-in + bit0=STROBE),
+ *                          [≥80µs], inb(DATA), CTL←4
+ *
+ * Edge rules (executed inside lpt_bus_decode on every cycle):
+ *   - W,0 → buffer the data, mark "fresh data pending"
+ *   - W,2 → look at CTL transitions vs s_bus_ctl_prev:
+ *       * bit 2 (INIT) 0→1 with bit 0 still 0  → addr latched: addr = buf
+ *       * bit 5 (DIR) becomes set              → read arm: consume next R,0
+ *                                                 (and suppress the bit-0
+ *                                                  rise that 0x2D contains —
+ *                                                  it is NOT a data strobe)
+ *       * bit 0 (STROBE) 0→1 with no read arm
+ *         and addr_valid and fresh data        → emit BUS_W addr,buf
+ *   - R,0 with read_pending → emit BUS_R addr,val
+ *
+ * Per-register write/read counters dumped at -vv on close. The bus-decoded
+ * BUS_W to register 0x05 (SW_COL/watchdog feed) feeds lpt_blanking_check()
+ * to detect real watchdog-feed gaps — the previous "any data-port write"
+ * proxy was meaningless because every bus cycle does 2+ such writes.
+ *
+ * State is reset on lpt_passthrough_open() AND on lpt_passthrough_reset_pulse()
+ * (i.e. at the guest-handoff boundary, after the boot auto-detect probe has
+ * scribbled all over the bus). Counters reset at the same boundary so they
+ * report "since guest activation", not "since process start". */
+
+#define LPT_BUS_REG_MAX 32
+
+static FILE    *s_bus_trace_fp     = NULL;
+static uint64_t s_bus_trace_events = 0;
+
+static uint8_t  s_bus_data_buf      = 0;
+static int      s_bus_data_dirty    = 0;
+static uint8_t  s_bus_addr          = 0;
+static int      s_bus_addr_valid    = 0;
+static uint8_t  s_bus_ctl_prev      = 0;
+static int      s_bus_read_pending  = 0;
+
+static uint64_t s_bus_w_count[LPT_BUS_REG_MAX];
+static uint64_t s_bus_r_count[LPT_BUS_REG_MAX];
+
+static void lpt_bus_decode_reset(void)
+{
+    s_bus_data_buf      = 0;
+    s_bus_data_dirty    = 0;
+    s_bus_addr          = 0;
+    s_bus_addr_valid    = 0;
+    s_bus_ctl_prev      = 0;
+    s_bus_read_pending  = 0;
+    s_last_reg_05_write_ns = 0;
+    s_blanking_warned   = 0;
+    memset(s_bus_w_count, 0, sizeof s_bus_w_count);
+    memset(s_bus_r_count, 0, sizeof s_bus_r_count);
+}
+
+#ifdef __linux__
+static inline void lpt_bus_emit(char dir, uint8_t reg, uint8_t val)
+{
+    uint8_t r = reg & (LPT_BUS_REG_MAX - 1);
+    if (dir == 'W') s_bus_w_count[r]++;
+    else            s_bus_r_count[r]++;
+
+    if (s_bus_trace_fp) {
+        fprintf(s_bus_trace_fp, "%llu,BUS,%c,0x%02x,0x%02x\n",
+                (unsigned long long)lpt_now_ns(), dir, reg, val);
+        s_bus_trace_events++;
+        if ((s_bus_trace_events & 0x3FF) == 0) fflush(s_bus_trace_fp);
+    }
+}
+
+static inline void lpt_bus_decode(char dir, uint8_t reg, uint8_t val)
+{
+    if (dir == 'W') {
+        if (reg == 0) {
+            s_bus_data_buf   = val;
+            s_bus_data_dirty = 1;
+        } else if (reg == 2) {
+            uint8_t prev = s_bus_ctl_prev;
+            uint8_t now  = val;
+            int addr_latch  = (~prev & now) & 0x04;   /* bit 2 (INIT) 0→1 */
+            int data_strobe = (~prev & now) & 0x01;   /* bit 0 (STROBE) 0→1 */
+            int read_arm    = (now & 0x20) != 0;      /* bit 5 (DIR=in) set */
+
+            if (addr_latch) {
+                s_bus_addr       = s_bus_data_buf;
+                s_bus_addr_valid = 1;
+                s_bus_data_dirty = 0;
+            }
+
+            if (read_arm && s_bus_addr_valid) {
+                /* CTL=0x2D arms a read; the next R,0 on the data port is
+                 * the bus value. The bit-0 rise that 0x2D contains is NOT
+                 * a data strobe — the board is sourcing the bus, not the
+                 * host. Suppress data_strobe handling on this transition. */
+                s_bus_read_pending = 1;
+                s_bus_data_dirty   = 0;
+            } else if (data_strobe && s_bus_addr_valid && s_bus_data_dirty) {
+                uint64_t now_ns = lpt_now_ns();
+                lpt_bus_emit('W', s_bus_addr, s_bus_data_buf);
+                if (s_bus_addr == 0x05) lpt_blanking_check(now_ns);
+                s_bus_data_dirty = 0;
+            }
+            s_bus_ctl_prev = now;
+        }
+    } else {  /* dir == 'R' */
+        if (reg == 0 && s_bus_read_pending && s_bus_addr_valid) {
+            lpt_bus_emit('R', s_bus_addr, val);
+            s_bus_read_pending = 0;
+        }
+    }
+}
+
+static void lpt_bus_decode_dump_counts(void)
+{
+    if (g_log_level < 2) return;
+    uint64_t total_w = 0, total_r = 0;
+    for (int i = 0; i < LPT_BUS_REG_MAX; i++) {
+        total_w += s_bus_w_count[i];
+        total_r += s_bus_r_count[i];
+    }
+    if (total_w == 0 && total_r == 0) return;
+    LOGV2("lpt", "bus decoder summary (since guest activation): "
+                 "%llu writes, %llu reads across %d registers\n",
+          (unsigned long long)total_w, (unsigned long long)total_r,
+          LPT_BUS_REG_MAX);
+    for (int i = 0; i < LPT_BUS_REG_MAX; i++) {
+        if (s_bus_w_count[i] == 0 && s_bus_r_count[i] == 0) continue;
+        LOGV2("lpt", "  reg 0x%02x:  W=%llu  R=%llu\n",
+              i,
+              (unsigned long long)s_bus_w_count[i],
+              (unsigned long long)s_bus_r_count[i]);
+    }
+}
+#else
+static inline void lpt_bus_emit(char dir, uint8_t reg, uint8_t val)
+    { (void)dir; (void)reg; (void)val; }
+static inline void lpt_bus_decode(char dir, uint8_t reg, uint8_t val)
+    { (void)dir; (void)reg; (void)val; }
+static void lpt_bus_decode_dump_counts(void) {}
+#endif
 
 #ifdef __linux__
 /* Raw backend only: arm the SuperI/O ECR (Extended Control Register) at
@@ -357,6 +508,28 @@ static int raw_open(unsigned long base, bool quiet_if_missing)
  * I/O base address (→ raw, requires CAP_SYS_RAWIO). Returns 0 on success,
  * -1 on failure. Caller decides whether failure is fatal (explicit
  * --lpt-device) or a silent fallback (default path attempted, no device). */
+#ifdef __linux__
+static void lpt_bus_trace_open(const char *backend_label)
+{
+    if (!g_emu.lpt_bus_trace_file[0]) return;
+    s_bus_trace_fp = fopen(g_emu.lpt_bus_trace_file, "w");
+    if (!s_bus_trace_fp) {
+        LOG("lpt", "bus-trace: fopen(%s) failed: %s\n",
+            g_emu.lpt_bus_trace_file, strerror(errno));
+        return;
+    }
+    fprintf(s_bus_trace_fp,
+            "# Encore P2K bus-event trace — backend=%s\n"
+            "# format: ns_monotonic,BUS,dir,reg,val\n"
+            "# dir = W (host→board) or R (board→host)\n"
+            "# reg = decoded P2K bus register (0x05=SW_COL/watchdog,\n"
+            "#       0x0D=Health LED+relay, 0x0F=SW_SYS/BLANKING-OK …)\n",
+            backend_label);
+    LOG("lpt", "bus-trace: writing decoded bus events to %s\n",
+        g_emu.lpt_bus_trace_file);
+}
+#endif
+
 int lpt_passthrough_open(const char *device, bool quiet_if_missing)
 {
 #ifndef __linux__
@@ -372,18 +545,24 @@ int lpt_passthrough_open(const char *device, bool quiet_if_missing)
     unsigned long base = 0;
     if (parse_io_base(device, &base)) {
         int rc = raw_open(base, quiet_if_missing);
-        if (rc == 0 && g_emu.lpt_trace_file[0]) {
-            s_trace_fp = fopen(g_emu.lpt_trace_file, "w");
-            if (s_trace_fp) {
-                fprintf(s_trace_fp,
-                        "# Encore LPT passthrough trace — base=raw 0x%lx\n"
-                        "# format: ns_monotonic,dir,reg,val\n", base);
-                LOG("lpt", "trace: writing bus cycles to %s\n",
-                    g_emu.lpt_trace_file);
-            } else {
-                LOG("lpt", "trace: fopen(%s) failed: %s\n",
-                    g_emu.lpt_trace_file, strerror(errno));
+        if (rc == 0) {
+            lpt_bus_decode_reset();
+            if (g_emu.lpt_trace_file[0]) {
+                s_trace_fp = fopen(g_emu.lpt_trace_file, "w");
+                if (s_trace_fp) {
+                    fprintf(s_trace_fp,
+                            "# Encore LPT passthrough trace — base=raw 0x%lx\n"
+                            "# format: ns_monotonic,dir,reg,val\n", base);
+                    LOG("lpt", "trace: writing bus cycles to %s\n",
+                        g_emu.lpt_trace_file);
+                } else {
+                    LOG("lpt", "trace: fopen(%s) failed: %s\n",
+                        g_emu.lpt_trace_file, strerror(errno));
+                }
             }
+            char label[64];
+            snprintf(label, sizeof label, "raw 0x%lx", base);
+            lpt_bus_trace_open(label);
         }
         return rc;
     }
@@ -449,6 +628,12 @@ int lpt_passthrough_open(const char *device, bool quiet_if_missing)
                 g_emu.lpt_trace_file, strerror(errno));
         }
     }
+    {
+        char label[320];
+        snprintf(label, sizeof label, "ppdev dev=%s", device);
+        lpt_bus_trace_open(label);
+    }
+    lpt_bus_decode_reset();
     return 0;
 #endif
 }
@@ -473,6 +658,13 @@ void lpt_passthrough_close(void)
             (unsigned long long)s_trace_cycles, g_emu.lpt_trace_file);
         fclose(s_trace_fp);
         s_trace_fp = NULL;
+    }
+    lpt_bus_decode_dump_counts();
+    if (s_bus_trace_fp) {
+        LOG("lpt", "bus-trace: %llu decoded bus events captured to %s\n",
+            (unsigned long long)s_bus_trace_events, g_emu.lpt_bus_trace_file);
+        fclose(s_bus_trace_fp);
+        s_bus_trace_fp = NULL;
     }
     s_backend = LPT_BK_NONE;
     LOG("lpt", "passthrough released\n");
@@ -539,7 +731,16 @@ void lpt_passthrough_reset_pulse(void)
 
     lpt_passthrough_write(2, 0x04);
 
-    LOGV("lpt", "init pulse: CTL 0x00 → (100µs) → 0x04 (board reset)\n");
+    /* Reset the bus-event decoder + counters at this guest-handoff
+     * boundary. The auto-detect probe above scribbled all over the bus and
+     * populated s_last_reg_05_write_ns, s_bus_w_count[], etc. We want
+     * "since guest activation" semantics from here on so the watchdog-feed
+     * gap detector is meaningful and the per-register counts reflect what
+     * the guest actually did, not what the boot probe did. */
+    lpt_bus_decode_reset();
+
+    LOGV("lpt", "init pulse: CTL 0x00 → (100µs) → 0x04 (board reset); "
+                "bus-event decoder armed for guest activation\n");
 #endif
 }
 
@@ -604,6 +805,7 @@ uint8_t lpt_passthrough_read(uint8_t reg)
     }
     lpt_sample_account(t0);
     lpt_trace_cycle('R', reg, v);
+    lpt_bus_decode('R', reg, v);
     return v;
 #else
     (void)reg;
@@ -620,7 +822,6 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
         unsigned char v = val;
         switch (reg) {
         case 0: /* data port — must be in output mode for the latch to hold */
-            lpt_blanking_check();
             set_dir(0);
             if (ioctl(s_fd, PPWDATA, &v) < 0)
                 LOG("lpt", "PPWDATA failed: %s\n", strerror(errno));
@@ -639,7 +840,6 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
     } else if (s_backend == LPT_BK_RAW) {
         switch (reg) {
         case 0:
-            lpt_blanking_check();
             if (g_emu.lpt_managed_dir) set_dir(0);
             outb(val, s_io_base + 0);
             break;
@@ -676,6 +876,7 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
 
     lpt_sample_account(t0);
     lpt_trace_cycle('W', reg, val);
+    lpt_bus_decode('W', reg, val);
 #else
     (void)reg; (void)val;
 #endif

@@ -228,6 +228,10 @@ static int apply_option(const char *key, const char *value)
         strncpy(g_emu.lpt_trace_file, value, sizeof(g_emu.lpt_trace_file) - 1);
         return 1;
     }
+    if (strcmp(key, "lpt-bus-trace") == 0 && value) {
+        strncpy(g_emu.lpt_bus_trace_file, value, sizeof(g_emu.lpt_bus_trace_file) - 1);
+        return 1;
+    }
     if (strcmp(key, "lpt-purist") == 0) {
         /* Back-compat no-op: verbatim CTL forwarding is now the default
          * for the raw backend. Use --lpt-managed-dir to opt back into the
@@ -587,6 +591,21 @@ print_help:
 "                         what the guest is actually putting on the wire and\n"
 "                         what the board is replying.\n"
 "\n"
+"  --lpt-bus-trace FILE   Capture decoded P2K driver-board bus events to\n"
+"                         FILE. One CSV line per bus cycle:\n"
+"                             ns,BUS,dir,reg,val\n"
+"                         where reg is the documented bus register (0x05 =\n"
+"                         SW_COL/watchdog feed, 0x0D = Health LED + relay,\n"
+"                         0x0F = SW_SYS / BLANKING-OK, etc — see\n"
+"                         docs/48-lpt-protocol-references.md and\n"
+"                         docs/51-power-driver-board.md). The decoder\n"
+"                         reconstructs bus events by watching the LPT byte\n"
+"                         stream for the documented address-latch /\n"
+"                         data-strobe / read-arm sequences. Off by default.\n"
+"                         Independent of --lpt-trace; the two can be used\n"
+"                         together to correlate raw LPT cycles with the\n"
+"                         high-level register writes they encode.\n"
+"\n"
 "  --lpt-managed-dir      Legacy raw-backend mode: Encore strips bit 5 from\n"
 "                         every guest CTL write and toggles it itself around\n"
 "                         data-port reads. The default (verbatim) matches\n"
@@ -604,21 +623,20 @@ print_help:
 "  --lpt-purist           Back-compat alias accepted but no-op: verbatim CTL\n"
 "                         forwarding is now the raw backend's default.\n"
 "\n"
-"  --lpt-bus-pace auto|N  Microseconds of busywait inserted after every CTL\n"
-"                         register write and before every DATA read of a\n"
-"                         read-strobe sequence. The cabinet driver board\n"
-"                         needs settling time between bus transitions; the\n"
-"                         host emulator otherwise hammers the wire faster\n"
-"                         than the level shifters can react, which causes\n"
-"                         relay chatter and garbled reads.\n"
-"                         auto (default): 0 µs when no real board is\n"
-"                                         detected (no overhead for emulated\n"
-"                                         users), 200 µs once a board is\n"
-"                                         detected on the wire.\n"
-"                         0:              disable pacing entirely (current\n"
-"                                         behaviour pre-flag).\n"
-"                         N (1..100000):  use exactly N microseconds.\n"
-"                         Try 200, 400, 800 for problem cabinets.\n"
+"  --lpt-bus-pace auto|N  Microseconds of busywait inserted before every\n"
+"                         DATA read of a read-strobe sequence — the moment\n"
+"                         the cabinet driver board drives the bus. Useful\n"
+"                         only on boards whose level shifters can't keep up\n"
+"                         with the guest XINA's natural iodelay pacing.\n"
+"                         auto (default): 0 µs. The original guest already\n"
+"                                         clocks the bus via XINA iodelay\n"
+"                                         loops; adding host-side busywait\n"
+"                                         on top stacks delay and starves\n"
+"                                         the JIT (1 ms wallclock per ms\n"
+"                                         of guest time → 2-FPS slideshow).\n"
+"                         N (1..100000):  use exactly N microseconds. Try\n"
+"                                         80, 200, 400 if your cabinet shows\n"
+"                                         garbled reads or relay chatter.\n"
 "\n"
 "════════════════════════════════════════════════════════════════════════\n"
 " Maybe-fun future ideas (not implemented — left as bread crumbs)\n"
@@ -860,7 +878,7 @@ static void cleanup_and_save(void)
 int main(int argc, char **argv)
 {
     memset(&g_emu, 0, sizeof(g_emu));
-    g_emu.lpt_bus_pace_us = -1;        /* -1 = auto: 0 µs without real board, 200 µs with */
+    g_emu.lpt_bus_pace_us = -1;        /* -1 = auto: 0 µs (trust guest XINA iodelay; opt-in N for boards that need help) */
     print_banner();
     parse_args(argc, argv);
 

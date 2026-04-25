@@ -267,6 +267,8 @@ typedef struct {
     char     lpt_device[256];         /* passthrough device path; "" = default, "none" = force emulation */
     bool     lpt_device_explicit;     /* user gave --lpt-device → fail hard if open fails */
     char     lpt_trace_file[512];     /* --lpt-trace FILE: capture every passthrough LPT cycle to disk */
+    char     lpt_bus_trace_file[512]; /* --lpt-bus-trace FILE: capture decoded P2K bus events (addr/data
+                                       *   reconstructed from the LPT byte stream) — see docs/48 §5 */
     bool     lpt_managed_dir;         /* --lpt-managed-dir: legacy mode where Encore rewrites CTL bit 5
                                        *   to track read/write direction. Default OFF: CTL is forwarded
                                        *   verbatim (matches the documented PB2K driver-board protocol
@@ -277,8 +279,9 @@ typedef struct {
      *   sequence. The cabinet driver board's level-shifters need at
      *   least ~80 µs of settling time between transitions; with no
      *   pacing Encore floods the bus and the relay chatters. -1 means
-     *   "auto" (0 µs when no real board is detected, 200 µs when one
-     *   is). 0 forces no pacing. Any other value is taken verbatim. */
+     *   "auto" (0 µs — trust the guest's XINA iodelay loops; opt in
+     *   with --lpt-bus-pace N for boards that need extra settling).
+     *   0 forces no pacing. Any other value is taken verbatim. */
     int      lpt_bus_pace_us;
     bool     update_explicit_none;    /* user gave --update none → skip auto-pick */
     char     update_file[512];        /* explicit update.bin path; empty → default search */
