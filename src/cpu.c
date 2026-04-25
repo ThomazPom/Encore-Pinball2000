@@ -550,8 +550,8 @@ void cpu_run(void)
     /* Initial EIP read — carried across iterations to avoid double-read */
     uc_reg_read(uc, UC_X86_REG_EIP, &eip);
 
-    /* doc 50 — establish the wall-clock origin for cpu-stats / throttle. */
-    if (g_emu.cpu_stats_enabled || g_emu.cpu_target_mhz > 0) {
+    /* doc 50 — wall-clock origin for cpu-stats and (opt-in) realtime throttle. */
+    if (g_emu.cpu_stats_enabled || g_emu.realtime) {
         struct timespec t0;
         clock_gettime(CLOCK_MONOTONIC, &t0);
         s_cpu_run_start_ns = (uint64_t)t0.tv_sec * 1000000000ULL + t0.tv_nsec;
@@ -577,30 +577,26 @@ void cpu_run(void)
         if (pit_div == 0) pit_div = 0xFFFF;
         /* PIT period in guest insns:
          *   pit_period_s = pit_div / 1193182
-         *   target_ips   = cpu_target_mhz * 1e6
+         *   model_ips    = cpu_target_mhz * 1e6
          *
-         * Default 20 MIPS — the trade-off explained:
+         * cpu_target_mhz is now the GUEST CPU MODEL RATE — used purely
+         * as the conversion factor between executed guest instructions
+         * and virtual time. It does NOT throttle the host. Unicorn
+         * always runs as fast as it can; --realtime is a separate,
+         * opt-in wall-clock throttle (off by default).
          *
-         *   Real Cyrix MediaGX 233 ≈ 100–150 MIPS.  Encore's Unicorn-based
-         *   x86 interpreter delivers ~10–20 MIPS on this host (commodity
-         *   PC, no JIT).  At 20 MIPS target with measured ~10 MIPS host:
-         *     - IRQ0 wall-rate ≈ 2000 Hz (vs firmware-programmed 4003 Hz)
-         *     - vt-scale ≈ 0.48× (game time is half wall time)
+         * Default 20 MIPS is a livable game-clock-vs-wall-clock ratio
+         * on commodity Unicorn hosts that deliver ~10 MIPS effective
+         * x86 throughput — the firmware-programmed 4003 Hz IRQ0 maps
+         * to ~2000 Hz wall, vt-scale ≈ 0.5×. Lower (12, 10) makes the
+         * game appear faster but increases per-second IRQ load (the
+         * watchdog-Fatal ceiling on this host is around 4 kHz wall).
+         * Higher (233 = real Cyrix) is the most physically honest
+         * setting, but on a slow host the game crawls.
          *
-         *   Pushing target → 12 MIPS gets vt-scale ≈ 1.00× (real-time
-         *   gameplay) but the 4000 Hz IRQ0 + slow Unicorn combination
-         *   starves resched and Fatals fire (~3/min).  Pushing target →
-         *   50 MIPS is rock-solid but vt-scale drops to 0.11× (game runs
-         *   9× too slow — the user complaint).
-         *
-         *   20 MIPS is the highest setting (= fastest gameplay) that has
-         *   ZERO Fatals across our cold-NVRAM SWE1 boot test set.
-         *
-         * Override at runtime: --cpu-target-mhz N.  Watch the
-         * '[irq] IRQ0 5s: ...' health line: vt-scale should be near 1.00,
-         * eoi/inject should be ≥ 0.95, and resched-in-ISR-suppressed
-         * should stay near zero.  If you push higher and see Fatals,
-         * that's the host budget exhausted, not a logic bug. */
+         * Watch the '[irq] IRQ0 5s' health line: vt-scale labels are
+         * AHEAD / OK / HOST-SLOW / HOST-BEHIND, eoi/inject should be
+         * 1.00, resched-in-ISR-suppressed should stay near 0. */
         uint64_t target_ips = g_emu.cpu_target_mhz > 0
             ? (uint64_t)g_emu.cpu_target_mhz * 1000000ULL
             : 20000000ULL;
@@ -686,7 +682,8 @@ void cpu_run(void)
                 double eoi_ratio = d_inject ? (double)d_eoi / (double)d_inject : 0.0;
                 uint64_t resched_drops = uart_get_resched_drop_count();
                 uint64_t d_resched = resched_drops - s_resched_burst_lines;
-                const char *health = (vt_scale >= 0.95) ? "OK"
+                const char *health = (vt_scale >= 1.05) ? "AHEAD"
+                                  : (vt_scale >= 0.95) ? "OK"
                                   : (vt_scale >= 0.50) ? "HOST-SLOW"
                                                        : "HOST-BEHIND";
 
@@ -758,13 +755,15 @@ void cpu_run(void)
             if (g_emu.timer_pending > 0)
                 g_emu.timer_pending = 0;
 
-            /* doc 50 — guest-CPU throttle.
-             * Once per vblank-cadence check, if we're running ahead of
-             * the configured target IPS, nanosleep until we're back on
-             * schedule. Estimated insns ≈ bytes/3.5 (i386 average).
-             * Coarse on purpose; fine-grained icount is doc-50 step 3. */
-            if (g_emu.cpu_target_mhz > 0 && s_cpu_run_start_ns) {
-                uint64_t target_ips = (uint64_t)g_emu.cpu_target_mhz * 1000000ULL;
+            /* doc 50 — opt-in realtime throttle (--realtime).
+             * Off by default: Encore is full-speed and guest virtual time
+             * may run faster OR slower than wall depending on host. When
+             * enabled, nanosleep when guest time is ahead of wall to
+             * approximate real Pinball 2000 timing for cabinet-driving. */
+            if (g_emu.realtime && s_cpu_run_start_ns) {
+                uint64_t target_ips = g_emu.cpu_target_mhz > 0
+                    ? (uint64_t)g_emu.cpu_target_mhz * 1000000ULL
+                    : 20000000ULL;
                 uint64_t insns_done = (s_cpu_bytes_total * 2ULL) / 7ULL; /* /3.5 */
                 uint64_t expected_ns = (insns_done * 1000000000ULL) / target_ips;
                 uint64_t actual_ns   = now_ns - s_cpu_run_start_ns;
@@ -1010,15 +1009,19 @@ void cpu_run(void)
 
         /* Batch size — fixed 4000 insns post-XINU.
          *
-         * Variable "run until next IRQ0 deadline" was tested but doubles
-         * the uc_emu_start call rate (small batches near the deadline)
-         * and that overhead was enough to push the host below the
-         * stability threshold on this backend. The 8259 collapse logic
-         * already absorbs late-by-one-batch ticks correctly, and the
-         * stat block reports accurate wall-Hz vs target-Hz, so the
-         * "next event" model is enforced semantically without paying
-         * the per-batch host cost. Pre-XINU there is no IRQ0 to deliver,
-         * so a much larger batch is fine. */
+         * NOTE — this is NOT a true "run-until-next-virtual-event"
+         * scheduler. It is a fixed-window approximation: each iteration
+         * runs up to 4000 guest insns, then we re-check the IRQ0
+         * deadline. The 8259 collapse logic absorbs late-by-one-batch
+         * ticks correctly (the wall-Hz vs target-Hz numbers in the
+         * stat block reflect the true delivery rate), so the model is
+         * semantically conservative without the per-batch host overhead
+         * a literal next-event sizer would cost. A real next-event
+         * scheduler is a future cleanup; doing it correctly requires
+         * an instruction-count-per-call signal that Unicorn does not
+         * currently expose cleanly without per-insn hooks (which are
+         * far more expensive than a 4000-insn batch). Pre-XINU there
+         * is no IRQ0 to deliver, so a much larger batch is fine. */
         size_t batch = g_emu.xinu_ready ? 4000 : 200000;
 
         /* Execute a batch of instructions.

@@ -286,6 +286,10 @@ static int apply_option(const char *key, const char *value)
         g_emu.cpu_target_mhz = (int)v;
         return 1;
     }
+    if (strcmp(key, "realtime") == 0) {
+        g_emu.realtime = true;
+        return 0;
+    }
     if (strcmp(key, "update") == 0 && value) {
         if (strcasecmp(value, "none") == 0) {
             g_emu.update_file[0] = '\0';
@@ -676,15 +680,23 @@ print_help:
 "                         multiplier on YOUR machine before reaching for\n"
 "                         --cpu-target-mhz. See docs/50-cpu-clock-mismatch.md.\n"
 "\n"
-"  --cpu-target-mhz N     Throttle the guest CPU so its average instructions/s\n"
-"                         is ~N × 10⁶ — i.e. pretend the host is a CPU of\n"
-"                         N MHz. Try 233 to match an original Pinball 2000\n"
-"                         board. The throttle is a coarse vblank-cadence\n"
-"                         nanosleep (per doc 50 step 2); good enough to fix\n"
-"                         most peripheral wall-clock-window bugs without\n"
-"                         per-knob band-aids. 0 (default) disables. May\n"
-"                         interact with --lpt-bus-pace; with the throttle\n"
-"                         on, --lpt-bus-pace auto is usually correct again.\n"
+"  --cpu-target-mhz N     Guest CPU MODEL rate in MIPS, used purely for PIT/\n"
+"                         IRQ0 scheduling math (pit_period_insns =\n"
+"                         N*1e6 * pit_div / 1193182). Does NOT throttle —\n"
+"                         the host runs Unicorn full-speed regardless. Lower\n"
+"                         values make IRQ0 fire more often per guest insn\n"
+"                         so the game-clock-vs-wall-clock ratio looks closer\n"
+"                         to real-time on slow Unicorn hosts; higher values\n"
+"                         (try 233 to match an original Cyrix MediaGX) make\n"
+"                         the game advance more guest-time per IRQ0. Default\n"
+"                         20 is a livable compromise. Independent of --realtime.\n"
+"\n"
+"  --realtime             Opt-in wall-clock throttle. When set, the cpu loop\n"
+"                         nanosleeps once per vblank cadence to keep guest\n"
+"                         virtual time from running ahead of wall time. Off\n"
+"                         by default — Encore is full-speed. Enable only for\n"
+"                         cabinet-safe runs driving a real Pinball 2000 board\n"
+"                         over LPT that needs real-time pacing.\n"
 "\n"
 "════════════════════════════════════════════════════════════════════════\n"
 " Maybe-fun future ideas (not implemented — left as bread crumbs)\n"
@@ -929,7 +941,8 @@ int main(int argc, char **argv)
     g_emu.lpt_bus_pace_us = -1;        /* -1 = auto: 0 µs (trust guest XINA iodelay; opt-in N for boards that need help) */
     g_emu.cpu_stats_enabled = false;
     g_emu.cpu_stats_period_s = 5;
-    g_emu.cpu_target_mhz = 0;          /* 0 = disabled (no throttle) — see docs/50 */
+    g_emu.cpu_target_mhz = 0;          /* 0 = use 20 MIPS fallback as guest CPU model rate */
+    g_emu.realtime = false;            /* opt-in wall-clock throttle (see --realtime) */
     print_banner();
     parse_args(argc, argv);
 

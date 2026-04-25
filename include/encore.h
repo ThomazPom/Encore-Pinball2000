@@ -1,7 +1,21 @@
 /*
  * encore.h — Encore Pinball 2000 emulator.
  * Shared types, constants, memory map, and extern declarations.
+ *
+ * IRQ0 / virtual-time direction (live):
+ *   - PIT/IRQ0 scheduled from guest virtual time (insns), not wall-clock.
+ *   - Real PIC collapse: at most one pending edge per line; ISR/IRR
+ *     rolled back if cpu_inject_interrupt skipped (IF=0 / stub IDT).
+ *   - Wall clock only throttles when --realtime is set; default is
+ *     full-speed and vt-scale > 1 is reported as [AHEAD], not as wrong.
+ *   - cpu_target_mhz is the GUEST CPU MODEL RATE (used for PIT period
+ *     math); it does NOT throttle the host. --realtime is the throttle.
+ *   - irq0_eoi_count is per-line (IRQ0 ISR-bit-0 1→0 transitions only);
+ *     do not mix in other lines' EOIs.
+ *   - bytes/3.5 stays as a diagnostic proxy. A true next-event scheduler
+ *     would need cheaper Unicorn per-batch overhead than we currently get.
  */
+
 #ifndef ENCORE_H
 #define ENCORE_H
 
@@ -294,14 +308,24 @@ typedef struct {
      *   throttle. Off by default. */
     bool     cpu_stats_enabled;
     int      cpu_stats_period_s;
-    /* --cpu-target-mhz N: coarse opt-in guest-CPU throttle. The
-     *   reference Cyrix MediaGX ran ~233 MHz; the firmware's iodelay
-     *   loops were calibrated against that. When N>0, the cpu loop
-     *   nanosleeps once per vblank cadence to bring the running
-     *   guest-IPS average down to N*1e6 instructions/s (estimated
-     *   from block-byte count via the i386 ~3.5 bytes/insn average).
-     *   0 = disabled (default). See docs/50-cpu-clock-mismatch.md. */
+    /* --cpu-target-mhz N: GUEST CPU MODEL RATE in MIPS used purely for
+     *   PIT/IRQ0 scheduling math (pit_period_insns = N*1e6 * pit_div /
+     *   1193182). Does NOT throttle the host — Unicorn always runs as
+     *   fast as it can. The reference Cyrix MediaGX ran ~233 MHz; lower
+     *   values (~20) make IRQ0 fire more often per guest insn so the
+     *   game-clock-vs-wall-clock ratio looks closer to real-time on a
+     *   slow Unicorn host, at the cost of higher per-second IRQ load.
+     *   Default 20 is a livable compromise on commodity hosts (~10 MIPS
+     *   effective). 0 means "use default". See docs/50-cpu-clock-mismatch.md. */
     int      cpu_target_mhz;
+    /* --realtime: opt-in wall-clock throttle. When true, the cpu loop
+     *   nanosleeps once per vblank cadence to keep guest virtual time
+     *   from running ahead of wall time. Off by default — the emulator
+     *   core runs full-speed; enable only for "cabinet-safe" runs that
+     *   drive a real Pinball 2000 board over LPT and need real-time
+     *   pacing. Independent of cpu_target_mhz now (was previously
+     *   coupled — split per the eriki-style virtual-time rework). */
+    bool     realtime;
     bool     update_explicit_none;    /* user gave --update none → skip auto-pick */
     char     update_file[512];        /* explicit update.bin path; empty → default search */
 
