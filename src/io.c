@@ -824,9 +824,18 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
     uint8_t result = 0;
     switch (opcode) {
     case 0x00:
-        /* Physical[8] — coin slots only (bits 0-3). Idle = 0x00. */
-        result = s_lpt_button_state >> 4;  /* unused for now; coin-slot keys not bound */
-        result = 0x00;                     /* keep zero until a coin-slot key is added */
+        /* Physical[8] — coin slots only (bits 0-3). On a real cabinet
+         * the bus idles with the high nibble pulled high (active-low
+         * pull-ups on unused data lines), so the byte at rest looks
+         * like 0xF0, not 0x00. External lpt_emu bus traces from the
+         * comparison emulator confirm a high-nibble-F response when
+         * the guest opcode-0x00 probe runs. We forced 0x00 in earlier
+         * bring-up because no coin-slot key was bound; the boot path
+         * never inspects this byte's high nibble so the change is
+         * inert for the current game matrix, but it removes a
+         * "this looks like no board attached" foot-print on the bus.
+         * Coin-slot bits (low nibble) remain unwired. */
+        result = 0xF0;
         break;
     case 0x01: {
         /* Physical[10] — flippers/actions + door interlock + tilts */
