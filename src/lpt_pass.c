@@ -81,6 +81,35 @@ static uint8_t       s_ctrl_cached = 0;         /* mirrors guest's last 0x37A wr
 static int           s_dir_input   = 0;         /* current PPDATADIR / control bit-5 state */
 static int           s_ecr_armed   = 0;         /* raw backend: did ioperm(BASE+0x402) succeed? */
 
+/* Resolved bus-pace value in microseconds.
+ * 0 = no pacing (busywait helper short-circuits at zero overhead).
+ * Set in lpt_passthrough_reset_pulse() once we know a real board is
+ * actually being driven (auto mode → 200 µs, mid-band of what the
+ * board's level shifters tolerate; explicit value used verbatim). */
+static int           s_bus_pace_us = 0;
+
+/* Busywait the configured number of microseconds. We use clock_gettime()
+ * + a tight spin instead of nanosleep() because Linux scheduler
+ * granularity rounds sub-100 µs sleeps up to ~1 ms with HZ=250 — useless
+ * for the 100–800 µs range we need. The path is only hit on the LPT bus
+ * boundary (a few hundred cycles per second at steady state), so the
+ * wasted CPU is negligible. Short-circuits at zero overhead when pace=0
+ * so non-passthrough users pay nothing. */
+static inline void lpt_bus_pace(void)
+{
+#ifdef __linux__
+    int us = s_bus_pace_us;
+    if (us <= 0) return;
+    struct timespec start, now;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    long target_ns = (long)us * 1000L;
+    do {
+        clock_gettime(CLOCK_MONOTONIC, &now);
+    } while (((now.tv_sec  - start.tv_sec)  * 1000000000L
+            + (now.tv_nsec - start.tv_nsec)) < target_ns);
+#endif
+}
+
 /* --lpt-trace FILE: bus-cycle CSV log for real-cabinet bring-up.
  * One line per cycle, format: ns_monotonic,dir,reg,val   (dir = R|W).
  * Opened lazily in lpt_passthrough_open(), flushed on close.
@@ -475,6 +504,20 @@ void lpt_passthrough_reset_pulse(void)
 #ifdef __linux__
     if (s_backend == LPT_BK_NONE) return;
 
+    /* Resolve --lpt-bus-pace at the moment we know a real board is
+     * actually being driven (the reset pulse only fires when passthrough
+     * was opened). auto → 200 µs (mid-band of what the board's level
+     * shifters tolerate). Explicit value used verbatim. Logged once so
+     * the operator sees the resolved pace in their startup banner. */
+    if (g_emu.lpt_bus_pace_us < 0) {
+        s_bus_pace_us = 200;
+        LOG("lpt", "bus-pace: auto → 200 µs (real board active)\n");
+    } else {
+        s_bus_pace_us = g_emu.lpt_bus_pace_us;
+        LOG("lpt", "bus-pace: %d µs (explicit --lpt-bus-pace)\n",
+            s_bus_pace_us);
+    }
+
     /* Public write path so the trace file and µs accounting record this
      * pulse identically to any other guest-issued CTL cycle. */
     lpt_passthrough_write(2, 0x00);
@@ -496,6 +539,13 @@ uint8_t lpt_passthrough_read(uint8_t reg)
 #ifdef __linux__
     unsigned char v = 0xFF;
     uint64_t t0 = (g_log_level >= 2) ? lpt_now_ns() : 0;
+
+    /* Bus settle: the cabinet driver board needs ~80 µs minimum between
+     * the last CTL=0x2D strobe write and the actual data sample, or it
+     * returns transient garbage. Cheap when pacing is disabled. Status
+     * reads (reg=1) and cached CTL reads (reg=2) bypass the wire so they
+     * don't need the settle. */
+    if (reg == 0) lpt_bus_pace();
 
     if (s_backend == LPT_BK_PPDEV) {
         if (s_fd < 0) { lpt_sample_account(t0); return v; }
@@ -607,6 +657,12 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
             break;
         }
     }
+    /* Bus settle: any time the guest just toggled CTL (reg=2), the
+     * driver-board's level shifters need to see a quiet wire long enough
+     * to latch. Done AFTER the outb/ioctl so the new value is on the
+     * pins before we wait. Cheap when pacing is disabled. */
+    if (reg == 2) lpt_bus_pace();
+
     lpt_sample_account(t0);
     lpt_trace_cycle('W', reg, val);
 #else

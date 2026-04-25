@@ -271,6 +271,15 @@ typedef struct {
                                        *   to track read/write direction. Default OFF: CTL is forwarded
                                        *   verbatim (matches the documented PB2K driver-board protocol
                                        *   and what an unmodified XINA driver expects). */
+    /* --lpt-bus-pace auto|N: minimum gap, in microseconds, that the
+     *   passthrough write/read path inserts after every CTL-register
+     *   write and before every DATA-register read of a read-strobe
+     *   sequence. The cabinet driver board's level-shifters need at
+     *   least ~80 µs of settling time between transitions; with no
+     *   pacing Encore floods the bus and the relay chatters. -1 means
+     *   "auto" (0 µs when no real board is detected, 200 µs when one
+     *   is). 0 forces no pacing. Any other value is taken verbatim. */
+    int      lpt_bus_pace_us;
     bool     update_explicit_none;    /* user gave --update none → skip auto-pick */
     char     update_file[512];        /* explicit update.bin path; empty → default search */
 

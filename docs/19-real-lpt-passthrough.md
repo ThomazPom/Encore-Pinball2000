@@ -250,6 +250,38 @@ used by the auto-detect bit-banging helpers further down in
 The pulse is recorded in the `--lpt-trace` CSV like any other CTL
 cycle, so it is visible when diffing traces.
 
+## Bus pacing (`--lpt-bus-pace`)
+
+The cabinet driver board's level shifters need a small settling window
+between consecutive transitions on the parallel-port wire. The host
+emulator can issue back-to-back IN/OUT instructions in well under a
+microsecond — fast enough that the board never sees a stable bus and
+returns transient garbage on data reads, which on a real cabinet
+manifests as relay chatter and occasional watchdog trips.
+
+`--lpt-bus-pace` inserts a deterministic busywait at two places in the
+passthrough hot path:
+
+* **after every CTL-register write** (`base+2`) — gives the strobe time
+  to propagate to the board before the next transition;
+* **before every DATA-register read** (`base+0`) — guarantees the board
+  has driven a stable value onto the bus before we sample it.
+
+Status reads, cached CTL reads, and pure-emulated I/O bypass the wire
+entirely and do not pace.
+
+| Value         | Behaviour                                                      |
+|---------------|----------------------------------------------------------------|
+| `auto` *(def)*| 0 µs while no real board is detected (no overhead for emulator-only users); 200 µs as soon as passthrough activates against a board. |
+| `0`           | Disable pacing entirely — pre-flag behaviour. Use only when measuring the raw round-trip cost on bench equipment. |
+| `1..100000`   | Force exactly N microseconds. Try `400` or `800` if the default 200 µs still chatters on a marginal board. |
+
+The implementation is a `clock_gettime(CLOCK_MONOTONIC)` busywait rather
+than `nanosleep()` because Linux scheduler granularity rounds sub-100 µs
+sleeps up to ~1 ms with the default `HZ=250` — useless for bus-cycle
+pacing. The CPU cost is negligible: even at the worst-case bus cycle
+rate the spin consumes a tiny fraction of one core.
+
 ## Coexistence with `--serial-tcp`
 
 Both are fine at the same time. The serial path is UART/TCP; the LPT

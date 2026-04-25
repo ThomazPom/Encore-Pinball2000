@@ -238,6 +238,22 @@ static int apply_option(const char *key, const char *value)
         g_emu.lpt_managed_dir = true;
         return 0;
     }
+    if (strcmp(key, "lpt-bus-pace") == 0 && value) {
+        if (strcasecmp(value, "auto") == 0) {
+            g_emu.lpt_bus_pace_us = -1;
+        } else {
+            char *end = NULL;
+            long v = strtol(value, &end, 0);
+            if (end == value || v < 0 || v > 100000) {
+                fprintf(stderr,
+                    "[main] --lpt-bus-pace must be 'auto' or 0..100000 (got %s)\n",
+                    value);
+                return 1;
+            }
+            g_emu.lpt_bus_pace_us = (int)v;
+        }
+        return 1;
+    }
     if (strcmp(key, "update") == 0 && value) {
         if (strcasecmp(value, "none") == 0) {
             g_emu.update_file[0] = '\0';
@@ -588,6 +604,22 @@ print_help:
 "  --lpt-purist           Back-compat alias accepted but no-op: verbatim CTL\n"
 "                         forwarding is now the raw backend's default.\n"
 "\n"
+"  --lpt-bus-pace auto|N  Microseconds of busywait inserted after every CTL\n"
+"                         register write and before every DATA read of a\n"
+"                         read-strobe sequence. The cabinet driver board\n"
+"                         needs settling time between bus transitions; the\n"
+"                         host emulator otherwise hammers the wire faster\n"
+"                         than the level shifters can react, which causes\n"
+"                         relay chatter and garbled reads.\n"
+"                         auto (default): 0 µs when no real board is\n"
+"                                         detected (no overhead for emulated\n"
+"                                         users), 200 µs once a board is\n"
+"                                         detected on the wire.\n"
+"                         0:              disable pacing entirely (current\n"
+"                                         behaviour pre-flag).\n"
+"                         N (1..100000):  use exactly N microseconds.\n"
+"                         Try 200, 400, 800 for problem cabinets.\n"
+"\n"
 "════════════════════════════════════════════════════════════════════════\n"
 " Maybe-fun future ideas (not implemented — left as bread crumbs)\n"
 "════════════════════════════════════════════════════════════════════════\n"
@@ -828,6 +860,7 @@ static void cleanup_and_save(void)
 int main(int argc, char **argv)
 {
     memset(&g_emu, 0, sizeof(g_emu));
+    g_emu.lpt_bus_pace_us = -1;        /* -1 = auto: 0 µs without real board, 200 µs with */
     print_banner();
     parse_args(argc, argv);
 
