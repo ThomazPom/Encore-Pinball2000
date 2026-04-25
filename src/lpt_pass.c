@@ -84,8 +84,10 @@ static int           s_ecr_armed   = 0;         /* raw backend: did ioperm(BASE+
 /* Resolved bus-pace value in microseconds.
  * 0 = no pacing (busywait helper short-circuits at zero overhead).
  * Set in lpt_passthrough_reset_pulse() once we know a real board is
- * actually being driven (auto mode → 200 µs, mid-band of what the
- * board's level shifters tolerate; explicit value used verbatim). */
+ * actually being driven. auto mode → 0 µs (the original guest's XINA
+ * iodelay loops already clock the bus correctly; an opt-in
+ * --lpt-bus-pace N is available for boards that genuinely need extra
+ * settling time before reads). */
 static int           s_bus_pace_us = 0;
 
 /* Busywait the configured number of microseconds. We use clock_gettime()
@@ -506,12 +508,19 @@ void lpt_passthrough_reset_pulse(void)
 
     /* Resolve --lpt-bus-pace at the moment we know a real board is
      * actually being driven (the reset pulse only fires when passthrough
-     * was opened). auto → 200 µs (mid-band of what the board's level
-     * shifters tolerate). Explicit value used verbatim. Logged once so
-     * the operator sees the resolved pace in their startup banner. */
+     * was opened). auto → 0 µs (trust the guest's XINA iodelay loops to
+     * pace the bus, which they were designed to do — adding host-side
+     * busywait fights the documented protocol and starves the JIT). The
+     * "auto = 200 µs" of the early bring-up turned out to be both
+     * unnecessary on the bus and catastrophic in throughput: at 5–6
+     * paces per LPT cycle and IRQ0-rate cycle traffic, it costs ~1 ms
+     * wallclock per emulated ms, sliding the SDL window to single-digit
+     * FPS while the relays chatter. Operators with finicky boards can
+     * still dial it back up with --lpt-bus-pace N. */
     if (g_emu.lpt_bus_pace_us < 0) {
-        s_bus_pace_us = 200;
-        LOG("lpt", "bus-pace: auto → 200 µs (real board active)\n");
+        s_bus_pace_us = 0;
+        LOG("lpt", "bus-pace: auto → 0 µs (trust guest XINA iodelay; "
+                   "use --lpt-bus-pace N if your board needs help)\n");
     } else {
         s_bus_pace_us = g_emu.lpt_bus_pace_us;
         LOG("lpt", "bus-pace: %d µs (explicit --lpt-bus-pace)\n",
@@ -657,11 +666,13 @@ void lpt_passthrough_write(uint8_t reg, uint8_t val)
             break;
         }
     }
-    /* Bus settle: any time the guest just toggled CTL (reg=2), the
-     * driver-board's level shifters need to see a quiet wire long enough
-     * to latch. Done AFTER the outb/ioctl so the new value is on the
-     * pins before we wait. Cheap when pacing is disabled. */
-    if (reg == 2) lpt_bus_pace();
+    /* Bus settle previously fired here on every CTL write. With the
+     * default --lpt-bus-pace=auto=0 it's a no-op anyway, but even when
+     * pacing is explicitly enabled it does not need to fire 4–5× per
+     * LPT cycle (every CTL transition); only the pre-read settle on
+     * reg=0 is on the documented "board drives the bus" boundary.
+     * Removed to avoid stacking host-side delay on top of the guest's
+     * own iodelay loops. */
 
     lpt_sample_account(t0);
     lpt_trace_cycle('W', reg, val);
