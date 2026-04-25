@@ -258,6 +258,34 @@ static int apply_option(const char *key, const char *value)
         }
         return 1;
     }
+    if (strcmp(key, "cpu-stats") == 0) {
+        g_emu.cpu_stats_enabled = true;
+        if (value) {
+            char *end = NULL;
+            long v = strtol(value, &end, 0);
+            if (end == value || v < 1 || v > 3600) {
+                fprintf(stderr,
+                    "[main] --cpu-stats[=N] period must be 1..3600 seconds (got %s)\n",
+                    value);
+                return 1;
+            }
+            g_emu.cpu_stats_period_s = (int)v;
+            return 1;
+        }
+        return 0;
+    }
+    if (strcmp(key, "cpu-target-mhz") == 0 && value) {
+        char *end = NULL;
+        long v = strtol(value, &end, 0);
+        if (end == value || v < 1 || v > 5000) {
+            fprintf(stderr,
+                "[main] --cpu-target-mhz must be 1..5000 (got %s)\n",
+                value);
+            return 1;
+        }
+        g_emu.cpu_target_mhz = (int)v;
+        return 1;
+    }
     if (strcmp(key, "update") == 0 && value) {
         if (strcasecmp(value, "none") == 0) {
             g_emu.update_file[0] = '\0';
@@ -638,6 +666,26 @@ print_help:
 "                                         80, 200, 400 if your cabinet shows\n"
 "                                         garbled reads or relay chatter.\n"
 "\n"
+"  --cpu-stats[=N]        Measure achieved guest CPU instructions/second on\n"
+"                         this host. Reports approximate guest IPS every N\n"
+"                         seconds (default 5). The guest binaries were\n"
+"                         calibrated against a ~233 MHz Cyrix MediaGX; on\n"
+"                         a modern host the Unicorn JIT typically runs them\n"
+"                         10×–50× faster, which compresses every iodelay\n"
+"                         loop in the firmware. Use this to see the\n"
+"                         multiplier on YOUR machine before reaching for\n"
+"                         --cpu-target-mhz. See docs/50-cpu-clock-mismatch.md.\n"
+"\n"
+"  --cpu-target-mhz N     Throttle the guest CPU so its average instructions/s\n"
+"                         is ~N × 10⁶ — i.e. pretend the host is a CPU of\n"
+"                         N MHz. Try 233 to match an original Pinball 2000\n"
+"                         board. The throttle is a coarse vblank-cadence\n"
+"                         nanosleep (per doc 50 step 2); good enough to fix\n"
+"                         most peripheral wall-clock-window bugs without\n"
+"                         per-knob band-aids. 0 (default) disables. May\n"
+"                         interact with --lpt-bus-pace; with the throttle\n"
+"                         on, --lpt-bus-pace auto is usually correct again.\n"
+"\n"
 "════════════════════════════════════════════════════════════════════════\n"
 " Maybe-fun future ideas (not implemented — left as bread crumbs)\n"
 "════════════════════════════════════════════════════════════════════════\n"
@@ -879,6 +927,9 @@ int main(int argc, char **argv)
 {
     memset(&g_emu, 0, sizeof(g_emu));
     g_emu.lpt_bus_pace_us = -1;        /* -1 = auto: 0 µs (trust guest XINA iodelay; opt-in N for boards that need help) */
+    g_emu.cpu_stats_enabled = false;
+    g_emu.cpu_stats_period_s = 5;
+    g_emu.cpu_target_mhz = 0;          /* 0 = disabled (no throttle) — see docs/50 */
     print_banner();
     parse_args(argc, argv);
 

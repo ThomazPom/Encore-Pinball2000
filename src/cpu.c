@@ -60,6 +60,27 @@ static void hook_dcs_mode_write(uc_engine *uc, uc_mem_type type,
                                 uint64_t addr, int size,
                                 int64_t value, void *user_data);
 
+/* doc 50 — guest-CPU pace measurement & throttle.
+ * Updated by UC_HOOK_BLOCK whenever --cpu-stats or --cpu-target-mhz are
+ * enabled. Block byte size is a cheap proxy for instruction count
+ * (i386 average ~3.5 bytes/insn). Reset every reporting period. */
+static uint64_t s_cpu_blocks_total   = 0;
+static uint64_t s_cpu_bytes_total    = 0;
+static uint64_t s_cpu_blocks_window  = 0;
+static uint64_t s_cpu_bytes_window   = 0;
+static uint64_t s_cpu_window_start_ns = 0;
+static uint64_t s_cpu_run_start_ns    = 0;
+
+static void hook_block_count(uc_engine *uc, uint64_t addr,
+                             uint32_t size, void *user_data)
+{
+    (void)uc; (void)addr; (void)user_data;
+    s_cpu_blocks_total++;
+    s_cpu_bytes_total += size;
+    s_cpu_blocks_window++;
+    s_cpu_bytes_window += size;
+}
+
 /* SIGALRM handler — sets timer_pending for HLT wakeup only.
  * Does NOT call uc_emu_stop (avoids stop_request contamination).
  * Tick injection is iteration-count based for consistent game speed. */
@@ -149,6 +170,24 @@ int cpu_init(void)
     uc_hook h_dcs_wp;
     uc_hook_add(uc, &h_dcs_wp, UC_HOOK_MEM_WRITE, (void*)hook_dcs_mode_write,
                 NULL, (uint64_t)0x3444b0, (uint64_t)0x3444b3);
+
+    /* doc 50 — guest-CPU pace measurement / throttle.
+     * Cheap UC_HOOK_BLOCK accumulator; only attached when at least one
+     * of --cpu-stats / --cpu-target-mhz is on, so default-path
+     * performance is unchanged. */
+    if (g_emu.cpu_stats_enabled || g_emu.cpu_target_mhz > 0) {
+        uc_hook h_block;
+        uc_err be = uc_hook_add(uc, &h_block, UC_HOOK_BLOCK,
+                                (void*)hook_block_count, NULL, 1, 0);
+        if (be) {
+            LOG("cpu", "cpu-pace BLOCK hook FAILED: %s\n", uc_strerror(be));
+        } else {
+            LOG("cpu", "cpu-pace: stats=%s target=%d MHz (period=%ds)\n",
+                g_emu.cpu_stats_enabled ? "on" : "off",
+                g_emu.cpu_target_mhz,
+                g_emu.cpu_stats_period_s);
+        }
+    }
 
     LOG("cpu", "Unicorn Engine initialized (i386 mode)\n");
     return 0;
@@ -493,33 +532,67 @@ void cpu_run(void)
     /* Initial EIP read — carried across iterations to avoid double-read */
     uc_reg_read(uc, UC_X86_REG_EIP, &eip);
 
+    /* doc 50 — establish the wall-clock origin for cpu-stats / throttle. */
+    if (g_emu.cpu_stats_enabled || g_emu.cpu_target_mhz > 0) {
+        struct timespec t0;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        s_cpu_run_start_ns = (uint64_t)t0.tv_sec * 1000000000ULL + t0.tv_nsec;
+        s_cpu_window_start_ns = s_cpu_run_start_ns;
+    }
+
     while (g_emu.running) {
         /* Timer tick injection — wall-clock based at guest-programmed PIT rate.
-         * The guest programs PIT CH0 with a divisor (e.g. 298 → ~4003 Hz).
-         * We fire IRQ0 at that rate using host clock, like QEMU's internal PIT.
-         * Check every 64 iterations to reduce clock_gettime overhead. */
-        if (g_emu.xinu_ready && (g_emu.exec_count & 0x3F) == 0) {
-            struct timespec now_ts;
-            clock_gettime(CLOCK_MONOTONIC, &now_ts);
-            uint64_t now_ns = (uint64_t)now_ts.tv_sec * 1000000000ULL + now_ts.tv_nsec;
+         * The guest programs PIT CH0 with a divisor (e.g. 298 → ~4003 Hz =
+         * 250 µs period). XINA uses this IRQ0 as the driver-board clock
+         * generator; if cadence drifts, lamps flicker and relays fire wildly
+         * (peripheral-side observation). We MUST honour the 250 µs window.
+         *
+         * Run this check *every* iteration — not gated on (exec_count & 0x3F),
+         * because at 20 guest-MIPS one batch is ~10 ms wall, dwarfing a
+         * 250 µs window. Combined with the small post-XINU batch below, this
+         * delivers IRQ0 within one batch of its scheduled time. */
+        struct timespec now_ts;
+        clock_gettime(CLOCK_MONOTONIC, &now_ts);
+        uint64_t now_ns = (uint64_t)now_ts.tv_sec * 1000000000ULL + now_ts.tv_nsec;
+        {
             static uint64_t last_tick_ns = 0;
-            if (last_tick_ns == 0) last_tick_ns = now_ns;
+            /* Initialise lazily the moment XINU becomes ready — *not* at
+             * cpu_run() entry — otherwise the first post-XINU iteration
+             * sees a multi-second backlog and would try to fire thousands
+             * of IRQ0s in one go. */
+            if (g_emu.xinu_ready && last_tick_ns == 0)
+                last_tick_ns = now_ns;
 
-            /* PIT period in nanoseconds: 1e9 / (1193182 / divisor) */
-            uint16_t div = g_emu.pit.count[0];
-            if (div == 0) div = 0xFFFF;
-            uint64_t pit_period_ns = (uint64_t)div * 838; /* 1e9/1193182 ≈ 838 ns per PIT tick */
+            if (last_tick_ns) {
+                /* PIT period in nanoseconds: 1e9 / (1193182 / divisor) */
+                uint16_t div = g_emu.pit.count[0];
+                if (div == 0) div = 0xFFFF;
+                uint64_t pit_period_ns = (uint64_t)div * 838;
 
-            if (now_ns - last_tick_ns >= pit_period_ns) {
-                unsigned n_ticks = (unsigned)((now_ns - last_tick_ns) / pit_period_ns);
-                if (n_ticks > 4) n_ticks = 4; /* cap catch-up */
-                last_tick_ns += (uint64_t)n_ticks * pit_period_ns;
+                if (now_ns - last_tick_ns >= pit_period_ns) {
+                    unsigned n_ticks = (unsigned)((now_ns - last_tick_ns) / pit_period_ns);
+                    /* Loose cap only to bound a single iteration's work
+                     * if the host stalls; no longer the dominant under-
+                     * delivery factor it used to be. */
+                    if (n_ticks > 64) n_ticks = 64;
+                    last_tick_ns += (uint64_t)n_ticks * pit_period_ns;
 
-                /* Set IRR bit 0 (level-triggered: just assert, don't drop) */
-                g_emu.pic[0].irr |= 0x01;
-                prof_ticks_fired += n_ticks;
+                    /* Gate the actual IRR set on xinu_ready (IDT[0x20]
+                     * isn't a real handler before clkint installs). The
+                     * schedule advances regardless so cadence stays
+                     * locked the moment delivery is enabled. */
+                    if (g_emu.xinu_ready) {
+                        g_emu.pic[0].irr |= 0x01;
+                        prof_ticks_fired += n_ticks;
+                    }
+                }
             }
+        }
 
+        /* Coarser per-vblank work — still gated to once-every-64-batches
+         * to avoid clock_gettime / uc_mem_write overhead on every batch.
+         * VSYNC, timer-pending drain, optional throttle and cpu-stats. */
+        if (g_emu.xinu_ready && (g_emu.exec_count & 0x3F) == 0) {
             /* VSYNC at ~57 Hz (wall-clock based, independent of PIT rate) */
             static uint64_t last_vsync_ns = 0;
             if (last_vsync_ns == 0) last_vsync_ns = now_ns;
@@ -549,6 +622,57 @@ void cpu_run(void)
             /* Drain SIGALRM timer_pending (used only for HLT wakeup) */
             if (g_emu.timer_pending > 0)
                 g_emu.timer_pending = 0;
+
+            /* doc 50 — guest-CPU throttle.
+             * Once per vblank-cadence check, if we're running ahead of
+             * the configured target IPS, nanosleep until we're back on
+             * schedule. Estimated insns ≈ bytes/3.5 (i386 average).
+             * Coarse on purpose; fine-grained icount is doc-50 step 3. */
+            if (g_emu.cpu_target_mhz > 0 && s_cpu_run_start_ns) {
+                uint64_t target_ips = (uint64_t)g_emu.cpu_target_mhz * 1000000ULL;
+                uint64_t insns_done = (s_cpu_bytes_total * 2ULL) / 7ULL; /* /3.5 */
+                uint64_t expected_ns = (insns_done * 1000000000ULL) / target_ips;
+                uint64_t actual_ns   = now_ns - s_cpu_run_start_ns;
+                if (expected_ns > actual_ns) {
+                    uint64_t sleep_ns = expected_ns - actual_ns;
+                    if (sleep_ns > 50000000ULL) sleep_ns = 50000000ULL; /* cap 50 ms */
+                    struct timespec ts = {
+                        .tv_sec  = (time_t)(sleep_ns / 1000000000ULL),
+                        .tv_nsec = (long)(sleep_ns % 1000000000ULL),
+                    };
+                    nanosleep(&ts, NULL);
+                }
+            }
+
+            /* doc 50 — guest-CPU stats report. */
+            if (g_emu.cpu_stats_enabled && s_cpu_window_start_ns) {
+                uint64_t period_ns = (uint64_t)g_emu.cpu_stats_period_s
+                                     * 1000000000ULL;
+                if (now_ns - s_cpu_window_start_ns >= period_ns) {
+                    uint64_t win_ns = now_ns - s_cpu_window_start_ns;
+                    uint64_t run_ns = now_ns - s_cpu_run_start_ns;
+                    uint64_t insns_window = (s_cpu_bytes_window * 2ULL) / 7ULL;
+                    uint64_t insns_total  = (s_cpu_bytes_total  * 2ULL) / 7ULL;
+                    double mips_window = (double)insns_window * 1000.0
+                                         / (double)win_ns;
+                    double mips_total  = (double)insns_total  * 1000.0
+                                         / (double)run_ns;
+                    LOG("cpu-stats",
+                        "window=%.2fs blocks=%llu bytes=%llu "
+                        "insns≈%llu  → ~%.1f guest-MIPS  "
+                        "(run=%.1fs avg≈%.1f MIPS, target Cyrix MediaGX≈233)\n",
+                        (double)win_ns / 1e9,
+                        (unsigned long long)s_cpu_blocks_window,
+                        (unsigned long long)s_cpu_bytes_window,
+                        (unsigned long long)insns_window,
+                        mips_window,
+                        (double)run_ns / 1e9,
+                        mips_total);
+                    s_cpu_blocks_window = 0;
+                    s_cpu_bytes_window  = 0;
+                    s_cpu_window_start_ns = now_ns;
+                }
+            }
         }
         /* Detect XINU timer readiness via IDT[0x20].
          *
@@ -747,10 +871,14 @@ void cpu_run(void)
                 prof_irq0_inject++;
         }
 
-        /* Fixed batch size — each call runs exactly this many TBs/instructions.
-         * No uc_emu_stop from SIGALRM = no stop_request contamination.
-         * Every call does real work. */
-        size_t batch = 200000;
+        /* Batch size — small post-XINU so the IRQ0 schedule check above
+         * fires within one batch of every 250 µs PIT window.
+         *
+         * At measured ~20 guest-MIPS, 4000 insns ≈ 200 µs wall-time, well
+         * inside the firmware's 250 µs IRQ0 expectation. Pre-XINU there is
+         * no IRQ0 to deliver, so we use a much larger batch (less
+         * uc_emu_start overhead → faster boot). */
+        size_t batch = g_emu.xinu_ready ? 4000 : 200000;
 
         /* Execute a batch of instructions.
          * eip is carried from previous iteration (or initial read before loop). */
@@ -787,15 +915,25 @@ void cpu_run(void)
                  * cell != 0xFFFF.  So flip to 0 only after xinu_ready for
                  * io-handled; keep 0xFFFF for bar4-patch (patched CMP
                  * makes the value moot but the watchdog callee is happy). */
-                uint32_t scribble_val;
-                if (!g_emu.xinu_ready) {
-                    scribble_val = 0x0000FFFFu;
-                } else {
-                    scribble_val =
-                        (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) ? 0u
-                                                                         : 0x0000FFFFu;
-                }
+                /* IRQ0-cadence-fix follow-up:
+                 * The pci_watchdog_bone caller does
+                 *     call test_fn; cmp eax,1; jne +20 (skip Fatal); FATAL
+                 * i.e. Fatal fires when test_fn returns 1. test_fn returns
+                 * 1 iff dcs_probe says "DCS present" AND PLX[0x4C] bit 2
+                 * clear. So the *correct* scribble in BOTH modes is the
+                 * value that makes dcs_probe return 0 (DCS "absent" path),
+                 * which in this firmware is cell == 0xFFFF. Empirical:
+                 * before the IRQ0 cadence fix the watchdog bone process
+                 * never ran, so scribbling 0 didn't matter; with the
+                 * cadence right the polarity matters. Audio init needs
+                 * its own DCS-presence path elsewhere — see dcs_mode
+                 * choice handling in io.c bar4-patch / io-handled. */
+                uint32_t scribble_val = 0x0000FFFFu;
                 RAM_WR32(g_emu.watchdog_flag_addr, scribble_val);
+            }
+            if (g_emu.plx_bar_ptr_addr) {
+                /* Keep PLX BAR pointer alive — see include/encore.h. */
+                RAM_WR32(g_emu.plx_bar_ptr_addr, WMS_BAR0);
             }
             RAM_WR32(0, 0);
         }
