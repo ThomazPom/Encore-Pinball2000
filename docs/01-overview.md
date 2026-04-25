@@ -33,11 +33,12 @@ The goal is **authenticity through simplicity**:
 
 ## Goals (in order of priority)
 
-1. **Correct boot on every dearchived bundle.** Seven update bundles
-   have been pulled from the wild — SWE1 v1.5 / v2.1 and RFM v1.2 /
-   v1.6 / v1.8 / v2.5 / v2.6. Six of the seven reach attract mode with
-   full graphics and DCS audio. The oldest (RFM v1.2, 1999) dies
-   pre-XINU and is documented separately (see [26](26-testing-bundle-matrix.md)).
+1. **Correct boot on every dearchived bundle.** Eleven update bundles
+   are tracked end-to-end — SWE1 v1.3 / v1.4 / v1.5 / v2.10 and RFM
+   v1.2 / v1.4 / v1.5 / v1.6 / v1.8 / v2.50 / v2.60. Under the default
+   `io-handled` DCS mode all eleven boot to attract mode with video and
+   DCS audio writes; see [26](26-testing-bundle-matrix.md) for the
+   per-bundle matrix and the caveats around r1- vs r2-chip ROMs.
 2. **Single binary, zero dynamic discovery.** No per-bundle JSON blob,
    no Python plug-ins, no per-game #ifdef. Every bundle-specific offset
    is either pattern-scanned at boot or looked up through the update's

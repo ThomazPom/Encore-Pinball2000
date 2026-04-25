@@ -20,7 +20,7 @@ precedence.
 | `--savedata` | *path* | `./savedata` | NVRAM/SEEPROM output |
 | `--update` | *file / dir / version* | — | Force an update bundle |
 | `--no-savedata` | — | off | Skip load *and* save |
-| `--dcs-mode` | `bar4-patch` / `io-handled` | `bar4-patch` | Sound topology |
+| `--dcs-mode` | `bar4-patch` / `io-handled` | `io-handled` | Sound topology |
 | `--fullscreen` | — | off | Open SDL window fullscreen |
 | `--flipscreen` | — | off | Invert the framebuffer vertically |
 | `--bpp` | `16` / `32` | `32` | Output texture depth |
