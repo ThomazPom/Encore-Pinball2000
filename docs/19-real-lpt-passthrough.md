@@ -261,29 +261,32 @@ cycle, so it is visible when diffing traces.
 
 ## Bus pacing (`--lpt-bus-pace`)
 
-The cabinet driver board's level shifters need a small settling window
-between consecutive transitions on the parallel-port wire. The host
-emulator can issue back-to-back IN/OUT instructions in well under a
-microsecond — fast enough that the board never sees a stable bus and
-returns transient garbage on data reads, which on a real cabinet
-manifests as relay chatter and occasional watchdog trips.
+Early bring-up assumed the cabinet driver board would need a host-side
+busywait between bus transitions to give its level shifters time to
+settle, otherwise the board would return transient garbage and chatter
+its relays. Field testing against real hardware refined that picture:
+the original guest already paces the bus through XINA's iodelay loops,
+which were designed for exactly this clock; stacking a host-side spin
+on top fights that pacing and starves the JIT (we measured ~1 ms of
+wallclock busywait per LPT cycle at the old auto-200 µs setting, which
+slid the SDL window to single-digit FPS while making the symptoms
+*worse* on the wire).
 
-`--lpt-bus-pace` inserts a deterministic busywait at two places in the
-passthrough hot path:
-
-* **after every CTL-register write** (`base+2`) — gives the strobe time
-  to propagate to the board before the next transition;
-* **before every DATA-register read** (`base+0`) — guarantees the board
-  has driven a stable value onto the bus before we sample it.
+`--lpt-bus-pace` is therefore now an **opt-in escape hatch** for boards
+that genuinely need it, not a default safety net. When non-zero, it
+inserts a deterministic busywait **before every DATA-register read**
+(`base+0`) — the one moment in the documented protocol where the board
+itself drives the bus, and the only place where extra settling time has
+a defensible reason to exist.
 
 Status reads, cached CTL reads, and pure-emulated I/O bypass the wire
 entirely and do not pace.
 
 | Value         | Behaviour                                                      |
 |---------------|----------------------------------------------------------------|
-| `auto` *(def)*| 0 µs while no real board is detected (no overhead for emulator-only users); 200 µs as soon as passthrough activates against a board. |
-| `0`           | Disable pacing entirely — pre-flag behaviour. Use only when measuring the raw round-trip cost on bench equipment. |
-| `1..100000`   | Force exactly N microseconds. Try `400` or `800` if the default 200 µs still chatters on a marginal board. |
+| `auto` *(def)*| 0 µs. Trust the guest XINA iodelay loops to clock the bus. |
+| `0`           | Same as `auto`. |
+| `1..100000`   | Force exactly N microseconds before each DATA read. Try `80`, `200`, `400` if a marginal board returns garbled values or chatters its relays. |
 
 The implementation is a `clock_gettime(CLOCK_MONOTONIC)` busywait rather
 than `nanosleep()` because Linux scheduler granularity rounds sub-100 µs

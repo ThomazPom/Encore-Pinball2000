@@ -1157,7 +1157,7 @@ void lpt_dump_guest_switch_state(void)
 static int lpt_val_interesting(uint8_t op, uint8_t val)
 {
     switch (op) {
-    case 0x00: return val != 0x00;                    /* Physical[8] — coin slots, idle = 0 */
+    case 0x00: return val != 0xF0;                    /* Physical[8] — idle = 0xF0 (cabinet pull-ups) */
     case 0x01: return val != 0x00 && val != 0x02;     /* Physical[10] — ignore door-only */
     case 0x02: return val != 0xF0;
     case 0x03: return val != 0x00;                    /* Physical[9] — switch active */
