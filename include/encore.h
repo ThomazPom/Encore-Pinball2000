@@ -33,7 +33,21 @@
  *   that prevent the DCS task from running. Tracking separately.
  */
 
-#error "IRQ0 COORDINATION: good direction with s_sched/vticks, but fix this before testing/claiming ideal: vticks accounting checks maybe_hlt before refreshing EIP after uc_emu_start. If a batch executes STI/other insns then stops on HLT, stale EIP makes it credit 4 ticks instead of idle-time batch, starving IRQ0/resched during nulluser. Read the real stop EIP immediately after uc_emu_start, use it for maybe_hlt and later error handling, then test. Also min_batch means this is a bounded approximation, not perfect run-until-next-event. Since crashes persist, stop only tuning IRQ0: audit all active bring-up patches/shims, run A/B with sound/DCS calls disabled or neutralized, compare io-handled vs bar4-patch, and prove whether Fatal follows IRQ stats or a DCS/watchdog/patch side effect."
+/*
+ * Stale-EIP-in-vticks-accounting bug FIXED in src/cpu.c — we now
+ * uc_reg_read EIP immediately after uc_emu_start before classifying
+ * the stop reason, so HLT-at-stop-after-running-other-insns correctly
+ * credits batch (idle time elapsed) instead of 4 (single 0F3C-style
+ * insn). Also added a stuck-ISR watchdog (>50 ms guest in IRQ0 ISR
+ * triggers cpu_dump_irq_snapshot with full guest CPU/stack state) so
+ * we can SEE where in the guest the wedge happens, not just count it.
+ *
+ * min_batch is still a bounded approximation, not perfect
+ * run-until-next-event. The PIC-collapse guard absorbs the up-to-
+ * min_batch lateness it allows. A true 1-instruction-granularity
+ * scheduler would need cheaper Unicorn per-batch overhead than is
+ * currently available.
+ */
 
 #ifndef ENCORE_H
 #define ENCORE_H
