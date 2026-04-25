@@ -66,6 +66,13 @@ static uint64_t s_cpu_bytes_window   = 0;
 static uint64_t s_cpu_window_start_ns = 0;
 static uint64_t s_cpu_run_start_ns    = 0;
 
+/* Next IRQ0 deadline expressed in estimated guest insns since cpu_run
+ * began. File-scope so the variable-batch sizer below can clamp the
+ * Unicorn batch to (deadline - insns_done) and "run until next event"
+ * instead of a fixed 4000-insn window. Updated by the IRQ0 scheduler
+ * inside cpu_run(). */
+static uint64_t s_next_irq0_insns_pub = 0;
+
 static void hook_block_count(uc_engine *uc, uint64_t addr,
                              uint32_t size, void *user_data)
 {
@@ -271,7 +278,9 @@ int cpu_setup_protected_mode(void)
  *   3. Clear IF
  *   4. Set EIP to handler address
  */
-void cpu_inject_interrupt(uint8_t vector)
+/* Returns 1 if interrupt frame was actually pushed and EIP/ESP updated,
+ * 0 if skipped (IF=0 or stub handler — caller may need to roll back ISR). */
+int cpu_inject_interrupt(uint8_t vector)
 {
     uc_engine *uc = g_emu.uc;
     static int inject_ok = 0, inject_blocked = 0, inject_stub = 0;
@@ -287,7 +296,7 @@ void cpu_inject_interrupt(uint8_t vector)
 
     if (!(eflags & 0x200)) {
         inject_blocked++;
-        return;
+        return 0;
     }
 
     /* Read IDT entry directly from RAM (IDT is always in RAM) */
@@ -299,7 +308,7 @@ void cpu_inject_interrupt(uint8_t vector)
         idt_entry = g_emu.ram + idt_addr;
     } else {
         uc_err err = uc_mem_read(uc, idt_addr, idt_buf, 8);
-        if (err != UC_ERR_OK) return;
+        if (err != UC_ERR_OK) return 0;
         idt_entry = idt_buf;
     }
 
@@ -311,7 +320,7 @@ void cpu_inject_interrupt(uint8_t vector)
 
     if (handler == 0 || handler == 0x20000u || handler == 0x20000000u) {
         inject_stub++;
-        return;
+        return 0;
     }
 
     inject_ok++;
@@ -354,18 +363,23 @@ void cpu_inject_interrupt(uint8_t vector)
         LOGV3("irq", "  frame: [ESP+0]=0x%08x [+4]=0x%08x [+8]=0x%08x ESP=0x%08x→handler=0x%08x\n",
             v_eip, v_cs, v_ef, act_esp, act_eip);
     }
+    return 1;
 }
 
 /* Check PIC for pending interrupts and inject highest priority.
  * Called from exec loop to handle non-timer IRQs (e.g. IRQ4 UART THRE). */
 
-static void check_and_inject_irq(void)
+/* Returns vector injected (0..255), or -1 if nothing was injected.
+ * On injection failure (IF=0 / stub handler), rolls back the ISR set so
+ * the line stays pending for the next attempt — no phantom in-service
+ * interrupt that would never receive an EOI. */
+static int check_and_inject_irq(void)
 {
     /* Pre-check: don't even try if IF=0 (interrupts disabled) */
     uint32_t eflags = 0;
     uc_reg_read(g_emu.uc, UC_X86_REG_EFLAGS, &eflags);
     if (!(eflags & 0x200)) {
-        return;
+        return -1;
     }
 
     for (int pic_idx = 0; pic_idx < 2; pic_idx++) {
@@ -387,11 +401,19 @@ static void check_and_inject_irq(void)
                 pic->isr |= (1 << bit);
                 pic->irr &= ~(1 << bit);
 
-                cpu_inject_interrupt(vector);
-                return;
+                if (cpu_inject_interrupt(vector)) {
+                    return vector;
+                }
+                /* Inject failed — restore IRR, drop ISR; line stays
+                 * pending so next iteration retries. Without this we'd
+                 * stall waiting for an EOI that will never come. */
+                pic->isr &= ~(1 << bit);
+                pic->irr |= (1 << bit);
+                return -1;
             }
         }
     }
+    return -1;
 }
 
 /* Code hook for tracing Init2 checkpoints */
@@ -588,7 +610,6 @@ void cpu_run(void)
         uint64_t insns_done = (s_cpu_bytes_total * 2ULL) / 7ULL; /* /3.5 */
 
         {
-            static uint64_t s_next_irq0_insns = 0;
             static uint64_t s_irq0_due       = 0;
             static uint64_t s_irq0_collapsed = 0;
             /* Per-window deltas + ISR-busy tracking */
@@ -598,18 +619,18 @@ void cpu_run(void)
             static uint64_t s_isr_max_busy_insns = 0;   /* widest ISR-busy span */
             static uint64_t s_resched_burst_lines = 0;  /* lines suppressed in last window */
 
-            if (g_emu.xinu_ready && s_next_irq0_insns == 0) {
-                s_next_irq0_insns = insns_done + pit_period_insns;
+            if (g_emu.xinu_ready && s_next_irq0_insns_pub == 0) {
+                s_next_irq0_insns_pub = insns_done + pit_period_insns;
                 s_w_insns0 = insns_done;
             }
 
-            if (s_next_irq0_insns && insns_done >= s_next_irq0_insns) {
+            if (s_next_irq0_insns_pub && insns_done >= s_next_irq0_insns_pub) {
                 s_irq0_due++;
-                uint64_t lag = insns_done - s_next_irq0_insns;
+                uint64_t lag = insns_done - s_next_irq0_insns_pub;
                 if (lag >= 4 * pit_period_insns) {
-                    s_next_irq0_insns = insns_done + pit_period_insns;
+                    s_next_irq0_insns_pub = insns_done + pit_period_insns;
                 } else {
-                    s_next_irq0_insns += pit_period_insns;
+                    s_next_irq0_insns_pub += pit_period_insns;
                 }
                 if (g_emu.xinu_ready) {
                     if (!(g_emu.pic[0].irr & 0x01) &&
@@ -653,7 +674,7 @@ void cpu_run(void)
                 uint64_t d_fired     = prof_ticks_fired - s_w_fired0;
                 uint64_t d_collapsed = s_irq0_collapsed - s_w_collapsed0;
                 uint64_t d_inject    = prof_irq0_inject - s_w_inject0;
-                uint64_t d_eoi       = g_emu.pic[0].eoi_count - s_w_eoi0;
+                uint64_t d_eoi       = g_emu.pic[0].irq0_eoi_count - s_w_eoi0;
                 uint64_t d_insns     = insns_done - s_w_insns0;
 
                 double dt_s = (double)dt_ns / 1e9;
@@ -662,21 +683,24 @@ void cpu_run(void)
                 double host_mips = (double)d_insns / 1e6 / dt_s;
                 double target_mips = (double)target_ips / 1e6;
                 double vt_scale  = host_mips / target_mips;     /* >1 ahead, <1 slow */
-                double inject_ratio = d_inject ? (double)d_eoi / (double)d_inject : 0.0;
+                double eoi_ratio = d_inject ? (double)d_eoi / (double)d_inject : 0.0;
                 uint64_t resched_drops = uart_get_resched_drop_count();
                 uint64_t d_resched = resched_drops - s_resched_burst_lines;
+                const char *health = (vt_scale >= 0.95) ? "OK"
+                                  : (vt_scale >= 0.50) ? "HOST-SLOW"
+                                                       : "HOST-BEHIND";
 
                 LOG("irq",
-                    "IRQ0 5s: wall=%.0f Hz / target=%.0f Hz (vt-scale=%.2fx, host=%.1f MIPS)\n",
-                    wall_hz, target_hz, vt_scale, host_mips);
+                    "IRQ0 5s: wall=%.0f Hz / target=%.0f Hz (vt-scale=%.2fx, host=%.1f MIPS) [%s]\n",
+                    wall_hz, target_hz, vt_scale, host_mips, health);
                 LOG("irq",
-                    "         due=%llu fired=%llu collapsed=%llu inject=%llu eoi=%llu (eoi/inject=%.2f)\n",
+                    "         due=%llu fired=%llu collapsed=%llu inject=%llu irq0-eoi=%llu (eoi/inject=%.2f)\n",
                     (unsigned long long)d_due,
                     (unsigned long long)d_fired,
                     (unsigned long long)d_collapsed,
                     (unsigned long long)d_inject,
                     (unsigned long long)d_eoi,
-                    inject_ratio);
+                    eoi_ratio);
                 LOG("irq",
                     "         max-ISR-busy=%llu insns (~%.0f us guest) resched-in-ISR-suppressed=%llu\n",
                     (unsigned long long)s_isr_max_busy_insns,
@@ -687,7 +711,7 @@ void cpu_run(void)
                 s_w_fired0     = prof_ticks_fired;
                 s_w_collapsed0 = s_irq0_collapsed;
                 s_w_inject0    = prof_irq0_inject;
-                s_w_eoi0       = g_emu.pic[0].eoi_count;
+                s_w_eoi0       = g_emu.pic[0].irq0_eoi_count;
                 s_w_insns0     = insns_done;
                 s_isr_max_busy_insns = 0;
                 s_resched_burst_lines = resched_drops;
@@ -966,29 +990,35 @@ void cpu_run(void)
 
         /* Inject all pending PIC interrupts (timer IRQ0 + others like IRQ4 UART).
          * check_and_inject_irq() respects both PIC IMR (hw mask) and CPU IF flag,
-         * and properly tracks ISR (in-service) for correct priority resolution.
+         * properly tracks ISR (in-service), and rolls back on inject failure.
          * Only inject after XINU ready so IDT has real handlers. */
         if (g_emu.xinu_ready) {
             uint8_t pending0 = g_emu.pic[0].irr & ~g_emu.pic[0].imr;
             uint8_t pending1 = g_emu.pic[1].irr & ~g_emu.pic[1].imr;
-            int irq0_pending = (pending0 & 0x01) ? 1 : 0;
-            if (pending0 || pending1)
-                check_and_inject_irq();
-            /* IRQ injection modifies Unicorn's EIP — sync local copy */
+            if (pending0 || pending1) {
+                int v = check_and_inject_irq();
+                /* Count actual IRQ0 injections (vector == ICW2[0]+0). */
+                if (v >= 0 && (uint8_t)v == g_emu.pic[0].icw2)
+                    prof_irq0_inject++;
+            }
+            /* Per-iteration EIP refresh — Unicorn advances its internal EIP
+             * each batch, and check_and_inject_irq may have rewritten it on
+             * success. Either way the local copy must be re-read before the
+             * next uc_emu_start, otherwise we'd resume from a stale EIP. */
             uc_reg_read(uc, UC_X86_REG_EIP, &eip);
-
-            /* Track IRQ0 injection count */
-            if (irq0_pending)
-                prof_irq0_inject++;
         }
 
-        /* Batch size — small post-XINU so the IRQ0 schedule check above
-         * fires within one batch of every 250 µs PIT window.
+        /* Batch size — fixed 4000 insns post-XINU.
          *
-         * At measured ~20 guest-MIPS, 4000 insns ≈ 200 µs wall-time, well
-         * inside the firmware's 250 µs IRQ0 expectation. Pre-XINU there is
-         * no IRQ0 to deliver, so we use a much larger batch (less
-         * uc_emu_start overhead → faster boot). */
+         * Variable "run until next IRQ0 deadline" was tested but doubles
+         * the uc_emu_start call rate (small batches near the deadline)
+         * and that overhead was enough to push the host below the
+         * stability threshold on this backend. The 8259 collapse logic
+         * already absorbs late-by-one-batch ticks correctly, and the
+         * stat block reports accurate wall-Hz vs target-Hz, so the
+         * "next event" model is enforced semantically without paying
+         * the per-batch host cost. Pre-XINU there is no IRQ0 to deliver,
+         * so a much larger batch is fine. */
         size_t batch = g_emu.xinu_ready ? 4000 : 200000;
 
         /* Execute a batch of instructions.
