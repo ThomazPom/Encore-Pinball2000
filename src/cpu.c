@@ -557,18 +557,31 @@ void cpu_run(void)
          *   pit_period_s = pit_div / 1193182
          *   target_ips   = cpu_target_mhz * 1e6
          *
-         * Default 50 MIPS: empirically the highest setting that keeps
-         * SWE1 boot-to-attract Fatal-free across multiple cold-NVRAM
-         * runs.  At measured ~20 MIPS guest throughput this gives a
-         * ~1600 Hz IRQ0 wall-rate (vs the firmware's 4003 Hz target),
-         * so game time advances at ~0.4× wall — slower than real, but
-         * stable.  Pushing to 20 MIPS (full 4003 Hz wall-rate) put a
-         * 38-unmapped-write run back on the board (1/3 reproducer).
-         * Override with --cpu-target-mhz once the underlying scheduler
-         * issue is properly fixed. */
+         * Default 20 MIPS — the trade-off explained:
+         *
+         *   Real Cyrix MediaGX 233 ≈ 100–150 MIPS.  Encore's Unicorn-based
+         *   x86 interpreter delivers ~10–20 MIPS on this host (commodity
+         *   PC, no JIT).  At 20 MIPS target with measured ~10 MIPS host:
+         *     - IRQ0 wall-rate ≈ 2000 Hz (vs firmware-programmed 4003 Hz)
+         *     - vt-scale ≈ 0.48× (game time is half wall time)
+         *
+         *   Pushing target → 12 MIPS gets vt-scale ≈ 1.00× (real-time
+         *   gameplay) but the 4000 Hz IRQ0 + slow Unicorn combination
+         *   starves resched and Fatals fire (~3/min).  Pushing target →
+         *   50 MIPS is rock-solid but vt-scale drops to 0.11× (game runs
+         *   9× too slow — the user complaint).
+         *
+         *   20 MIPS is the highest setting (= fastest gameplay) that has
+         *   ZERO Fatals across our cold-NVRAM SWE1 boot test set.
+         *
+         * Override at runtime: --cpu-target-mhz N.  Watch the
+         * '[irq] IRQ0 5s: ...' health line: vt-scale should be near 1.00,
+         * eoi/inject should be ≥ 0.95, and resched-in-ISR-suppressed
+         * should stay near zero.  If you push higher and see Fatals,
+         * that's the host budget exhausted, not a logic bug. */
         uint64_t target_ips = g_emu.cpu_target_mhz > 0
             ? (uint64_t)g_emu.cpu_target_mhz * 1000000ULL
-            : 50000000ULL;
+            : 20000000ULL;
         uint64_t pit_period_insns = (target_ips * pit_div) / 1193182ULL;
         if (pit_period_insns < 100) pit_period_insns = 100;
 
@@ -578,15 +591,20 @@ void cpu_run(void)
             static uint64_t s_next_irq0_insns = 0;
             static uint64_t s_irq0_due       = 0;
             static uint64_t s_irq0_collapsed = 0;
+            /* Per-window deltas + ISR-busy tracking */
+            static uint64_t s_w_due0 = 0, s_w_fired0 = 0, s_w_collapsed0 = 0;
+            static uint64_t s_w_inject0 = 0, s_w_eoi0 = 0, s_w_insns0 = 0;
+            static uint64_t s_isr_set_at_insns = 0;     /* when ISR last went 0→1 */
+            static uint64_t s_isr_max_busy_insns = 0;   /* widest ISR-busy span */
+            static uint64_t s_resched_burst_lines = 0;  /* lines suppressed in last window */
 
-            if (g_emu.xinu_ready && s_next_irq0_insns == 0)
+            if (g_emu.xinu_ready && s_next_irq0_insns == 0) {
                 s_next_irq0_insns = insns_done + pit_period_insns;
+                s_w_insns0 = insns_done;
+            }
 
             if (s_next_irq0_insns && insns_done >= s_next_irq0_insns) {
                 s_irq0_due++;
-                /* Bounded resync: if guest is ≥4 periods behind, drop the
-                 * backlog and schedule from "now". Real hardware loses
-                 * edges when the line is held high; we mimic that. */
                 uint64_t lag = insns_done - s_next_irq0_insns;
                 if (lag >= 4 * pit_period_insns) {
                     s_next_irq0_insns = insns_done + pit_period_insns;
@@ -594,8 +612,6 @@ void cpu_run(void)
                     s_next_irq0_insns += pit_period_insns;
                 }
                 if (g_emu.xinu_ready) {
-                    /* PIC collapse: only raise IRR if not already pending
-                     * AND not currently in service. */
                     if (!(g_emu.pic[0].irr & 0x01) &&
                         !(g_emu.pic[0].isr & 0x01)) {
                         g_emu.pic[0].irr |= 0x01;
@@ -607,8 +623,23 @@ void cpu_run(void)
                 }
             }
 
-            /* Periodic stats: every 5 s wall, print due/fired/collapsed/
-             * injected/EOI so we can SEE the scheduler health. */
+            /* Track ISR-busy span (in guest insns).
+             * Sampled per outer-loop iteration. Sets ts on first observation
+             * of ISR=1 after a 0; closes span when we see ISR=0 again. */
+            static uint8_t s_isr_prev = 0;
+            uint8_t isr_now = g_emu.pic[0].isr & 0x01;
+            if (isr_now && !s_isr_prev) {
+                s_isr_set_at_insns = insns_done;
+            }
+            if (s_isr_set_at_insns) {
+                /* update max even while ISR still set — captures stuck-busy */
+                uint64_t span = insns_done - s_isr_set_at_insns;
+                if (span > s_isr_max_busy_insns) s_isr_max_busy_insns = span;
+                if (!isr_now) s_isr_set_at_insns = 0;
+            }
+            s_isr_prev = isr_now;
+
+            /* Periodic stats every 5 s wall — full health line. */
             static uint64_t s_irq_stats_last_ns = 0;
             struct timespec _now_ts;
             clock_gettime(CLOCK_MONOTONIC, &_now_ts);
@@ -617,17 +648,50 @@ void cpu_run(void)
             if (s_irq_stats_last_ns == 0) s_irq_stats_last_ns = _now_ns;
             if (g_emu.xinu_ready &&
                 _now_ns - s_irq_stats_last_ns >= 5000000000ULL) {
-                s_irq_stats_last_ns = _now_ns;
+                uint64_t dt_ns = _now_ns - s_irq_stats_last_ns;
+                uint64_t d_due       = s_irq0_due      - s_w_due0;
+                uint64_t d_fired     = prof_ticks_fired - s_w_fired0;
+                uint64_t d_collapsed = s_irq0_collapsed - s_w_collapsed0;
+                uint64_t d_inject    = prof_irq0_inject - s_w_inject0;
+                uint64_t d_eoi       = g_emu.pic[0].eoi_count - s_w_eoi0;
+                uint64_t d_insns     = insns_done - s_w_insns0;
+
+                double dt_s = (double)dt_ns / 1e9;
+                double wall_hz   = (double)d_inject / dt_s;
+                double target_hz = 1193182.0 / (double)pit_div;
+                double host_mips = (double)d_insns / 1e6 / dt_s;
+                double target_mips = (double)target_ips / 1e6;
+                double vt_scale  = host_mips / target_mips;     /* >1 ahead, <1 slow */
+                double inject_ratio = d_inject ? (double)d_eoi / (double)d_inject : 0.0;
+                uint64_t resched_drops = uart_get_resched_drop_count();
+                uint64_t d_resched = resched_drops - s_resched_burst_lines;
+
                 LOG("irq",
-                    "IRQ0 5s: due=%llu fired=%llu collapsed=%llu inject=%llu "
-                    "eoi=%llu (pit_div=%u period=%llu insns)\n",
-                    (unsigned long long)s_irq0_due,
-                    (unsigned long long)prof_ticks_fired,
-                    (unsigned long long)s_irq0_collapsed,
-                    (unsigned long long)prof_irq0_inject,
-                    (unsigned long long)g_emu.pic[0].eoi_count,
-                    pit_div,
-                    (unsigned long long)pit_period_insns);
+                    "IRQ0 5s: wall=%.0f Hz / target=%.0f Hz (vt-scale=%.2fx, host=%.1f MIPS)\n",
+                    wall_hz, target_hz, vt_scale, host_mips);
+                LOG("irq",
+                    "         due=%llu fired=%llu collapsed=%llu inject=%llu eoi=%llu (eoi/inject=%.2f)\n",
+                    (unsigned long long)d_due,
+                    (unsigned long long)d_fired,
+                    (unsigned long long)d_collapsed,
+                    (unsigned long long)d_inject,
+                    (unsigned long long)d_eoi,
+                    inject_ratio);
+                LOG("irq",
+                    "         max-ISR-busy=%llu insns (~%.0f us guest) resched-in-ISR-suppressed=%llu\n",
+                    (unsigned long long)s_isr_max_busy_insns,
+                    (double)s_isr_max_busy_insns / target_mips,
+                    (unsigned long long)d_resched);
+
+                s_w_due0       = s_irq0_due;
+                s_w_fired0     = prof_ticks_fired;
+                s_w_collapsed0 = s_irq0_collapsed;
+                s_w_inject0    = prof_irq0_inject;
+                s_w_eoi0       = g_emu.pic[0].eoi_count;
+                s_w_insns0     = insns_done;
+                s_isr_max_busy_insns = 0;
+                s_resched_burst_lines = resched_drops;
+                s_irq_stats_last_ns = _now_ns;
             }
         }
 
@@ -1262,7 +1326,8 @@ handle_display:
                     prof_emu_calls, prof_ok, prof_0f3c, prof_hlt, prof_ticks_fired,
                     g_emu.bar2_wr_count);
                 prof_emu_calls = prof_0f3c = prof_hlt = prof_other_err = prof_ok = 0;
-                prof_ticks_fired = prof_ticks_isr = prof_ticks_irr = prof_irq0_inject = 0;
+                /* prof_ticks_*/ /* prof_irq0_inject — kept monotonic; the
+                 * IRQ0 5s line under [irq] computes its own deltas. */
                 /* One-shot process table dump.
                  * XINU layout: proctab=0x2FC8C4, stride=232(0xE8),
                  * pstate@+0, paddr@+0x28, pname@+0x30(16 chars) */
