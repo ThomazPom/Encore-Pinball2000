@@ -163,7 +163,8 @@ typedef struct {
     uint8_t icw4;
     uint8_t read_isr;   /* OCW3 read ISR mode */
     bool    init_mode;
-    uint64_t eoi_count; /* total EOIs received (for IRQ scheduler stats) */
+    uint64_t eoi_count;      /* total EOIs received (any line)         */
+    uint64_t irq0_eoi_count; /* EOIs that actually cleared ISR bit 0   */
 } PICState;
 
 /* =========================================================================
@@ -466,7 +467,7 @@ extern EncoreState g_emu;
 int  cpu_init(void);
 int  cpu_setup_protected_mode(void);
 void cpu_run(void);
-void cpu_inject_interrupt(uint8_t vector);
+int cpu_inject_interrupt(uint8_t vector);
 void cpu_timer_handler(int sig);
 
 /* memory.c */

@@ -148,6 +148,7 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
             for (int i = 0; i < 8; i++) {
                 if (pic->isr & (1 << i)) {
                     pic->isr &= ~(1 << i);
+                    if (idx == 0 && i == 0) pic->irq0_eoi_count++;
                     break;
                 }
             }
@@ -158,12 +159,17 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
                     idx, old_isr, pic->isr, eoi_log);
         } else if (val == 0x60) {
             /* Specific EOI for IRQ0 */
+            uint8_t had = pic->isr & 0x01;
             pic->isr &= ~0x01;
             pic->eoi_count++;
+            if (idx == 0 && had) pic->irq0_eoi_count++;
         } else if ((val & 0x60) == 0x60) {
             /* Specific EOI */
-            pic->isr &= ~(1 << (val & 7));
+            uint8_t bit = val & 7;
+            uint8_t had = pic->isr & (1 << bit);
+            pic->isr &= ~(1 << bit);
             pic->eoi_count++;
+            if (idx == 0 && bit == 0 && had) pic->irq0_eoi_count++;
         } else if (val == 0x0B) {
             /* OCW3: read ISR */
             pic->read_isr = 1;
