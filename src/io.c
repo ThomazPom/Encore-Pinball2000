@@ -421,6 +421,53 @@ static void apply_sgc_patches(void)
         }
     }
 
+    /* PLX BAR pointer load — find the `mov eax,[ds:plx_bar_var]` followed
+     * shortly by `mov eax,[eax+0x4C]` (8B 40 4C) inside the same callee.
+     * That `plx_bar_var` is the firmware's storage of the PCI-enumerated
+     * PLX BAR0 address. Without our fix it stays NULL and the read at
+     * +0x4C falls to RAM[0x4C] (IDT slot) where bit 2 is usually set →
+     * watchdog "expired".  We extract the var address, then cpu.c primes
+     * it with WMS_BAR0 so the read goes through bar.c (which forces
+     * INTCSR bit 2 clear). Two encodings to look for:
+     *   A1 <addr32>            ; mov eax,[moffs32]
+     *   8B 05 <addr32>         ; mov eax,[disp32]
+     * followed (within ~16 bytes, allowing a cmp/test/jcc filler) by
+     *   8B 40 4C               ; mov eax,[eax+0x4C]
+     */
+    uint32_t plx_bar_var = 0;
+    {
+        uint32_t scan_lo = callee_off;
+        uint32_t scan_hi = callee_off + 256;
+        if (scan_hi > scan_size - 8) scan_hi = scan_size - 8;
+        for (uint32_t off = scan_lo; off + 8 <= scan_hi && !plx_bar_var; off++) {
+            uint8_t *p = buf + off;
+            uint32_t cand = 0;
+            uint32_t after = 0;
+            if (p[0] == 0xA1) {
+                memcpy(&cand, p + 1, 4);
+                after = off + 5;
+            } else if (p[0] == 0x8B && p[1] == 0x05) {
+                memcpy(&cand, p + 2, 4);
+                after = off + 6;
+            } else {
+                continue;
+            }
+            if (cand < 0x100000u || cand >= 0x1000000u) continue;
+            uint32_t look_hi = after + 16;
+            if (look_hi > scan_size - 3) look_hi = scan_size - 3;
+            for (uint32_t k = after; k + 3 <= look_hi; k++) {
+                if (buf[k] == 0x8B && buf[k+1] == 0x40 && buf[k+2] == 0x4C) {
+                    plx_bar_var = cand;
+                    LOGV("sgc", "PLX BAR ptr: load at 0x%08x → var [0x%08x]\n",
+                         scan_base + off, plx_bar_var);
+                    break;
+                }
+                /* allow short fillers; bail on RET/JMP */
+                if (buf[k] == 0xC3 || buf[k] == 0xEB || buf[k] == 0xE9) break;
+            }
+        }
+    }
+
     free(buf);
 
     if (!health_addr) {
@@ -459,6 +506,22 @@ static void apply_sgc_patches(void)
             health_addr, prime_val,
             (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) ? "io-handled" : "bar4-patch");
     }
+
+    /* PLX BAR ptr priming — see comment in include/encore.h next to
+     * plx_bar_ptr_addr for the watchdog-callee rationale. We prime it
+     * once here AND keep cpu.c re-writing it each iteration, because
+     * the firmware's natural PCI enumeration would normally overwrite
+     * a stale value mid-boot; without that path we must own the cell. */
+    if (plx_bar_var) {
+        g_emu.plx_bar_ptr_addr = plx_bar_var;
+        RAM_WR32(plx_bar_var, WMS_BAR0);
+        LOG("sgc", "PLX BAR ptr primed: [0x%08x] = 0x%08x (BT-IRQ0 fix dependency)\n",
+            plx_bar_var, WMS_BAR0);
+    } else {
+        LOG("sgc", "PLX BAR ptr scan: load pattern not found — pci_watchdog_bone may fire\n");
+    }
+    /* Always dump the callee bytes once for diagnosis */
+    (void)0;
 
     /* === BT-130: mem_detect() patch ===
      * XINU's mem_detect() returns 0x400 pages (4MB) in our emulator because the

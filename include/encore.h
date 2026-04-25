@@ -283,6 +283,23 @@ typedef struct {
      *   with --lpt-bus-pace N for boards that need extra settling).
      *   0 forces no pacing. Any other value is taken verbatim. */
     int      lpt_bus_pace_us;
+
+    /* --cpu-stats[=N]: measurement step from doc 50. Counts guest basic
+     *   blocks + bytes executed and reports approximate guest IPS once
+     *   every N seconds (default 5). Unicorn JIT typically runs the
+     *   i386 guest 10–50× faster than the original Cyrix MediaGX it
+     *   was written for; this is the measurement before deciding on a
+     *   throttle. Off by default. */
+    bool     cpu_stats_enabled;
+    int      cpu_stats_period_s;
+    /* --cpu-target-mhz N: coarse opt-in guest-CPU throttle. The
+     *   reference Cyrix MediaGX ran ~233 MHz; the firmware's iodelay
+     *   loops were calibrated against that. When N>0, the cpu loop
+     *   nanosleeps once per vblank cadence to bring the running
+     *   guest-IPS average down to N*1e6 instructions/s (estimated
+     *   from block-byte count via the i386 ~3.5 bytes/insn average).
+     *   0 = disabled (default). See docs/50-cpu-clock-mismatch.md. */
+    int      cpu_target_mhz;
     bool     update_explicit_none;    /* user gave --update none → skip auto-pick */
     char     update_file[512];        /* explicit update.bin path; empty → default search */
 
@@ -411,6 +428,19 @@ typedef struct {
      * pci_watchdog_bone() False Alarm Fatal. Real 200MHz hardware completes
      * game init before the watchdog can expire; Unicorn emulation is slower. */
     uint32_t      watchdog_flag_addr;
+
+    /* PLX BAR0 pointer storage in guest RAM, scanned from the
+     * pci_watchdog_bone() callee (mov eax,[ds:plx_bar_var]; mov eax,[eax+0x4C];
+     * test al,0x4 → bit 2 = expired). Without our scan, this var stays NULL
+     * because Encore doesn't run the firmware's natural PCI BAR enumeration
+     * path; the resulting [NULL+0x4C] reads garbage from low RAM (IDT entry
+     * 9) which usually has bit 2 set → the watchdog probe returns "expired"
+     * once IRQ0 cadence is correct enough for the watchdog_bone process to
+     * actually run. cpu.c writes WMS_BAR0 (0x10000000) here so the next
+     * load resolves to a real PLX BAR address; bar.c forces INTCSR bit 2
+     * clear on read, so the firmware sees "alive". 0 = scan failed / not
+     * yet found → no priming. */
+    uint32_t      plx_bar_ptr_addr;
 
     /* Host-driven C++ constructor calling phase (POC BT-64/BT-89).
      * XINU's cpp_call_ctors needs the symbol table at BAR3 flash, which may
