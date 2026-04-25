@@ -40,11 +40,6 @@
  *  C) RFM/SWE1 both, read-only maintenance @ 64-cycle tick:
  *      RAM_WR32(0, 0)           — NULL page zeroing, harmless
  *      watchdog_flag_addr=FFFF  — uses scanned address (safe)
- *
- *  D) Dropped in prior pass — kept only as commented markers:
- *      apply_xinu_boot_patches() (V1.12 BSS pokes) — orphaned, deleted.
- *      SWE1-V1.12 display bootstrap — deleted.
- *      Fatal/panic loop HLT pokes — deleted.
  * ==========================================================================
  */
 #include "encore.h"
