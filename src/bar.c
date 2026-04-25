@@ -519,10 +519,6 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
         /* BAR2: DCS2 SRAM echo */
         uint32_t off = a - WMS_BAR2;
 
-        /* DROPPED 2026-04-21: Phase 3 start trigger (V1.12 only) was a
-         * stub anyway (just logged, no patches inside). is_v19_update
-         * is always true for our update-flash loads → dead code. */
-
         if (off < BAR2_SIZE) {
             if (size == 1)
                 val = g_emu.bar2_sram[off];
@@ -809,12 +805,6 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
             LOGV3("bar2", "XINU boot detected (first BAR2 write at off=0x%x) — activating LPT\n", off);
             lpt_activate();
         }
-
-        /* DROPPED 2026-04-21: DCS2 V1.12 completion intercepts (offset 0x50/0x1C
-         * acks writing 0x2797C4 / 0x2C927C BSS addresses). Gated on
-         * !is_v19_update which is always true for our update-flash loads
-         * (rom.c sets is_v19_update=true for both swe1_14 and rfm_15) →
-         * dead code. */
 
         /* Text display: printable chars at SRAM offsets are char display data */
         if (size == 1 && val >= 0x20 && val < 0x7F && off >= 0x200) {

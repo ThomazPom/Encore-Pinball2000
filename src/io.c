@@ -562,15 +562,6 @@ static void apply_sgc_patches(void)
         free(mb);
     }
 
-    /* DROPPED 2026-04-21: "Minimal display bootstrap" block (9 hardcoded
-     * SWE1-V1.12 BSS writes) was already gated to game_id==50069 only.
-     * Removed entirely because (a) SWE1 currently runs as V1.5, not V1.12,
-     * so those addresses are also wrong, and (b) SWE1 still boots cleanly
-     * to the idle loop (EIP=0x22f433) without it — the scheduler is
-     * primed via apply_xinu_boot_patches() and the V1.19 maintenance
-     * block in cpu.c.  Less patches → version-agnostic.
-     */
-
     /* === prnull idle code at 0xFF0000 (can be written early, it's just code) === */
     {
         uint8_t idle_code[64];
@@ -624,20 +615,6 @@ static void apply_sgc_patches(void)
         free(mb);
     }
 
-    /* DROPPED 2026-04-21 (RFM minimization pass):
-     *   - Fatal() 0x1CF7F4 → HLT marker (BT-122)
-     *   - Panic loop 0x1D96AE → HLT HLT
-     *   - 5 function stubs at 0x18BF70/0x18C148/0x17BA9C/0x2712A8/0x2C6D00
-     *   - SuperIOType=1 at 0x2C6DFC
-     *   - getstk free-list seed at 0x2D577C
-     *   - PLX BAR0 ptr at 0x279768
-     * All targeted V1.12 addresses; the latter four were gated on
-     * !is_v19_update which is ALWAYS true for our update-flash loads
-     * (both swe1_14 and rfm_15 set is_v19_update=true in rom.c) →
-     * dead code. The Fatal/panic/stubs were verified irrelevant to
-     * current RFM state via A/B test (identical exec_count + EIP
-     * with/without). Game-agnostic minimization. */
-
     /* === IVT null-pointer guard (POC: bar2_patch_ivt) ===
      * In protected mode, the real-mode IVT at address 0 is unused for interrupts
      * (IDT is used instead). However, the game's interval_0_25ms() checks
@@ -658,13 +635,6 @@ static void apply_sgc_patches(void)
         LOGV("sgc", "IRET+EOI stub at phys 0x20000 (address 0 left as zero sentinel)\n");
     }
 }
-
-/* DROPPED 2026-04-21: apply_xinu_boot_patches() — orphaned and removed.
- * Was V1.12-hardcoded scheduler/prnull seed (pstate, magic, sched_en,
- * tick_init, clkruns at SWE1-V1.12 BSS addresses). Last call site removed
- * for RFM (was corrupting RAM); SWE1 paths never depended on it once the
- * pattern-scanned BT-74 idle-loop fix landed. Keep this comment as
- * historical marker; empirical tests prove no boot-time scheduler poke is needed. */
 
 /* ===== SMC8216T NIC emulation (BT-131) =====
  * ez0: port 0x300 irq 7 mac 00:00:c0:01:02:03 type SMC8216T (8 bit)
@@ -1542,14 +1512,6 @@ static void uart_write(uint16_t port, uint8_t val)
                     lpt_activate();
                     LOG("sgc", "XINU boot detected (exec=%lu) — LPT activated (BT-94)\n",
                         (unsigned long)g_emu.exec_count);
-                    /* DROPPED 2026-04-21: apply_xinu_boot_patches() for RFM.
-                     * Those addresses (0x2B3E94/0x2B3EB8/0x2BD544/0x2BD5EC/
-                     * 0x2BD540) are SWE1-V1.12 BSS layout, NOT RFM v1.6 —
-                     * the savsp guard already caught the mismatch
-                     * ("prnull savsp=0x101e74ff (unexpected)") but the
-                     * unconditional flag writes still corrupted 21 bytes
-                     * of unknown RFM data. RFM's own XINU sysinit
-                     * completes naturally; no scheduler poke needed. */
                 }
             }
 
