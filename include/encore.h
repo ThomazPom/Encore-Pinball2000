@@ -3,18 +3,37 @@
  * Shared types, constants, memory map, and extern declarations.
  *
  * IRQ0 / virtual-time direction (live):
- *   - PIT/IRQ0 scheduled from guest virtual time (insns), not wall-clock.
+ *   - PIT/IRQ0 scheduled from guest virtual time (vticks), not wall-clock.
+ *     vticks is fed authoritatively by Unicorn's `count` parameter after
+ *     each batch; bytes/3.5 is now only a secondary diagnostic.
+ *   - Variable batch sizing: clamp(insns_to_next_irq0, min_batch, 4000).
+ *     min_batch = pit_period/4 capped at 1000 to bound uc_emu_start
+ *     overhead (prior unbounded variable-batch attempt destabilized).
  *   - Real PIC collapse: at most one pending edge per line; ISR/IRR
  *     rolled back if cpu_inject_interrupt skipped (IF=0 / stub IDT).
  *   - Wall clock only throttles when --realtime is set; default is
  *     full-speed and vt-scale > 1 is reported as [AHEAD], not as wrong.
  *   - cpu_target_mhz is the GUEST CPU MODEL RATE (used for PIT period
- *     math); it does NOT throttle the host. --realtime is the throttle.
+ *     math and as the realtime throttle reference); it does NOT throttle
+ *     the host on its own. --realtime is the throttle.
  *   - irq0_eoi_count is per-line (IRQ0 ISR-bit-0 1→0 transitions only);
  *     do not mix in other lines' EOIs.
- *   - bytes/3.5 stays as a diagnostic proxy. A true next-event scheduler
- *     would need cheaper Unicorn per-batch overhead than we currently get.
+ *   - cpu_dump_irq_snapshot(trigger) is called on guest "*** Fatal" /
+ *     "*** NonFatal" UART lines and dumps live + last 5 windows of
+ *     IRQ counters. Rate-limited to 2 Hz.
+ *
+ * KNOWN SEPARATE OPEN ISSUE — sound/DCS path:
+ *   The watchdog/DCS-probe scribble at <watchdog_flag_addr> is hard-
+ *   coded to 0xFFFF in both bar4-patch and io-handled modes (see
+ *   src/cpu.c). io-handled mode assumed it would flip to 0 after
+ *   xinu_ready so the natural probe returns DCS-present, but the
+ *   IRQ0-cadence rework changed which polarity makes the bone caller
+ *   happy. Audio-init breakage in io-handled mode is suspected to be
+ *   downstream of this AND of any remaining IRQ0/scheduler issues
+ *   that prevent the DCS task from running. Tracking separately.
  */
+
+#error "IRQ0 COORDINATION: good direction with s_sched/vticks, but fix this before testing/claiming ideal: vticks accounting checks maybe_hlt before refreshing EIP after uc_emu_start. If a batch executes STI/other insns then stops on HLT, stale EIP makes it credit 4 ticks instead of idle-time batch, starving IRQ0/resched during nulluser. Read the real stop EIP immediately after uc_emu_start, use it for maybe_hlt and later error handling, then test. Also min_batch means this is a bounded approximation, not perfect run-until-next-event. Since crashes persist, stop only tuning IRQ0: audit all active bring-up patches/shims, run A/B with sound/DCS calls disabled or neutralized, compare io-handled vs bar4-patch, and prove whether Fatal follows IRQ stats or a DCS/watchdog/patch side effect."
 
 #ifndef ENCORE_H
 #define ENCORE_H
@@ -493,6 +512,8 @@ int  cpu_setup_protected_mode(void);
 void cpu_run(void);
 int cpu_inject_interrupt(uint8_t vector);
 void cpu_timer_handler(int sig);
+/* Dump live IRQ/PIC counters + last 5 windows on guest Fatal/NonFatal. */
+void cpu_dump_irq_snapshot(const char *trigger);
 
 /* memory.c */
 int  memory_init(void);

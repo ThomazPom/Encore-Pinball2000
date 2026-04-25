@@ -1522,6 +1522,20 @@ static void uart_write(uint16_t port, uint8_t val)
                     LOG("uart", "%s", g_emu.uart_buf);
                     snprintf(s_uart_prev, sizeof(s_uart_prev), "%s", g_emu.uart_buf);
                 }
+                /* Pre-Fatal IRQ/PIC snapshot — when the guest emits a
+                 * Fatal/NonFatal/panic line, dump live IRQ counters and
+                 * the last few completed 5 s windows so we can see what
+                 * the scheduler was doing right before the crash. The
+                 * dumper is rate-limited to 2 Hz internally. */
+                if (strstr(g_emu.uart_buf, "*** Fatal") ||
+                    strstr(g_emu.uart_buf, "*** NonFatal") ||
+                    strstr(g_emu.uart_buf, "panic") ||
+                    strstr(g_emu.uart_buf, "Panic")) {
+                    const char *trig = strstr(g_emu.uart_buf, "*** Fatal")    ? "Fatal"
+                                     : strstr(g_emu.uart_buf, "*** NonFatal") ? "NonFatal"
+                                                                              : "panic";
+                    cpu_dump_irq_snapshot(trig);
+                }
             }
 
             /* Detect game code start — apply patches once */

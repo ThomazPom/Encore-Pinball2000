@@ -58,7 +58,13 @@ static void hook_dcs_mode_write(uc_engine *uc, uc_mem_type type,
 /* doc 50 — guest-CPU pace measurement & throttle.
  * Updated by UC_HOOK_BLOCK whenever --cpu-stats or --cpu-target-mhz are
  * enabled. Block byte size is a cheap proxy for instruction count
- * (i386 average ~3.5 bytes/insn). Reset every reporting period. */
+ * (i386 average ~3.5 bytes/insn). Reset every reporting period.
+ *
+ * NOTE: bytes/3.5 stays only as a SECONDARY diagnostic now. The
+ * authoritative virtual-time clock is `s_sched.vticks_total` below,
+ * fed by Unicorn's `count` parameter. bytes/3.5 vs vticks divergence
+ * is reported as a sanity check (HLT-heavy periods diverge legitimately
+ * because vticks credits idle time but bytes do not). */
 static uint64_t s_cpu_blocks_total   = 0;
 static uint64_t s_cpu_bytes_total    = 0;
 static uint64_t s_cpu_blocks_window  = 0;
@@ -66,12 +72,56 @@ static uint64_t s_cpu_bytes_window   = 0;
 static uint64_t s_cpu_window_start_ns = 0;
 static uint64_t s_cpu_run_start_ns    = 0;
 
-/* Next IRQ0 deadline expressed in estimated guest insns since cpu_run
- * began. File-scope so the variable-batch sizer below can clamp the
- * Unicorn batch to (deadline - insns_done) and "run until next event"
- * instead of a fixed 4000-insn window. Updated by the IRQ0 scheduler
- * inside cpu_run(). */
-static uint64_t s_next_irq0_insns_pub = 0;
+/* Virtual-time scheduler state (file-scope so cpu_dump_irq_snapshot
+ * can read it on guest Fatal). vticks_total is the AUTHORITATIVE
+ * virtual-time clock — incremented by the `count` we asked Unicorn
+ * to run after each batch. It is not "retired instructions" exactly:
+ *   - on UC_ERR_OK: full batch credited (Unicorn hit count or HLT idle —
+ *     either way that virtual time slot has elapsed)
+ *   - on UC_ERR_INSN_INVALID (HLT / 0F3C / similar emulated insn):
+ *     credit the full batch for HLT (idle equivalence), or a small
+ *     bounded value for emulated insns
+ *   - on hard error (mem unmap etc.): credit a small bounded value */
+#define IRQ_RING 5
+static struct sched_state {
+    uint64_t vticks_total;
+    uint64_t next_irq0_at_vticks;
+
+    /* cumulative counters since cpu_run started */
+    uint64_t irq0_due;
+    uint64_t irq0_fired;
+    uint64_t irq0_collapsed;
+    uint64_t irq0_inject;
+    uint64_t emu_calls;
+
+    /* ISR-busy tracking (in vticks within the current 5 s window) */
+    uint64_t isr_set_at_vticks;
+    uint64_t isr_max_busy_vticks_w;
+    uint8_t  isr_prev;
+
+    /* Window baselines for computing 5 s deltas */
+    uint64_t w_start_ns;
+    uint64_t w_vticks_base;
+    uint64_t w_due_base, w_fired_base, w_collapsed_base;
+    uint64_t w_inject_base, w_eoi_base, w_resched_base;
+
+    /* Ring of last IRQ_RING completed windows (newest at head). */
+    struct sched_window {
+        uint64_t end_ns;
+        uint64_t d_vticks;
+        uint64_t d_due, d_fired, d_collapsed, d_inject, d_eoi, d_resched;
+        uint64_t max_isr_busy_vticks;
+        double   wall_hz, target_hz, vt_scale, host_mips;
+        uint8_t  pic_irr, pic_isr, pic_imr;
+        char     health[16];
+    } ring[IRQ_RING];
+    int ring_head;     /* index of most-recent completed window */
+    int ring_count;    /* number of valid windows in ring (0..IRQ_RING) */
+
+    /* Cached pit_period_insns / target_ips so the snapshot has them. */
+    uint64_t cached_pit_period_insns;
+    uint64_t cached_target_ips;
+} s_sched;
 
 static void hook_block_count(uc_engine *uc, uint64_t addr,
                              uint32_t size, void *user_data)
@@ -524,6 +574,81 @@ static void hook_dcs_mode_write(uc_engine *uc, uc_mem_type type,
     }
 }
 
+/* Pre-Fatal IRQ/PIC snapshot — called from the UART line processor
+ * when the guest emits a "*** Fatal" / "*** NonFatal" line. Dumps the
+ * live counters since the last 5 s window AND the last few completed
+ * windows so we can see both the immediate state and the lead-up. */
+void cpu_dump_irq_snapshot(const char *trigger)
+{
+    static uint64_t s_last_dump_ns = 0;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    uint64_t now_ns = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+    /* Rate-limit to once per 500 ms so a NonFatal storm doesn't spam. */
+    if (s_last_dump_ns && now_ns - s_last_dump_ns < 500000000ULL) return;
+    s_last_dump_ns = now_ns;
+
+    if (!trigger) trigger = "snapshot";
+    LOG("irq", "=== TRIGGER:%s — IRQ/PIC pre-Fatal snapshot ===\n", trigger);
+
+    /* Live (incomplete) window since last 5 s boundary. */
+    uint64_t d_vticks    = s_sched.vticks_total   - s_sched.w_vticks_base;
+    uint64_t d_due       = s_sched.irq0_due       - s_sched.w_due_base;
+    uint64_t d_fired     = s_sched.irq0_fired     - s_sched.w_fired_base;
+    uint64_t d_collapsed = s_sched.irq0_collapsed - s_sched.w_collapsed_base;
+    uint64_t d_inject    = s_sched.irq0_inject    - s_sched.w_inject_base;
+    uint64_t d_eoi       = g_emu.pic[0].irq0_eoi_count - s_sched.w_eoi_base;
+    uint64_t resched_drops = uart_get_resched_drop_count();
+    uint64_t d_resched   = resched_drops - s_sched.w_resched_base;
+    double dt_s = (s_sched.w_start_ns ? (double)(now_ns - s_sched.w_start_ns) : 1.0) / 1e9;
+    if (dt_s < 0.001) dt_s = 0.001;
+    double target_mips = (double)s_sched.cached_target_ips / 1e6;
+    if (target_mips < 0.01) target_mips = 20.0;
+    double host_mips = (double)d_vticks / 1e6 / dt_s;
+    double vt_scale  = host_mips / target_mips;
+    double wall_hz   = (double)d_inject / dt_s;
+    double eoi_ratio = d_inject ? (double)d_eoi / (double)d_inject : 0.0;
+
+    LOG("irq",
+        "  live (last %.2fs): wall=%.0f Hz vt-scale=%.2fx host=%.1f MIPS\n",
+        dt_s, wall_hz, vt_scale, host_mips);
+    LOG("irq",
+        "  live: due=%llu fired=%llu collapsed=%llu inject=%llu irq0-eoi=%llu eoi/inject=%.2f\n",
+        (unsigned long long)d_due, (unsigned long long)d_fired,
+        (unsigned long long)d_collapsed, (unsigned long long)d_inject,
+        (unsigned long long)d_eoi, eoi_ratio);
+    LOG("irq",
+        "  live: max-ISR-busy-vticks=%llu (~%.0f us guest) resched-in-ISR-suppr=%llu\n",
+        (unsigned long long)s_sched.isr_max_busy_vticks_w,
+        (double)s_sched.isr_max_busy_vticks_w / target_mips,
+        (unsigned long long)d_resched);
+    LOG("irq",
+        "  PIC0 now: IRR=0x%02x ISR=0x%02x IMR=0x%02x  PIT[0]=%u\n",
+        g_emu.pic[0].irr, g_emu.pic[0].isr, g_emu.pic[0].imr,
+        g_emu.pit.count[0]);
+
+    /* Completed windows (oldest → newest). */
+    int n = s_sched.ring_count;
+    for (int i = 0; i < n; i++) {
+        int idx = (s_sched.ring_head - (n - 1 - i) + IRQ_RING * 2) % IRQ_RING;
+        struct sched_window *w = &s_sched.ring[idx];
+        double age_s = (double)(now_ns - w->end_ns) / 1e9;
+        LOG("irq",
+            "  win[-%ds] wall=%.0f Hz vt=%.2fx host=%.1f MIPS [%s] "
+            "due=%llu fired=%llu coll=%llu inj=%llu eoi=%llu maxISR=%llu PIC=%02x/%02x/%02x\n",
+            (int)(age_s + 0.5),
+            w->wall_hz, w->vt_scale, w->host_mips, w->health,
+            (unsigned long long)w->d_due,
+            (unsigned long long)w->d_fired,
+            (unsigned long long)w->d_collapsed,
+            (unsigned long long)w->d_inject,
+            (unsigned long long)w->d_eoi,
+            (unsigned long long)w->max_isr_busy_vticks,
+            w->pic_irr, w->pic_isr, w->pic_imr);
+    }
+    LOG("irq", "=== end snapshot ===\n");
+}
+
 /* Main execution loop */
 void cpu_run(void)
 {
@@ -542,10 +667,6 @@ void cpu_run(void)
     unsigned long prof_hlt = 0;         /* HLT returns */
     unsigned long prof_other_err = 0;   /* other errors */
     unsigned long prof_ok = 0;          /* UC_ERR_OK (batch exhausted or stopped) */
-    unsigned long prof_ticks_fired = 0; /* ticks that successfully set IRR */
-    unsigned long prof_ticks_isr = 0;   /* ticks dropped: ISR busy */
-    unsigned long prof_ticks_irr = 0;   /* ticks dropped: IRR already set */
-    unsigned long prof_irq0_inject = 0; /* IRQ0 actually injected */
 
     /* Initial EIP read — carried across iterations to avoid double-read */
     uc_reg_read(uc, UC_X86_REG_EIP, &eip);
@@ -561,11 +682,12 @@ void cpu_run(void)
     while (g_emu.running) {
         /* Virtual-time IRQ0 scheduler.
          *
-         * IRQ0 fires when the guest has executed enough INSTRUCTIONS to
-         * cover one PIT period — not when the host wall-clock says so.
-         * This makes IRQ delivery a function of guest progress, so a
-         * temporarily slow Unicorn cannot generate a tick burst, and a
-         * fast one cannot starve the guest.
+         * IRQ0 fires when the guest has consumed enough VIRTUAL TIME
+         * (in vticks) to cover one PIT period — not when host wall-
+         * clock says so. vticks is fed by Unicorn's `count` parameter
+         * after each batch (see post-uc_emu_start accounting below)
+         * and so reflects the host-independent guest clock that the
+         * 8253 PIT would actually count down against on real HW.
          *
          * Real-PIC collapse: if IRR bit is already set, OR the previous
          * IRQ0 is still in service (ISR set), we DO NOT requeue — the
@@ -575,145 +697,155 @@ void cpu_run(void)
          * scheduler watchdog at [0x30895c]. */
         uint16_t pit_div = g_emu.pit.count[0];
         if (pit_div == 0) pit_div = 0xFFFF;
-        /* PIT period in guest insns:
+        /* PIT period in vticks:
          *   pit_period_s = pit_div / 1193182
          *   model_ips    = cpu_target_mhz * 1e6
          *
-         * cpu_target_mhz is now the GUEST CPU MODEL RATE — used purely
-         * as the conversion factor between executed guest instructions
-         * and virtual time. It does NOT throttle the host. Unicorn
-         * always runs as fast as it can; --realtime is a separate,
-         * opt-in wall-clock throttle (off by default).
+         * cpu_target_mhz is the GUEST CPU MODEL RATE — used purely as
+         * the conversion factor between executed guest ticks and
+         * virtual time. It does NOT throttle the host. Unicorn always
+         * runs as fast as it can; --realtime is a separate, opt-in
+         * wall-clock throttle (off by default).
          *
          * Default 20 MIPS is a livable game-clock-vs-wall-clock ratio
          * on commodity Unicorn hosts that deliver ~10 MIPS effective
-         * x86 throughput — the firmware-programmed 4003 Hz IRQ0 maps
-         * to ~2000 Hz wall, vt-scale ≈ 0.5×. Lower (12, 10) makes the
-         * game appear faster but increases per-second IRQ load (the
-         * watchdog-Fatal ceiling on this host is around 4 kHz wall).
-         * Higher (233 = real Cyrix) is the most physically honest
-         * setting, but on a slow host the game crawls.
+         * x86 throughput. Lower (12, 10) makes the game appear faster
+         * but increases per-second IRQ load. Higher (233 = real Cyrix)
+         * is the most physically honest setting, but on a slow host
+         * the game crawls. THIS IS NOT THE FINAL ARCHITECTURE — just
+         * the pragmatic conversion ratio until full virtual-event
+         * scheduling lands across all peripherals.
          *
          * Watch the '[irq] IRQ0 5s' health line: vt-scale labels are
          * AHEAD / OK / HOST-SLOW / HOST-BEHIND, eoi/inject should be
-         * 1.00, resched-in-ISR-suppressed should stay near 0. */
+         * 1.00, max-ISR-busy-vticks must stay well below pit_period. */
         uint64_t target_ips = g_emu.cpu_target_mhz > 0
             ? (uint64_t)g_emu.cpu_target_mhz * 1000000ULL
             : 20000000ULL;
         uint64_t pit_period_insns = (target_ips * pit_div) / 1193182ULL;
         if (pit_period_insns < 100) pit_period_insns = 100;
+        s_sched.cached_pit_period_insns = pit_period_insns;
+        s_sched.cached_target_ips = target_ips;
 
-        uint64_t insns_done = (s_cpu_bytes_total * 2ULL) / 7ULL; /* /3.5 */
+        if (g_emu.xinu_ready && s_sched.next_irq0_at_vticks == 0) {
+            s_sched.next_irq0_at_vticks = s_sched.vticks_total + pit_period_insns;
+            s_sched.w_vticks_base = s_sched.vticks_total;
+        }
 
-        {
-            static uint64_t s_irq0_due       = 0;
-            static uint64_t s_irq0_collapsed = 0;
-            /* Per-window deltas + ISR-busy tracking */
-            static uint64_t s_w_due0 = 0, s_w_fired0 = 0, s_w_collapsed0 = 0;
-            static uint64_t s_w_inject0 = 0, s_w_eoi0 = 0, s_w_insns0 = 0;
-            static uint64_t s_isr_set_at_insns = 0;     /* when ISR last went 0→1 */
-            static uint64_t s_isr_max_busy_insns = 0;   /* widest ISR-busy span */
-            static uint64_t s_resched_burst_lines = 0;  /* lines suppressed in last window */
-
-            if (g_emu.xinu_ready && s_next_irq0_insns_pub == 0) {
-                s_next_irq0_insns_pub = insns_done + pit_period_insns;
-                s_w_insns0 = insns_done;
+        if (s_sched.next_irq0_at_vticks &&
+            s_sched.vticks_total >= s_sched.next_irq0_at_vticks) {
+            s_sched.irq0_due++;
+            uint64_t lag = s_sched.vticks_total - s_sched.next_irq0_at_vticks;
+            if (lag >= 4 * pit_period_insns) {
+                s_sched.next_irq0_at_vticks = s_sched.vticks_total + pit_period_insns;
+            } else {
+                s_sched.next_irq0_at_vticks += pit_period_insns;
             }
-
-            if (s_next_irq0_insns_pub && insns_done >= s_next_irq0_insns_pub) {
-                s_irq0_due++;
-                uint64_t lag = insns_done - s_next_irq0_insns_pub;
-                if (lag >= 4 * pit_period_insns) {
-                    s_next_irq0_insns_pub = insns_done + pit_period_insns;
+            if (g_emu.xinu_ready) {
+                if (!(g_emu.pic[0].irr & 0x01) &&
+                    !(g_emu.pic[0].isr & 0x01)) {
+                    g_emu.pic[0].irr |= 0x01;
+                    s_sched.irq0_fired++;
                 } else {
-                    s_next_irq0_insns_pub += pit_period_insns;
-                }
-                if (g_emu.xinu_ready) {
-                    if (!(g_emu.pic[0].irr & 0x01) &&
-                        !(g_emu.pic[0].isr & 0x01)) {
-                        g_emu.pic[0].irr |= 0x01;
-                        prof_ticks_fired++;
-                    } else {
-                        s_irq0_collapsed++;
-                        prof_ticks_irr++;
-                    }
+                    s_sched.irq0_collapsed++;
                 }
             }
+        }
 
-            /* Track ISR-busy span (in guest insns).
-             * Sampled per outer-loop iteration. Sets ts on first observation
-             * of ISR=1 after a 0; closes span when we see ISR=0 again. */
-            static uint8_t s_isr_prev = 0;
-            uint8_t isr_now = g_emu.pic[0].isr & 0x01;
-            if (isr_now && !s_isr_prev) {
-                s_isr_set_at_insns = insns_done;
-            }
-            if (s_isr_set_at_insns) {
-                /* update max even while ISR still set — captures stuck-busy */
-                uint64_t span = insns_done - s_isr_set_at_insns;
-                if (span > s_isr_max_busy_insns) s_isr_max_busy_insns = span;
-                if (!isr_now) s_isr_set_at_insns = 0;
-            }
-            s_isr_prev = isr_now;
+        /* Track ISR-busy span (in vticks).
+         * Sampled per outer-loop iteration. Sets ts on first observation
+         * of ISR=1 after a 0; closes span when we see ISR=0 again. */
+        uint8_t isr_now = g_emu.pic[0].isr & 0x01;
+        if (isr_now && !s_sched.isr_prev) {
+            s_sched.isr_set_at_vticks = s_sched.vticks_total;
+        }
+        if (s_sched.isr_set_at_vticks) {
+            uint64_t span = s_sched.vticks_total - s_sched.isr_set_at_vticks;
+            if (span > s_sched.isr_max_busy_vticks_w)
+                s_sched.isr_max_busy_vticks_w = span;
+            if (!isr_now) s_sched.isr_set_at_vticks = 0;
+        }
+        s_sched.isr_prev = isr_now;
 
-            /* Periodic stats every 5 s wall — full health line. */
-            static uint64_t s_irq_stats_last_ns = 0;
-            struct timespec _now_ts;
-            clock_gettime(CLOCK_MONOTONIC, &_now_ts);
-            uint64_t _now_ns = (uint64_t)_now_ts.tv_sec * 1000000000ULL
-                             + _now_ts.tv_nsec;
-            if (s_irq_stats_last_ns == 0) s_irq_stats_last_ns = _now_ns;
-            if (g_emu.xinu_ready &&
-                _now_ns - s_irq_stats_last_ns >= 5000000000ULL) {
-                uint64_t dt_ns = _now_ns - s_irq_stats_last_ns;
-                uint64_t d_due       = s_irq0_due      - s_w_due0;
-                uint64_t d_fired     = prof_ticks_fired - s_w_fired0;
-                uint64_t d_collapsed = s_irq0_collapsed - s_w_collapsed0;
-                uint64_t d_inject    = prof_irq0_inject - s_w_inject0;
-                uint64_t d_eoi       = g_emu.pic[0].irq0_eoi_count - s_w_eoi0;
-                uint64_t d_insns     = insns_done - s_w_insns0;
+        /* Periodic stats every 5 s wall — full health line. */
+        struct timespec _now_ts;
+        clock_gettime(CLOCK_MONOTONIC, &_now_ts);
+        uint64_t _now_ns = (uint64_t)_now_ts.tv_sec * 1000000000ULL
+                         + _now_ts.tv_nsec;
+        if (s_sched.w_start_ns == 0) s_sched.w_start_ns = _now_ns;
+        if (g_emu.xinu_ready &&
+            _now_ns - s_sched.w_start_ns >= 5000000000ULL) {
+            uint64_t dt_ns = _now_ns - s_sched.w_start_ns;
+            uint64_t d_due       = s_sched.irq0_due       - s_sched.w_due_base;
+            uint64_t d_fired     = s_sched.irq0_fired     - s_sched.w_fired_base;
+            uint64_t d_collapsed = s_sched.irq0_collapsed - s_sched.w_collapsed_base;
+            uint64_t d_inject    = s_sched.irq0_inject    - s_sched.w_inject_base;
+            uint64_t d_eoi       = g_emu.pic[0].irq0_eoi_count - s_sched.w_eoi_base;
+            uint64_t d_vticks    = s_sched.vticks_total   - s_sched.w_vticks_base;
+            uint64_t resched_drops = uart_get_resched_drop_count();
+            uint64_t d_resched   = resched_drops - s_sched.w_resched_base;
 
-                double dt_s = (double)dt_ns / 1e9;
-                double wall_hz   = (double)d_inject / dt_s;
-                double target_hz = 1193182.0 / (double)pit_div;
-                double host_mips = (double)d_insns / 1e6 / dt_s;
-                double target_mips = (double)target_ips / 1e6;
-                double vt_scale  = host_mips / target_mips;     /* >1 ahead, <1 slow */
-                double eoi_ratio = d_inject ? (double)d_eoi / (double)d_inject : 0.0;
-                uint64_t resched_drops = uart_get_resched_drop_count();
-                uint64_t d_resched = resched_drops - s_resched_burst_lines;
-                const char *health = (vt_scale >= 1.05) ? "AHEAD"
-                                  : (vt_scale >= 0.95) ? "OK"
-                                  : (vt_scale >= 0.50) ? "HOST-SLOW"
-                                                       : "HOST-BEHIND";
+            double dt_s = (double)dt_ns / 1e9;
+            double wall_hz   = (double)d_inject / dt_s;
+            double target_hz = 1193182.0 / (double)pit_div;
+            double host_mips = (double)d_vticks / 1e6 / dt_s;
+            double target_mips = (double)target_ips / 1e6;
+            double vt_scale  = host_mips / target_mips;
+            double eoi_ratio = d_inject ? (double)d_eoi / (double)d_inject : 0.0;
+            const char *health = (vt_scale >= 1.05) ? "AHEAD"
+                              : (vt_scale >= 0.95) ? "OK"
+                              : (vt_scale >= 0.50) ? "HOST-SLOW"
+                                                   : "HOST-BEHIND";
 
-                LOG("irq",
-                    "IRQ0 5s: wall=%.0f Hz / target=%.0f Hz (vt-scale=%.2fx, host=%.1f MIPS) [%s]\n",
-                    wall_hz, target_hz, vt_scale, host_mips, health);
-                LOG("irq",
-                    "         due=%llu fired=%llu collapsed=%llu inject=%llu irq0-eoi=%llu (eoi/inject=%.2f)\n",
-                    (unsigned long long)d_due,
-                    (unsigned long long)d_fired,
-                    (unsigned long long)d_collapsed,
-                    (unsigned long long)d_inject,
-                    (unsigned long long)d_eoi,
-                    eoi_ratio);
-                LOG("irq",
-                    "         max-ISR-busy=%llu insns (~%.0f us guest) resched-in-ISR-suppressed=%llu\n",
-                    (unsigned long long)s_isr_max_busy_insns,
-                    (double)s_isr_max_busy_insns / target_mips,
-                    (unsigned long long)d_resched);
+            LOG("irq",
+                "IRQ0 5s: wall=%.0f Hz / target=%.0f Hz (vt-scale=%.2fx, host=%.1f MIPS) [%s]\n",
+                wall_hz, target_hz, vt_scale, host_mips, health);
+            LOG("irq",
+                "         due=%llu fired=%llu collapsed=%llu inject=%llu irq0-eoi=%llu (eoi/inject=%.2f)\n",
+                (unsigned long long)d_due,
+                (unsigned long long)d_fired,
+                (unsigned long long)d_collapsed,
+                (unsigned long long)d_inject,
+                (unsigned long long)d_eoi,
+                eoi_ratio);
+            LOG("irq",
+                "         max-ISR-busy=%llu vticks (~%.0f us guest) resched-in-ISR-suppressed=%llu\n",
+                (unsigned long long)s_sched.isr_max_busy_vticks_w,
+                (double)s_sched.isr_max_busy_vticks_w / target_mips,
+                (unsigned long long)d_resched);
 
-                s_w_due0       = s_irq0_due;
-                s_w_fired0     = prof_ticks_fired;
-                s_w_collapsed0 = s_irq0_collapsed;
-                s_w_inject0    = prof_irq0_inject;
-                s_w_eoi0       = g_emu.pic[0].irq0_eoi_count;
-                s_w_insns0     = insns_done;
-                s_isr_max_busy_insns = 0;
-                s_resched_burst_lines = resched_drops;
-                s_irq_stats_last_ns = _now_ns;
-            }
+            /* Push window into ring (newest at head). */
+            int next_head = (s_sched.ring_head + 1) % IRQ_RING;
+            struct sched_window *w = &s_sched.ring[next_head];
+            w->end_ns      = _now_ns;
+            w->d_vticks    = d_vticks;
+            w->d_due       = d_due;
+            w->d_fired     = d_fired;
+            w->d_collapsed = d_collapsed;
+            w->d_inject    = d_inject;
+            w->d_eoi       = d_eoi;
+            w->d_resched   = d_resched;
+            w->max_isr_busy_vticks = s_sched.isr_max_busy_vticks_w;
+            w->wall_hz     = wall_hz;
+            w->target_hz   = target_hz;
+            w->vt_scale    = vt_scale;
+            w->host_mips   = host_mips;
+            w->pic_irr     = g_emu.pic[0].irr;
+            w->pic_isr     = g_emu.pic[0].isr;
+            w->pic_imr     = g_emu.pic[0].imr;
+            snprintf(w->health, sizeof(w->health), "%s", health);
+            s_sched.ring_head = next_head;
+            if (s_sched.ring_count < IRQ_RING) s_sched.ring_count++;
+
+            s_sched.w_due_base       = s_sched.irq0_due;
+            s_sched.w_fired_base     = s_sched.irq0_fired;
+            s_sched.w_collapsed_base = s_sched.irq0_collapsed;
+            s_sched.w_inject_base    = s_sched.irq0_inject;
+            s_sched.w_eoi_base       = g_emu.pic[0].irq0_eoi_count;
+            s_sched.w_vticks_base    = s_sched.vticks_total;
+            s_sched.isr_max_busy_vticks_w = 0;
+            s_sched.w_resched_base   = resched_drops;
+            s_sched.w_start_ns       = _now_ns;
         }
 
         /* Wall-clock "now" for VSYNC and throttle (independent of IRQ0). */
@@ -756,16 +888,13 @@ void cpu_run(void)
                 g_emu.timer_pending = 0;
 
             /* doc 50 — opt-in realtime throttle (--realtime).
-             * Off by default: Encore is full-speed and guest virtual time
-             * may run faster OR slower than wall depending on host. When
-             * enabled, nanosleep when guest time is ahead of wall to
-             * approximate real Pinball 2000 timing for cabinet-driving. */
+             * Uses the same authoritative virtual-time clock as the
+             * IRQ scheduler, so throttle and IRQ timing always agree. */
             if (g_emu.realtime && s_cpu_run_start_ns) {
                 uint64_t target_ips = g_emu.cpu_target_mhz > 0
                     ? (uint64_t)g_emu.cpu_target_mhz * 1000000ULL
                     : 20000000ULL;
-                uint64_t insns_done = (s_cpu_bytes_total * 2ULL) / 7ULL; /* /3.5 */
-                uint64_t expected_ns = (insns_done * 1000000000ULL) / target_ips;
+                uint64_t expected_ns = (s_sched.vticks_total * 1000000000ULL) / target_ips;
                 uint64_t actual_ns   = now_ns - s_cpu_run_start_ns;
                 if (expected_ns > actual_ns) {
                     uint64_t sleep_ns = expected_ns - actual_ns;
@@ -998,7 +1127,7 @@ void cpu_run(void)
                 int v = check_and_inject_irq();
                 /* Count actual IRQ0 injections (vector == ICW2[0]+0). */
                 if (v >= 0 && (uint8_t)v == g_emu.pic[0].icw2)
-                    prof_irq0_inject++;
+                    s_sched.irq0_inject++;
             }
             /* Per-iteration EIP refresh — Unicorn advances its internal EIP
              * each batch, and check_and_inject_irq may have rewritten it on
@@ -1007,22 +1136,38 @@ void cpu_run(void)
             uc_reg_read(uc, UC_X86_REG_EIP, &eip);
         }
 
-        /* Batch size — fixed 4000 insns post-XINU.
+        /* Variable batch — run until next virtual event.
          *
-         * NOTE — this is NOT a true "run-until-next-virtual-event"
-         * scheduler. It is a fixed-window approximation: each iteration
-         * runs up to 4000 guest insns, then we re-check the IRQ0
-         * deadline. The 8259 collapse logic absorbs late-by-one-batch
-         * ticks correctly (the wall-Hz vs target-Hz numbers in the
-         * stat block reflect the true delivery rate), so the model is
-         * semantically conservative without the per-batch host overhead
-         * a literal next-event sizer would cost. A real next-event
-         * scheduler is a future cleanup; doing it correctly requires
-         * an instruction-count-per-call signal that Unicorn does not
-         * currently expose cleanly without per-insn hooks (which are
-         * far more expensive than a 4000-insn batch). Pre-XINU there
-         * is no IRQ0 to deliver, so a much larger batch is fine. */
-        size_t batch = g_emu.xinu_ready ? 4000 : 200000;
+         * Compute insns to next IRQ0 deadline; clamp to [min_batch,
+         * MAX_BATCH]. Without a floor, near-deadline iterations drop
+         * to ~50 insns each, doubling uc_emu_start call rate and
+         * destabilizing the host. With min_batch ≥ 1 PIT period / 4
+         * (and a hard 1000-insn floor for the default 20 MIPS / 4 kHz
+         * case), per-batch overhead stays bounded; the 8259 collapse
+         * logic absorbs the up-to-min_batch lateness it allows.
+         *
+         * Pre-XINU there is no IRQ0 to deliver, so a much larger
+         * batch is fine and reduces uc_emu_start overhead during ROM
+         * boot (the slowest part of the run). */
+        size_t batch;
+        if (g_emu.xinu_ready) {
+            int64_t to_next = (int64_t)s_sched.next_irq0_at_vticks
+                            - (int64_t)s_sched.vticks_total;
+            size_t min_batch = pit_period_insns / 4;
+            if (min_batch > 1000) min_batch = 1000;
+            if (min_batch < 100)  min_batch = 100;
+            const size_t max_batch = 4000;
+            if (to_next <= 0)
+                batch = min_batch;
+            else if ((uint64_t)to_next > max_batch)
+                batch = max_batch;
+            else if ((uint64_t)to_next < min_batch)
+                batch = min_batch;
+            else
+                batch = (size_t)to_next;
+        } else {
+            batch = 200000;
+        }
 
         /* Execute a batch of instructions.
          * eip is carried from previous iteration (or initial read before loop). */
@@ -1033,7 +1178,41 @@ void cpu_run(void)
 
         g_emu.exec_count++;
         prof_emu_calls++;
+        s_sched.emu_calls++;
         int eip_dirty = 0;  /* set when error handlers modify local eip */
+
+        /* Authoritative virtual-time advance.
+         *
+         *   UC_ERR_OK              : Unicorn either consumed `batch`
+         *                            insns or stopped at an HLT.
+         *                            Either way the CPU has consumed
+         *                            `batch` ticks of virtual time
+         *                            (HLT idle = real CPU would be
+         *                            idle for that long too).
+         *   UC_ERR_INSN_INVALID    : HLT-from-error / 0F3C / similar
+         *                            partial run. We can't know exact
+         *                            partial count; credit `batch` for
+         *                            HLT (idle equivalence), small
+         *                            bounded value otherwise so the
+         *                            scheduler doesn't stall.
+         *   other errors           : unmapped mem etc. Credit small
+         *                            bounded value, scheduler will
+         *                            still progress; the error itself
+         *                            is the real signal.
+         *
+         * This includes idle/halted virtual time on purpose — vticks
+         * is the SCHEDULER clock, not retired-instruction count. The
+         * 0F3C / invalid-insn cases credit only a small fixed value
+         * since these are emulated single instructions, not idle. */
+        if (err == UC_ERR_OK) {
+            s_sched.vticks_total += batch;
+        } else if (err == UC_ERR_INSN_INVALID) {
+            uint8_t maybe_hlt = 0;
+            if (eip < RAM_SIZE) maybe_hlt = (g_emu.ram[eip] == 0xF4);
+            s_sched.vticks_total += maybe_hlt ? batch : 4;
+        } else {
+            s_sched.vticks_total += 4;
+        }
 
         /* Periodic maintenance — every iteration. */
         if (g_emu.game_started) {
@@ -1355,12 +1534,13 @@ handle_display:
                 }
                 /* One-shot dump of guest DCS state — disabled */
                 /* Performance stats */
-                LOGV2("hb", "  PERF: calls=%lu/5s ok=%lu 0f3c=%lu hlt=%lu ticks=%lu bar2wr=%u\n",
-                    prof_emu_calls, prof_ok, prof_0f3c, prof_hlt, prof_ticks_fired,
+                LOGV2("hb", "  PERF: calls=%lu/5s ok=%lu 0f3c=%lu hlt=%lu fired=%llu bar2wr=%u\n",
+                    prof_emu_calls, prof_ok, prof_0f3c, prof_hlt,
+                    (unsigned long long)s_sched.irq0_fired,
                     g_emu.bar2_wr_count);
                 prof_emu_calls = prof_0f3c = prof_hlt = prof_other_err = prof_ok = 0;
-                /* prof_ticks_*/ /* prof_irq0_inject — kept monotonic; the
-                 * IRQ0 5s line under [irq] computes its own deltas. */
+                /* IRQ0 inject/EOI deltas are computed by the [irq] 5s
+                 * health line above (s_sched.* monotonic counters). */
                 /* One-shot process table dump.
                  * XINU layout: proctab=0x2FC8C4, stride=232(0xE8),
                  * pstate@+0, paddr@+0x28, pname@+0x30(16 chars) */
