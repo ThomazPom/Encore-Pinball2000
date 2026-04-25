@@ -487,6 +487,7 @@ uint32_t io_port_read(uint16_t port, int size);
 void     io_port_write(uint16_t port, uint32_t val, int size);
 void     dcs_io_get_counters(uint32_t *ww, uint32_t *wr, uint32_t *bw, uint32_t *br, uint32_t *fr);
 void     io_init(void);
+uint64_t uart_get_resched_drop_count(void); /* for IRQ stats */
 void     nic_dseg_init(void);  /* populate NIC LAN ROM in D-segment guest RAM */
 void     lpt_activate(void);   /* activate LPT emulated port for PinIO (BT-93) */
 

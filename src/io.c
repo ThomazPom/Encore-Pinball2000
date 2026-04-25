@@ -6,6 +6,9 @@
  */
 #include "encore.h"
 
+uint64_t g_uart_resched_drop_count = 0;
+uint64_t uart_get_resched_drop_count(void) { return g_uart_resched_drop_count; }
+
 static uint8_t s_prism_regs[256] = {
     [0xB8] = 0x09, /* GCR — matches working i386 PoC / P2K-driver */
 };
@@ -1496,6 +1499,7 @@ static void uart_write(uint16_t port, uint8_t val)
                             s_last_ts = ts;
                         } else {
                             s_dropped++;
+                            g_uart_resched_drop_count++;
                             show = false;
                         }
                     }
