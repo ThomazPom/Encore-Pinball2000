@@ -163,6 +163,7 @@ typedef struct {
     uint8_t icw4;
     uint8_t read_isr;   /* OCW3 read ISR mode */
     bool    init_mode;
+    uint64_t eoi_count; /* total EOIs received (for IRQ scheduler stats) */
 } PICState;
 
 /* =========================================================================

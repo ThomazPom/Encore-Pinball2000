@@ -170,13 +170,14 @@ int cpu_init(void)
      * Cheap UC_HOOK_BLOCK accumulator; only attached when at least one
      * of --cpu-stats / --cpu-target-mhz is on, so default-path
      * performance is unchanged. */
-    if (g_emu.cpu_stats_enabled || g_emu.cpu_target_mhz > 0) {
+    /* Always attach: virtual-time IRQ0 scheduler needs a guest-insn proxy. */
+    {
         uc_hook h_block;
         uc_err be = uc_hook_add(uc, &h_block, UC_HOOK_BLOCK,
                                 (void*)hook_block_count, NULL, 1, 0);
         if (be) {
             LOG("cpu", "cpu-pace BLOCK hook FAILED: %s\n", uc_strerror(be));
-        } else {
+        } else if (g_emu.cpu_stats_enabled || g_emu.cpu_target_mhz > 0) {
             LOG("cpu", "cpu-pace: stats=%s target=%d MHz (period=%ds)\n",
                 g_emu.cpu_stats_enabled ? "on" : "off",
                 g_emu.cpu_target_mhz,
@@ -536,53 +537,104 @@ void cpu_run(void)
     }
 
     while (g_emu.running) {
-        /* Timer tick injection — wall-clock based at guest-programmed PIT rate.
-         * The guest programs PIT CH0 with a divisor (e.g. 298 → ~4003 Hz =
-         * 250 µs period). XINA uses this IRQ0 as the driver-board clock
-         * generator; if cadence drifts, lamps flicker and relays fire wildly
-         * (peripheral-side observation). We MUST honour the 250 µs window.
+        /* Virtual-time IRQ0 scheduler.
          *
-         * Run this check *every* iteration — not gated on (exec_count & 0x3F),
-         * because at 20 guest-MIPS one batch is ~10 ms wall, dwarfing a
-         * 250 µs window. Combined with the small post-XINU batch below, this
-         * delivers IRQ0 within one batch of its scheduled time. */
-        struct timespec now_ts;
-        clock_gettime(CLOCK_MONOTONIC, &now_ts);
-        uint64_t now_ns = (uint64_t)now_ts.tv_sec * 1000000000ULL + now_ts.tv_nsec;
+         * IRQ0 fires when the guest has executed enough INSTRUCTIONS to
+         * cover one PIT period — not when the host wall-clock says so.
+         * This makes IRQ delivery a function of guest progress, so a
+         * temporarily slow Unicorn cannot generate a tick burst, and a
+         * fast one cannot starve the guest.
+         *
+         * Real-PIC collapse: if IRR bit is already set, OR the previous
+         * IRQ0 is still in service (ISR set), we DO NOT requeue — the
+         * 8259 latches at most one pending edge per line. Behind-schedule
+         * ticks are dropped (bounded resync) instead of bursted, which
+         * would re-enter clkint before XINU's resched can clear the
+         * scheduler watchdog at [0x30895c]. */
+        uint16_t pit_div = g_emu.pit.count[0];
+        if (pit_div == 0) pit_div = 0xFFFF;
+        /* PIT period in guest insns:
+         *   pit_period_s = pit_div / 1193182
+         *   target_ips   = cpu_target_mhz * 1e6
+         *
+         * Default 50 MIPS: empirically the highest setting that keeps
+         * SWE1 boot-to-attract Fatal-free across multiple cold-NVRAM
+         * runs.  At measured ~20 MIPS guest throughput this gives a
+         * ~1600 Hz IRQ0 wall-rate (vs the firmware's 4003 Hz target),
+         * so game time advances at ~0.4× wall — slower than real, but
+         * stable.  Pushing to 20 MIPS (full 4003 Hz wall-rate) put a
+         * 38-unmapped-write run back on the board (1/3 reproducer).
+         * Override with --cpu-target-mhz once the underlying scheduler
+         * issue is properly fixed. */
+        uint64_t target_ips = g_emu.cpu_target_mhz > 0
+            ? (uint64_t)g_emu.cpu_target_mhz * 1000000ULL
+            : 50000000ULL;
+        uint64_t pit_period_insns = (target_ips * pit_div) / 1193182ULL;
+        if (pit_period_insns < 100) pit_period_insns = 100;
+
+        uint64_t insns_done = (s_cpu_bytes_total * 2ULL) / 7ULL; /* /3.5 */
+
         {
-            static uint64_t last_tick_ns = 0;
-            /* Initialise lazily the moment XINU becomes ready — *not* at
-             * cpu_run() entry — otherwise the first post-XINU iteration
-             * sees a multi-second backlog and would try to fire thousands
-             * of IRQ0s in one go. */
-            if (g_emu.xinu_ready && last_tick_ns == 0)
-                last_tick_ns = now_ns;
+            static uint64_t s_next_irq0_insns = 0;
+            static uint64_t s_irq0_due       = 0;
+            static uint64_t s_irq0_collapsed = 0;
 
-            if (last_tick_ns) {
-                /* PIT period in nanoseconds: 1e9 / (1193182 / divisor) */
-                uint16_t div = g_emu.pit.count[0];
-                if (div == 0) div = 0xFFFF;
-                uint64_t pit_period_ns = (uint64_t)div * 838;
+            if (g_emu.xinu_ready && s_next_irq0_insns == 0)
+                s_next_irq0_insns = insns_done + pit_period_insns;
 
-                if (now_ns - last_tick_ns >= pit_period_ns) {
-                    unsigned n_ticks = (unsigned)((now_ns - last_tick_ns) / pit_period_ns);
-                    /* Loose cap only to bound a single iteration's work
-                     * if the host stalls; no longer the dominant under-
-                     * delivery factor it used to be. */
-                    if (n_ticks > 64) n_ticks = 64;
-                    last_tick_ns += (uint64_t)n_ticks * pit_period_ns;
-
-                    /* Gate the actual IRR set on xinu_ready (IDT[0x20]
-                     * isn't a real handler before clkint installs). The
-                     * schedule advances regardless so cadence stays
-                     * locked the moment delivery is enabled. */
-                    if (g_emu.xinu_ready) {
+            if (s_next_irq0_insns && insns_done >= s_next_irq0_insns) {
+                s_irq0_due++;
+                /* Bounded resync: if guest is ≥4 periods behind, drop the
+                 * backlog and schedule from "now". Real hardware loses
+                 * edges when the line is held high; we mimic that. */
+                uint64_t lag = insns_done - s_next_irq0_insns;
+                if (lag >= 4 * pit_period_insns) {
+                    s_next_irq0_insns = insns_done + pit_period_insns;
+                } else {
+                    s_next_irq0_insns += pit_period_insns;
+                }
+                if (g_emu.xinu_ready) {
+                    /* PIC collapse: only raise IRR if not already pending
+                     * AND not currently in service. */
+                    if (!(g_emu.pic[0].irr & 0x01) &&
+                        !(g_emu.pic[0].isr & 0x01)) {
                         g_emu.pic[0].irr |= 0x01;
-                        prof_ticks_fired += n_ticks;
+                        prof_ticks_fired++;
+                    } else {
+                        s_irq0_collapsed++;
+                        prof_ticks_irr++;
                     }
                 }
             }
+
+            /* Periodic stats: every 5 s wall, print due/fired/collapsed/
+             * injected/EOI so we can SEE the scheduler health. */
+            static uint64_t s_irq_stats_last_ns = 0;
+            struct timespec _now_ts;
+            clock_gettime(CLOCK_MONOTONIC, &_now_ts);
+            uint64_t _now_ns = (uint64_t)_now_ts.tv_sec * 1000000000ULL
+                             + _now_ts.tv_nsec;
+            if (s_irq_stats_last_ns == 0) s_irq_stats_last_ns = _now_ns;
+            if (g_emu.xinu_ready &&
+                _now_ns - s_irq_stats_last_ns >= 5000000000ULL) {
+                s_irq_stats_last_ns = _now_ns;
+                LOG("irq",
+                    "IRQ0 5s: due=%llu fired=%llu collapsed=%llu inject=%llu "
+                    "eoi=%llu (pit_div=%u period=%llu insns)\n",
+                    (unsigned long long)s_irq0_due,
+                    (unsigned long long)prof_ticks_fired,
+                    (unsigned long long)s_irq0_collapsed,
+                    (unsigned long long)prof_irq0_inject,
+                    (unsigned long long)g_emu.pic[0].eoi_count,
+                    pit_div,
+                    (unsigned long long)pit_period_insns);
+            }
         }
+
+        /* Wall-clock "now" for VSYNC and throttle (independent of IRQ0). */
+        struct timespec now_ts;
+        clock_gettime(CLOCK_MONOTONIC, &now_ts);
+        uint64_t now_ns = (uint64_t)now_ts.tv_sec * 1000000000ULL + now_ts.tv_nsec;
 
         /* Coarser per-vblank work — still gated to once-every-64-batches
          * to avoid clock_gettime / uc_mem_write overhead on every batch.

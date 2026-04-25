@@ -148,6 +148,7 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
                     break;
                 }
             }
+            pic->eoi_count++;
             static int eoi_log = 0;
             if (++eoi_log <= 20 || (eoi_log % 200 == 0))
                 LOGV3("pic", "PIC%d EOI: ISR 0x%02x→0x%02x (cnt=%d)\n",
@@ -155,9 +156,11 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
         } else if (val == 0x60) {
             /* Specific EOI for IRQ0 */
             pic->isr &= ~0x01;
+            pic->eoi_count++;
         } else if ((val & 0x60) == 0x60) {
             /* Specific EOI */
             pic->isr &= ~(1 << (val & 7));
+            pic->eoi_count++;
         } else if (val == 0x0B) {
             /* OCW3: read ISR */
             pic->read_isr = 1;
@@ -1470,15 +1473,32 @@ static void uart_write(uint16_t port, uint8_t val)
                             strstr(g_emu.uart_buf, "XINA") != NULL ||
                             strstr(g_emu.uart_buf, "XINU") != NULL ||
                             strstr(g_emu.uart_buf, "monitor commands") != NULL);
-                    /* XINU pedantry: clkint legitimately calls resched on
-                     * preempt ticks; XINU prints this NonFatal whenever
-                     * resched runs while its in-interrupt-handler flag
-                     * ([0x002f7d98]) is set. Confirmed cosmetic — not a
-                     * real fault. Mute at default verbosity to keep the
-                     * UART stream readable. -vv shows it again. */
+                    /* "resched: called from interrupt handler" — emitted by
+                     * XINU when resched runs while its in-handler flag is
+                     * set. Sometimes legitimate, but in BURSTS it's the
+                     * leading symptom of the IRQ0/scheduler death loop.
+                     * Keep visible but rate-limited so the stream stays
+                     * readable while still surfacing the cluster. */
                     if (show && strstr(g_emu.uart_buf,
-                            "resched: called from interrupt handler") != NULL)
-                        show = false;
+                            "resched: called from interrupt handler") != NULL) {
+                        static struct timespec s_last_ts = {0, 0};
+                        static unsigned s_dropped = 0;
+                        struct timespec ts;
+                        clock_gettime(CLOCK_MONOTONIC, &ts);
+                        uint64_t dt = (uint64_t)(ts.tv_sec - s_last_ts.tv_sec) * 1000000000ULL
+                                    + (int64_t)(ts.tv_nsec - s_last_ts.tv_nsec);
+                        if (s_last_ts.tv_sec == 0 || dt >= 1000000000ULL) {
+                            if (s_dropped) {
+                                LOG("uart", "(suppressed %u resched-in-ISR in last 1s)\n",
+                                    s_dropped);
+                                s_dropped = 0;
+                            }
+                            s_last_ts = ts;
+                        } else {
+                            s_dropped++;
+                            show = false;
+                        }
+                    }
                 }
                 if (!show) {
                     LOGV2("uart", "%s", g_emu.uart_buf);
