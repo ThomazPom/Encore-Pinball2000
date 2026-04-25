@@ -98,6 +98,7 @@ static struct sched_state {
     uint64_t isr_set_at_vticks;
     uint64_t isr_max_busy_vticks_w;
     uint8_t  isr_prev;
+    bool     isr_warned_this_span;
 
     /* Window baselines for computing 5 s deltas */
     uint64_t w_start_ns;
@@ -627,6 +628,32 @@ void cpu_dump_irq_snapshot(const char *trigger)
         g_emu.pic[0].irr, g_emu.pic[0].isr, g_emu.pic[0].imr,
         g_emu.pit.count[0]);
 
+    /* Live guest CPU state — where exactly is the guest right now?
+     * For "*** Fatal" + stuck-ISR triggers, this points at the
+     * instruction (usually inside an ISR or right after a corrupted
+     * jump) that the snapshot is reacting to. */
+    if (g_emu.uc) {
+        uint32_t eip=0, esp=0, ebp=0, eax=0, eflags=0, cs=0;
+        uc_reg_read(g_emu.uc, UC_X86_REG_EIP, &eip);
+        uc_reg_read(g_emu.uc, UC_X86_REG_ESP, &esp);
+        uc_reg_read(g_emu.uc, UC_X86_REG_EBP, &ebp);
+        uc_reg_read(g_emu.uc, UC_X86_REG_EAX, &eax);
+        uc_reg_read(g_emu.uc, UC_X86_REG_EFLAGS, &eflags);
+        uc_reg_read(g_emu.uc, UC_X86_REG_CS, &cs);
+        LOG("irq",
+            "  guest CPU: EIP=0x%08x CS=0x%04x ESP=0x%08x EBP=0x%08x EAX=0x%08x EFLAGS=0x%08x IF=%d\n",
+            eip, cs, esp, ebp, eax, eflags, (eflags >> 9) & 1);
+        /* Top of stack — last few return addresses if the call chain
+         * is healthy, garbage if it isn't. */
+        uint32_t stk[6] = {0};
+        if (esp >= 0x100 && esp < 0x80000000) {
+            uc_mem_read(g_emu.uc, esp, stk, sizeof(stk));
+            LOG("irq",
+                "  guest stack[ESP..]: %08x %08x %08x %08x %08x %08x\n",
+                stk[0], stk[1], stk[2], stk[3], stk[4], stk[5]);
+        }
+    }
+
     /* Completed windows (oldest → newest). */
     int n = s_sched.ring_count;
     for (int i = 0; i < n; i++) {
@@ -758,11 +785,23 @@ void cpu_run(void)
         uint8_t isr_now = g_emu.pic[0].isr & 0x01;
         if (isr_now && !s_sched.isr_prev) {
             s_sched.isr_set_at_vticks = s_sched.vticks_total;
+            s_sched.isr_warned_this_span = false;
         }
         if (s_sched.isr_set_at_vticks) {
             uint64_t span = s_sched.vticks_total - s_sched.isr_set_at_vticks;
             if (span > s_sched.isr_max_busy_vticks_w)
                 s_sched.isr_max_busy_vticks_w = span;
+            /* Stuck-ISR watchdog: if guest has been inside the IRQ0 ISR
+             * for more than ~50 ms of guest time without sending PIC
+             * EOI, that's almost certainly a wedge (not a long but
+             * legitimate handler). Auto-trigger a snapshot once per
+             * stuck span so we capture WHERE in the guest it's stuck
+             * before the *** Fatal storm starts. */
+            if (!s_sched.isr_warned_this_span &&
+                span > (uint64_t)(s_sched.cached_target_ips / 20ULL)) {
+                s_sched.isr_warned_this_span = true;
+                cpu_dump_irq_snapshot("stuck-ISR>50ms");
+            }
             if (!isr_now) s_sched.isr_set_at_vticks = 0;
         }
         s_sched.isr_prev = isr_now;
@@ -1175,6 +1214,14 @@ void cpu_run(void)
         if ((g_emu.exec_count & 0x3F) == 0)
             uc_ctl_flush_tlb(uc);
         uc_err err = uc_emu_start(uc, eip, 0, 0, batch);
+
+        /* Refresh local eip from Unicorn — after uc_emu_start, the
+         * authoritative stop point is in the engine's register file,
+         * NOT the value we passed in. Using the entry-point eip below
+         * mis-classifies HLT-at-stop as a non-HLT batch (vticks gets
+         * +4 instead of +batch), which starves IRQ0 / resched during
+         * nulluser idle. */
+        uc_reg_read(uc, UC_X86_REG_EIP, &eip);
 
         g_emu.exec_count++;
         prof_emu_calls++;
