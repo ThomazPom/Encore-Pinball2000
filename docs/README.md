@@ -103,6 +103,7 @@ whatever interests you.
 | [48](48-lpt-protocol-references.md) | Real PB2K LPT protocol — public references |
 | [49](49-splash-screen.md) | Startup splash image (`--splash-screen`) |
 | [50](50-cpu-clock-mismatch.md) | Speculative: CPU clock-rate vs guest-side iodelay timing |
+| [51](51-power-driver-board.md) | Power Driver Board — physical primer, decode chain, bench bring-up |
 
 ## Conventions
 
