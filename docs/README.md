@@ -102,6 +102,7 @@ to whatever interests you.
 | [47](47-community-updates.md) | Community updates (mypinballs.com) |
 | [48](48-lpt-protocol-references.md) | Real PB2K LPT protocol — public references |
 | [49](49-splash-screen.md) | Startup splash image (`--splash-screen`) |
+| [50](50-cpu-clock-mismatch.md) | Speculative: CPU clock-rate vs guest-side iodelay timing |
 
 ## Conventions
 
