@@ -122,6 +122,16 @@ static struct sched_state {
     /* Cached pit_period_insns / target_ips so the snapshot has them. */
     uint64_t cached_pit_period_insns;
     uint64_t cached_target_ips;
+
+    /* Wall-time floor on IRQ0 cadence.
+     * IRQ0 must fire when BOTH (a) the guest has consumed one PIT
+     * period of virtual time, AND (b) at least one PIT period of WALL
+     * time has elapsed since the previous IRQ0. The wall-time floor
+     * prevents over-firing on a host that runs faster than the guest
+     * CPU model rate (vt-scale > 1) — without it, XINU's tick-based
+     * scheduler watchdogs see compressed wall timeouts and Fatal. */
+    uint64_t next_irq0_at_ns;
+    uint64_t pit_period_ns;
 } s_sched;
 
 static void hook_block_count(uc_engine *uc, uint64_t addr,
@@ -753,20 +763,44 @@ void cpu_run(void)
         if (pit_period_insns < 100) pit_period_insns = 100;
         s_sched.cached_pit_period_insns = pit_period_insns;
         s_sched.cached_target_ips = target_ips;
+        /* PIT period in nanoseconds — wall-time floor on IRQ0.
+         *   pit_period_ns = pit_div * 1e9 / 1193182  (PIT clk = 1.193182 MHz) */
+        uint64_t pit_period_ns = ((uint64_t)pit_div * 1000000000ULL) / 1193182ULL;
+        if (pit_period_ns < 1000) pit_period_ns = 1000;
+        s_sched.pit_period_ns = pit_period_ns;
+
+        /* Wall-clock now (cheap on Linux x86_64). */
+        struct timespec _ts_now;
+        clock_gettime(CLOCK_MONOTONIC, &_ts_now);
+        uint64_t now_wall_ns = (uint64_t)_ts_now.tv_sec * 1000000000ULL
+                             + (uint64_t)_ts_now.tv_nsec;
 
         if (g_emu.xinu_ready && s_sched.next_irq0_at_vticks == 0) {
             s_sched.next_irq0_at_vticks = s_sched.vticks_total + pit_period_insns;
+            s_sched.next_irq0_at_ns     = now_wall_ns + pit_period_ns;
             s_sched.w_vticks_base = s_sched.vticks_total;
         }
 
+        /* Fire IRQ0 only when BOTH virtual-time AND wall-time deadlines
+         * have passed. Virtual-time gate keeps slow hosts from over-
+         * firing relative to executed guest progress; wall-time gate
+         * keeps fast hosts from over-firing relative to real time and
+         * thereby compressing XINU's tick-based scheduler watchdog. */
         if (s_sched.next_irq0_at_vticks &&
-            s_sched.vticks_total >= s_sched.next_irq0_at_vticks) {
+            s_sched.vticks_total >= s_sched.next_irq0_at_vticks &&
+            now_wall_ns           >= s_sched.next_irq0_at_ns) {
             s_sched.irq0_due++;
-            uint64_t lag = s_sched.vticks_total - s_sched.next_irq0_at_vticks;
-            if (lag >= 4 * pit_period_insns) {
+            uint64_t lag_v = s_sched.vticks_total - s_sched.next_irq0_at_vticks;
+            uint64_t lag_n = now_wall_ns           - s_sched.next_irq0_at_ns;
+            if (lag_v >= 4 * pit_period_insns) {
                 s_sched.next_irq0_at_vticks = s_sched.vticks_total + pit_period_insns;
             } else {
                 s_sched.next_irq0_at_vticks += pit_period_insns;
+            }
+            if (lag_n >= 4 * pit_period_ns) {
+                s_sched.next_irq0_at_ns = now_wall_ns + pit_period_ns;
+            } else {
+                s_sched.next_irq0_at_ns += pit_period_ns;
             }
             if (g_emu.xinu_ready) {
                 if (!(g_emu.pic[0].irr & 0x01) &&
@@ -1033,13 +1067,21 @@ void cpu_run(void)
                             h6[p++] = 0x5E;                         /* POP ESI */
                             h6[p++] = 0x58;                         /* POP EAX */
                             h6[p++] = 0xCF;                         /* IRET */
-                            /* .not_cyrix: */
+                            /* .not_cyrix: came from #UD on a non-0F3C
+                             * opcode. Real CPUs would re-raise; we
+                             * advance saved EIP by 1 and IRET so the
+                             * guest can't infinite-loop on us, and
+                             * critically we DO NOT use LEAVE+RET here
+                             * (that pops EBP+CS+EFLAGS as if they
+                             * were a C return frame, leaking 8 bytes
+                             * of stack on every spurious #UD — over
+                             * thousands of preemptions this triggers
+                             * XINU's IStack underflow watchdog). */
                             h6[p++] = 0x5E;                         /* POP ESI */
                             h6[p++] = 0x58;                         /* POP EAX */
-                            h6[p++] = 0xB8; h6[p++] = 0xFF;        /* MOV EAX,-1 */
-                            h6[p++] = 0xFF; h6[p++] = 0xFF; h6[p++] = 0xFF;
-                            h6[p++] = 0xC9;                         /* LEAVE */
-                            h6[p++] = 0xC3;                         /* RET */
+                            h6[p++] = 0x83; h6[p++] = 0x04;         /* ADD DWORD [ESP], 1 */
+                            h6[p++] = 0x24; h6[p++] = 0x01;
+                            h6[p++] = 0xCF;                         /* IRET */
                             uc_mem_write(uc, 0x500, h6, p);
 
                             /* Use the runtime-detected IDT base — different
