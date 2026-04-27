@@ -49,22 +49,24 @@ for f in "$ROOT"/qemu/p2k-*.c; do
   P2K_C_FILES+=( "$(basename "$f")" )
 done
 
-# --- Patch hw/i386/meson.build (idempotent) --------------------------------
+# --- Patch hw/i386/meson.build (re-patched every run so new p2k-*.c get added) -
 MESON="$HW_I386/meson.build"
-if ! grep -q "pinball2000.c" "$MESON"; then
-  echo "[build-qemu] patching $MESON"
-  {
-    echo
-    echo "# --- Pinball 2000 (out-of-tree, copied in by scripts/build-qemu.sh) ---"
-    printf "i386_ss.add(when: 'CONFIG_PINBALL2000', if_true: files("
-    first=1
-    for f in "${P2K_C_FILES[@]}"; do
-      if [[ $first -eq 1 ]]; then first=0; else printf ", "; fi
-      printf "'%s'" "$f"
-    done
-    printf "))\n"
-  } >> "$MESON"
-fi
+# Strip any previous pinball2000 block (between the marker and the next blank line).
+sed -i '/# --- Pinball 2000 /,/^$/d' "$MESON"
+# Also strip a trailing line that may have been left without a blank separator.
+sed -i '/i386_ss\.add.*pinball2000\.c/d' "$MESON"
+echo "[build-qemu] patching $MESON"
+{
+  echo
+  echo "# --- Pinball 2000 (out-of-tree, copied in by scripts/build-qemu.sh) ---"
+  printf "i386_ss.add(when: 'CONFIG_PINBALL2000', if_true: files("
+  first=1
+  for f in "${P2K_C_FILES[@]}"; do
+    if [[ $first -eq 1 ]]; then first=0; else printf ", "; fi
+    printf "'%s'" "$f"
+  done
+  printf "))\n"
+} >> "$MESON"
 
 # --- Patch hw/i386/Kconfig (idempotent) ------------------------------------
 KCONFIG="$HW_I386/Kconfig"

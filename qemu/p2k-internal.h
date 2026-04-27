@@ -31,4 +31,7 @@ int  p2k_load_bank0(Pinball2000MachineState *s);
 /* p2k-boot.c: post-reset PM-entry recipe (option ROM copy + GDT + CPU regs). */
 void p2k_post_reset(void *opaque);
 
+/* p2k-plx9054.c: install bank0 at the PLX/option-ROM/BAR5/alias windows. */
+void p2k_map_rom_windows(Pinball2000MachineState *s);
+
 #endif /* HW_PINBALL2000_INTERNAL_H */
