@@ -256,6 +256,28 @@ static void hook_block_count(uc_engine *uc, uint64_t addr,
             s_irq0_in_flight = 0;
         }
     }
+    /* Task-switch fallback: when XINU's clkint calls resched, the new
+     * task's stack is loaded and the original pre_eip is never executed
+     * again from this context — in_flight would stay armed until task
+     * wraparound (measured up to 86 ms). Detect a stack switch by
+     * watching for ESP movement outside a 4 KiB window around pre_esp,
+     * which is wider than any clkint frame growth but tighter than a
+     * different task's stack. PIC ISR is already 0 by this point (EOI
+     * was sent in clkint's prologue), so allowing the next IRQ0 here
+     * is HW-equivalent to "the kernel moved on, frame is gone". */
+    if (s_irq0_in_flight) {
+        uint32_t cur_esp = 0;
+        uc_reg_read(uc, UC_X86_REG_ESP, &cur_esp);
+        uint32_t lo = (s_irq0_pre_esp > 0x1000) ? (s_irq0_pre_esp - 0x1000) : 0;
+        uint32_t hi = s_irq0_pre_esp + 0x1000;
+        if ((cur_esp < lo || cur_esp > hi) &&
+            !(g_emu.pic[0].isr & 0x01)) {
+            uint64_t dur = s_sched.vticks_total - s_irq0_in_flight_arm_vt;
+            if (dur > s_irq0_in_flight_max_vt) s_irq0_in_flight_max_vt = dur;
+            s_irq0_in_flight_clears++;
+            s_irq0_in_flight = 0;
+        }
+    }
 }
 
 /* SIGALRM handler — sets timer_pending for HLT wakeup only.
@@ -469,11 +491,14 @@ int cpu_inject_interrupt(uint8_t vector)
     uint32_t eip = regs_val[0], esp = regs_val[1];
     uint32_t eflags = regs_val[2], cs = regs_val[3] & 0xFFFF;
 
-    /* IRQ0 nested-injection guard. If a previous IRQ0 injection has
-     * not yet IRET'd back to its pre-injection ESP baseline, defer.
-     * This models the real-hardware IF=0 ISR window that clkint's
-     * early-EOI breaks. Without this, XINU panics with
-     * "resched: called from interrupt handler". */
+    /* IRQ0 nested-injection guard. Real x86 clears IF on int entry and
+     * sets it again on IRET, so a new IRQ0 cannot fire until the old
+     * handler IRETs. clkint, however, sends EOI early and clears its
+     * own "in_handler" flag in its epilogue, BEFORE the actual IRET.
+     * If we inject between EOI (ISR=0) and in_handler=0 we get
+     * "resched: called from interrupt handler" panics. The PIC ISR
+     * bit alone is therefore insufficient — wait for the real IRET to
+     * complete (EIP back at pre-injection point with ESP popped). */
     if (vector == 0x20 && s_irq0_in_flight) {
         s_irq0_guard_defer++;
         if (s_irq0_guard_defer <= 5 || (s_irq0_guard_defer % 10000) == 0) {
@@ -519,37 +544,18 @@ int cpu_inject_interrupt(uint8_t vector)
      * Both kick in for IRQ0 only — other vectors (#GP, #UD, etc.)
      * are exception-driven and don't have this race.
      */
-    static uint32_t s_irq0_last_target_eip = 0;
-    static uint64_t s_irq0_last_eoi_count  = 0;
-    static uint32_t s_irq0_last_defer_eip  = 0;  /* don't defer the same EIP twice */
-    static uint64_t s_irq0_last_inject_vticks = 0;
     if (vector == 0x20) {
-        /* Hard burst gate: require some minimum guest progress (in
-         * vticks ≈ instructions) between two IRQ0 injections. Without
-         * this, with vt-scale=100x the injection loop can fire 16+
-         * IRQ0s in a row at pre_eip values that vary slightly (XINU
-         * resched hops between several dispatcher EIPs after each
-         * EOI/IRET) yet ESP keeps dropping ~360 bytes/inject — the
-         * task stack overflows and trashes adjacent memory (incl.
-         * IDT[0x20]). Real PIT gives the guest at least pit-period-
-         * worth of instructions to make progress; emulate that by
-         * gating the next inject on a fraction of pit_period_insns. */
-        uint64_t pp = s_sched.cached_pit_period_insns
-                        ? s_sched.cached_pit_period_insns : 5000;
-        uint64_t min_gap = pp / 4;       /* 25% of one PIT period */
-        if (min_gap < 256) min_gap = 256;
-        if (s_irq0_last_inject_vticks &&
-            (s_sched.vticks_total - s_irq0_last_inject_vticks) < min_gap) {
-            s_inj_defer_burst++;
-            if (s_inj_defer_burst <= 5 || (s_inj_defer_burst % 100000) == 0) {
-                LOGV3("irq",
-                    "vec=0x20 DEFERRED (burst gate): only %llu vticks since last inject, need %llu (n=%llu)\n",
-                    (unsigned long long)(s_sched.vticks_total - s_irq0_last_inject_vticks),
-                    (unsigned long long)min_gap,
-                    (unsigned long long)s_inj_defer_burst);
-            }
-            return 0;
-        }
+        /* STI-shadow guard (REAL x86 behavior).
+         * Real hardware blocks interrupts for one instruction after STI
+         * and after IRET, so `sti; iret` is atomic w.r.t. interrupt
+         * delivery. Unicorn 2.x does not implement that 1-insn shadow,
+         * so we approximate it via opcode peek: if EIP currently points
+         * at IRET (0xCF) or STI (0xFB), or the byte just before is STI,
+         * defer one iteration. This is the only inject-time guard we
+         * keep beyond IF and in_flight — burst gate and no-progress
+         * were removed because PIC ISR + in_flight (cleared on real
+         * IRET completion or task-switch) cover those cases. */
+        static uint32_t s_irq0_last_defer_eip = 0;
         if (eip < RAM_SIZE - 1 && eip != s_irq0_last_defer_eip) {
             uint8_t cur  = g_emu.ram[eip];
             uint8_t prev = (eip > 0) ? g_emu.ram[eip - 1] : 0;
@@ -565,23 +571,7 @@ int cpu_inject_interrupt(uint8_t vector)
                 return 0;
             }
         }
-        if (s_irq0_last_target_eip == eip
-            && eip != 0
-            && eip != s_irq0_last_defer_eip
-            && g_emu.pic[0].irq0_eoi_count != s_irq0_last_eoi_count) {
-            s_inj_defer_progress++;
-            s_irq0_last_defer_eip = eip;
-            if (s_inj_defer_progress <= 5 || (s_inj_defer_progress % 100000) == 0) {
-                LOGV3("irq",
-                    "vec=0x20 DEFERRED (no-progress): same EIP=0x%08x as prev inject after EOI (n=%llu)\n",
-                    eip, (unsigned long long)s_inj_defer_progress);
-            }
-            return 0;
-        }
-        s_irq0_last_target_eip = eip;
-        s_irq0_last_eoi_count  = g_emu.pic[0].irq0_eoi_count;
-        s_irq0_last_defer_eip  = 0;
-        s_irq0_last_inject_vticks = s_sched.vticks_total;
+        s_irq0_last_defer_eip = 0;
     }
 
     /* Read IDT entry directly from RAM (IDT is always in RAM) */
@@ -1148,18 +1138,6 @@ void cpu_run(void)
         if (isr_now && !s_sched.isr_prev) {
             s_sched.isr_set_at_vticks = s_sched.vticks_total;
             s_sched.isr_warned_this_span = false;
-        }
-        /* On ISR 1→0 (EOI delivered), the IRQ0 handler is logically done.
-         * Real x86 has no "in-flight" concept beyond ISR state, so allow
-         * a new injection now even if the guest task-switched away from
-         * pre_eip (XINU resched runs from clkint and never returns to
-         * the pre-injection EIP, which previously kept in_flight armed
-         * until task wraparound — measured up to 86 ms / ~340 ticks). */
-        if (s_sched.isr_prev && !isr_now && s_irq0_in_flight) {
-            uint64_t dur = s_sched.vticks_total - s_irq0_in_flight_arm_vt;
-            if (dur > s_irq0_in_flight_max_vt) s_irq0_in_flight_max_vt = dur;
-            s_irq0_in_flight_clears++;
-            s_irq0_in_flight = 0;
         }
         if (s_sched.isr_set_at_vticks) {
             uint64_t span = s_sched.vticks_total - s_sched.isr_set_at_vticks;
