@@ -51,19 +51,54 @@ static void p2k_map_rom(MemoryRegion *system_memory, const char *name,
     if (src && src_size) {
         memcpy(host, src, MIN(size, src_size));
     }
-    memory_region_add_subregion(system_memory, base, mr);
+    /* Priority 1: must beat the 0..16 MiB RAM alias when ranges overlap
+     * (option ROM at 0xC0000 and BIOS shadow at 0xF0000 both fall inside
+     * the RAM alias).  Same-priority overlap causes TCG to generate bad
+     * code and segfault. */
+    memory_region_add_subregion_overlap(system_memory, base, mr, 1);
     info_report("pinball2000: mapped %-20s @ 0x%08" HWADDR_PRIx " (%" PRIu64 " KiB)",
                 name, base, (uint64_t)(size >> 10));
 }
 
-static void p2k_map_ram(MemoryRegion *system_memory, const char *name,
-                        hwaddr base, uint64_t size)
+static void p2k_map_bios(MemoryRegion *system_memory, const char *roms_dir)
 {
-    MemoryRegion *mr = g_new(MemoryRegion, 1);
-    memory_region_init_ram(mr, NULL, name, size, &error_abort);
-    memory_region_add_subregion(system_memory, base, mr);
-    info_report("pinball2000: mapped %-20s @ 0x%08" HWADDR_PRIx " (%" PRIu64 " KiB, RW)",
-                name, base, (uint64_t)(size >> 10));
+    char path[512];
+    snprintf(path, sizeof(path), "%s/bios.bin", roms_dir);
+    uint8_t buf[P2K_BIOS_SHADOW_SIZE];
+    memset(buf, 0xFF, sizeof(buf));
+    FILE *fp = fopen(path, "rb");
+    if (fp) {
+        size_t n = fread(buf, 1, sizeof(buf), fp);
+        fclose(fp);
+        info_report("pinball2000: loaded %s (%zu bytes -> BIOS)", path, n);
+    } else {
+        warn_report("pinball2000: %s not found; BIOS shadow filled with 0xFF",
+                    path);
+    }
+
+    /* Low BIOS shadow at 0xF0000.  PRISM observed jumping to CS:EIP=08:F06F6
+     * during boot, so this must contain real BIOS code, not zero/0xFF.
+     * Kept RW (RAM) because legacy code may patch the shadow. */
+    MemoryRegion *shadow = g_new(MemoryRegion, 1);
+    memory_region_init_ram(shadow, NULL, "p2k.bios-shadow",
+                           P2K_BIOS_SHADOW_SIZE, &error_abort);
+    memcpy(memory_region_get_ram_ptr(shadow), buf, sizeof(buf));
+    memory_region_add_subregion_overlap(system_memory,
+                                        P2K_BIOS_SHADOW_BASE, shadow, 1);
+    info_report("pinball2000: mapped %-20s @ 0x%08x (%u KiB, RW)",
+                "p2k.bios-shadow", P2K_BIOS_SHADOW_BASE,
+                P2K_BIOS_SHADOW_SIZE >> 10);
+
+    /* High reset-vector mirror at 0xFFFF0000 (RO).  Not executed in the
+     * P2K boot path (PRISM bypasses real-mode reset via our PM-entry hook),
+     * but kept for any code that does compute addresses there. */
+    MemoryRegion *reset = g_new(MemoryRegion, 1);
+    memory_region_init_rom(reset, NULL, "p2k.bios-reset",
+                           P2K_BIOS_SHADOW_SIZE, &error_abort);
+    memcpy(memory_region_get_ram_ptr(reset), buf, sizeof(buf));
+    memory_region_add_subregion(system_memory, 0xFFFF0000u, reset);
+    info_report("pinball2000: mapped %-20s @ 0xffff0000 (%u KiB)",
+                "p2k.bios-reset", P2K_BIOS_SHADOW_SIZE >> 10);
 }
 
 void p2k_map_rom_windows(Pinball2000MachineState *s)
@@ -81,11 +116,9 @@ void p2k_map_rom_windows(Pinball2000MachineState *s)
                 P2K_OPTROM_BASE, P2K_OPTROM_SIZE,
                 s->bank0, P2K_OPTROM_SIZE);
 
-    /* BIOS shadow at 0xF0000.  We have no real BIOS code, but the guest
-     * may CALL into this area for legacy BIOS services that PRISM stubs
-     * out itself.  Provide a writable scratch region so writes don't fault. */
-    p2k_map_ram(system_memory, "p2k.bios-shadow",
-                P2K_BIOS_SHADOW_BASE, P2K_BIOS_SHADOW_SIZE);
+    /* BIOS code at 0xF0000 (RW shadow) and 0xFFFF0000 (RO reset mirror).
+     * Loaded from roms/bios.bin if present. */
+    p2k_map_bios(system_memory, s->roms_dir);
 
     /* PLX bank0 — full 1 MiB at 0x08000000. */
     p2k_map_rom(system_memory, "p2k.plx-bank0",

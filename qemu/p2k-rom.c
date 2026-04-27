@@ -1,10 +1,9 @@
 /*
  * pinball2000 ROM loader.
  *
- * Bank 0 is two physical 27C040-class chips byte-interleaved on the PLX
- * ROM window: chip u100 supplies even-offset bytes, chip u101 supplies odd
- * bytes.  We rebuild the linear 1 MiB image here so later code can treat
- * bank0 as a flat array.
+ * Bank 0 = two physical 8 MiB chips (u100, u101) interleaved as 16-bit pairs
+ * stepped by 4 bytes (so the linear bank is 16 MiB).  Per unicorn.old/src/rom.c
+ * interleave_file(): chip c writes pair[0..1] at base + c*2, then steps +4.
  *
  * Files are looked up under <roms-dir>/<game>_u<NN>.{rom,bin}.
  */
@@ -14,7 +13,7 @@
 
 #include "p2k-internal.h"
 
-static int p2k_load_chip(uint8_t *bank, int which_byte,
+static int p2k_load_chip(uint8_t *bank, int which_chip,
                          const char *roms_dir, const char *game, int chipnum)
 {
     char path[512];
@@ -32,19 +31,26 @@ static int p2k_load_chip(uint8_t *bank, int which_byte,
         return -1;
     }
 
-    /* Each chip is at most 512 KiB; interleave into the 1 MiB bank. */
-    uint8_t buf[512 * 1024];
-    size_t n = fread(buf, 1, sizeof(buf), fp);
+    /* 16-bit-pair interleave per unicorn.old/src/rom.c:interleave_file().
+     * For each 2 bytes read from the chip, write them to bank[base+0..1],
+     * then step base by 4. */
+    uint8_t pair[2];
+    uint8_t *ptr = bank + which_chip * 2;
+    size_t total = 0;
+    while (fread(pair, 1, 2, fp) == 2) {
+        if ((size_t)(ptr - bank) + 2 > P2K_BANK_SIZE) break;
+        ptr[0] = pair[0];
+        ptr[1] = pair[1];
+        ptr += 4;
+        total += 2;
+    }
     fclose(fp);
-    if (n == 0) {
+    if (total == 0) {
         error_report("pinball2000: empty ROM chip %s", path);
         return -1;
     }
-    for (size_t i = 0; i < n; i++) {
-        bank[2 * i + which_byte] = buf[i];
-    }
-    info_report("pinball2000: loaded %s (%zu bytes -> bank0 %s)",
-                path, n, which_byte ? "odd" : "even");
+    info_report("pinball2000: loaded %s (%zu bytes -> bank0 chip%d 16-bit lane)",
+                path, total, which_chip);
     return 0;
 }
 

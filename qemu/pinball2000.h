@@ -85,7 +85,8 @@
  *       (0x801BF/0x801C4 path) and switch to PM itself.  Untested.
  * Recipe (a) is the proven path.
  */
-#define P2K_BANK_SIZE              0x00100000   /* 1 MiB per ROM bank */
+#define P2K_BANK_SIZE              0x01000000   /* 16 MiB per ROM bank (2 chips x 8 MiB, 16-bit pair interleave step 4) */
+#define P2K_CHIP_SIZE              0x00800000   /* 8 MiB per physical chip */
 #define P2K_OPTROM_SIZE            0x00008000   /* 32 KiB PRISM option ROM */
 #define P2K_OPTROM_LOAD_ADDR       0x00080000
 #define P2K_PM_ENTRY_EIP           0x000801D9
