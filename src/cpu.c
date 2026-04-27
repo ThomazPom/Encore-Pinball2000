@@ -2030,26 +2030,25 @@ handle_display:
                 if (g_emu.game_id == 50069u) {
                     uint32_t dmm = RAM_RD32(0x2E8E2C);
                     uint32_t gxp = RAM_RD32(0x2E8B74);
-                    uint32_t dcs_mode = RAM_RD32(0x3444b0);
-                    uint32_t dcs_state = RAM_RD32(0x3442e8);
-                    uint32_t dcs_count = RAM_RD32(0x3442f8);
+                    /* DCS state addresses decoded from io-handled state
+                     * machine at 0x195a16 (commit decoding the post-RESET
+                     * flow). All in the 0x34a??? page, not 0x344???. */
+                    uint32_t dcs_mode = RAM_RD32(0x34a714);
+                    uint32_t dcs_state = RAM_RD32(0x34a54c);
+                    uint32_t dcs_count = RAM_RD32(0x34a55c);
                     uint32_t ww,wr,bw,br,fr;
                     dcs_io_get_counters(&ww,&wr,&bw,&br,&fr);
                     LOGV2("hb", "  DM: mode=%u gxp=0x%x dt2=%u dcs_mode=%u dcs_st=%u dcs_cnt=%u io:ww=%u wr=%u bw=%u br=%u fr=%u\n",
                         dmm, gxp, g_emu.dc_timing2, dcs_mode, dcs_state, dcs_count,
                         ww, wr, bw, br, fr);
-                    uint32_t dcs_ready_flag = RAM_RD32(0x3442f4);
-                    uint32_t dcs_complete   = RAM_RD32(0x3442f0);
-                    uint32_t dcs_last_val   = RAM_RD32(0x344414);
-                    uint32_t dcs_init_flag  = RAM_RD32(0x344410);
-                    LOGV2("hb", "  DCS-v19: rdy=%u cpl=%u lastval=0x%x initf=0x%x\n",
-                        dcs_ready_flag, dcs_complete, dcs_last_val, dcs_init_flag);
-                    uint32_t q_wr = RAM_RD32(0x344408);
-                    uint32_t q_rd = RAM_RD32(0x34440c);
-                    uint32_t oq_wr = RAM_RD32(0x344498);
-                    uint32_t oq_rd = RAM_RD32(0x34449c);
-                    LOGV2("hb", "  Q: inner[wr=%u rd=%u] outer[wr=%u rd=%u]\n",
-                        q_wr, q_rd, oq_wr, oq_rd);
+                    uint32_t dcs_send_gate = RAM_RD32(0x34a554);
+                    uint32_t dcs_init_done = RAM_RD32(0x34a558);
+                    uint32_t dcs_pump_flag = RAM_RD32(0x34a674);
+                    LOGV2("hb", "  DCS-v19: send_gate=%u init_done=%u pump_flag=%u\n",
+                        dcs_send_gate, dcs_init_done, dcs_pump_flag);
+                    uint32_t q_wr = RAM_RD32(0x34a66c);
+                    uint32_t q_rd = RAM_RD32(0x34a670);
+                    LOGV2("hb", "  Q: out[wr=%u rd=%u]\n", q_wr, q_rd);
                 } else {
                     uint32_t ww,wr,bw,br,fr;
                     dcs_io_get_counters(&ww,&wr,&bw,&br,&fr);
