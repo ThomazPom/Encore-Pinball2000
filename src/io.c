@@ -1482,12 +1482,14 @@ static void uart_write(uint16_t port, uint8_t val)
                             strstr(g_emu.uart_buf, "XINA") != NULL ||
                             strstr(g_emu.uart_buf, "XINU") != NULL ||
                             strstr(g_emu.uart_buf, "monitor commands") != NULL);
-                    /* "resched: called from interrupt handler" — emitted by
-                     * XINU when resched runs while its in-handler flag is
-                     * set. Sometimes legitimate, but in BURSTS it's the
-                     * leading symptom of the IRQ0/scheduler death loop.
-                     * Keep visible but rate-limited so the stream stays
-                     * readable while still surfacing the cluster. */
+                    /* "resched: called from interrupt handler" — XINU
+                     * warning emitted when resched runs while its
+                     * in-handler flag is set. With the new IRQ block-
+                     * reason instrumentation showing verdict=ok and
+                     * eoi/inject=1.00 throughout these runs, the warning
+                     * is benign noise, not a delivery failure. Fully
+                     * suppress at default verbosity, emit a periodic
+                     * summary so the cluster is still visible. */
                     if (show && strstr(g_emu.uart_buf,
                             "resched: called from interrupt handler") != NULL) {
                         static struct timespec s_last_ts = {0, 0};
@@ -1496,18 +1498,25 @@ static void uart_write(uint16_t port, uint8_t val)
                         clock_gettime(CLOCK_MONOTONIC, &ts);
                         uint64_t dt = (uint64_t)(ts.tv_sec - s_last_ts.tv_sec) * 1000000000ULL
                                     + (int64_t)(ts.tv_nsec - s_last_ts.tv_nsec);
-                        if (s_last_ts.tv_sec == 0 || dt >= 1000000000ULL) {
-                            if (s_dropped) {
-                                LOG("uart", "(suppressed %u resched-in-ISR in last 1s)\n",
-                                    s_dropped);
-                                s_dropped = 0;
-                            }
+                        s_dropped++;
+                        g_uart_resched_drop_count++;
+                        if (s_last_ts.tv_sec == 0 || dt >= 5000000000ULL) {
+                            LOG("uart", "(suppressed %u resched-in-ISR in last %.0fs — benign per IRQ verdict=ok)\n",
+                                s_dropped, dt ? (double)dt / 1e9 : 0.0);
+                            s_dropped = 0;
                             s_last_ts = ts;
-                        } else {
-                            s_dropped++;
-                            g_uart_resched_drop_count++;
-                            show = false;
                         }
+                        show = false;
+                    }
+                    /* "Last[XPid X] Current[XPid Y]" — XINU debug
+                     * context dump always paired with another NonFatal
+                     * that already self-describes. Suppress at default
+                     * verbosity to remove the 2x amplification it adds
+                     * to the visible NonFatal stream. */
+                    if (show && strstr(g_emu.uart_buf,
+                            "*** NonFatal: Last[XPid") != NULL &&
+                        strstr(g_emu.uart_buf, "Current[XPid") != NULL) {
+                        show = false;
                     }
                 }
                 if (!show) {
@@ -1526,15 +1535,36 @@ static void uart_write(uint16_t port, uint8_t val)
                  * Fatal/NonFatal/panic line, dump live IRQ counters and
                  * the last few completed 5 s windows so we can see what
                  * the scheduler was doing right before the crash. The
-                 * dumper is rate-limited to 2 Hz internally. */
+                 * dumper is rate-limited to 2 Hz internally.
+                 *
+                 * Skip snapshot for known-benign NonFatal lines that
+                 * fire frequently and would drown the log:
+                 *   - "resched: called from interrupt handler" — XINU
+                 *     warning, harmless when IRQ0 verdict=ok and
+                 *     eoi/inject=1.00 (which the new instrumentation
+                 *     proves it is on these runs).
+                 *   - "Last[XPid ...] Current[XPid ...]" — XINU context
+                 *     dump always paired with another NonFatal that
+                 *     already triggered its own snapshot.
+                 *   - "get_player_up(): Game_ptr is not set" and
+                 *     "Could not create resource ...Duplicate ID" —
+                 *     startup races, recover by themselves. */
                 if (strstr(g_emu.uart_buf, "*** Fatal") ||
                     strstr(g_emu.uart_buf, "*** NonFatal") ||
                     strstr(g_emu.uart_buf, "panic") ||
                     strstr(g_emu.uart_buf, "Panic")) {
-                    const char *trig = strstr(g_emu.uart_buf, "*** Fatal")    ? "Fatal"
-                                     : strstr(g_emu.uart_buf, "*** NonFatal") ? "NonFatal"
-                                                                              : "panic";
-                    cpu_dump_irq_snapshot(trig);
+                    bool benign =
+                        strstr(g_emu.uart_buf, "resched: called from interrupt handler") ||
+                        (strstr(g_emu.uart_buf, "*** NonFatal: Last[XPid") &&
+                         strstr(g_emu.uart_buf, "Current[XPid")) ||
+                        strstr(g_emu.uart_buf, "get_player_up(): Game_ptr is not set") ||
+                        strstr(g_emu.uart_buf, "Could not create resource");
+                    if (!benign) {
+                        const char *trig = strstr(g_emu.uart_buf, "*** Fatal")    ? "Fatal"
+                                         : strstr(g_emu.uart_buf, "*** NonFatal") ? "NonFatal"
+                                                                                  : "panic";
+                        cpu_dump_irq_snapshot(trig);
+                    }
                 }
             }
 

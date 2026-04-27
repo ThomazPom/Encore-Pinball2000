@@ -695,6 +695,19 @@ void cpu_dump_irq_snapshot(const char *trigger)
                 "  guest stack[ESP..]: %08x %08x %08x %08x %08x %08x\n",
                 stk[0], stk[1], stk[2], stk[3], stk[4], stk[5]);
         }
+        /* Bytes at EIP — lets us identify the wedged instruction
+         * (HLT 0xF4, JMP-self EBFE, tight loop, etc.) without needing
+         * a separate disassembler. */
+        uint8_t code[16] = {0};
+        if (eip < RAM_SIZE - 16) {
+            memcpy(code, g_emu.ram + eip, 16);
+        } else {
+            uc_mem_read(g_emu.uc, eip, code, sizeof(code));
+        }
+        LOG("irq",
+            "  bytes@EIP: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+            code[0], code[1], code[2], code[3], code[4], code[5],
+            code[6], code[7], code[8], code[9], code[10], code[11]);
     }
 
     /* Completed windows (oldest → newest). */
