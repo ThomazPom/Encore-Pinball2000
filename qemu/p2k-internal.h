@@ -39,4 +39,7 @@ void p2k_install_isa_stubs(void);
 void p2k_install_pci_stub(void);
 void p2k_install_plx_bars(void);
 
+/* p2k-gx.c: 16 MiB Cyrix MediaGX MMIO + framebuffer stub at 0x40000000. */
+void p2k_install_gx_stub(void);
+
 #endif /* HW_PINBALL2000_INTERNAL_H */
