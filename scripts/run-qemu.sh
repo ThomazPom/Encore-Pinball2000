@@ -33,7 +33,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-QEMU_BIN="${QEMU_BIN:-qemu-system-i386}"
+QEMU_BIN="${QEMU_BIN:-$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386}"
+[[ -x "$QEMU_BIN" ]] || QEMU_BIN="qemu-system-i386"
 ARGS=( -no-reboot -m 16 )
 [[ $HEADLESS -eq 1 ]] && ARGS+=( -nographic ) || ARGS+=( -serial stdio )
 [[ -n "$DEBUG" ]]    && ARGS+=( -d "$DEBUG" -D /tmp/p2k_qemu.log )
@@ -44,7 +45,6 @@ if [[ $TCG_ONLY -eq 1 ]]; then
   exec "$QEMU_BIN" "${ARGS[@]}"
 fi
 
-ARGS=( -M pinball2000,game="$GAME" "${ARGS[@]}" )
+ARGS=( -M pinball2000,game="$GAME",roms-dir="$ROOT/roms" "${ARGS[@]}" )
 echo "[run-qemu] $QEMU_BIN ${ARGS[*]}"
-echo "[run-qemu] requires a patched QEMU — see qemu/README.md"
 exec "$QEMU_BIN" "${ARGS[@]}"

@@ -1,154 +1,162 @@
 /*
  * QEMU machine type "pinball2000" — Williams Pinball 2000 hardware.
  *
- * Out-of-tree QEMU source. To build, drop into a QEMU 8.x or 9.x source
- * tree under hw/i386/ and add to hw/i386/meson.build + hw/i386/Kconfig
- * (see qemu/README.md).
+ * This file owns ONLY the MachineClass registration and the top-level
+ * init wiring (RAM alias, CPU, ISA bus, PIC, PIT, ROM load, reset hook).
  *
- * Architecture:
- *   - Cyrix MediaGX core      → modeled as "486" CPU + #UD trap for 0F3C
- *   - CS5530 south bridge     → reuses QEMU's i8254 (PIT) and i8259 (PIC)
- *   - PLX 9054 PCI bridge     → custom PCI device (plx9054.c)
- *   - 256 KiB BAR2 SRAM       → MemoryRegion mapped via plx9054.c
- *   - DCS sound port 0x13c    → custom ISA device (dcs2.c)
- *   - LPT driver board        → custom ISA device on parport (lpt_board.c)
- *   - Watchdog / health reg   → MMIO inside BAR2 (plx9054.c)
+ * Responsibilities split out:
+ *   p2k-rom.c   — bank0 ROM loader (chips u100/u101 deinterleave)
+ *   p2k-boot.c  — PM-entry post-reset recipe (option ROM copy + GDT + regs)
+ *   pinball2000.h     — public board constants
+ *   p2k-internal.h    — private declarations shared between p2k-*.c
  *
- * Crucially, this file does NOT implement:
- *   - PIT timing heuristics (QEMU i8254 owns it)
- *   - PIC IRR/ISR/IMR guards (QEMU i8259 owns it)
- *   - CPU run-budget loop    (QEMU TCG owns it)
- *   - LPT pacing             (LPT remains pure I/O)
+ * Devices yet to add (each in its own future file — keep this file small):
+ *   p2k-plx9054.c   — BAR0 ROM window banking, BAR2 SRAM, watchdog @ +0x420
+ *   p2k-dcs2.c      — sound stream device on port 0x13c
+ *   p2k-lpt-board.c — driver-board on port 0x378 (idle reply 0xF0)
+ *   p2k-display.c   — DC_TIMING2 / VSYNC ~57 Hz path
+ *
+ * Out-of-tree QEMU source.  scripts/build-qemu.sh copies the qemu/ files
+ * into a pinned upstream qemu-x.y.z/hw/i386/ and patches meson.build,
+ * Kconfig and configs/devices/i386-softmmu/default.mak.  No vendoring.
  */
 
 #include "qemu/osdep.h"
-#include "qapi/error.h"
-#include "hw/boards.h"
-#include "hw/i386/pc.h"
-#include "hw/loader.h"
-#include "hw/qdev-properties.h"
 #include "qemu/error-report.h"
-#include "sysemu/sysemu.h"
+#include "qemu/units.h"
+#include "qapi/error.h"
+#include "exec/address-spaces.h"
+#include "system/system.h"
+#include "system/reset.h"
+#include "hw/boards.h"
+#include "hw/i386/x86.h"
+#include "hw/isa/isa.h"
+#include "hw/intc/i8259.h"
+#include "hw/timer/i8254.h"
+#include "hw/irq.h"
+#include "hw/qdev-properties.h"
+#include "target/i386/cpu.h"
 
-#include "pinball2000.h"
+#include "p2k-internal.h"
 
-#define TYPE_PINBALL2000_MACHINE  MACHINE_TYPE_NAME("pinball2000")
+/* ------------------------------------------------------------------------ */
+/* Machine init.                                                             */
+/* ------------------------------------------------------------------------ */
 
-typedef struct Pinball2000MachineState {
-    MachineState parent;
-    /* Per-board configuration parsed from -machine pinball2000,game=<id> */
-    char *game;
-} Pinball2000MachineState;
-
-DECLARE_INSTANCE_CHECKER(Pinball2000MachineState, PINBALL2000_MACHINE,
-                         TYPE_PINBALL2000_MACHINE)
-
-/*
- * Top-level board init.
- *
- * Order:
- *   1. Create CPU (i486 + 0F3C trap; full Cyrix MediaGX model is TODO).
- *   2. Allocate guest RAM (16 MiB — Pinball 2000 board has 16 MiB DRAM).
- *   3. Map BIOS image at 0xFFFF0000..0xFFFFFFFF (top 64 KiB of 4 GiB).
- *   4. Create CS5530 south bridge: PIT (i8254) + PIC (i8259) on standard ports.
- *   5. Create PLX 9054 PCI bridge (BAR0 ROM window, BAR2 SRAM, BAR4 regs).
- *   6. Create DCS2 sound device on port 0x13c.
- *   7. Create LPT board device on port 0x378.
- *   8. Wire IRQ0 from PIT → PIC line 0 (QEMU i8254 + i8259 do this natively;
- *      we just have to instantiate them, NOT implement timing).
- */
 static void pinball2000_init(MachineState *machine)
 {
     Pinball2000MachineState *s = PINBALL2000_MACHINE(machine);
+    X86MachineState *x86ms = X86_MACHINE(machine);
+    MemoryRegion *system_memory = get_system_memory();
+    MemoryRegion *ram_alias;
+    ISABus *isa_bus;
+    qemu_irq *i8259;
 
-    /* TODO #1 — CPU.  For first pass: */
-    /*     X86CPU *cpu = X86_CPU(cpu_create(machine->cpu_type)); */
-    /* MediaGX model not in upstream; "486" is the closest reasonable base. */
-    /* The 0F3C #UD trap is handled by hooking the CPU's invalid-opcode path. */
+    if (!s->game) {
+        error_report("pinball2000: -machine pinball2000,game=<id> required "
+                     "(e.g. game=swe1)");
+        exit(1);
+    }
+    if (!s->roms_dir) {
+        s->roms_dir = g_strdup("roms");
+    }
 
-    /* TODO #2 — RAM.  Pinball 2000 ships with 16 MiB DRAM. */
-    /*     memory_region_init_ram(ram, NULL, "p2k.ram", P2K_RAM_SIZE, &error_fatal); */
-    /*     memory_region_add_subregion(get_system_memory(), 0, ram); */
+    /* RAM: alias machine->ram (auto-allocated by mc->default_ram_id) at 0. */
+    x86ms->below_4g_mem_size = machine->ram_size;
+    x86ms->above_4g_mem_size = 0;
+    ram_alias = g_new(MemoryRegion, 1);
+    memory_region_init_alias(ram_alias, NULL, "p2k.ram-alias",
+                             machine->ram, 0, machine->ram_size);
+    memory_region_add_subregion(system_memory, 0, ram_alias);
 
-    /* TODO #3 — Boot entry path.
-     * Do NOT load roms/bios.bin and do NOT use real-mode reset vector.
-     * The proven boot recipe (from unicorn.old/src/cpu.c:200-227):
-     *   - Load game ROM bank0 (chips u100 + u101 interleaved, 1 MiB).
-     *   - Copy first P2K_OPTROM_SIZE bytes (PRISM option ROM) to
-     *     P2K_OPTROM_LOAD_ADDR (= 0x80000) in RAM.
-     *   - Build a flat 32-bit GDT with CS sel = P2K_INITIAL_CS_SEL,
-     *     DS sel = P2K_INITIAL_DS_SEL.
-     *   - Set CPU: CR0.PE=1, EFLAGS=0x2 (IF=0), ESP=P2K_INITIAL_ESP,
-     *     EIP=P2K_PM_ENTRY_EIP (skips real-mode call pair at 0x801BF/4).
-     * This must run AFTER QEMU instantiates the CPU but BEFORE TCG starts. */
+    /* CPU(s): default "486" from mc->default_cpu_type. */
+    x86_cpus_init(x86ms, CPU_VERSION_LATEST);
 
-    /* TODO #4 — CS5530 south bridge.  Reuse QEMU's standard i8254 + i8259: */
-    /*     ISABus *isa = isa_bus_new(...); */
-    /*     i8259 = i8259_init(isa, x86ms->gsi[0]); */
-    /*     pit = i8254_pit_init(isa, 0x40, 0, NULL); */
-    /* QEMU then drives PIT OUT0 → PIC IRQ0 with correct semantics. */
+    /* ISA bus + PIC + PIT.  QEMU owns all timing semantics here.
+     * No IOAPIC: single-CPU 486-class board.  i8259 outputs route directly
+     * to the CPU INTR line via x86_allocate_cpu_irq(); the ISA bus then
+     * forwards device IRQs to the 16 i8259 input lines.  Do NOT g_free
+     * the i8259 array — isa_bus_register_input_irqs stores the pointer. */
+    isa_bus = isa_bus_new(NULL, system_memory, get_system_io(), &error_abort);
+    i8259 = i8259_init(isa_bus, x86_allocate_cpu_irq());
+    isa_bus_register_input_irqs(isa_bus, i8259);
 
-    /* TODO #5 — PLX 9054.  Custom PCIDevice in plx9054.c. */
-    /*   - BAR0: 1 MiB ROM window, banks selected by writes to BAR4. */
-    /*   - BAR2: 256 KiB SRAM + watchdog/DC_TIMING2 MMIO. */
-    /*   - BAR4: PLX runtime regs (mailbox, DMA, doorbell). */
+    i8254_pit_init(isa_bus, 0x40, 0, NULL);
 
-    /* TODO #6 — DCS2 sound.  ISA device in dcs2.c, port 0x13c. */
-    /*   Byte-stream protocol: two consecutive bytes form a 16-bit command. */
-    /*   Reset byte 0x00 → reply 0xF0. */
+    /* Load game ROM bank0 (chips u100 + u101 interleaved). */
+    if (p2k_load_bank0(s) < 0) {
+        exit(1);
+    }
 
-    /* TODO #7 — LPT driver board.  ISA device in lpt_board.c, port 0x378. */
-    /*   Idle opcode 0x00 → reply 0xF0. */
-    /*   No pacing.  No sleeps.  Pure I/O. */
+    /* Arrange the PM-entry reset recipe to fire after every system reset. */
+    qemu_register_reset(p2k_post_reset, s);
 
-    error_report("pinball2000: scaffold only — see qemu/README.md "
-                 "(game=%s)", s->game ?: "(none)");
+    info_report("pinball2000: machine ready (game=%s, ram=%lu MiB)",
+                s->game, (unsigned long)(machine->ram_size / MiB));
 }
 
-static char *pinball2000_get_game(Object *obj, Error **errp)
+/* ------------------------------------------------------------------------ */
+/* Properties / class registration.                                         */
+/* ------------------------------------------------------------------------ */
+
+static char *p2k_get_game(Object *obj, Error **errp)
 {
     Pinball2000MachineState *s = PINBALL2000_MACHINE(obj);
     return g_strdup(s->game ?: "");
 }
-
-static void pinball2000_set_game(Object *obj, const char *value, Error **errp)
+static void p2k_set_game(Object *obj, const char *value, Error **errp)
 {
     Pinball2000MachineState *s = PINBALL2000_MACHINE(obj);
     g_free(s->game);
     s->game = g_strdup(value);
 }
+static char *p2k_get_roms_dir(Object *obj, Error **errp)
+{
+    Pinball2000MachineState *s = PINBALL2000_MACHINE(obj);
+    return g_strdup(s->roms_dir ?: "");
+}
+static void p2k_set_roms_dir(Object *obj, const char *value, Error **errp)
+{
+    Pinball2000MachineState *s = PINBALL2000_MACHINE(obj);
+    g_free(s->roms_dir);
+    s->roms_dir = g_strdup(value);
+}
 
-static void pinball2000_machine_class_init(ObjectClass *oc, void *data)
+static void pinball2000_class_init(ObjectClass *oc, void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 
-    mc->desc = "Williams Pinball 2000 (Cyrix MediaGX + CS5530 + PLX9054)";
-    mc->init = pinball2000_init;
-    mc->max_cpus = 1;
-    mc->default_cpu_type = X86_CPU_TYPE_NAME("486");
-    mc->default_ram_size = 16 * MiB;
-    mc->default_ram_id = "p2k.ram";
-    mc->no_floppy = 1;
-    mc->no_cdrom = 1;
-    mc->no_parallel = 1;   /* we provide our own LPT board device */
-    mc->no_serial = 0;     /* COM1 may be used for service interface */
+    mc->desc              = "Williams Pinball 2000 (Cyrix MediaGX + CS5530 + PLX9054)";
+    mc->init              = pinball2000_init;
+    mc->family            = "pinball2000_i386";
+    mc->max_cpus          = 1;
+    mc->default_cpu_type  = X86_CPU_TYPE_NAME("486");
+    mc->default_ram_size  = P2K_RAM_SIZE;
+    mc->default_ram_id    = "p2k.ram";
+    mc->no_floppy         = 1;
+    mc->no_cdrom          = 1;
+    mc->no_parallel       = 1;   /* the LPT board device will own port 0x378 */
+    mc->units_per_default_bus = 1;
 
-    object_class_property_add_str(oc, "game",
-                                  pinball2000_get_game, pinball2000_set_game);
+    object_class_property_add_str(oc, "game", p2k_get_game, p2k_set_game);
     object_class_property_set_description(oc, "game",
         "Game ROM bank to load (e.g. swe1, rfm)");
+    object_class_property_add_str(oc, "roms-dir",
+                                  p2k_get_roms_dir, p2k_set_roms_dir);
+    object_class_property_set_description(oc, "roms-dir",
+        "Directory containing game ROM chip files (default: ./roms)");
 }
 
 static const TypeInfo pinball2000_machine_info = {
     .name           = TYPE_PINBALL2000_MACHINE,
-    .parent         = TYPE_MACHINE,
+    .parent         = TYPE_X86_MACHINE,
     .instance_size  = sizeof(Pinball2000MachineState),
-    .class_init     = pinball2000_machine_class_init,
+    .class_init     = pinball2000_class_init,
 };
 
-static void pinball2000_machine_register_types(void)
+static void pinball2000_register_types(void)
 {
     type_register_static(&pinball2000_machine_info);
 }
 
-type_init(pinball2000_machine_register_types)
+type_init(pinball2000_register_types)
