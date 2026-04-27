@@ -90,8 +90,14 @@ static struct sched_state {
     /* cumulative counters since cpu_run started */
     uint64_t irq0_due;
     uint64_t irq0_fired;
-    uint64_t irq0_collapsed;
+    uint64_t irq0_collapsed;       /* coll_irr + coll_isr */
+    uint64_t irq0_coll_irr;        /* IRR bit0 already pending at fire time */
+    uint64_t irq0_coll_isr;        /* ISR bit0 still in-service (no EOI) */
     uint64_t irq0_inject;
+    /* Inject block reasons specific to IRQ0 (sampled in check_and_inject_irq) */
+    uint64_t irq0_blk_if;          /* IRR pending, not masked, not in service, but IF=0 */
+    uint64_t irq0_blk_imr;         /* IRR pending but masked in IMR */
+    uint64_t irq0_blk_stub;        /* injected but IDT entry is stub (handler==0/0x20000) */
     uint64_t emu_calls;
 
     /* ISR-busy tracking (in vticks within the current 5 s window) */
@@ -104,6 +110,8 @@ static struct sched_state {
     uint64_t w_start_ns;
     uint64_t w_vticks_base;
     uint64_t w_due_base, w_fired_base, w_collapsed_base;
+    uint64_t w_coll_irr_base, w_coll_isr_base;
+    uint64_t w_blk_if_base, w_blk_imr_base, w_blk_stub_base;
     uint64_t w_inject_base, w_eoi_base, w_resched_base;
 
     /* Ring of last IRQ_RING completed windows (newest at head). */
@@ -440,7 +448,21 @@ static int check_and_inject_irq(void)
     uint32_t eflags = 0;
     uc_reg_read(g_emu.uc, UC_X86_REG_EFLAGS, &eflags);
     if (!(eflags & 0x200)) {
+        /* If IRQ0 is sitting in IRR un-masked and not in service, this
+         * is the reason it isn't being delivered: guest CLI'd. */
+        if ((g_emu.pic[0].irr & 0x01) &&
+            !(g_emu.pic[0].imr & 0x01) &&
+            !(g_emu.pic[0].isr & 0x01)) {
+            s_sched.irq0_blk_if++;
+        }
         return -1;
+    }
+
+    /* IRQ0 specifically masked in IMR (would never be in `pending` below). */
+    if ((g_emu.pic[0].irr & 0x01) &&
+        (g_emu.pic[0].imr & 0x01) &&
+        !(g_emu.pic[0].isr & 0x01)) {
+        s_sched.irq0_blk_imr++;
     }
 
     for (int pic_idx = 0; pic_idx < 2; pic_idx++) {
@@ -470,6 +492,11 @@ static int check_and_inject_irq(void)
                  * stall waiting for an EOI that will never come. */
                 pic->isr &= ~(1 << bit);
                 pic->irr |= (1 << bit);
+                /* For IRQ0 specifically, classify why inject failed. */
+                if (pic_idx == 0 && bit == 0) {
+                    if (!(eflags & 0x200)) s_sched.irq0_blk_if++;
+                    else                   s_sched.irq0_blk_stub++;
+                }
                 return -1;
             }
         }
@@ -634,9 +661,15 @@ void cpu_dump_irq_snapshot(const char *trigger)
         (double)s_sched.isr_max_busy_vticks_w / target_mips,
         (unsigned long long)d_resched);
     LOG("irq",
-        "  PIC0 now: IRR=0x%02x ISR=0x%02x IMR=0x%02x  PIT[0]=%u\n",
+        "  PIC0 now: IRR=0x%02x ISR=0x%02x IMR=0x%02x  PIT[0]=%u  "
+        "blk(cum) if=%llu imr=%llu stub=%llu coll(cum) irr=%llu isr=%llu\n",
         g_emu.pic[0].irr, g_emu.pic[0].isr, g_emu.pic[0].imr,
-        g_emu.pit.count[0]);
+        g_emu.pit.count[0],
+        (unsigned long long)s_sched.irq0_blk_if,
+        (unsigned long long)s_sched.irq0_blk_imr,
+        (unsigned long long)s_sched.irq0_blk_stub,
+        (unsigned long long)s_sched.irq0_coll_irr,
+        (unsigned long long)s_sched.irq0_coll_isr);
 
     /* Live guest CPU state — where exactly is the guest right now?
      * For "*** Fatal" + stuck-ISR triggers, this points at the
@@ -808,6 +841,8 @@ void cpu_run(void)
                     g_emu.pic[0].irr |= 0x01;
                     s_sched.irq0_fired++;
                 } else {
+                    if (g_emu.pic[0].irr & 0x01) s_sched.irq0_coll_irr++;
+                    else                          s_sched.irq0_coll_isr++;
                     s_sched.irq0_collapsed++;
                 }
             }
@@ -855,6 +890,11 @@ void cpu_run(void)
             uint64_t d_inject    = s_sched.irq0_inject    - s_sched.w_inject_base;
             uint64_t d_eoi       = g_emu.pic[0].irq0_eoi_count - s_sched.w_eoi_base;
             uint64_t d_vticks    = s_sched.vticks_total   - s_sched.w_vticks_base;
+            uint64_t d_coll_irr  = s_sched.irq0_coll_irr  - s_sched.w_coll_irr_base;
+            uint64_t d_coll_isr  = s_sched.irq0_coll_isr  - s_sched.w_coll_isr_base;
+            uint64_t d_blk_if    = s_sched.irq0_blk_if    - s_sched.w_blk_if_base;
+            uint64_t d_blk_imr   = s_sched.irq0_blk_imr   - s_sched.w_blk_imr_base;
+            uint64_t d_blk_stub  = s_sched.irq0_blk_stub  - s_sched.w_blk_stub_base;
             uint64_t resched_drops = uart_get_resched_drop_count();
             uint64_t d_resched   = resched_drops - s_sched.w_resched_base;
 
@@ -870,22 +910,60 @@ void cpu_run(void)
                               : (vt_scale >= 0.50) ? "HOST-SLOW"
                                                    : "HOST-BEHIND";
 
+            /* Sample current PIC0 + guest IF for the block-reason verdict. */
+            uint8_t irr0 = g_emu.pic[0].irr & 0x01;
+            uint8_t isr0 = g_emu.pic[0].isr & 0x01;
+            uint8_t imr0 = g_emu.pic[0].imr & 0x01;
+            uint32_t cur_eflags = 0;
+            if (g_emu.uc) uc_reg_read(g_emu.uc, UC_X86_REG_EFLAGS, &cur_eflags);
+            int cur_if = (cur_eflags >> 9) & 1;
+
+            /* Verdict: if no IRQ0 was delivered this window despite
+             * timer ticks being due, classify what blocked it. */
+            const char *verdict = "ok";
+            if (d_due > 0 && d_inject == 0) {
+                if (isr0)              verdict = "DEAD: ISR-stuck (no EOI)";
+                else if (imr0)         verdict = "DEAD: IMR masks IRQ0";
+                else if (irr0 && !cur_if) verdict = "DEAD: IRR pending, IF=0";
+                else if (irr0)         verdict = "DEAD: IRR pending, inject loop not firing";
+                else if (d_blk_stub)   verdict = "DEAD: IDT stub for vector 0x08";
+                else                   verdict = "DEAD: unknown (no IRR/ISR/IMR/IF block)";
+            } else if (d_due > 0 && d_inject < d_due / 2) {
+                verdict = "DEGRADED: <50% IRQ0s delivered";
+            }
+
             LOG("irq",
-                "IRQ0 5s: wall=%.0f Hz / target=%.0f Hz (vt-scale=%.2fx, host=%.1f MIPS) [%s]\n",
-                wall_hz, target_hz, vt_scale, host_mips, health);
+                "IRQ0 5s: wall=%.0f Hz / target=%.0f Hz (vt-scale=%.2fx, host=%.1f MIPS) [%s] %s\n",
+                wall_hz, target_hz, vt_scale, host_mips, health, verdict);
             LOG("irq",
-                "         due=%llu fired=%llu collapsed=%llu inject=%llu irq0-eoi=%llu (eoi/inject=%.2f)\n",
+                "         due=%llu fired=%llu collapsed=%llu (irr=%llu isr=%llu) inject=%llu irq0-eoi=%llu (eoi/inject=%.2f)\n",
                 (unsigned long long)d_due,
                 (unsigned long long)d_fired,
                 (unsigned long long)d_collapsed,
+                (unsigned long long)d_coll_irr,
+                (unsigned long long)d_coll_isr,
                 (unsigned long long)d_inject,
                 (unsigned long long)d_eoi,
                 eoi_ratio);
+            LOG("irq",
+                "         block: if=%llu imr=%llu stub=%llu  PIC0 IRR=0x%02x ISR=0x%02x IMR=0x%02x  guest IF=%d\n",
+                (unsigned long long)d_blk_if,
+                (unsigned long long)d_blk_imr,
+                (unsigned long long)d_blk_stub,
+                g_emu.pic[0].irr, g_emu.pic[0].isr, g_emu.pic[0].imr,
+                cur_if);
             LOG("irq",
                 "         max-ISR-busy=%llu vticks (~%.0f us guest) resched-in-ISR-suppressed=%llu\n",
                 (unsigned long long)s_sched.isr_max_busy_vticks_w,
                 (double)s_sched.isr_max_busy_vticks_w / target_mips,
                 (unsigned long long)d_resched);
+
+            /* Auto-snapshot when IRQ0 delivery has died. This is the
+             * hard failure mode the user wants caught immediately, not
+             * only when *** Fatal eventually appears in UART. */
+            if (d_due > 100 && d_inject == 0) {
+                cpu_dump_irq_snapshot("IRQ0-delivery-dead");
+            }
 
             /* Push window into ring (newest at head). */
             int next_head = (s_sched.ring_head + 1) % IRQ_RING;
@@ -913,6 +991,11 @@ void cpu_run(void)
             s_sched.w_due_base       = s_sched.irq0_due;
             s_sched.w_fired_base     = s_sched.irq0_fired;
             s_sched.w_collapsed_base = s_sched.irq0_collapsed;
+            s_sched.w_coll_irr_base  = s_sched.irq0_coll_irr;
+            s_sched.w_coll_isr_base  = s_sched.irq0_coll_isr;
+            s_sched.w_blk_if_base    = s_sched.irq0_blk_if;
+            s_sched.w_blk_imr_base   = s_sched.irq0_blk_imr;
+            s_sched.w_blk_stub_base  = s_sched.irq0_blk_stub;
             s_sched.w_inject_base    = s_sched.irq0_inject;
             s_sched.w_eoi_base       = g_emu.pic[0].irq0_eoi_count;
             s_sched.w_vticks_base    = s_sched.vticks_total;
