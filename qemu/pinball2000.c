@@ -93,6 +93,7 @@ static void pinball2000_init(MachineState *machine)
      * 1 MiB bank0 image at 0x08000000/0x14000000/0xFF000000 are visible
      * to the guest. */
     p2k_map_rom_windows(s);
+    p2k_install_isa_stubs();
 
     /* Arrange the PM-entry reset recipe to fire after every system reset. */
     qemu_register_reset(p2k_post_reset, s);
