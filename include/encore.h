@@ -410,15 +410,9 @@ typedef struct {
      *     forcing the PCI BAR4 path.  Kept for regression / A-B work;
      *     fails on bundles where the 5-byte prologue is absent
      *     (notably SWE1 v1.3 and the --update none trim set).  */
-    /* Default 0 = BAR4 patch path (audio init, sample playback, mixer all
-     * proven working at HEAD).  io-handled mode is DEFERRED — it answers
-     * the UART RESET handshake but the post-reset cmd stream
-     * (dong/init/mixer) is never sent by the game, so default sound is
-     * silent.  See cpu.c DCS-mode patch comment for full rationale.
-     * Override with `--dcs-mode io-handled` for A/B regression work. */
     enum {
-        ENCORE_DCS_BAR4_PATCH = 0,
-        ENCORE_DCS_IO_HANDLED = 1,
+        ENCORE_DCS_IO_HANDLED = 0,
+        ENCORE_DCS_BAR4_PATCH = 1,
     } dcs_mode_choice;
     volatile int timer_pending;       /* count of unprocessed SIGALRM ticks */
     volatile int timer_tick_queue;    /* queued IRQ0 ticks waiting for EOI */
