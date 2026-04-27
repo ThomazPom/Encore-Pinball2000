@@ -277,40 +277,50 @@ static void hook_block_count(uc_engine *uc, uint64_t addr,
     /* Task-switch fallback: when XINU's clkint calls resched, the new
      * task's stack is loaded and the original pre_eip is never executed
      * again from this context — in_flight would stay armed until task
-     * wraparound (measured up to 86 ms). Detect a stack switch by
-     * watching for ESP movement outside a 4 KiB window around pre_esp,
-     * which is wider than any clkint frame growth but tighter than a
-     * different task's stack. PIC ISR is already 0 by this point (EOI
-     * was sent in clkint's prologue), so allowing the next IRQ0 here
-     * is HW-equivalent to "the kernel moved on, frame is gone".
+     * wraparound (measured up to 86 ms). Only clear in_flight when:
+     *   (a) ESP is far outside the pre-injection baseline (>= 16 KiB),
+     *       wider than any plausible clkint stack frame (printf etc.),
+     *   (b) PIC ISR for IRQ0 is already 0 (clkint EOI sent), AND
+     *   (c) at least one full PIT period of guest time has elapsed
+     *       since arming — by which point a real IRET back to pre_eip
+     *       would have been observed by the iret-clear path. (a)+(b)
+     *       alone fired during clkint's own post-EOI body and caused
+     *       a resched-in-ISR storm.
      * NOTE: heuristic, not proven hardware-equivalent — counted
      * separately so we can audit it via the 5s heartbeat. */
     if (s_irq0_in_flight) {
+        uint64_t dur = s_sched.vticks_total - s_irq0_in_flight_arm_vt;
+        uint64_t min_dur = s_sched.cached_pit_period_insns;
+        if (min_dur < 1000) min_dur = 1000;
+        if (dur < min_dur) {
+            return;
+        }
         uint32_t cur_esp = 0;
         uc_reg_read(uc, UC_X86_REG_ESP, &cur_esp);
-        uint32_t lo = (s_irq0_pre_esp > 0x1000) ? (s_irq0_pre_esp - 0x1000) : 0;
-        uint32_t hi = s_irq0_pre_esp + 0x1000;
+        const uint32_t WINDOW = 0x4000; /* +/-16 KiB */
+        uint32_t lo = (s_irq0_pre_esp > WINDOW) ? (s_irq0_pre_esp - WINDOW) : 0;
+        uint32_t hi = s_irq0_pre_esp + WINDOW;
+        int32_t  desp = (int32_t)cur_esp - (int32_t)s_irq0_pre_esp;
+        int32_t  abs_desp = desp < 0 ? -desp : desp;
         if ((cur_esp < lo || cur_esp > hi) &&
+            abs_desp >= (int32_t)WINDOW &&
             !(g_emu.pic[0].isr & 0x01)) {
-            uint64_t dur = s_sched.vticks_total - s_irq0_in_flight_arm_vt;
             if (dur > s_irq0_in_flight_max_vt) s_irq0_in_flight_max_vt = dur;
             s_irq0_in_flight_clears++;
             s_irq0_in_flight_clear_tsw++;
-            /* Sample-log the first 5 to confirm they really look like
-             * task switches (large ESP delta, distinct page) and not
-             * accidental stack movement. */
             if (s_irq0_tsw_logged < 5) {
                 uint32_t cur_eflags = 0;
                 uc_reg_read(uc, UC_X86_REG_EFLAGS, &cur_eflags);
                 LOG("irq",
-                    "in_flight cleared by TASK-SWITCH #%llu: pre_eip=0x%08x pre_esp=0x%08x cur_eip=0x%08x cur_esp=0x%08x dESP=%+ld IRR=%02x ISR=%02x IMR=%02x IF=%d dur=%llu vt\n",
+                    "in_flight cleared by TASK-SWITCH #%llu: pre_eip=0x%08x pre_esp=0x%08x cur_eip=0x%08x cur_esp=0x%08x dESP=%+ld IRR=%02x ISR=%02x IMR=%02x IF=%d dur=%llu vt (min_dur=%llu)\n",
                     (unsigned long long)(s_irq0_tsw_logged + 1),
                     s_irq0_pre_eip, s_irq0_pre_esp,
                     (uint32_t)addr, cur_esp,
-                    (long)((int32_t)cur_esp - (int32_t)s_irq0_pre_esp),
+                    (long)desp,
                     g_emu.pic[0].irr, g_emu.pic[0].isr, g_emu.pic[0].imr,
                     (cur_eflags >> 9) & 1,
-                    (unsigned long long)dur);
+                    (unsigned long long)dur,
+                    (unsigned long long)min_dur);
                 s_irq0_tsw_logged++;
             }
             s_irq0_in_flight = 0;
