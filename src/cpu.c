@@ -1135,6 +1135,18 @@ void cpu_run(void)
             s_sched.isr_set_at_vticks = s_sched.vticks_total;
             s_sched.isr_warned_this_span = false;
         }
+        /* On ISR 1→0 (EOI delivered), the IRQ0 handler is logically done.
+         * Real x86 has no "in-flight" concept beyond ISR state, so allow
+         * a new injection now even if the guest task-switched away from
+         * pre_eip (XINU resched runs from clkint and never returns to
+         * the pre-injection EIP, which previously kept in_flight armed
+         * until task wraparound — measured up to 86 ms / ~340 ticks). */
+        if (s_sched.isr_prev && !isr_now && s_irq0_in_flight) {
+            uint64_t dur = s_sched.vticks_total - s_irq0_in_flight_arm_vt;
+            if (dur > s_irq0_in_flight_max_vt) s_irq0_in_flight_max_vt = dur;
+            s_irq0_in_flight_clears++;
+            s_irq0_in_flight = 0;
+        }
         if (s_sched.isr_set_at_vticks) {
             uint64_t span = s_sched.vticks_total - s_sched.isr_set_at_vticks;
             if (span > s_sched.isr_max_busy_vticks_w)
