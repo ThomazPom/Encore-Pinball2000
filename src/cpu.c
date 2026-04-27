@@ -1240,9 +1240,15 @@ void cpu_run(void)
                 verdict = "DEGRADED: <50% IRQ0s delivered";
             }
 
+            double delivered_pct = d_due ? 100.0 * (double)d_inject / (double)d_due : 0.0;
+            double collapsed_pct = d_due ? 100.0 * (double)d_collapsed / (double)d_due : 0.0;
+            double wall_period_us = wall_hz > 0.0 ? 1.0e6 / wall_hz : 0.0;
+            double target_period_us = target_hz > 0.0 ? 1.0e6 / target_hz : 0.0;
             LOG("irq",
-                "IRQ0 5s: wall=%.0f Hz / target=%.0f Hz (vt-scale=%.2fx, host=%.1f MIPS) [%s] %s\n",
-                wall_hz, target_hz, vt_scale, host_mips, health, verdict);
+                "IRQ0 5s: wall=%.0f Hz / target=%.0f Hz (period: wall=%.1f us / target=%.1f us; delivered=%.1f%% collapsed=%.1f%%) (vt-scale=%.2fx, host=%.1f MIPS) [%s] %s\n",
+                wall_hz, target_hz, wall_period_us, target_period_us,
+                delivered_pct, collapsed_pct,
+                vt_scale, host_mips, health, verdict);
             LOG("irq",
                 "         due=%llu fired=%llu collapsed=%llu (irr=%llu isr=%llu) inject=%llu irq0-eoi=%llu (eoi/inject=%.2f)\n",
                 (unsigned long long)d_due,
