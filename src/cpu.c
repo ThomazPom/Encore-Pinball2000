@@ -225,9 +225,12 @@ static uint32_t s_irq0_pre_eip     = 0;     /* return EIP */
 static uint32_t s_irq0_handler_eip = 0;     /* clkint base */
 static uint64_t s_irq0_in_flight   = 0;     /* 0 = idle, else seq number */
 static uint64_t s_irq0_in_flight_arms   = 0;     /* total times in_flight was armed (== inject count) */
-static uint64_t s_irq0_in_flight_clears = 0;     /* total times in_flight was cleared by IRET detection */
+static uint64_t s_irq0_in_flight_clears = 0;     /* total clears (sum of all reasons) */
+static uint64_t s_irq0_in_flight_clear_iret = 0; /* clear by EIP-return-to-pre_eip with ESP recovered */
+static uint64_t s_irq0_in_flight_clear_tsw  = 0; /* clear by task-switch (ESP outside +/-4KiB AND ISR=0) */
 static uint64_t s_irq0_in_flight_max_vt = 0;     /* longest in_flight duration in vticks */
 static uint64_t s_irq0_in_flight_arm_vt = 0;     /* vticks at last arm */
+static uint64_t s_irq0_tsw_logged = 0;           /* sample-log first N task-switch clears */
 static uint64_t s_irq0_guard_defer = 0;     /* count of injections deferred by this guard */
 static uint64_t s_inj_defer_iret = 0;
 static uint64_t s_inj_defer_progress = 0;
@@ -253,6 +256,7 @@ static void hook_block_count(uc_engine *uc, uint64_t addr,
             uint64_t dur = s_sched.vticks_total - s_irq0_in_flight_arm_vt;
             if (dur > s_irq0_in_flight_max_vt) s_irq0_in_flight_max_vt = dur;
             s_irq0_in_flight_clears++;
+            s_irq0_in_flight_clear_iret++;
             s_irq0_in_flight = 0;
         }
     }
@@ -264,7 +268,9 @@ static void hook_block_count(uc_engine *uc, uint64_t addr,
      * which is wider than any clkint frame growth but tighter than a
      * different task's stack. PIC ISR is already 0 by this point (EOI
      * was sent in clkint's prologue), so allowing the next IRQ0 here
-     * is HW-equivalent to "the kernel moved on, frame is gone". */
+     * is HW-equivalent to "the kernel moved on, frame is gone".
+     * NOTE: heuristic, not proven hardware-equivalent — counted
+     * separately so we can audit it via the 5s heartbeat. */
     if (s_irq0_in_flight) {
         uint32_t cur_esp = 0;
         uc_reg_read(uc, UC_X86_REG_ESP, &cur_esp);
@@ -275,6 +281,24 @@ static void hook_block_count(uc_engine *uc, uint64_t addr,
             uint64_t dur = s_sched.vticks_total - s_irq0_in_flight_arm_vt;
             if (dur > s_irq0_in_flight_max_vt) s_irq0_in_flight_max_vt = dur;
             s_irq0_in_flight_clears++;
+            s_irq0_in_flight_clear_tsw++;
+            /* Sample-log the first 5 to confirm they really look like
+             * task switches (large ESP delta, distinct page) and not
+             * accidental stack movement. */
+            if (s_irq0_tsw_logged < 5) {
+                uint32_t cur_eflags = 0;
+                uc_reg_read(uc, UC_X86_REG_EFLAGS, &cur_eflags);
+                LOG("irq",
+                    "in_flight cleared by TASK-SWITCH #%llu: pre_eip=0x%08x pre_esp=0x%08x cur_eip=0x%08x cur_esp=0x%08x dESP=%+ld IRR=%02x ISR=%02x IMR=%02x IF=%d dur=%llu vt\n",
+                    (unsigned long long)(s_irq0_tsw_logged + 1),
+                    s_irq0_pre_eip, s_irq0_pre_esp,
+                    (uint32_t)addr, cur_esp,
+                    (long)((int32_t)cur_esp - (int32_t)s_irq0_pre_esp),
+                    g_emu.pic[0].irr, g_emu.pic[0].isr, g_emu.pic[0].imr,
+                    (cur_eflags >> 9) & 1,
+                    (unsigned long long)dur);
+                s_irq0_tsw_logged++;
+            }
             s_irq0_in_flight = 0;
         }
     }
@@ -1275,11 +1299,16 @@ void cpu_run(void)
                 (unsigned long long)s_sched.isr_max_busy_vticks_w,
                 (double)s_sched.isr_max_busy_vticks_w / target_mips,
                 (unsigned long long)d_resched);
+            uint64_t cur_inflight_dur = s_irq0_in_flight
+                ? (s_sched.vticks_total - s_irq0_in_flight_arm_vt) : 0;
             LOG("irq",
-                "         guards: in-flight arms=%llu clears=%llu (cur=%llu max-vt=%llu)  defer: nest=%llu sti/iret=%llu no-prog=%llu burst=%llu esp=%llu  force-EOI=%llu  blk-stub=%llu\n",
+                "         guards: in-flight arms=%llu clears=%llu (iret=%llu tsw=%llu) cur=%llu cur-dur=%llu vt max-vt=%llu  defer: nest=%llu sti/iret=%llu no-prog=%llu burst=%llu esp=%llu  force-EOI=%llu  blk-stub=%llu\n",
                 (unsigned long long)s_irq0_in_flight_arms,
                 (unsigned long long)s_irq0_in_flight_clears,
+                (unsigned long long)s_irq0_in_flight_clear_iret,
+                (unsigned long long)s_irq0_in_flight_clear_tsw,
                 (unsigned long long)s_irq0_in_flight,
+                (unsigned long long)cur_inflight_dur,
                 (unsigned long long)s_irq0_in_flight_max_vt,
                 (unsigned long long)s_irq0_guard_defer,
                 (unsigned long long)s_inj_defer_iret,
