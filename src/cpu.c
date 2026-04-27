@@ -541,6 +541,25 @@ int cpu_inject_interrupt(uint8_t vector)
             vector, handler, eip, inject_ok, inject_blocked, inject_stub);
     }
 
+    /* Sanity: refuse to inject if ESP isn't pointing into mapped RAM
+     * with room for the 12-byte interrupt frame. We've observed task
+     * ESPs drifting to 0xff3fxxxx (above ROM alias, unmapped) where
+     * uc_mem_write silently fails — the push doesn't land, but ESP
+     * is still decremented and a handler is invoked. The subsequent
+     * IRET pops garbage and the CPU jumps to a corrupt vector,
+     * eventually wedging in the GDT or at NULL. Defer instead so
+     * the line stays pending; the next attempt may catch a sane ESP. */
+    if (esp < 16 || esp >= RAM_SIZE || (esp - 12) >= RAM_SIZE) {
+        static uint64_t s_inj_defer_esp = 0;
+        s_inj_defer_esp++;
+        if (s_inj_defer_esp <= 5 || (s_inj_defer_esp % 100000) == 0) {
+            LOGV3("irq",
+                "vec=0x%02x DEFERRED (ESP out of RAM): EIP=0x%08x ESP=0x%08x (n=%llu)\n",
+                vector, eip, esp, (unsigned long long)s_inj_defer_esp);
+        }
+        return 0;
+    }
+
     /* Push interrupt frame directly to RAM (stack is always in RAM) */
     esp -= 4;
     if (esp < RAM_SIZE) RAM_WR32(esp, eflags); else uc_mem_write(uc, esp, &eflags, 4);
@@ -1045,6 +1064,30 @@ void cpu_run(void)
                 span > (uint64_t)(s_sched.cached_target_ips / 20ULL)) {
                 s_sched.isr_warned_this_span = true;
                 cpu_dump_irq_snapshot("stuck-ISR>50ms");
+            }
+            /* Stuck-ISR auto-recovery: if ISR has been latched for
+             * more than ~250 ms of guest time, the IRQ0 handler will
+             * NEVER complete (we're wedged after stack/IDT corruption,
+             * jumped to NULL CS, executing in GDT, etc.). Forcing the
+             * EOI here at least restores IRQ0 delivery so XINU's other
+             * watchdogs / display / sound have a chance to keep going
+             * instead of locking the whole emulator. This is a recovery
+             * measure, not a fix — the underlying corruption remains. */
+            if (span > (uint64_t)(s_sched.cached_target_ips / 4ULL)) {
+                static uint64_t s_isr_force_eoi = 0;
+                s_isr_force_eoi++;
+                if (s_isr_force_eoi <= 5 || (s_isr_force_eoi % 1000) == 0) {
+                    LOG("irq",
+                        "*** STUCK-ISR RECOVERY: forcing EOI after %llu vticks (~%llu ms guest) (n=%llu)\n",
+                        (unsigned long long)span,
+                        (unsigned long long)(span * 1000ULL /
+                            (s_sched.cached_target_ips ? s_sched.cached_target_ips : 1)),
+                        (unsigned long long)s_isr_force_eoi);
+                }
+                g_emu.pic[0].isr &= ~0x01;
+                g_emu.pic[0].irq0_eoi_count++;
+                s_sched.isr_set_at_vticks = 0;
+                s_sched.isr_warned_this_span = false;
             }
             if (!isr_now) s_sched.isr_set_at_vticks = 0;
         }
