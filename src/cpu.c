@@ -1098,32 +1098,46 @@ void cpu_run(void)
          * firing relative to executed guest progress; wall-time gate
          * keeps fast hosts from over-firing relative to real time and
          * thereby compressing XINU's tick-based scheduler watchdog. */
-        if (s_sched.next_irq0_at_vticks &&
-            s_sched.vticks_total >= s_sched.next_irq0_at_vticks &&
-            now_wall_ns           >= s_sched.next_irq0_at_ns) {
-            s_sched.irq0_due++;
-            uint64_t lag_v = s_sched.vticks_total - s_sched.next_irq0_at_vticks;
-            uint64_t lag_n = now_wall_ns           - s_sched.next_irq0_at_ns;
-            if (lag_v >= 4 * pit_period_insns) {
-                s_sched.next_irq0_at_vticks = s_sched.vticks_total + pit_period_insns;
-            } else {
+        /* Drain ALL elapsed PIT periods per outer-loop iteration.
+         * Previously we incremented due by 1 per check even if the batch
+         * had advanced wall-time/vticks across multiple periods, then
+         * reset the deadline to now+period when lag_n >= 4*period — so
+         * we silently dropped ticks. That makes "delivered = inject/due"
+         * look healthier than reality and starves the guest of cadence
+         * when vt-scale runs ahead. Real PIT generates one rising edge
+         * per period; PIC IRR collapses repeated edges within one ISR
+         * span, so multiple due++ inside one window is correct: most
+         * collapse into IRR/ISR, but the count tells us the true cadence
+         * the guest should have seen. Cap the catch-up at 1024 periods
+         * per check to bound CPU spent in the gate after a long stall. */
+        if (s_sched.next_irq0_at_vticks) {
+            int catchup_budget = 1024;
+            while (catchup_budget-- > 0 &&
+                   s_sched.vticks_total >= s_sched.next_irq0_at_vticks &&
+                   now_wall_ns           >= s_sched.next_irq0_at_ns) {
+                s_sched.irq0_due++;
                 s_sched.next_irq0_at_vticks += pit_period_insns;
-            }
-            if (lag_n >= 4 * pit_period_ns) {
-                s_sched.next_irq0_at_ns = now_wall_ns + pit_period_ns;
-            } else {
-                s_sched.next_irq0_at_ns += pit_period_ns;
-            }
-            if (g_emu.xinu_ready) {
-                if (!(g_emu.pic[0].irr & 0x01) &&
-                    !(g_emu.pic[0].isr & 0x01)) {
-                    g_emu.pic[0].irr |= 0x01;
-                    s_sched.irq0_fired++;
-                } else {
-                    if (g_emu.pic[0].irr & 0x01) s_sched.irq0_coll_irr++;
-                    else                          s_sched.irq0_coll_isr++;
-                    s_sched.irq0_collapsed++;
+                s_sched.next_irq0_at_ns     += pit_period_ns;
+                if (g_emu.xinu_ready) {
+                    if (!(g_emu.pic[0].irr & 0x01) &&
+                        !(g_emu.pic[0].isr & 0x01)) {
+                        g_emu.pic[0].irr |= 0x01;
+                        s_sched.irq0_fired++;
+                    } else {
+                        if (g_emu.pic[0].irr & 0x01) s_sched.irq0_coll_irr++;
+                        else                          s_sched.irq0_coll_isr++;
+                        s_sched.irq0_collapsed++;
+                    }
                 }
+            }
+            /* Hard re-sync if the catch-up loop hit its budget — the
+             * guest was paused (debugger, host scheduler hiccup) and we
+             * should not spend the next 1000+ iterations chasing the
+             * wall clock. Drop the deadlines onto "now" without
+             * generating spurious due. */
+            if (catchup_budget < 0) {
+                s_sched.next_irq0_at_vticks = s_sched.vticks_total + pit_period_insns;
+                s_sched.next_irq0_at_ns     = now_wall_ns          + pit_period_ns;
             }
         }
 
