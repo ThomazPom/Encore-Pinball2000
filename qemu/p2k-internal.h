@@ -45,4 +45,7 @@ void p2k_install_gx_stub(void);
 /* p2k-display.c: 640×480 SDL/QEMU display reading FB at RAM 0x800000. */
 void p2k_install_display(void);
 
+/* p2k-dcs.c: DCS audio MMIO state machine on BAR4 (0x13000000, 16 MiB). */
+void p2k_install_dcs(void);
+
 #endif /* HW_PINBALL2000_INTERNAL_H */
