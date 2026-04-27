@@ -142,6 +142,53 @@ static struct sched_state {
     uint64_t pit_period_ns;
 } s_sched;
 
+/* Injection ring buffer — captures the last N interrupt injections so
+ * that when the CPU later wedges (e.g. EIP lands in the GDT at 0x1016
+ * after a corrupt IRET), we can dump exactly which injection set up
+ * the bad return frame. */
+#define IRQ_INJ_RING 16
+struct inj_record {
+    uint64_t seq;          /* monotonic injection counter (0 = empty slot) */
+    uint8_t  vector;
+    uint8_t  idt_bytes[8];
+    uint16_t selector;
+    uint32_t handler;
+    uint32_t pre_eip;
+    uint32_t pre_cs;
+    uint32_t pre_esp;
+    uint32_t pre_eflags;
+    uint32_t post_esp;
+    uint32_t frame_eip;
+    uint32_t frame_cs;
+    uint32_t frame_eflags;
+};
+static struct inj_record s_inj_ring[IRQ_INJ_RING];
+static uint64_t          s_inj_seq = 0;          /* next seq to assign */
+static int               s_inj_head = 0;         /* next ring slot */
+static int               s_gdt_eip_trapped = 0;  /* once-shot trap flag */
+
+static void cpu_dump_inj_ring(const char *why)
+{
+    LOG("irq", "=== INJ RING DUMP (%s) — last %d injections ===\n", why, IRQ_INJ_RING);
+    /* Walk oldest → newest. */
+    for (int i = 0; i < IRQ_INJ_RING; i++) {
+        int idx = (s_inj_head + i) % IRQ_INJ_RING;
+        struct inj_record *r = &s_inj_ring[idx];
+        if (r->seq == 0) continue;
+        LOG("irq",
+            "  #%llu vec=0x%02x sel=0x%04x handler=0x%08x  "
+            "pre EIP=0x%08x CS=0x%04x ESP=0x%08x EFL=0x%08x  "
+            "postESP=0x%08x  frame[EIP=0x%08x CS=0x%08x EFL=0x%08x]  "
+            "idt=%02x %02x %02x %02x %02x %02x %02x %02x\n",
+            (unsigned long long)r->seq, r->vector, r->selector, r->handler,
+            r->pre_eip, r->pre_cs, r->pre_esp, r->pre_eflags,
+            r->post_esp, r->frame_eip, r->frame_cs, r->frame_eflags,
+            r->idt_bytes[0], r->idt_bytes[1], r->idt_bytes[2], r->idt_bytes[3],
+            r->idt_bytes[4], r->idt_bytes[5], r->idt_bytes[6], r->idt_bytes[7]);
+    }
+    LOG("irq", "=== end INJ RING ===\n");
+}
+
 static void hook_block_count(uc_engine *uc, uint64_t addr,
                              uint32_t size, void *user_data)
 {
@@ -368,6 +415,101 @@ int cpu_inject_interrupt(uint8_t vector)
         return 0;
     }
 
+    /* STI-shadow / no-progress deferral.
+     *
+     * Real x86 hardware blocks interrupts for ONE instruction after
+     * STI / after IRET — so the canonical `sti; iret` exit lets the
+     * interrupted task execute at least one instruction before the
+     * next IRQ can fire.
+     *
+     * Unicorn 2.x does NOT implement the STI-shadow. Without this
+     * guard we observe IRQ0 firing back-to-back at the SAME guest EIP
+     * (the task we just returned to never gets to execute even one
+     * instruction): each injection pushes a new frame on top of the
+     * previous handler's saved state, ESP shrinks by ~352 bytes per
+     * cycle, the task stack overflows, neighbouring memory (incl.
+     * IDT[0x20]) is trashed, and the CPU eventually jumps to a
+     * corrupt vector and wedges in the GDT or at NULL.
+     *
+     * Two complementary checks:
+     *   1. opcode-based: defer if current insn is IRET (0xCF) or
+     *      STI (0xFB) or previous insn was STI (0xFB).
+     *   2. progress-based: defer if EIP is identical to the EIP we
+     *      interrupted on the previous IRQ0 injection AND that
+     *      previous injection's handler has already returned (we
+     *      saw an EOI). The interrupted task hasn't advanced.
+     *
+     * Both kick in for IRQ0 only — other vectors (#GP, #UD, etc.)
+     * are exception-driven and don't have this race.
+     */
+    static uint64_t s_inj_defer_iret = 0;
+    static uint64_t s_inj_defer_progress = 0;
+    static uint64_t s_inj_defer_burst = 0;
+    static uint32_t s_irq0_last_target_eip = 0;
+    static uint64_t s_irq0_last_eoi_count  = 0;
+    static uint32_t s_irq0_last_defer_eip  = 0;  /* don't defer the same EIP twice */
+    static uint64_t s_irq0_last_inject_vticks = 0;
+    if (vector == 0x20) {
+        /* Hard burst gate: require some minimum guest progress (in
+         * vticks ≈ instructions) between two IRQ0 injections. Without
+         * this, with vt-scale=100x the injection loop can fire 16+
+         * IRQ0s in a row at pre_eip values that vary slightly (XINU
+         * resched hops between several dispatcher EIPs after each
+         * EOI/IRET) yet ESP keeps dropping ~360 bytes/inject — the
+         * task stack overflows and trashes adjacent memory (incl.
+         * IDT[0x20]). Real PIT gives the guest at least pit-period-
+         * worth of instructions to make progress; emulate that by
+         * gating the next inject on a fraction of pit_period_insns. */
+        uint64_t pp = s_sched.cached_pit_period_insns
+                        ? s_sched.cached_pit_period_insns : 5000;
+        uint64_t min_gap = pp / 4;       /* 25% of one PIT period */
+        if (min_gap < 256) min_gap = 256;
+        if (s_irq0_last_inject_vticks &&
+            (s_sched.vticks_total - s_irq0_last_inject_vticks) < min_gap) {
+            s_inj_defer_burst++;
+            if (s_inj_defer_burst <= 5 || (s_inj_defer_burst % 100000) == 0) {
+                LOGV3("irq",
+                    "vec=0x20 DEFERRED (burst gate): only %llu vticks since last inject, need %llu (n=%llu)\n",
+                    (unsigned long long)(s_sched.vticks_total - s_irq0_last_inject_vticks),
+                    (unsigned long long)min_gap,
+                    (unsigned long long)s_inj_defer_burst);
+            }
+            return 0;
+        }
+        if (eip < RAM_SIZE - 1 && eip != s_irq0_last_defer_eip) {
+            uint8_t cur  = g_emu.ram[eip];
+            uint8_t prev = (eip > 0) ? g_emu.ram[eip - 1] : 0;
+            if (cur == 0xCF || cur == 0xFB || prev == 0xFB) {
+                s_inj_defer_iret++;
+                s_irq0_last_defer_eip = eip;
+                if (s_inj_defer_iret <= 5 || (s_inj_defer_iret % 100000) == 0) {
+                    LOGV3("irq",
+                        "vec=0x20 DEFERRED (sti/iret shadow): EIP=0x%08x byte=%02x prev=%02x (n=%llu)\n",
+                        eip, cur, prev,
+                        (unsigned long long)s_inj_defer_iret);
+                }
+                return 0;
+            }
+        }
+        if (s_irq0_last_target_eip == eip
+            && eip != 0
+            && eip != s_irq0_last_defer_eip
+            && g_emu.pic[0].irq0_eoi_count != s_irq0_last_eoi_count) {
+            s_inj_defer_progress++;
+            s_irq0_last_defer_eip = eip;
+            if (s_inj_defer_progress <= 5 || (s_inj_defer_progress % 100000) == 0) {
+                LOGV3("irq",
+                    "vec=0x20 DEFERRED (no-progress): same EIP=0x%08x as prev inject after EOI (n=%llu)\n",
+                    eip, (unsigned long long)s_inj_defer_progress);
+            }
+            return 0;
+        }
+        s_irq0_last_target_eip = eip;
+        s_irq0_last_eoi_count  = g_emu.pic[0].irq0_eoi_count;
+        s_irq0_last_defer_eip  = 0;
+        s_irq0_last_inject_vticks = s_sched.vticks_total;
+    }
+
     /* Read IDT entry directly from RAM (IDT is always in RAM) */
     uint32_t idt_base = g_emu.idt_base;
     uint32_t idt_addr = idt_base + vector * 8;
@@ -431,6 +573,26 @@ int cpu_inject_interrupt(uint8_t vector)
         uc_reg_read(uc, UC_X86_REG_ESP, &act_esp);
         LOGV3("irq", "  frame: [ESP+0]=0x%08x [+4]=0x%08x [+8]=0x%08x ESP=0x%08x→handler=0x%08x\n",
             v_eip, v_cs, v_ef, act_esp, act_eip);
+    }
+
+    /* Record this injection in the ring buffer for post-mortem if the
+     * guest later wedges (EIP in GDT, CS=0, etc.). */
+    {
+        struct inj_record *r = &s_inj_ring[s_inj_head];
+        r->seq          = ++s_inj_seq;
+        r->vector       = vector;
+        memcpy(r->idt_bytes, idt_entry, 8);
+        r->selector     = selector;
+        r->handler      = handler;
+        r->pre_eip      = regs_val[0];
+        r->pre_cs       = regs_val[3] & 0xFFFF;
+        r->pre_esp      = regs_val[1];
+        r->pre_eflags   = regs_val[2];
+        r->post_esp     = esp;
+        r->frame_eip    = regs_val[0];
+        r->frame_cs     = cs;
+        r->frame_eflags = regs_val[2];
+        s_inj_head = (s_inj_head + 1) % IRQ_INJ_RING;
     }
     return 1;
 }
@@ -1448,6 +1610,26 @@ void cpu_run(void)
 
         /* Read EIP after execution stopped */
         uc_reg_read(uc, UC_X86_REG_EIP, &eip);
+
+        /* Hard trap: if EIP enters the GDT region (0x1000..0x1020) or
+         * any low non-code page (< 0x800, before our entry stubs), we
+         * are running off corrupt return state. Dump full forensic
+         * context once and abort the run cleanly so the test exits
+         * with the snapshot at the top of the log instead of being
+         * buried in spam from the resulting infinite IRET loop. */
+        if (!s_gdt_eip_trapped &&
+            ((eip >= GDT_ADDR && eip < GDT_ADDR + 0x40) ||
+             (eip < 0x400u))) {
+            s_gdt_eip_trapped = 1;
+            LOG("irq", "*** EIP-IN-DANGER-ZONE TRAP: EIP=0x%08x (GDT=0x%08x) — aborting ***\n",
+                eip, (unsigned)GDT_ADDR);
+            cpu_dump_irq_snapshot("EIP-in-GDT");
+            cpu_dump_inj_ring("EIP-in-GDT");
+            /* Stop the emulator gracefully — main loop will see EOF. */
+            uc_emu_stop(uc);
+            g_emu.running = false;
+            break;
+        }
 
         if (err != UC_ERR_OK) {
             if (err == UC_ERR_INSN_INVALID) {
