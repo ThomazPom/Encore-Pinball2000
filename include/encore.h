@@ -212,6 +212,13 @@ typedef struct {
     bool    init_mode;
     uint64_t eoi_count;      /* total EOIs received (any line)         */
     uint64_t irq0_eoi_count; /* EOIs that actually cleared ISR bit 0   */
+    /* QEMU-style line-level model: physical IRQ line states feeding
+     * this PIC. Edge detection (low->high) is the only path that may
+     * latch into IRR. ISR/IMR/IF are NOT consulted here — they belong
+     * to the CPU acknowledge stage in check_and_inject_irq(). */
+    uint8_t  irq_level;      /* current electrical levels per line     */
+    uint64_t edges_latched;  /* count of low->high edges latched IRR   */
+    uint64_t edges_collapsed_irr;  /* edge arrived while IRR already 1  */
 } PICState;
 
 /* =========================================================================

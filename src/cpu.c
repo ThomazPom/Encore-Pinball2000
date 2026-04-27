@@ -140,6 +140,20 @@ static struct sched_state {
      * scheduler watchdogs see compressed wall timeouts and Fatal. */
     uint64_t next_irq0_at_ns;
     uint64_t pit_period_ns;
+
+    /* QEMU-style PIT channel 0 OUT-line model (mode 2 / rate generator).
+     * In mode 2 OUT is normally HIGH; at terminal count it pulses LOW
+     * for one PIT clock then returns HIGH. The LOW->HIGH rising edge
+     * is what the PIC latches as IRQ0. We approximate this as an
+     * instantaneous pulse per period: pic_set_irq(0,0) then
+     * pic_set_irq(0,1) on each period boundary, which matches the
+     * IRR-latching effect without modelling the sub-clock LOW window. */
+    int      pit0_out_level;          /* current OUT line level (0/1) */
+    uint64_t pit_edges_due;           /* expected PIT rising edges (cumulative) */
+    uint64_t pit_edges_emitted;       /* edges actually fed to PIC */
+    uint64_t w_pit_edges_due_base;
+    uint64_t w_pic_edges_latched_base;
+    uint64_t w_pic_edges_collapsed_base;
 } s_sched;
 
 /* Injection ring buffer — captures the last N interrupt injections so
@@ -300,6 +314,34 @@ static void hook_block_count(uc_engine *uc, uint64_t addr,
                 s_irq0_tsw_logged++;
             }
             s_irq0_in_flight = 0;
+        }
+    }
+}
+
+/* QEMU-style PIC line-level setter.
+ * Updates an electrical input line and latches IRR on the rising
+ * (low->high) edge only. Does NOT consult ISR/IMR/IF — those gates
+ * live in the CPU acknowledge stage (check_and_inject_irq).
+ *
+ * On a rising edge with IRR bit already set, the edge is collapsed
+ * (real PIC behavior: edge-triggered mode requires the line to fall
+ * before re-arming, but we count it for diagnostics).
+ *
+ * level = 0 or 1; pic_idx = 0 (master) or 1 (slave); irq = 0..7. */
+static void pic_set_irq(int pic_idx, int irq, int level)
+{
+    if (pic_idx < 0 || pic_idx > 1 || irq < 0 || irq > 7) return;
+    PICState *pic = &g_emu.pic[pic_idx];
+    uint8_t mask  = (uint8_t)(1u << irq);
+    uint8_t old   = (pic->irq_level & mask) ? 1 : 0;
+    if (level) pic->irq_level |=  mask;
+    else       pic->irq_level &= ~mask;
+    if (!old && level) {
+        if (pic->irr & mask) {
+            pic->edges_collapsed_irr++;
+        } else {
+            pic->irr |= mask;
+            pic->edges_latched++;
         }
     }
 }
@@ -1130,18 +1172,37 @@ void cpu_run(void)
                    s_sched.vticks_total >= s_sched.next_irq0_at_vticks &&
                    now_wall_ns           >= s_sched.next_irq0_at_ns) {
                 s_sched.irq0_due++;
+                s_sched.pit_edges_due++;
                 s_sched.next_irq0_at_vticks += pit_period_insns;
                 s_sched.next_irq0_at_ns     += pit_period_ns;
                 if (g_emu.xinu_ready) {
-                    if (!(g_emu.pic[0].irr & 0x01) &&
-                        !(g_emu.pic[0].isr & 0x01)) {
-                        g_emu.pic[0].irr |= 0x01;
+                    /* QEMU-style: PIT OUT0 mode-2 pulse — drop LOW
+                     * then back HIGH. The PIC owns edge detection and
+                     * IRR latching; ISR/IMR/IF live in the CPU
+                     * acknowledge stage (check_and_inject_irq). */
+                    uint64_t latched_before  = g_emu.pic[0].edges_latched;
+                    uint64_t collapsed_before = g_emu.pic[0].edges_collapsed_irr;
+                    pic_set_irq(0, 0, 0);
+                    pic_set_irq(0, 0, 1);
+                    s_sched.pit_edges_emitted++;
+                    if (g_emu.pic[0].edges_latched > latched_before) {
                         s_sched.irq0_fired++;
+                    } else if (g_emu.pic[0].edges_collapsed_irr > collapsed_before) {
+                        s_sched.irq0_coll_irr++;
+                        s_sched.irq0_collapsed++;
                     } else {
-                        if (g_emu.pic[0].irr & 0x01) s_sched.irq0_coll_irr++;
-                        else                          s_sched.irq0_coll_isr++;
+                        /* Edge dropped because IRR was clear but ISR
+                         * still set (real PIC: edge in mode-2 still
+                         * latches IRR even when ISR is set; only EOI
+                         * lets it reach the CPU). Our approximation
+                         * keeps both counters honest: irq_level was 0
+                         * before, so any non-edge case here means a
+                         * coding bug. Account for ISR-collapse as a
+                         * fallback diagnostic. */
+                        s_sched.irq0_coll_isr++;
                         s_sched.irq0_collapsed++;
                     }
+                    (void)collapsed_before;
                 }
             }
             /* Hard re-sync if the catch-up loop hit its budget — the
