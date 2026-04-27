@@ -237,15 +237,56 @@ static void cpu_dump_handler_bytes(uint32_t addr, size_t n, const char *tag)
 static uint32_t s_irq0_pre_esp     = 0;     /* ESP captured BEFORE we pushed frame */
 static uint32_t s_irq0_pre_eip     = 0;     /* return EIP */
 static uint32_t s_irq0_handler_eip = 0;     /* clkint base */
+static uint32_t s_irq0_pre_currpid = 0xffffffffu; /* XINU currpid at inject (proves task switch) */
+static uint32_t s_currpid_addr = 0;  /* cached sym_lookup("currpid") — 0 until resolved */
 static uint64_t s_irq0_in_flight   = 0;     /* 0 = idle, else seq number */
 static uint64_t s_irq0_in_flight_arms   = 0;     /* total times in_flight was armed (== inject count) */
 static uint64_t s_irq0_in_flight_clears = 0;     /* total clears (sum of all reasons) */
 static uint64_t s_irq0_in_flight_clear_iret = 0; /* clear by EIP-return-to-pre_eip with ESP recovered */
-static uint64_t s_irq0_in_flight_clear_tsw  = 0; /* clear by task-switch (ESP outside +/-4KiB AND ISR=0) */
+static uint64_t s_irq0_in_flight_clear_tsw  = 0; /* clear by XINU currpid change AND ISR=0 */
 static uint64_t s_irq0_in_flight_max_vt = 0;     /* longest in_flight duration in vticks */
+
+/* Resolve currpid's actual RAM address from the symbol table (cached).
+ * Returns 0 if symbols aren't loaded yet — callers must treat 0 as
+ * "unknown" and skip the currpid check rather than reading RAM[0]. */
+static uint32_t cpu_currpid_addr(void)
+{
+    if (s_currpid_addr) return s_currpid_addr;
+    if (sym_loaded()) {
+        uint32_t a = sym_lookup("currpid");
+        if (a >= 0x100000u && a < RAM_SIZE) {
+            s_currpid_addr = a;
+        }
+    }
+    return s_currpid_addr;
+}
+static inline uint32_t cpu_read_currpid(void)
+{
+    uint32_t a = cpu_currpid_addr();
+    return a ? RAM_RD32(a) : 0xffffffffu;
+}
 static uint64_t s_irq0_in_flight_arm_vt = 0;     /* vticks at last arm */
 static uint64_t s_irq0_tsw_logged = 0;           /* sample-log first N task-switch clears */
 static uint64_t s_irq0_guard_defer = 0;     /* count of injections deferred by this guard */
+
+/* Ring of recent in_flight CLEAR events — for forensic dump on the
+ * first resched-in-ISR storm so we can prove which clear event let
+ * a nested inject through. */
+#define IRQ_CLR_RING 16
+struct clr_record {
+    uint64_t seq;            /* matches inject seq this clear was for */
+    uint64_t arm_vt;         /* vticks at arm */
+    uint64_t clear_vt;       /* vticks at clear */
+    uint64_t dur_vt;         /* clear_vt - arm_vt */
+    uint8_t  reason;         /* 1=iret, 2=task-switch */
+    uint32_t pre_eip, pre_esp, pre_currpid;
+    uint32_t cur_eip, cur_esp, cur_currpid;
+    uint8_t  pic_irr, pic_isr, pic_imr;
+    uint8_t  guest_if;
+};
+static struct clr_record s_clr_ring[IRQ_CLR_RING];
+static int               s_clr_head = 0;
+static int               s_resched_dump_done = 0;
 static uint64_t s_inj_defer_iret = 0;
 static uint64_t s_inj_defer_progress = 0;
 static uint64_t s_inj_defer_burst = 0;
@@ -269,6 +310,23 @@ static void hook_block_count(uc_engine *uc, uint64_t addr,
         if (cur_esp >= s_irq0_pre_esp) {
             uint64_t dur = s_sched.vticks_total - s_irq0_in_flight_arm_vt;
             if (dur > s_irq0_in_flight_max_vt) s_irq0_in_flight_max_vt = dur;
+            /* Record into clears ring for forensic dump. */
+            uint32_t cur_eflags = 0;
+            uc_reg_read(uc, UC_X86_REG_EFLAGS, &cur_eflags);
+            struct clr_record *cr = &s_clr_ring[s_clr_head];
+            cr->seq = s_irq0_in_flight;
+            cr->arm_vt = s_irq0_in_flight_arm_vt;
+            cr->clear_vt = s_sched.vticks_total;
+            cr->dur_vt = dur;
+            cr->reason = 1; /* iret */
+            cr->pre_eip = s_irq0_pre_eip; cr->pre_esp = s_irq0_pre_esp;
+            cr->pre_currpid = s_irq0_pre_currpid;
+            cr->cur_eip = (uint32_t)addr; cr->cur_esp = cur_esp;
+            cr->cur_currpid = cpu_read_currpid();
+            cr->pic_irr = g_emu.pic[0].irr; cr->pic_isr = g_emu.pic[0].isr;
+            cr->pic_imr = g_emu.pic[0].imr;
+            cr->guest_if = (cur_eflags >> 9) & 1;
+            s_clr_head = (s_clr_head + 1) % IRQ_CLR_RING;
             s_irq0_in_flight_clears++;
             s_irq0_in_flight_clear_iret++;
             s_irq0_in_flight = 0;
@@ -276,56 +334,119 @@ static void hook_block_count(uc_engine *uc, uint64_t addr,
     }
     /* Task-switch fallback: when XINU's clkint calls resched, the new
      * task's stack is loaded and the original pre_eip is never executed
-     * again from this context — in_flight would stay armed until task
-     * wraparound (measured up to 86 ms). Only clear in_flight when:
-     *   (a) ESP is far outside the pre-injection baseline (>= 16 KiB),
-     *       wider than any plausible clkint stack frame (printf etc.),
+     * again from this context. Previous heuristic used ESP+duration —
+     * that fired during clkint's own post-EOI body (printf etc.) and
+     * caused resched-in-ISR storms. The PROOF of an actual XINU task
+     * switch is a change in the kernel's own currpid variable
+     * (XINU stores it at 0x2FC8BC). Require ALL of:
+     *   (a) currpid != currpid at inject time (real XINU resched),
      *   (b) PIC ISR for IRQ0 is already 0 (clkint EOI sent), AND
      *   (c) at least one full PIT period of guest time has elapsed
-     *       since arming — by which point a real IRET back to pre_eip
-     *       would have been observed by the iret-clear path. (a)+(b)
-     *       alone fired during clkint's own post-EOI body and caused
-     *       a resched-in-ISR storm.
-     * NOTE: heuristic, not proven hardware-equivalent — counted
-     * separately so we can audit it via the 5s heartbeat. */
+     *       (gives the iret-clear path first chance for the simple
+     *       case where clkint returned without rescheduling).
+     * NOTE: still a heuristic on top of in_flight, but currpid is
+     * scheduler ground truth, not derived. */
     if (s_irq0_in_flight) {
         uint64_t dur = s_sched.vticks_total - s_irq0_in_flight_arm_vt;
-        uint64_t min_dur = s_sched.cached_pit_period_insns;
-        if (min_dur < 1000) min_dur = 1000;
+        /* 2 PIT periods: gives the iret-clear path two full ticks to
+         * fire the common "clkint IRETs straight back" case before we
+         * fall back to the currpid-change heuristic. */
+        uint64_t min_dur = s_sched.cached_pit_period_insns * 2;
+        if (min_dur < 2000) min_dur = 2000;
         if (dur < min_dur) {
             return;
         }
-        uint32_t cur_esp = 0;
-        uc_reg_read(uc, UC_X86_REG_ESP, &cur_esp);
-        const uint32_t WINDOW = 0x4000; /* +/-16 KiB */
-        uint32_t lo = (s_irq0_pre_esp > WINDOW) ? (s_irq0_pre_esp - WINDOW) : 0;
-        uint32_t hi = s_irq0_pre_esp + WINDOW;
-        int32_t  desp = (int32_t)cur_esp - (int32_t)s_irq0_pre_esp;
-        int32_t  abs_desp = desp < 0 ? -desp : desp;
-        if ((cur_esp < lo || cur_esp > hi) &&
-            abs_desp >= (int32_t)WINDOW &&
+        uint32_t cur_currpid = cpu_read_currpid();
+        if (s_currpid_addr &&
+            s_irq0_pre_currpid != 0xffffffffu &&
+            cur_currpid != s_irq0_pre_currpid &&
+            cur_currpid != 0 &&                  /* not transient/kernel-idle */
+            cur_currpid < 0x100 &&               /* sane PID range (XINU PIDs are small) */
             !(g_emu.pic[0].isr & 0x01)) {
+            uint32_t cur_esp = 0, cur_eflags = 0;
+            uc_reg_read(uc, UC_X86_REG_ESP, &cur_esp);
+            uc_reg_read(uc, UC_X86_REG_EFLAGS, &cur_eflags);
+            if (!((cur_eflags >> 9) & 1)) {
+                /* IF=0: guest in critical section — wait for sti before clearing. */
+                return;
+            }
             if (dur > s_irq0_in_flight_max_vt) s_irq0_in_flight_max_vt = dur;
+            /* Record into clears ring. */
+            struct clr_record *cr = &s_clr_ring[s_clr_head];
+            cr->seq = s_irq0_in_flight;
+            cr->arm_vt = s_irq0_in_flight_arm_vt;
+            cr->clear_vt = s_sched.vticks_total;
+            cr->dur_vt = dur;
+            cr->reason = 2; /* task-switch */
+            cr->pre_eip = s_irq0_pre_eip; cr->pre_esp = s_irq0_pre_esp;
+            cr->pre_currpid = s_irq0_pre_currpid;
+            cr->cur_eip = (uint32_t)addr; cr->cur_esp = cur_esp;
+            cr->cur_currpid = cur_currpid;
+            cr->pic_irr = g_emu.pic[0].irr; cr->pic_isr = g_emu.pic[0].isr;
+            cr->pic_imr = g_emu.pic[0].imr;
+            cr->guest_if = (cur_eflags >> 9) & 1;
+            s_clr_head = (s_clr_head + 1) % IRQ_CLR_RING;
             s_irq0_in_flight_clears++;
             s_irq0_in_flight_clear_tsw++;
             if (s_irq0_tsw_logged < 5) {
-                uint32_t cur_eflags = 0;
-                uc_reg_read(uc, UC_X86_REG_EFLAGS, &cur_eflags);
                 LOG("irq",
-                    "in_flight cleared by TASK-SWITCH #%llu: pre_eip=0x%08x pre_esp=0x%08x cur_eip=0x%08x cur_esp=0x%08x dESP=%+ld IRR=%02x ISR=%02x IMR=%02x IF=%d dur=%llu vt (min_dur=%llu)\n",
+                    "in_flight cleared by TASK-SWITCH #%llu: pre_eip=0x%08x pre_esp=0x%08x pre_pid=%u cur_eip=0x%08x cur_esp=0x%08x cur_pid=%u IRR=%02x ISR=%02x IMR=%02x IF=%d dur=%llu vt\n",
                     (unsigned long long)(s_irq0_tsw_logged + 1),
-                    s_irq0_pre_eip, s_irq0_pre_esp,
-                    (uint32_t)addr, cur_esp,
-                    (long)desp,
+                    s_irq0_pre_eip, s_irq0_pre_esp, s_irq0_pre_currpid,
+                    (uint32_t)addr, cur_esp, cur_currpid,
                     g_emu.pic[0].irr, g_emu.pic[0].isr, g_emu.pic[0].imr,
                     (cur_eflags >> 9) & 1,
-                    (unsigned long long)dur,
-                    (unsigned long long)min_dur);
+                    (unsigned long long)dur);
                 s_irq0_tsw_logged++;
             }
             s_irq0_in_flight = 0;
         }
     }
+}
+
+static void cpu_dump_clr_ring(const char *why)
+{
+    LOG("irq", "=== CLR RING DUMP (%s) — last %d in_flight clears ===\n",
+        why, IRQ_CLR_RING);
+    for (int i = 0; i < IRQ_CLR_RING; i++) {
+        int idx = (s_clr_head + i) % IRQ_CLR_RING;
+        struct clr_record *r = &s_clr_ring[idx];
+        if (r->seq == 0) continue;
+        const char *rn = r->reason == 1 ? "IRET" :
+                         r->reason == 2 ? "TSW " : "????";
+        LOG("irq",
+            "  seq#%llu %s arm_vt=%llu clear_vt=%llu dur=%llu  "
+            "pre[EIP=0x%08x ESP=0x%08x pid=%u] cur[EIP=0x%08x ESP=0x%08x pid=%u]  "
+            "IRR=%02x ISR=%02x IMR=%02x IF=%d\n",
+            (unsigned long long)r->seq, rn,
+            (unsigned long long)r->arm_vt,
+            (unsigned long long)r->clear_vt,
+            (unsigned long long)r->dur_vt,
+            r->pre_eip, r->pre_esp, r->pre_currpid,
+            r->cur_eip, r->cur_esp, r->cur_currpid,
+            r->pic_irr, r->pic_isr, r->pic_imr, r->guest_if);
+    }
+    LOG("irq", "=== end CLR RING ===\n");
+}
+
+/* Public: forensic dump on first resched-in-ISR storm. Idempotent
+ * after first call. Pairs the inject ring and the clears ring so we
+ * can see exactly which clear let a nested IRQ0 through. */
+void cpu_dump_resched_forensic(const char *why)
+{
+    if (s_resched_dump_done) return;
+    s_resched_dump_done = 1;
+    LOG("irq", "############ FIRST RESCHED-IN-ISR FORENSIC (%s) ############\n", why);
+    LOG("irq", "  arms=%llu clears=%llu (iret=%llu tsw=%llu)  cur_in_flight=%llu cur_dur=%llu vt\n",
+        (unsigned long long)s_irq0_in_flight_arms,
+        (unsigned long long)s_irq0_in_flight_clears,
+        (unsigned long long)s_irq0_in_flight_clear_iret,
+        (unsigned long long)s_irq0_in_flight_clear_tsw,
+        (unsigned long long)s_irq0_in_flight,
+        (unsigned long long)(s_irq0_in_flight ? (s_sched.vticks_total - s_irq0_in_flight_arm_vt) : 0));
+    cpu_dump_inj_ring(why);
+    cpu_dump_clr_ring(why);
+    LOG("irq", "############ END RESCHED FORENSIC ############\n");
 }
 
 /* QEMU-style PIC line-level setter.
@@ -760,6 +881,7 @@ int cpu_inject_interrupt(uint8_t vector)
         s_irq0_in_flight   = s_inj_seq;
         s_irq0_pre_eip     = regs_val[0];
         s_irq0_pre_esp     = regs_val[1];
+        s_irq0_pre_currpid = cpu_read_currpid();
         s_irq0_handler_eip = handler;
         s_irq0_in_flight_arms++;
         s_irq0_in_flight_arm_vt = s_sched.vticks_total;

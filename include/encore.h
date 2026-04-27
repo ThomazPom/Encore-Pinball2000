@@ -535,6 +535,7 @@ int cpu_inject_interrupt(uint8_t vector);
 void cpu_timer_handler(int sig);
 /* Dump live IRQ/PIC counters + last 5 windows on guest Fatal/NonFatal. */
 void cpu_dump_irq_snapshot(const char *trigger);
+void cpu_dump_resched_forensic(const char *why);
 
 /* memory.c */
 int  memory_init(void);

@@ -1470,6 +1470,13 @@ static void uart_write(uint16_t port, uint8_t val)
                 static char s_uart_prev[1024];
                 static int  s_uart_dup_count = 0;
                 bool show = true;
+                /* Forensic: on FIRST resched-in-ISR ever, dump inject +
+                 * clears rings. Idempotent. Outside the log-level
+                 * filter so it always runs even at -vv/-vvv. */
+                if (strstr(g_emu.uart_buf,
+                        "resched: called from interrupt handler") != NULL) {
+                    cpu_dump_resched_forensic("resched-in-ISR");
+                }
                 if (g_log_level < 2 && g_emu.game_started) {
                     /* Heuristic: keep error-shaped lines, suppress chatter. */
                     show = (strstr(g_emu.uart_buf, "***") != NULL ||
@@ -1496,15 +1503,20 @@ static void uart_write(uint16_t port, uint8_t val)
                         static unsigned s_dropped = 0;
                         struct timespec ts;
                         clock_gettime(CLOCK_MONOTONIC, &ts);
-                        uint64_t dt = (uint64_t)(ts.tv_sec - s_last_ts.tv_sec) * 1000000000ULL
-                                    + (int64_t)(ts.tv_nsec - s_last_ts.tv_nsec);
                         s_dropped++;
                         g_uart_resched_drop_count++;
-                        if (s_last_ts.tv_sec == 0 || dt >= 5000000000ULL) {
-                            LOG("uart", "(suppressed %u resched-in-ISR in last %.0fs — benign per IRQ verdict=ok)\n",
-                                s_dropped, dt ? (double)dt / 1e9 : 0.0);
-                            s_dropped = 0;
+                        if (s_last_ts.tv_sec == 0) {
                             s_last_ts = ts;
+                            s_dropped = 0;
+                        } else {
+                            uint64_t dt = (uint64_t)(ts.tv_sec - s_last_ts.tv_sec) * 1000000000ULL
+                                        + (int64_t)(ts.tv_nsec - s_last_ts.tv_nsec);
+                            if (dt >= 5000000000ULL) {
+                                LOG("uart", "(suppressed %u resched-in-ISR in last %.1fs — benign per IRQ verdict=ok)\n",
+                                    s_dropped, (double)dt / 1e9);
+                                s_dropped = 0;
+                                s_last_ts = ts;
+                            }
                         }
                         show = false;
                     }
