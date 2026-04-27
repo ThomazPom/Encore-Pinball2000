@@ -224,7 +224,16 @@ static uint32_t s_irq0_pre_esp     = 0;     /* ESP captured BEFORE we pushed fra
 static uint32_t s_irq0_pre_eip     = 0;     /* return EIP */
 static uint32_t s_irq0_handler_eip = 0;     /* clkint base */
 static uint64_t s_irq0_in_flight   = 0;     /* 0 = idle, else seq number */
+static uint64_t s_irq0_in_flight_arms   = 0;     /* total times in_flight was armed (== inject count) */
+static uint64_t s_irq0_in_flight_clears = 0;     /* total times in_flight was cleared by IRET detection */
+static uint64_t s_irq0_in_flight_max_vt = 0;     /* longest in_flight duration in vticks */
+static uint64_t s_irq0_in_flight_arm_vt = 0;     /* vticks at last arm */
 static uint64_t s_irq0_guard_defer = 0;     /* count of injections deferred by this guard */
+static uint64_t s_inj_defer_iret = 0;
+static uint64_t s_inj_defer_progress = 0;
+static uint64_t s_inj_defer_burst = 0;
+static uint64_t s_inj_defer_esp = 0;
+static uint64_t s_isr_force_eoi_total = 0;
 
 static void hook_block_count(uc_engine *uc, uint64_t addr,
                              uint32_t size, void *user_data)
@@ -241,6 +250,9 @@ static void hook_block_count(uc_engine *uc, uint64_t addr,
         uint32_t cur_esp = 0;
         uc_reg_read(uc, UC_X86_REG_ESP, &cur_esp);
         if (cur_esp >= s_irq0_pre_esp) {
+            uint64_t dur = s_sched.vticks_total - s_irq0_in_flight_arm_vt;
+            if (dur > s_irq0_in_flight_max_vt) s_irq0_in_flight_max_vt = dur;
+            s_irq0_in_flight_clears++;
             s_irq0_in_flight = 0;
         }
     }
@@ -507,9 +519,6 @@ int cpu_inject_interrupt(uint8_t vector)
      * Both kick in for IRQ0 only — other vectors (#GP, #UD, etc.)
      * are exception-driven and don't have this race.
      */
-    static uint64_t s_inj_defer_iret = 0;
-    static uint64_t s_inj_defer_progress = 0;
-    static uint64_t s_inj_defer_burst = 0;
     static uint32_t s_irq0_last_target_eip = 0;
     static uint64_t s_irq0_last_eoi_count  = 0;
     static uint32_t s_irq0_last_defer_eip  = 0;  /* don't defer the same EIP twice */
@@ -615,9 +624,10 @@ int cpu_inject_interrupt(uint8_t vector)
      * eventually wedging in the GDT or at NULL. Defer instead so
      * the line stays pending; the next attempt may catch a sane ESP. */
     if (esp < 16 || esp >= RAM_SIZE || (esp - 12) >= RAM_SIZE) {
-        static uint64_t s_inj_defer_esp = 0;
+        static uint64_t s_inj_defer_esp_local = 0;
         s_inj_defer_esp++;
-        if (s_inj_defer_esp <= 5 || (s_inj_defer_esp % 100000) == 0) {
+        s_inj_defer_esp_local++;
+        if (s_inj_defer_esp_local <= 5 || (s_inj_defer_esp_local % 100000) == 0) {
             LOGV3("irq",
                 "vec=0x%02x DEFERRED (ESP out of RAM): EIP=0x%08x ESP=0x%08x (n=%llu)\n",
                 vector, eip, esp, (unsigned long long)s_inj_defer_esp);
@@ -685,6 +695,8 @@ int cpu_inject_interrupt(uint8_t vector)
         s_irq0_pre_eip     = regs_val[0];
         s_irq0_pre_esp     = regs_val[1];
         s_irq0_handler_eip = handler;
+        s_irq0_in_flight_arms++;
+        s_irq0_in_flight_arm_vt = s_sched.vticks_total;
     }
     return 1;
 }
@@ -1153,6 +1165,7 @@ void cpu_run(void)
             if (span > (uint64_t)(s_sched.cached_target_ips / 4ULL)) {
                 static uint64_t s_isr_force_eoi = 0;
                 s_isr_force_eoi++;
+                s_isr_force_eoi_total++;
                 if (s_isr_force_eoi <= 5 || (s_isr_force_eoi % 1000) == 0) {
                     LOG("irq",
                         "*** STUCK-ISR RECOVERY (band-aid): forcing EOI after %llu vticks (~%llu ms guest) (n=%llu)\n",
@@ -1252,6 +1265,30 @@ void cpu_run(void)
                 (unsigned long long)s_sched.isr_max_busy_vticks_w,
                 (double)s_sched.isr_max_busy_vticks_w / target_mips,
                 (unsigned long long)d_resched);
+            LOG("irq",
+                "         guards: in-flight arms=%llu clears=%llu (cur=%llu max-vt=%llu)  defer: nest=%llu sti/iret=%llu no-prog=%llu burst=%llu esp=%llu  force-EOI=%llu  blk-stub=%llu\n",
+                (unsigned long long)s_irq0_in_flight_arms,
+                (unsigned long long)s_irq0_in_flight_clears,
+                (unsigned long long)s_irq0_in_flight,
+                (unsigned long long)s_irq0_in_flight_max_vt,
+                (unsigned long long)s_irq0_guard_defer,
+                (unsigned long long)s_inj_defer_iret,
+                (unsigned long long)s_inj_defer_progress,
+                (unsigned long long)s_inj_defer_burst,
+                (unsigned long long)s_inj_defer_esp,
+                (unsigned long long)s_isr_force_eoi_total,
+                (unsigned long long)d_blk_stub);
+            /* Health amendment: unhealthy if guard ever permanently
+             * stuck in-flight or force-EOI ever fired this run. */
+            if (s_isr_force_eoi_total > 0) {
+                LOG("irq", "         UNHEALTHY: force-EOI fired %llu times this run\n",
+                    (unsigned long long)s_isr_force_eoi_total);
+            }
+            if (s_irq0_in_flight && s_irq0_in_flight_max_vt > target_ips) {
+                LOG("irq", "         UNHEALTHY: in-flight stuck for >1s of guest time (cur=%llu max=%llu vticks)\n",
+                    (unsigned long long)s_irq0_in_flight,
+                    (unsigned long long)s_irq0_in_flight_max_vt);
+            }
 
             /* Auto-snapshot when IRQ0 delivery has died. This is the
              * hard failure mode the user wants caught immediately, not
