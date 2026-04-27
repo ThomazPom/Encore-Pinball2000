@@ -1693,7 +1693,7 @@ static struct {
     int      mixer[8];
     int      layer;
     int      remaining;
-    uint32_t cnt_wr, cnt_rd, cnt_flag;
+    uint32_t cnt_wr, cnt_rd, cnt_flag, cnt_byte_wr;
 } s_dcs_io;
 
 static void dcs_io_push(uint16_t val) {
@@ -1713,6 +1713,8 @@ static uint16_t dcs_io_pop(void) {
         LOG("dcs-io", "pop 0x%04x (wr=%d rd=%d)\n", val, s_dcs_io.wr, s_dcs_io.rd);
     return val;
 }
+
+static void dcs_io_execute(void);
 
 static void dcs_io_execute(void) {
     int cmd = s_dcs_io.cmd;
@@ -1754,8 +1756,15 @@ static void dcs_io_execute(void) {
 
     switch (cmd) {
     case 0x5800:
+        /* DECODED: state machine at 0x195a16. State 7 reads our ack.
+         * Ack 0x1000 → state 7 SUCCESS path: state=0, counter=0xfa0,
+         * keeps [0x34a554]=0. State 0 then drains counter and sets
+         * init_done=1 so the pump (0x1959a2 entry) starts running.
+         * NOT acking would force timeout which sets [0x34a554]=1,
+         * which is the "watchdog tripped, re-init" path (outer at
+         * 0x195914) — wrong direction. */
         dcs_io_push(0x1000);
-        LOG("dcs-io", "RESET 0x5800 → 0x1000\n");
+        LOG("dcs-io", "RESET 0x5800 → 0x1000 (state-7 success)\n");
         break;
     case 0x5A00:
         dcs_io_push(0x1000);
@@ -1854,11 +1863,35 @@ static uint32_t dcs2_port_read(uint16_t port, int size) {
 static void dcs2_port_write(uint16_t port, uint32_t val, int size) {
     int off = port - DCS2_UART_BASE;
 
-    /* Port 0x13C (off=4): word=DCS command, byte=MCR */
+    /* Port 0x13C (off=4): word=DCS command, byte=DCS byte-stream
+     *
+     * The SWE1 io-handled pump (0x194efc → byte path 0x195a00) writes
+     * commands a byte at a time: HIGH byte first, then LOW byte. Each
+     * pair is one 16-bit DCS command. We assemble the pair and feed
+     * dcs_io_execute() so the cmd reaches sound_process_cmd.
+     *
+     * State [0x34a674] in guest RAM tracks whether the next byte is
+     * HIGH (0) or LOW (1) on the game side; we mirror that locally. */
     if (off == 4 && size >= 2) {
         s_dcs_io.cnt_wr++;
         s_dcs_io.cmd = val & 0xFFFF;
         dcs_io_execute();
+        return;
+    }
+    if (off == 4 && size == 1) {
+        static uint16_t s_pair = 0;
+        static int s_have_high = 0;
+        s_dcs_io.cnt_byte_wr++;
+        if (!s_have_high) {
+            s_pair = (uint16_t)((val & 0xFF) << 8);
+            s_have_high = 1;
+        } else {
+            s_pair |= (uint16_t)(val & 0xFF);
+            s_have_high = 0;
+            s_dcs_io.cnt_wr++;
+            s_dcs_io.cmd = s_pair;
+            dcs_io_execute();
+        }
         return;
     }
 
@@ -1879,7 +1912,7 @@ static void dcs2_port_write(uint16_t port, uint32_t val, int size) {
 
 void dcs_io_get_counters(uint32_t *ww, uint32_t *wr, uint32_t *bw, uint32_t *br, uint32_t *fr) {
     *ww = s_dcs_io.cnt_wr; *wr = s_dcs_io.cnt_rd;
-    *bw = 0; *br = 0; *fr = s_dcs_io.cnt_flag;
+    *bw = s_dcs_io.cnt_byte_wr; *br = 0; *fr = s_dcs_io.cnt_flag;
 }
 
 /* ===== Main I/O dispatch ===== */
@@ -2209,11 +2242,16 @@ void io_port_write(uint16_t port, uint32_t val, int size)
     case PORT_DCS2_STATUS:
         break;
 
-    /* DCS2 UART window (write side) — mirror of read-side narrowing:
-     * only word writes to off=4 (DCS command) are delivered. */
+    /* DCS2 UART window (write side):
+     *  - word writes to off=4 (0x13c): DCS command (e.g. 0x5800)
+     *  - byte writes to off=4 (0x13c): DCS byte-stream from io-handled
+     *    pump at 0x194efc — pump emits HIGH then LOW byte per command.
+     *    Forward both so dcs2_port_write can assemble pairs. */
     case DCS2_UART_BASE ... (DCS2_UART_BASE + 7): {
         int off = (int)port - DCS2_UART_BASE;
         if (off == 4 && size >= 2)
+            dcs2_port_write(port, val, size);
+        else if (off == 4 && size == 1)
             dcs2_port_write(port, val, size);
         break;
     }
