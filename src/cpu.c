@@ -189,14 +189,61 @@ static void cpu_dump_inj_ring(const char *why)
     LOG("irq", "=== end INJ RING ===\n");
 }
 
+/* One-shot dump of N bytes at addr — for offline objdump. */
+static void cpu_dump_handler_bytes(uint32_t addr, size_t n, const char *tag) __attribute__((unused));
+static void cpu_dump_handler_bytes(uint32_t addr, size_t n, const char *tag)
+{
+    if (addr + n > RAM_SIZE) return;
+    LOG("irq", "=== HANDLER BYTES @0x%08x (%s, %zu bytes) ===\n", addr, tag, n);
+    char line[256];
+    for (size_t off = 0; off < n; off += 16) {
+        int p = snprintf(line, sizeof(line), "  %08x:", (unsigned)(addr + off));
+        for (size_t j = 0; j < 16 && off + j < n; j++) {
+            p += snprintf(line + p, sizeof(line) - p, " %02x",
+                          g_emu.ram[addr + off + j]);
+        }
+        LOG("irq", "%s\n", line);
+    }
+    LOG("irq", "=== end HANDLER BYTES ===\n");
+}
+
+/* In-handler tracker for IRQ0. Real x86 keeps IF=0 throughout an
+ * interrupt handler until IRET pops the saved EFLAGS. clkint here
+ * however issues `out 0x20,0x20` (EOI) early, then executes
+ * `popa; sti; iret`. The EOI clears PIC ISR but the CPU is still in
+ * the handler. Without modeling the IF=0 / STI-shadow window, a new
+ * IRQ0 tick can arrive and we re-inject mid-handler, which makes
+ * XINU panic with "resched: called from interrupt handler".
+ *
+ * We track the IRQ0 ESP baseline at injection and refuse to inject
+ * IRQ0 again until ESP returns to >= that baseline (i.e. clkint has
+ * IRET'd back to the interrupted task's stack frame). Other IRQs are
+ * untouched. This guard maps directly to the hardware semantic of
+ * "no nested IRQ0 until the prior frame is popped". */
+static uint32_t s_irq0_pre_esp     = 0;     /* ESP captured BEFORE we pushed frame */
+static uint32_t s_irq0_pre_eip     = 0;     /* return EIP */
+static uint32_t s_irq0_handler_eip = 0;     /* clkint base */
+static uint64_t s_irq0_in_flight   = 0;     /* 0 = idle, else seq number */
+static uint64_t s_irq0_guard_defer = 0;     /* count of injections deferred by this guard */
+
 static void hook_block_count(uc_engine *uc, uint64_t addr,
                              uint32_t size, void *user_data)
 {
-    (void)uc; (void)addr; (void)user_data;
+    (void)user_data;
     s_cpu_blocks_total++;
     s_cpu_bytes_total += size;
     s_cpu_blocks_window++;
     s_cpu_bytes_window += size;
+    /* IRQ0 nested-injection guard: clear in_flight when we observe the
+     * guest is back at the pre-injection EIP AND ESP has returned to
+     * >= the pre-injection baseline (clkint's IRET completed). */
+    if (s_irq0_in_flight && (uint32_t)addr == s_irq0_pre_eip) {
+        uint32_t cur_esp = 0;
+        uc_reg_read(uc, UC_X86_REG_ESP, &cur_esp);
+        if (cur_esp >= s_irq0_pre_esp) {
+            s_irq0_in_flight = 0;
+        }
+    }
 }
 
 /* SIGALRM handler — sets timer_pending for HLT wakeup only.
@@ -410,6 +457,24 @@ int cpu_inject_interrupt(uint8_t vector)
     uint32_t eip = regs_val[0], esp = regs_val[1];
     uint32_t eflags = regs_val[2], cs = regs_val[3] & 0xFFFF;
 
+    /* IRQ0 nested-injection guard. If a previous IRQ0 injection has
+     * not yet IRET'd back to its pre-injection ESP baseline, defer.
+     * This models the real-hardware IF=0 ISR window that clkint's
+     * early-EOI breaks. Without this, XINU panics with
+     * "resched: called from interrupt handler". */
+    if (vector == 0x20 && s_irq0_in_flight) {
+        s_irq0_guard_defer++;
+        if (s_irq0_guard_defer <= 5 || (s_irq0_guard_defer % 10000) == 0) {
+            LOG("irq",
+                "  irq0 nested-defer (n=%llu, in_flight seq=%llu, pre_eip=0x%08x pre_esp=0x%08x cur_eip=0x%08x cur_esp=0x%08x)\n",
+                (unsigned long long)s_irq0_guard_defer,
+                (unsigned long long)s_irq0_in_flight,
+                s_irq0_pre_eip, s_irq0_pre_esp,
+                regs_val[0], regs_val[1]);
+        }
+        return 0;
+    }
+
     if (!(eflags & 0x200)) {
         inject_blocked++;
         return 0;
@@ -612,6 +677,14 @@ int cpu_inject_interrupt(uint8_t vector)
         r->frame_cs     = cs;
         r->frame_eflags = regs_val[2];
         s_inj_head = (s_inj_head + 1) % IRQ_INJ_RING;
+    }
+
+    /* Arm IRQ0 nested-injection guard tracking. */
+    if (vector == 0x20) {
+        s_irq0_in_flight   = s_inj_seq;
+        s_irq0_pre_eip     = regs_val[0];
+        s_irq0_pre_esp     = regs_val[1];
+        s_irq0_handler_eip = handler;
     }
     return 1;
 }
@@ -1065,20 +1138,24 @@ void cpu_run(void)
                 s_sched.isr_warned_this_span = true;
                 cpu_dump_irq_snapshot("stuck-ISR>50ms");
             }
-            /* Stuck-ISR auto-recovery: if ISR has been latched for
-             * more than ~250 ms of guest time, the IRQ0 handler will
-             * NEVER complete (we're wedged after stack/IDT corruption,
-             * jumped to NULL CS, executing in GDT, etc.). Forcing the
-             * EOI here at least restores IRQ0 delivery so XINU's other
-             * watchdogs / display / sound have a chance to keep going
-             * instead of locking the whole emulator. This is a recovery
-             * measure, not a fix — the underlying corruption remains. */
+            /* Stuck-ISR recovery (BAND-AID, NOT a fix).
+             *
+             * The IRET-leak hypothesis was disproved by the lifecycle
+             * trace (Δ=+0 across many IRQ0 returns — Unicorn's IRET
+             * pops correctly). The actual wedge mode is XINU emitting
+             * "resched: called from interrupt handler" then a Fatal
+             * storm, which suggests our injection or the PIT/PIC line
+             * model lets a new IRQ fire while the kernel is still in
+             * an interrupt context. The right fix is a small QEMU-style
+             * PIT/PIC line model. Until that lands, this recovery
+             * keeps IRQ0 delivery alive after a 250 ms stall so the
+             * emulator does not freeze for the user. */
             if (span > (uint64_t)(s_sched.cached_target_ips / 4ULL)) {
                 static uint64_t s_isr_force_eoi = 0;
                 s_isr_force_eoi++;
                 if (s_isr_force_eoi <= 5 || (s_isr_force_eoi % 1000) == 0) {
                     LOG("irq",
-                        "*** STUCK-ISR RECOVERY: forcing EOI after %llu vticks (~%llu ms guest) (n=%llu)\n",
+                        "*** STUCK-ISR RECOVERY (band-aid): forcing EOI after %llu vticks (~%llu ms guest) (n=%llu)\n",
                         (unsigned long long)span,
                         (unsigned long long)(span * 1000ULL /
                             (s_sched.cached_target_ips ? s_sched.cached_target_ips : 1)),
