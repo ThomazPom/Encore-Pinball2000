@@ -61,6 +61,6 @@ void p2k_install_plx_bars(void)
 {
     MemoryRegion *sm = get_system_memory();
     map_ram(sm, "p2k.bar2-sram",   P2K_BAR2_BASE, P2K_BAR2_SIZE);
-    map_ram(sm, "p2k.bar3-update", P2K_BAR3_BASE, P2K_BAR3_SIZE);
+    /* BAR3 (update flash) is loaded by p2k_install_bar3_flash() */
     /* BAR4 (DCS audio) is now an MMIO state-machine in p2k-dcs.c */
 }
