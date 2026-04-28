@@ -16,6 +16,8 @@ Likely keep:
 - `-v`, `-vv`, `-vvv` / `--verbose`.
 - `--headless`.
 - `--fullscreen` if QEMU display backend support stays simple.
+- `--bpp 16|32` if it remains useful for presentation/debug compatibility.
+- `--splash-screen` if we keep the old polished startup / fallback UX.
 - `--dcs-mode io-handled|bar4-fallback` while both paths exist.
 - `--lpt-device none|emu|/dev/parportN|0xBASE` when cabinet passthrough lands.
 - `--lpt-trace FILE`.
@@ -70,8 +72,6 @@ Likely drop:
   go through serial TCP, and gameplay input should go through the cabinet/LPT
   switch-matrix path, not PS/2 scancode injection. Reconsider only if a proven
   guest path genuinely requires raw PS/2 keyboard input.
-- `--bpp 16|32`: QEMU display backends should own presentation details.
-- `--splash-screen`: not needed for first QEMU usability.
 - `--record` / `--replay`, `--http`, `--xina-script`, `--net-bridge`: useful
   someday maybe, but not part of the baseline.
 - Any old Unicorn CPU/PIT/IRQ pacing option. QEMU owns CPU execution, i8254 PIT,
@@ -90,3 +90,99 @@ Distinguish host framebuffer presentation from guest-visible graphics device
 initialization. A QEMU `DisplaySurface` can be a simple RAM view, but that does
 not prove `set_gfx_mode()` sees a valid MediaGX/Allegro device. Long-term goal
 is QEMU-side GX/MediaGX semantics, not only framebuffer readout.
+
+## DCS Sound Priority
+
+Next functional milestone after display/UART stability is DCS sound.
+
+Do this before broad CLI polish or optional cabinet features. The QEMU branch
+should reach at least the old Unicorn usability baseline: visible graphics,
+UART console, working sound, and basic input.
+
+Architecture goal:
+
+- Avoid two independent DCS implementations.
+- Create a shared DCS core/state machine for command decode, reset/ready
+  responses, command FIFO, and eventual host sample playback.
+- Keep BAR4/MMIO and I/O-UART/`0x138..0x13f` as thin frontends into that shared
+  core.
+- Port only the useful audio behavior from `unicorn.old/src/sound.c` and the
+  proven `io-handled` byte-write lesson from `0001de2`.
+- Treat `bar4` and `io-handled` as compatibility paths/modes, not as duplicate
+  sound engines.
+- Do not make `bar4` the default just because it masks a bug in the I/O path;
+  prove which path each bundle naturally takes.
+
+## Watchdog / PLX INTCSR Candidate Fix
+
+Track this as a strong QEMU improvement over the old Unicorn/mainline watchdog
+workaround. The core polarity fix is ROM/disasm-backed and likely correct; the
+remaining caution is bundle coverage and interaction with future DCS work.
+
+Old Unicorn/mainline family:
+
+- Scanned the guest for the `pci_watchdog_bone()` / `pci_read_watchdog()` path.
+- Periodically scribbled guest RAM watchdog/probe cells.
+- Also primed a guest PLX BAR pointer so `[ptr + 0x4c]` reached the emulated
+  PLX register window.
+- Comments and polarity around `INTCSR` bit 2 were historically confusing.
+
+Current QEMU candidate:
+
+- ROM inspection for SWE1 v2.10 shows the caller Fatals when
+  `pci_watchdog_bone()` returns 1.
+- `pci_watchdog_bone()` returns 1 when the probe succeeds and PLX `INTCSR`
+  bit 2 is clear.
+- Therefore forcing PLX `INTCSR` bit 2 set makes this path return 0 and skip
+  the Fatal without RAM scribbling.
+- This is likely cleaner than the Unicorn/mainline RAM scribbler, because it
+  moves the behavior into the PLX device model.
+
+Validation still needed before deleting the fallback:
+
+- Long-run SWE1 with watchdog scribbler off by default.
+- At least one update bundle and RFM/RFM update coverage.
+- Confirm DCS sound still works once the DCS path is implemented.
+- Keep `P2K_WATCHDOG_SCRIBBLER=1` or equivalent only as a temporary opt-in
+  fallback until the matrix is proven.
+- Update stale comments that still say `INTCSR` bit 2 clear is the healthy
+  value.
+
+## Post-LPT-Pace Master Fixes
+
+Treat later Unicorn/mainline fixes from the post-LPT-pace era as possible
+clues, not automatically correct patches.
+
+- Prefer porting device behavior that is independently justified by ROM,
+  symbols, logs, or hardware docs.
+- Avoid importing timing/guard/scribble layers just because they made one
+  Unicorn run more stable.
+- The PLX `INTCSR` bit-2 polarity fix above is stronger than that category:
+  it is backed by the actual `pci_watchdog_bone()` caller/callee bytes.
+
+Short-list of claims/lessons worth checking surgically:
+
+These came from a difficult late-Unicorn phase where master often said it had
+"fixed" things while the architecture was still unstable. Treat each item as a
+lead to verify, not as proven truth.
+
+- `817afac`: claimed/found that emulated LPT opcode `0x00` should return
+  `0xF0`, not `0x00`. Verify against protocol evidence or current guest
+  behavior before porting.
+- `0001de2`: claimed/found that `io-handled` DCS needs byte writes to port
+  `0x13c` for sound command delivery. Likely relevant, but prove it in the QEMU
+  DCS path. Historical nuance: around the LPT-pace era, `io-handled` sound
+  appeared genuinely strong/useful, while late master had many timing/IRQ guard
+  experiments and sound became harder to interpret. Use the earlier good
+  behavior as a clue, but re-prove QEMU sound cleanly instead of trusting the
+  final master state. The `unicorn.old/` snapshot is currently the most
+  functional practical reference for this path; use it to understand expected
+  behavior, not as code to copy blindly.
+- `516210d`: claimed/found a `#UD` / `0F3C` non-Cyrix interrupt-frame issue.
+  Only relevant if QEMU keeps a custom 0F3C handler; verify against actual
+  handler bytes and IRET frame behavior.
+- `2c2c180`: env-gated PDB/LPT CSV tracing looks useful for comparing traffic
+  to hardware or NuCore. This is diagnostic tooling, not a behavioral fix.
+- `be99437`: historically useful because it exposed that IRQ0/PLX/watchdog
+  behavior mattered, but it mixed too many changes and belongs to the unstable
+  pre/post-LPT-pace transition. Do not port wholesale.

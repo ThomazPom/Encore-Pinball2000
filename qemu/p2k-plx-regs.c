@@ -23,7 +23,10 @@
  * Scope
  * -----
  * - 64-dword PLX register file backed by simple memory.
- * - INTCSR (0x4C) read returns bit2 cleared / bit5 set (PLX ready).
+ * - INTCSR (0x4C) read returns bit2 SET / bit5 set: bit2=1 satisfies
+ *   pci_watchdog_bone() in SWE1 v2.10 (caller @ 0x1a6f48 fires Fatal
+ *   when bone() returns 1; bone() returns 1 iff bit2==0). bit5=1
+ *   reports the PLX as ready.
  * - CNTRL (0x50) read returns the latched value with EE_PRESENT (bit28)
  *   forced and EEDO (bit27) reflecting the SEEPROM shift register.
  * - CNTRL writes drive the 93C46 state machine.
