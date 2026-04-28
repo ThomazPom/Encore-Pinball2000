@@ -19,14 +19,20 @@ typedef struct Pinball2000MachineState {
     X86MachineState parent;
     char            *game;          /* "swe1", "rfm", ... */
     char            *roms_dir;      /* default: <cwd>/roms */
-    uint8_t         *bank0;         /* 1 MiB, owned by us */
+    uint8_t         *bank0;         /* 16 MiB, owned by us */
+    uint8_t         *bank1;         /* 16 MiB or NULL if chips absent */
+    uint8_t         *bank2;
+    uint8_t         *bank3;
+    uint8_t         *dcs_rom;       /* 8 MiB DCS sound, NULL if absent */
 } Pinball2000MachineState;
 
 DECLARE_INSTANCE_CHECKER(Pinball2000MachineState, PINBALL2000_MACHINE,
                          TYPE_PINBALL2000_MACHINE)
 
-/* p2k-rom.c: deinterleave chips u100+u101 into a 1 MiB bank. */
+/* p2k-rom.c: deinterleave chips u100..u107 (banks 0..3) + DCS u109/u110. */
 int  p2k_load_bank0(Pinball2000MachineState *s);
+void p2k_load_extra_banks(Pinball2000MachineState *s);
+void p2k_load_dcs_rom(Pinball2000MachineState *s);
 
 /* p2k-boot.c: post-reset PM-entry recipe (option ROM copy + GDT + CPU regs). */
 void p2k_post_reset(void *opaque);

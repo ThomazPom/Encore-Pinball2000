@@ -87,6 +87,9 @@ static void pinball2000_init(MachineState *machine)
     if (p2k_load_bank0(s) < 0) {
         exit(1);
     }
+    /* Best-effort load banks 1/2/3 (u102..u107) and DCS sound (u109/u110). */
+    p2k_load_extra_banks(s);
+    p2k_load_dcs_rom(s);
 
     /* Map bank0 into the PLX/option-ROM/BAR5/alias windows.  After this
      * the option ROM at 0x80000 (placed by p2k_post_reset) and the full

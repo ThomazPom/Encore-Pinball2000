@@ -33,8 +33,16 @@
 #define P2K_OPTROM_BASE      0x000C0000u
 #define P2K_BIOS_SHADOW_BASE 0x000F0000u
 #define P2K_BIOS_SHADOW_SIZE 0x00010000u
-#define P2K_PLX_BANK0_BASE   0x08000000u
+#define P2K_PLX_BANK0_BASE   0x08000000u   /* LAS3BA */
+#define P2K_PLX_BANK1_BASE   0x08800000u   /* CS0BASE */
+#define P2K_PLX_BANK2_BASE   0x09800000u   /* CS1BASE */
+#define P2K_PLX_BANK3_BASE   0x0A800000u   /* CS2BASE */
+#define P2K_PLX_CS3_DCS      0x0B800000u   /* CS3BASE — DCS sound ROM */
 #define P2K_BAR5_BANK0_BASE  0x14000000u
+#define P2K_BAR5_BANK1_BASE  0x15000000u
+#define P2K_BAR5_BANK2_BASE  0x16000000u
+#define P2K_BAR5_BANK3_BASE  0x17000000u
+#define P2K_ROMBAR_DCS       0x18000000u   /* DCS sound ROMBAR mirror */
 #define P2K_BANK0_ALIAS_BASE 0xFF000000u
 #define P2K_BANK0_ALIAS_SIZE 0x00400000u   /* 4 MiB */
 
@@ -120,15 +128,47 @@ void p2k_map_rom_windows(Pinball2000MachineState *s)
      * Loaded from roms/bios.bin if present. */
     p2k_map_bios(system_memory, s->roms_dir);
 
-    /* PLX bank0 — full 1 MiB at 0x08000000. */
+    /* PLX bank0 — full 16 MiB at 0x08000000. */
     p2k_map_rom(system_memory, "p2k.plx-bank0",
                 P2K_PLX_BANK0_BASE, P2K_BANK_SIZE,
                 s->bank0, P2K_BANK_SIZE);
 
-    /* BAR5 bank0 — pristine 1 MiB mirror at 0x14000000 (kept for checksum). */
+    /* PLX banks 1/2/3 — game data, mask art, im_sys0 etc.  Best-effort:
+     * if the chips weren't found, the bank pointer is NULL and we still
+     * map a 16 MiB 0xFF-filled window so reads don't fault. */
+    p2k_map_rom(system_memory, "p2k.plx-bank1",
+                P2K_PLX_BANK1_BASE, P2K_BANK_SIZE,
+                s->bank1, s->bank1 ? P2K_BANK_SIZE : 0);
+    p2k_map_rom(system_memory, "p2k.plx-bank2",
+                P2K_PLX_BANK2_BASE, P2K_BANK_SIZE,
+                s->bank2, s->bank2 ? P2K_BANK_SIZE : 0);
+    p2k_map_rom(system_memory, "p2k.plx-bank3",
+                P2K_PLX_BANK3_BASE, P2K_BANK_SIZE,
+                s->bank3, s->bank3 ? P2K_BANK_SIZE : 0);
+
+    /* DCS sound ROM at PLX CS3 (0x0B800000) and ROMBAR mirror (0x18000000). */
+    if (s->dcs_rom) {
+        p2k_map_rom(system_memory, "p2k.dcs-cs3",
+                    P2K_PLX_CS3_DCS, P2K_DCS_BANK_SIZE,
+                    s->dcs_rom, P2K_DCS_BANK_SIZE);
+        p2k_map_rom(system_memory, "p2k.dcs-rombar",
+                    P2K_ROMBAR_DCS, P2K_DCS_BANK_SIZE,
+                    s->dcs_rom, P2K_DCS_BANK_SIZE);
+    }
+
+    /* BAR5 bank0 — pristine 16 MiB mirror at 0x14000000 (kept for checksum). */
     p2k_map_rom(system_memory, "p2k.bar5-bank0",
                 P2K_BAR5_BANK0_BASE, P2K_BANK_SIZE,
                 s->bank0, P2K_BANK_SIZE);
+    p2k_map_rom(system_memory, "p2k.bar5-bank1",
+                P2K_BAR5_BANK1_BASE, P2K_BANK_SIZE,
+                s->bank1, s->bank1 ? P2K_BANK_SIZE : 0);
+    p2k_map_rom(system_memory, "p2k.bar5-bank2",
+                P2K_BAR5_BANK2_BASE, P2K_BANK_SIZE,
+                s->bank2, s->bank2 ? P2K_BANK_SIZE : 0);
+    p2k_map_rom(system_memory, "p2k.bar5-bank3",
+                P2K_BAR5_BANK3_BASE, P2K_BANK_SIZE,
+                s->bank3, s->bank3 ? P2K_BANK_SIZE : 0);
 
     /* BT-108 high alias: 4 MiB read-only mirror of bank0 at 0xFF000000. */
     p2k_map_rom(system_memory, "p2k.bank0-alias",
