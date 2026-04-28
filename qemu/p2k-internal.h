@@ -37,7 +37,7 @@ void p2k_map_rom_windows(Pinball2000MachineState *s);
 /* p2k-isa-stubs.c: minimal i8042 etc. so PRISM polling loops terminate. */
 void p2k_install_isa_stubs(void);
 void p2k_install_pci_stub(void);
-void p2k_install_plx_bars(void);
+void p2k_install_plx_bars(Pinball2000MachineState *s);
 
 /* p2k-gx.c: 16 MiB Cyrix MediaGX MMIO + framebuffer stub at 0x40000000. */
 void p2k_install_gx_stub(void);

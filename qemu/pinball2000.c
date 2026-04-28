@@ -95,7 +95,7 @@ static void pinball2000_init(MachineState *machine)
     p2k_map_rom_windows(s);
     p2k_install_isa_stubs();
     p2k_install_pci_stub();
-    p2k_install_plx_bars();
+    p2k_install_plx_bars(s);
     p2k_install_plx_regs();
     p2k_install_bar3_flash(s);
     p2k_install_dcs();
