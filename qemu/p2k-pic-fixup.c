@@ -1,4 +1,23 @@
 /*
+ * ============================================================================
+ * STATUS: TEMPORARY SYMPTOM PATCH — replace with proper QEMU device behavior.
+ *
+ * Why temporary: this module polls the QEMU i8259 IMR and force-clears
+ * bit 0 (IRQ0) + bit 2 (cascade) on a 250 us timer. It papers over the
+ * fact that the guest's own restore_irq routine repeatedly re-masks
+ * IRQ0 because we bypass the BIOS PIC initialisation that would have
+ * left a sane base_mask.
+ *
+ * Removal condition: delete this file once we either
+ *   (a) run the real BIOS init far enough that XINU inherits a correct
+ *       base_mask (i.e. PRISM/POST runs a normal i8259 ICW sequence
+ *       before jumping to PM entry), OR
+ *   (b) move the PM entry recipe in p2k-boot.c so that the guest's
+ *       device_init step is no longer NOP'd, and the OR-mask at
+ *       0x2fe854 ends up with bit 0 cleared naturally.
+ * Until then: kill switch is P2K_NO_PIC_FIXUP.
+ * ============================================================================
+ *
  * pinball2000 PIC IRQ0/cascade unmask fix-up.
  *
  * Direct port of the proven unicorn.old/src/io.c:121-127 fix:

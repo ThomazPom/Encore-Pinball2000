@@ -1,4 +1,25 @@
 /*
+ * ============================================================================
+ * STATUS: TEMPORARY SYMPTOM PATCH — replace with proper QEMU device behavior.
+ *
+ * Why temporary: this module pins IDT[0x20] to a hand-injected stub at
+ * physical 0x500 and re-arms it indefinitely on a virtual-clock timer.
+ * That fights the guest's own IDT writes and embeds an emulator-side
+ * timing assumption (IRQ0 must always EOI+IRET cleanly) into RAM.
+ *
+ * Removal condition: stop pinning the IDT entry once
+ *   (a) the QEMU i8259 + i8254 path is wired so that IRQ0 deliveries
+ *       are gated by the *real* CPU IF flag and IDT contents (no force
+ *       inject), AND
+ *   (b) the guest's own clkint installer (set_evec(0x20, clkint) inside
+ *       XINU's clkinit) is reached naturally — verified by IDT[0x20]
+ *       holding a >0x100000 address at the point the first PIT tick
+ *       arrives — at which point this whole file can be deleted.
+ *
+ * Until then: keep the env-var kill switch P2K_NO_IRQ0_SHIM so the
+ * patch can be disabled when working on the real fix.
+ * ============================================================================
+ *
  * pinball2000 IRQ0 early-shim.
  *
  * Problem: in our QEMU build of swe1, IDT[0x20] is initialised by XINU's

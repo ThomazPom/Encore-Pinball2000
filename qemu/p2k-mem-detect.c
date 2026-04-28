@@ -1,4 +1,23 @@
 /*
+ * ============================================================================
+ * STATUS: TEMPORARY SYMPTOM PATCH — replace with proper QEMU device behavior.
+ *
+ * Why temporary: this module rewrites a byte in the guest's own
+ * `mem_detect()` prologue so the function returns 14 MiB instead of 4.
+ * Modifying guest .text from the host is the worst kind of band-aid —
+ * it relies on a fixed instruction pattern, must scan RAM, and breaks
+ * silently if the build changes. The real failure is that our Cyrix
+ * MediaGX memory-controller stub does not answer the probes that
+ * mem_detect() runs.
+ *
+ * Removal condition: delete this file once the MediaGX memory-controller
+ * configuration registers (CCR3, MCRs at 0x22/0x23 index/data, etc.)
+ * are modelled accurately enough that the guest's own mem_detect()
+ * naturally computes the configured RAM size. At that point the
+ * code-rewrite scan is unnecessary.
+ * Until then: kill switch is P2K_NO_MEM_DETECT_PATCH.
+ * ============================================================================
+ *
  * pinball2000 BT-130: XINU mem_detect() patch.
  *
  * XINU's mem_detect() probes the MediaGX memory controller and returns

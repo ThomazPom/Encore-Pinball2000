@@ -1,4 +1,25 @@
 /*
+ * ============================================================================
+ * STATUS: TEMPORARY SYMPTOM PATCH — replace with proper QEMU device behavior.
+ *
+ * Why temporary: this module hand-services the legacy 0xCF8/0xCFC
+ * config-space ports with a static table of vendor/device IDs. There is
+ * no real PCIDevice, no real PCIBus, no auto-BAR layout, and no IRQ
+ * routing through QEMU's PCI host. That means later devices we want to
+ * model properly (PLX 9054, Cyrix MediaGX video, CS5530 south-bridge)
+ * cannot use upstream QEMU PCIDevice subclassing, MSI, BAR remapping,
+ * or pci_set_irq() — they have to be hand-stitched alongside this stub.
+ *
+ * Removal condition: delete this file in favour of a real
+ *   - i440fx-style PCI host bridge (or a custom Cyrix MediaGX host bridge
+ *     class), and
+ *   - real PCIDevice classes for PLX9054, MediaGX video, CS5530, and
+ *     PRISM (PLX9050)
+ * once each individual BAR consumer (p2k-plx9054.c, p2k-gx.c,
+ * p2k-bar3-flash.c, p2k-dcs.c) has been ported to PCIDevice subclasses.
+ * At that point QEMU's pci_default_read_config() handles cf8/cfc for free.
+ * ============================================================================
+ *
  * pinball2000 minimal PCI configuration space (cf8/cfc).
  *
  * We do NOT instantiate a QEMU PCI host bridge. PRISM uses PCI only as a

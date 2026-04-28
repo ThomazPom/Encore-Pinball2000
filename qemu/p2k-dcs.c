@@ -1,4 +1,24 @@
 /*
+ * ============================================================================
+ * STATUS: PARTIALLY TEMPORARY — DCS state is duplicated between this
+ * module (BAR4 MMIO) and qemu/p2k-dcs-uart.c (I/O 0x138-0x13F overlay).
+ *
+ * Why temporary: real DCS-2 hardware has ONE state machine (the ADSP-2105
+ * sound CPU). The game can talk to it through either the BAR4 word
+ * window or the legacy UART port — but both views must mutate the
+ * same queue/flag state. Today we have two parallel state copies that
+ * happen to agree only because both see the same guest writes.
+ *
+ * Removal condition: refactor to a single owning DCS device object
+ *   (e.g. p2k-dcs-core.c) that owns the response queue, ECHO byte, and
+ *   ADSP handshake, and have BOTH this module and p2k-dcs-uart.c be
+ *   thin views over the shared state — or better, make this BAR4
+ *   region the only path and route the I/O port window through it via
+ *   a memory-region alias.
+ * Until then: any state divergence between the two paths is a likely
+ * source of bugs; treat both files together when changing semantics.
+ * ============================================================================
+ *
  * pinball2000 DCS audio MMIO (PLX9054 BAR4 @ 0x13000000, 16 MiB window).
  *
  * Mirrors the DCS-on-BAR4 semantics validated in unicorn.old:

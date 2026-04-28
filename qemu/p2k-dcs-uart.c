@@ -1,4 +1,15 @@
 /*
+ * ============================================================================
+ * STATUS: PARTIALLY TEMPORARY — see p2k-dcs.c header. This module owns
+ * a parallel copy of the DCS response queue + flag byte that should be
+ * the SAME state as the BAR4 view.
+ *
+ * Removal condition: collapse with p2k-dcs.c into a single DCS device
+ * object whose state is shared. This file then becomes either an alias
+ * MemoryRegion over the BAR4 window or a thin IO port view that calls
+ * into the shared state.
+ * ============================================================================
+ *
  * pinball2000 DCS-2 sound board on I/O ports 0x138-0x13F.
  *
  * Direct port of unicorn.old/src/io.c:1444-1650 (DCS UART overlay).

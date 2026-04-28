@@ -1,72 +1,105 @@
 # `qemu/` — Pinball 2000 custom QEMU machine
 
-This directory holds the source for a custom QEMU **machine type** named
-`pinball2000`.  When built into a patched `qemu-system-i386`, it exposes the
-Williams Pinball 2000 board (Cyrix MediaGX + CS5530 + PLX9054 + DCS sound +
-LPT driver board) so the unmodified game ROM image can run.
+Custom QEMU **machine type** `pinball2000`, built into a vendored,
+patched, pinned `qemu-system-i386` (currently 10.0.8) by
+`scripts/build-qemu.sh`. Exposes the Williams Pinball 2000 board (Cyrix
+MediaGX + CS5530 + PLX9054 + DCS-2 sound + LPT driver board) so the
+unmodified game ROMs run.
 
-## Why a custom machine type, not stock QEMU + `-bios`
+## Why custom — not stock `-bios`
 
-`roms/bios.bin` is **not** an entry point on this hardware in any practical
-sense.  The Unicorn project never executed the BIOS — it built a flat
-protected-mode GDT in memory, copied the PRISM option ROM (first 32 KiB of
-game ROM bank 0 = chips `u100` + `u101` interleaved) to physical address
-`0x80000`, and jumped CPU to `EIP=0x801D9` with `ESP=0x8B000` and `IF=0`.
-That is the boot recipe to reproduce.
+`roms/bios.bin` is not a meaningful entry point on this hardware. The
+boot recipe (`p2k-boot.c`) bypasses the BIOS, copies the PRISM option
+ROM (first 32 KiB of game ROM bank 0 = `u100`+`u101` interleaved) to
+physical `0x80000`, builds a flat-mode GDT at `0x1000`, and jumps the
+CPU to `EIP=0x801D9` with `ESP=0x8B000` and `IF=0`.
 
-Stock `qemu-system-i386 -M isapc -bios roms/bios.bin` therefore proves
-nothing about Pinball 2000.  It only proves QEMU TCG runs (which it does).
-That smoke-test is available as `scripts/run-qemu.sh --tcg-only`.
+## Architectural intent
 
-## Files
+QEMU owns CPU execution, PIT/PIC timing, virtual timers and interrupt
+delivery. We do **not** rebuild any of that layer. Each Pinball-2000
+peripheral should land here as a normal QEMU device (PCIDevice for
+PCI-attached parts, `MemoryRegionOps` for MMIO, `isa_register_ioport`
+for legacy I/O, `qemu_console` for video).
 
-| File              | Purpose                                                  | Status     |
-|-------------------|----------------------------------------------------------|------------|
-| `pinball2000.h`   | Address-map / register / boot-entry constants            | written    |
-| `pinball2000.c`   | `MachineClass` skeleton; documents init order            | scaffold   |
-| `plx9054.c`       | PLX 9054 PCI bridge (BAR0 ROM window, BAR2 SRAM, BAR4)   | not yet    |
-| `cs5530.c`        | CS5530 south-bridge wiring (PIT/PIC reuse stock QEMU)    | not yet    |
-| `dcs2.c`          | DCS2 sound device on port `0x13c` (byte-stream protocol) | not yet    |
-| `lpt_board.c`     | BT-94/107 driver board on port `0x378`                   | not yet    |
+A handful of files in this directory are still **symptom patches**
+(host-side RAM pokes, IDT pinning, code rewrites, fake cf8/cfc handler).
+Each such file carries a `STATUS: TEMPORARY SYMPTOM PATCH` block at the
+top stating the removal condition. Treat any new patch the same way:
+ship it with a written sunset criterion or do not ship it.
 
-## Building (planned)
+## File layout — one concern per file
 
-The custom machine cannot be built as a runtime QEMU plugin — QEMU does not
-support out-of-tree `MachineClass` registration.  The two practical options:
+| File                  | Concern                                                     | Status         |
+|-----------------------|-------------------------------------------------------------|----------------|
+| `pinball2000.c`       | `MachineClass` registration; tiny init-order list           | machine        |
+| `pinball2000.h`       | Address-map / register / boot-entry constants               | header         |
+| `p2k-internal.h`      | Private declarations shared between p2k-*.c modules         | header         |
+| `p2k-rom.c`           | Bank0..3 + DCS ROM deinterleave loader                      | device         |
+| `p2k-boot.c`          | Post-reset PM-entry recipe (option-ROM copy + GDT + regs)   | machine glue   |
+| `p2k-plx9054.c`       | PLX 9054 ROM/BIOS/bank0/BAR5 windows                        | device         |
+| `p2k-plx-regs.c`      | PLX 9050 BAR0 registers + 93C46 SEEPROM model               | device         |
+| `p2k-bars.c`          | BAR2 SRAM + 16 MiB sentinel (seeds from `savedata/*.nvram2`)| device         |
+| `p2k-bar3-flash.c`    | BAR3 Intel 28F320 command protocol (seeds from `*.flash`)   | device         |
+| `p2k-dcs.c`           | DCS-2 sound on BAR4 MMIO (state shared with dcs-uart)       | device (split) |
+| `p2k-dcs-uart.c`      | DCS-2 sound legacy I/O view 0x138-0x13F (state split)       | device (split) |
+| `p2k-lpt-board.c`     | LPT driver-board protocol on 0x378-0x37A                    | device         |
+| `p2k-gx.c`            | Cyrix MediaGX 16 MiB MMIO + framebuffer alias to RAM 0x800k | device         |
+| `p2k-display.c`       | 640×480 ARGB8888 console reading FB at RAM 0x800000         | device         |
+| `p2k-vsync.c`         | ~57 Hz VSYNC ticker (BAR2[4]=1 + DC_TIMING2 walk)           | device         |
+| `p2k-isa-stubs.c`     | i8042 / CMOS / POST / COM1 minimal stubs                    | device         |
+| `p2k-superio.c`       | W83977EF (0x2E/0x2F) + Cyrix CC5530 (0xEA/0xEB) chip-IDs    | device         |
+| `p2k-cyrix-0f3c.c`    | Emulator for Cyrix-only `0F 3C` opcode (#UD trap → real op) | cpu glue       |
+| `p2k-pci.c`           | cf8/cfc dispatcher with vendor-IDs (TEMPORARY)              | symptom patch  |
+| `p2k-pic-fixup.c`     | Force-unmask IRQ0+cascade on the i8259 (TEMPORARY)          | symptom patch  |
+| `p2k-irq0-shim.c`     | Pin IDT[0x20] to a 0x500 EOI+IRET stub (TEMPORARY)          | symptom patch  |
+| `p2k-watchdog.c`      | RAM-scribble PCI/watchdog sentinels (TEMPORARY)             | symptom patch  |
+| `p2k-mem-detect.c`    | BT-130: rewrite XINU `mem_detect` prologue (TEMPORARY)      | symptom patch  |
+| `p2k-nic-dseg.c`      | BT-131: poke SMC8216T LAN-ROM shadow into D-seg (TEMPORARY) | symptom patch  |
 
-1. **Vendored QEMU fork** (recommended):
-   - Add QEMU source as a git submodule under `qemu-src/`.
-   - Symlink/copy these files into `qemu-src/hw/i386/`.
-   - Add to `qemu-src/hw/i386/meson.build` and `Kconfig`.
-   - `cd qemu-src && ./configure --target-list=i386-softmmu --disable-werror && make -j`.
-   - Resulting `qemu-src/build/qemu-system-i386` accepts `-M pinball2000`.
+## Boot recipe owned by `p2k-boot.c`
 
-2. **External patch series** kept against a pinned upstream tag.
+Run after every system reset (registered with `qemu_register_reset`
+*after* QEMU's own device reset, so our register writes survive):
 
-The build harness (`scripts/build-qemu.sh`) is a stub today.  It will pin
-QEMU 9.x or 10.x once the scaffold compiles cleanly.
+1. Copy first 32 KiB of bank0 to physical `0x80000` (PRISM option ROM).
+2. Seed BT-131 NIC LAN ROM shadow at `0xD0008..0xD000F`.
+3. Lay down the 4-entry GDT at `0x1000` (CS=0x9F, DS=0x93 — match
+   unicorn).
+4. Reprogram CPU0 to PM entry: `CR0 |= PE|ET`, `CS:EIP = 0x08:0x801D9`,
+   flat 4 GiB segments, `EFLAGS.IF = 0`, `ESP = 0x8B000`.
 
-## Parity roadmap
+## Removal-condition discipline
 
-A useful boot needs, in order:
+When you change a `symptom patch` file:
 
-1. **CPU + RAM + entry recipe** — i486 (Cyrix MediaGX surrogate), 16 MiB RAM,
-   bank0 option-ROM copy, GDT, PM jump to `0x801D9`.  *Then guest reaches the
-   first executable instruction in PRISM.*
-2. **PIC + PIT** (reuse stock QEMU `i8259` + `i8254`).  *Then IRQ0 timing
-   works correctly without any of the Unicorn-era guards.*
-3. **PLX9054 BAR2 SRAM + watchdog health register** (`P2K_BAR2_WATCHDOG_HEALTH`
-   must read `0xFFFF`).  *Then the watchdog stops resetting the board.*
-4. **PLX9054 BAR0 ROM window with bank switching**.  *Then PRISM finishes
-   POST and locates the game image.*
-5. **DCS2 sound device** (port `0x13c`, byte-stream `HIGH/LOW` pairing,
-   reset reply `0xF0`).  *Then sound init handshake `0xACE1` succeeds.*
-6. **LPT board device** (port `0x378`, idle opcode `0x00 → 0xF0`).  *Then
-   XINU sees driver-board presence and lamps/coils tasks start.*
-7. **Display path** — DC_TIMING2 / VSYNC at ~57 Hz hooked to a QEMU
-   `qemu_console` framebuffer.  *Then attract mode renders.*
+* Keep it kill-switchable (env var) so it can be disabled while wiring
+  up the real device.
+* Update the `STATUS:` block if you change the removal condition.
+* If the real-device path becomes available, **remove** the symptom
+  patch in the same commit that lands the replacement — do not leave
+  both running.
 
-Every step has a corresponding piece of distilled knowledge in
-`pinball2000.h` or `unicorn.old/src/`.  None of the Unicorn timing
-heuristics (vticks, dynamic budget, IRR guards, LPT pacing) is needed
-here — QEMU owns CPU/PIT/PIC semantics natively.
+## Build
+
+`bash scripts/build-qemu.sh` — downloads QEMU 10.0.8 to
+`~/.cache/p2k-qemu-build/`, copies every `p2k-*.c` here into
+`hw/i386/`, edits `meson.build`, builds `qemu-system-i386`. The script
+is idempotent and cheap on incremental rebuilds.
+
+## Run
+
+```sh
+QEMU_BIN=~/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386
+$QEMU_BIN -M pinball2000,game=swe1,roms-dir=$PWD/roms -m 16 -display sdl
+```
+
+Useful env vars:
+
+| Var                            | Effect                                              |
+|--------------------------------|-----------------------------------------------------|
+| `P2K_UART_TO_STDERR=1`         | Mirror COM1 UART to host stderr                     |
+| `P2K_NO_IRQ0_SHIM=1`           | Disable IDT[0x20] shim                              |
+| `P2K_NO_PIC_FIXUP=1`           | Disable PIC IMR force-unmask timer                  |
+| `P2K_NO_WATCHDOG=1`            | Disable RAM-scribble watchdog suppressor            |
+| `P2K_NO_MEM_DETECT_PATCH=1`    | Disable BT-130 mem_detect prologue rewrite          |

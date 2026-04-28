@@ -1,4 +1,24 @@
 /*
+ * ============================================================================
+ * STATUS: TEMPORARY SYMPTOM PATCH — replace with proper QEMU device behavior.
+ *
+ * Why temporary: this module scans game RAM for `cmp [imm32], 0xFFFF`
+ * sentinels and periodically re-writes 0x0000FFFF into them so the
+ * guest's own watchdog + DCS-probe paths read "alive". That is host
+ * code reaching into guest BSS to flip cells that the *guest itself*
+ * is supposed to maintain.
+ *
+ * Removal condition: delete this file once
+ *   (a) the BAR3 28F320 flash protocol model + DCS state machine are
+ *       complete enough that the guest's own pci_watchdog_bone() and
+ *       dcs_probe() see real "device present" signals via QEMU device
+ *       I/O (no RAM injection needed), AND
+ *   (b) PRISM POST runs to the point that the watchdog process is
+ *       actually scheduled by XINU, so the cells get refreshed by the
+ *       guest at the natural cadence.
+ * Until then: kill switch is P2K_NO_WATCHDOG.
+ * ============================================================================
+ *
  * pinball2000 PCI sentinel scribbler.
  *
  * The four cells at 0x2f0414 / 0x2f0418 / 0x2f041c / 0x2f0420 are the
