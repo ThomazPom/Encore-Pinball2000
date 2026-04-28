@@ -80,6 +80,23 @@ static uint32_t p2k_pci_cfg_read(uint8_t bus, uint8_t dev,
         default:   return 0x00000000u;
         }
 
+    case 9: /* PLX 9050 raw vendor face — pci_probe wants to find 0x10B5
+             *  in addition to the WMS-skinned dev8.  Real hardware
+             *  presents the same chip under 0x10B5:0x9050 before the
+             *  93C46 EEPROM image overrides the IDs; we expose a
+             *  shadow at devNum=9 so the game's PLX-not-found path
+             *  (game+0x1a6ba6) is bypassed without a periodic
+             *  sentinel scribble. */
+        switch (reg) {
+        case 0x00: return 0x905010B5u;   /* vendor=PLX, device=0x9050 */
+        case 0x04: return 0x02800007u;
+        case 0x08: return 0x06800001u;   /* class: bridge / other */
+        case 0x0C: return 0x00000000u;
+        case 0x10: return P2K_PCI_WMS_BAR0; /* same physical BAR0 */
+        case 0x3C: return 0x00000100u;
+        default:   return 0x00000000u;
+        }
+
     case 18: /* Cyrix Cx5520 ISA bridge */
         switch (reg) {
         case 0x00: return 0x00021078u;

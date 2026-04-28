@@ -1,37 +1,30 @@
 /*
- * pinball2000 watchdog flag scribbler.
+ * pinball2000 PCI sentinel scribbler.
  *
- * The Pinball 2000 game code embeds a `pci_watchdog_bone()` style
- * health register inside its DCS-probe call:
+ * The four cells at 0x2f0414 / 0x2f0418 / 0x2f041c / 0x2f0420 are the
+ * "PCI device discovered" sentinels written by the game's pci_probe
+ * (game+0x1a69f8..0x1a6c4c).  After the scan, pci_probe checks each
+ * cell with `CMPL $0xFFFF, [cell]` to detect "device NOT found" and
+ * aborts on a mismatch via paths we have not fully investigated.
  *
- *     CMP DWORD [<addr>], 0xFFFF
- *     JE  RET-0
- *     MOV EAX, 1
+ * Empirically (this branch), forcing the cells to STAY at 0x0000FFFF
+ * (i.e. pretending no PCI device was found) is what unblocks XINU
+ * sysinit() — pci_probe returns -1, sysinit takes the "no PCI" code
+ * path, prints "XINU: V7" + io_setup_*: SuperIOType unknown, and the
+ * resource-panic recursion stabilises into a normal warning stream.
  *
- * meaning "DCS PRESENT when [addr] != 0xFFFF".  But there are also
- * sibling CMPs in genuine watchdog code paths that REQUIRE the cell
- * to remain 0xFFFF — they treat any other value as "watchdog timer
- * has expired, reset the system".  When IRQ0 is firing but no real
- * pci_watchdog_bone() process is running, those checks fail
- * silently and XINU's sysinit() never finishes.
+ * One-shot prime + periodic re-scribble was originally added under
+ * the (incorrect) name "watchdog flag scribbler".  The cells are not
+ * watchdog cells but PCI sentinels; the scribble keeps them at the
+ * "device not found" state regardless of what pci_probe writes.
  *
- * Strategy (mirrors unicorn.old/src/io.c:380-460 and cpu.c:766-800):
+ * Mirrors the empirical fix in unicorn.old/src/io.c:380-460 +
+ * cpu.c:766-800.  No timing/vticks/budget heuristics involved.
  *
- *   1. At startup, scan the relocated game code (0x100000.. 0x600000)
- *      for the byte pattern  81 3D <ADDR32> FF FF 00 00  i.e. CMP
- *      DWORD [imm32], 0xFFFF where imm32 is in the BSS range
- *      (0x100000..0x1000000).
- *   2. Collect the unique target cells (typically 4-8 of them, all
- *      in a small struct).
- *   3. Periodically write 0xFFFF to each of those cells from a QEMU
- *      timer.  This keeps the watchdog-expiry checks happy.
- *
- * One-time prime + 1 ms cadence is fine — any code path that races
- * with the scribble would have already exhibited issues on real
- * hardware.
- *
- * No Unicorn timing/vticks/budget heuristics are involved.  This is
- * a pure I/O cadence concern.
+ * TODO: Investigate exposing the PLX 9050 (vendor 0x10b5) properly
+ * so pci_probe can succeed natively.  For now the fail-path lets
+ * boot proceed further than the success-path — keep periodic
+ * scribble until a complete PCI exposition is in place.
  */
 
 #include "qemu/osdep.h"
@@ -130,13 +123,15 @@ static void p2k_wd_tick(void *opaque)
     if (!p2k_wd_scanned) {
         p2k_wd_scan_once();
         if (!p2k_wd_scanned) {
-            /* Game code not yet relocated — retry later. */
             timer_mod(p2k_wd_timer,
                       qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
                       P2K_WD_RESCAN_NS);
             return;
         }
     }
+    /* Periodic re-scribble: keeps cells == 0x0000FFFF so pci_probe
+     * post-scan checks consistently take the "device not found" path,
+     * which empirically lets XINU sysinit() proceed further. */
     for (int i = 0; i < p2k_wd_n_cells; i++) {
         p2k_wd_write_cell(p2k_wd_cells[i], 0x0000FFFFu);
     }
@@ -149,8 +144,8 @@ void p2k_install_watchdog(void)
     p2k_wd_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, p2k_wd_tick, NULL);
     timer_mod(p2k_wd_timer,
               qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + P2K_WD_PRIME_DELAY_NS);
-    info_report("pinball2000: watchdog scribbler armed "
-                "(scan after %d ms, then %d ms cadence)",
+    info_report("pinball2000: PCI sentinel scribbler armed "
+                "(scan after %d ms, then %d ms re-scribble cadence)",
                 (int)(P2K_WD_PRIME_DELAY_NS / 1000000),
                 (int)(P2K_WD_PERIOD_NS / 1000000));
 }
