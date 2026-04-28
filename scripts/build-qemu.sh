@@ -59,13 +59,15 @@ echo "[build-qemu] patching $MESON"
 {
   echo
   echo "# --- Pinball 2000 (out-of-tree, copied in by scripts/build-qemu.sh) ---"
-  printf "i386_ss.add(when: 'CONFIG_PINBALL2000', if_true: files("
+  echo "p2k_vorbisfile_dep = dependency('vorbisfile', required: false)"
+  printf "p2k_files = files("
   first=1
   for f in "${P2K_C_FILES[@]}"; do
     if [[ $first -eq 1 ]]; then first=0; else printf ", "; fi
     printf "'%s'" "$f"
   done
-  printf "))\n"
+  printf ")\n"
+  echo "i386_ss.add(when: 'CONFIG_PINBALL2000', if_true: [p2k_files, p2k_vorbisfile_dep])"
 } >> "$MESON"
 
 # --- Patch hw/i386/Kconfig (idempotent) ------------------------------------
