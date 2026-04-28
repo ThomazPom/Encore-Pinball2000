@@ -68,7 +68,9 @@ typedef struct {
 typedef struct {
     const Sample *s;
     size_t        pos;       /* frame index into s->pcm */
-    int           amp_q15;   /* 0..32767, simple per-voice volume */
+    uint8_t       vol;       /* 0..255 per Unicorn */
+    uint8_t       pan;       /* 0..255 (0x7F = center) */
+    bool          active;
 } Voice;
 
 extern void (*p2k_dcs_core_audio_process_cmd)(uint16_t cmd);
@@ -98,6 +100,8 @@ typedef struct DcsAudio {
 
     /* mixer */
     Voice         voices[DCS_VOICES];
+    uint8_t       global_vol;     /* 0..255, applied to all channels */
+    bool          trace;          /* P2K_DCS_AUDIO_TRACE=1 */
 
     /* startup hello + fallback blip */
     uint32_t      blip_freq;
@@ -316,20 +320,25 @@ static Sample *decode_ogg_to_s16(const uint8_t *data, size_t size)
     return s;
 }
 
-static Sample *get_sample_for_cmd(DcsAudio *a, uint16_t cmd)
+static Sample *get_sample_for_cmd(DcsAudio *a, uint16_t cmd,
+                                  const char **out_name)
 {
+    if (out_name) *out_name = NULL;
     if (cmd >= SAMPLE_CACHE_SIZE) return NULL;
-    if (a->cache[cmd]) return a->cache[cmd];
-    if (a->cache_tried[cmd]) return NULL;
-    a->cache_tried[cmd] = 1;
 
-    /* Find entry by track_cmd. */
+    /* Find entry by track_cmd (cached lookup attempted only once). */
     int idx = -1;
     for (int i = 0; i < a->entry_cnt; i++) {
         if (a->entries[i].track_cmd == cmd) { idx = i; break; }
     }
     if (idx < 0) return NULL;
     Pb2kEntry *e = &a->entries[idx];
+    if (out_name) *out_name = e->name;
+
+    if (a->cache[cmd]) return a->cache[cmd];
+    if (a->cache_tried[cmd]) return NULL;
+    a->cache_tried[cmd] = 1;
+
     if (e->size == 0 || e->offset + e->size > a->pb2k_size) return NULL;
 
     /* De-XOR payload into a temp buffer, then decode. */
@@ -347,31 +356,36 @@ static Sample *get_sample_for_cmd(DcsAudio *a, uint16_t cmd)
 /* Mixer + QEMU audio callback                                         */
 /* ------------------------------------------------------------------ */
 
-static void start_voice(DcsAudio *a, const Sample *s, int vol_8bit)
+/* Start sample on a fixed channel (Unicorn semantics: re-trigger on
+ * the same channel halts the previous voice). */
+static void start_voice_on_channel(DcsAudio *a, int ch, const Sample *s,
+                                   int vol_8bit, int pan_8bit)
 {
-    /* Pick a free slot, else replace the most-advanced (oldest) one. */
-    int best = -1;
-    size_t best_pos = 0;
-    for (int i = 0; i < DCS_VOICES; i++) {
-        if (!a->voices[i].s) { best = i; break; }
-        if (a->voices[i].pos > best_pos) {
-            best_pos = a->voices[i].pos;
-            best = i;
-        }
-    }
-    if (best < 0) best = 0;
+    if (ch < 0 || ch >= DCS_VOICES) ch = 0;
     if (vol_8bit < 0)   vol_8bit = 0;
     if (vol_8bit > 255) vol_8bit = 255;
-    /* Map 0..255 -> 0..28000 (leaves headroom for mixing 8 voices). */
-    a->voices[best].s       = s;
-    a->voices[best].pos     = 0;
-    a->voices[best].amp_q15 = (28000 * vol_8bit) / 255;
+    if (pan_8bit < 0)   pan_8bit = 0;
+    if (pan_8bit > 255) pan_8bit = 255;
+    a->voices[ch].s      = s;
+    a->voices[ch].pos    = 0;
+    a->voices[ch].vol    = (uint8_t)vol_8bit;
+    a->voices[ch].pan    = (uint8_t)pan_8bit;
+    a->voices[ch].active = true;
+}
+
+static void stop_all_voices(DcsAudio *a)
+{
+    for (int i = 0; i < DCS_VOICES; i++) {
+        a->voices[i].s = NULL;
+        a->voices[i].active = false;
+    }
 }
 
 static void render(DcsAudio *a, int16_t *out, int frames)
 {
-    /* Start with silence + the fallback blip (or hello tone) so the
-     * voice is always producing some audible sample stream. */
+    /* Per-channel mix:
+     *   amp_q15 = (vol * global_vol * 28000) / (255 * 255)
+     * leaves headroom for summing 8 voices. */
     for (int i = 0; i < frames; i++) {
         int32_t mix = 0;
         if (a->blip_samples_left > 0) {
@@ -385,10 +399,16 @@ static void render(DcsAudio *a, int16_t *out, int frames)
         }
         for (int v = 0; v < DCS_VOICES; v++) {
             Voice *vc = &a->voices[v];
-            if (!vc->s) continue;
-            if (vc->pos >= vc->s->frames) { vc->s = NULL; continue; }
+            if (!vc->active || !vc->s) continue;
+            if (vc->pos >= vc->s->frames) {
+                vc->s = NULL;
+                vc->active = false;
+                continue;
+            }
             int32_t s = vc->s->pcm[vc->pos++];
-            mix += (s * vc->amp_q15) >> 15;
+            int32_t amp = (int32_t)vc->vol * (int32_t)a->global_vol * 28000;
+            amp /= (255 * 255);
+            mix += (s * amp) >> 15;
         }
         if (mix >  32767) mix =  32767;
         if (mix < -32768) mix = -32768;
@@ -428,6 +448,15 @@ static uint32_t cmd_to_freq(uint16_t cmd)
     return scale[cmd & 0x0F];
 }
 
+/* One-line trace per audio event: shows enough to bucket the failure
+ * (event source, full triple, computed channel/vol/pan, lookup key,
+ * pb2k entry name if found, sample frames, voice slot). */
+#define TRACE_EVT(a, fmt, ...) do {                            \
+    if ((a)->trace || (a)->cmd_count <= 64) {                  \
+        info_report("dcs-audio: " fmt, ##__VA_ARGS__);         \
+    }                                                          \
+} while (0)
+
 /* Process-cmd hook: receives semantic direct-trigger events from
  * p2k-dcs-core (matches Unicorn sound.c sound_process_cmd contract). */
 static void dcs_audio_on_process_cmd(uint16_t cmd)
@@ -437,52 +466,59 @@ static void dcs_audio_on_process_cmd(uint16_t cmd)
     a->cmd_count++;
 
     /* Mirrors Unicorn sound.c sound_process_cmd:
-     *   0x0000        -> halt-all (we just stop starting new voices)
-     *   0x003A        -> boot dong
-     *   0x00AA        -> special 0x0FFF sample
-     *   cmd >= 0x0100 -> normal track lookup
-     *   else          -> nothing (the ACE1/mixer path uses a different
-     *                   hook, so any low-cmd hitting here is genuinely
-     *                   a sound_process_cmd protocol byte). */
+     *   0x0000        -> halt all channels
+     *   0x003A        -> boot dong on channel 0
+     *   0x00AA        -> 0x0FFF special on channel 7
+     *   cmd >= 0x0100 -> normal track on channel (cmd & 7)
+     *   else          -> ignore (protocol byte). */
     if (cmd == 0x0000) {
+        TRACE_EVT(a, "process_cmd 0x0000 → STOP ALL");
+        stop_all_voices(a);
         return;
     }
 
-    uint16_t lookup_cmd = cmd;
-    if (cmd == 0x00AA) {
+    int channel;
+    uint16_t lookup_cmd;
+    if (cmd == 0x003A) {
+        channel = 0;
+        lookup_cmd = 0x003A;
+    } else if (cmd == 0x00AA) {
+        channel = 7;
         lookup_cmd = 0x0FFF;
-    } else if (cmd != 0x003A && cmd < 0x0100) {
+    } else if (cmd >= 0x0100) {
+        channel = cmd & 7;
+        lookup_cmd = cmd;
+    } else {
+        TRACE_EVT(a, "process_cmd 0x%04x → ignored (protocol byte)", cmd);
         return;
     }
 
-    Sample *s = get_sample_for_cmd(a, lookup_cmd);
+    const char *name = NULL;
+    Sample *s = get_sample_for_cmd(a, lookup_cmd, &name);
     if (s) {
-        start_voice(a, s, 255);
+        start_voice_on_channel(a, channel, s, /*vol*/255, /*pan*/0x7F);
         a->played_count++;
-        if (a->played_count <= 16) {
-            info_report("dcs-audio: process_cmd 0x%04x → sample %zu frames "
-                        "(played #%llu)",
-                        cmd, s->frames,
-                        (unsigned long long)a->played_count);
-        }
+        TRACE_EVT(a,
+                  "process_cmd 0x%04x → key=0x%04x name=%s frames=%zu "
+                  "ch=%d vol=255 pan=127 (played #%llu)",
+                  cmd, lookup_cmd, name ? name : "?", s->frames, channel,
+                  (unsigned long long)a->played_count);
     } else {
         a->missed_count++;
-        if (a->missed_count <= 8) {
-            info_report("dcs-audio: process_cmd 0x%04x → trigger w/o pb2k "
-                        "entry (missed #%llu, silent)",
-                        cmd, (unsigned long long)a->missed_count);
-        }
+        TRACE_EVT(a,
+                  "process_cmd 0x%04x → key=0x%04x %s (missed #%llu)",
+                  cmd, lookup_cmd,
+                  name ? "decode-failed" : "no-pb2k-entry",
+                  (unsigned long long)a->missed_count);
     }
 }
 
 /* Execute-mixer hook: ACE1 multi-word accumulator finished.
  * Mirrors Unicorn sound.c sound_execute_mixer:
- *   cmd >> 8 == 0x55  -> vol/pan/global (we just log; mixer state
- *                        is currently not modulating active voices)
- *   else              -> play track (track_cmd=cmd) at vol=(d1>>8),
- *                        pan=(d1 & 0xFF), channel=((d2 & 0x380)>>7).
- * For now we route ALL non-0x55 mixer triples to a sample lookup
- * by cmd, which is the audio-test-menu path the user asked about. */
+ *   cmd >> 8 == 0x55  -> vol/pan/global control
+ *   else              -> sound_play_track(cmd, ch=(d2 & 0x380)>>7,
+ *                                         vol=(d1 >> 8) & 0xFF,
+ *                                         pan=d1 & 0xFF). */
 static void dcs_audio_on_execute_mixer(uint16_t cmd, uint16_t data1,
                                        uint16_t data2)
 {
@@ -491,34 +527,67 @@ static void dcs_audio_on_execute_mixer(uint16_t cmd, uint16_t data1,
     a->cmd_count++;
 
     if ((cmd & 0xFF00) == 0x5500) {
-        /* Volume/pan control: not yet wired into per-voice state. */
-        if (a->cmd_count <= 32) {
-            info_report("dcs-audio: mixer-ctrl 0x%04x d1=0x%04x d2=0x%04x",
-                        cmd, data1, data2);
+        switch (cmd) {
+        case 0x55AA:
+            /* Global volume from data1 (full 16-bit, clip to 8). */
+            a->global_vol = (uint8_t)(data1 > 255 ? 255 : data1);
+            TRACE_EVT(a,
+                      "execute_mixer 0x%04x d1=0x%04x → GLOBAL_VOL=%u",
+                      cmd, data1, a->global_vol);
+            break;
+        case 0x55AB:
+        case 0x55AE: {
+            int ch  = (data1 >> 8) & 0x07;
+            int vol = data1 & 0xFF;
+            a->voices[ch].vol = (uint8_t)vol;
+            TRACE_EVT(a,
+                      "execute_mixer 0x%04x d1=0x%04x → ch%d VOL=%d",
+                      cmd, data1, ch, vol);
+            break;
+        }
+        case 0x55AC: {
+            int ch  = (data1 >> 8) & 0x07;
+            int pan = data1 & 0xFF;
+            a->voices[ch].pan = (uint8_t)pan;
+            TRACE_EVT(a,
+                      "execute_mixer 0x%04x d1=0x%04x → ch%d PAN=%d",
+                      cmd, data1, ch, pan);
+            break;
+        }
+        default:
+            TRACE_EVT(a,
+                      "execute_mixer 0x%04x d1=0x%04x d2=0x%04x → "
+                      "unknown mixer-ctrl",
+                      cmd, data1, data2);
+            break;
         }
         return;
     }
 
-    int vol = (data1 >> 8) & 0xFF;
-    if (vol == 0) vol = 255;             /* default full volume */
+    int channel = (data2 & 0x380) >> 7;
+    int vol     = (data1 >> 8) & 0xFF;
+    int pan     = data1 & 0xFF;
+    if (vol == 0) vol = 255;            /* Unicorn used 0xFF default */
 
-    Sample *s = get_sample_for_cmd(a, cmd);
+    const char *name = NULL;
+    Sample *s = get_sample_for_cmd(a, cmd, &name);
     if (s) {
-        start_voice(a, s, vol);
+        start_voice_on_channel(a, channel, s, vol, pan);
         a->played_count++;
-        if (a->played_count <= 16) {
-            info_report("dcs-audio: mixer-trigger 0x%04x d1=0x%04x d2=0x%04x"
-                        " → sample %zu frames vol=%d (played #%llu)",
-                        cmd, data1, data2, s->frames, vol,
-                        (unsigned long long)a->played_count);
-        }
+        TRACE_EVT(a,
+                  "execute_mixer 0x%04x d1=0x%04x d2=0x%04x → "
+                  "name=%s frames=%zu ch=%d vol=%d pan=%d (played #%llu)",
+                  cmd, data1, data2, name ? name : "?", s->frames,
+                  channel, vol, pan,
+                  (unsigned long long)a->played_count);
     } else {
         a->missed_count++;
-        if (a->missed_count <= 8) {
-            info_report("dcs-audio: mixer-trigger 0x%04x → no pb2k entry "
-                        "(missed #%llu, silent)",
-                        cmd, (unsigned long long)a->missed_count);
-        }
+        TRACE_EVT(a,
+                  "execute_mixer 0x%04x d1=0x%04x d2=0x%04x → "
+                  "key=0x%04x %s (missed #%llu)",
+                  cmd, data1, data2, cmd,
+                  name ? "decode-failed" : "no-pb2k-entry",
+                  (unsigned long long)a->missed_count);
     }
 }
 
@@ -563,6 +632,14 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
     a->enabled = true;
     a->opened  = true;
     a->bong_idx = -1;
+    a->global_vol = 255;     /* full volume until guest sets 0x55AA */
+    a->trace = (getenv("P2K_DCS_AUDIO_TRACE") != NULL);
+    for (int i = 0; i < DCS_VOICES; i++) {
+        a->voices[i].vol = 255;
+        a->voices[i].pan = 0x7F;
+        a->voices[i].active = false;
+        a->voices[i].s = NULL;
+    }
 
     /* Try to mount the pb2kslib container. Failure is non-fatal — the
      * fallback blip path keeps proof-of-path audible. */
