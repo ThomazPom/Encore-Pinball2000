@@ -52,4 +52,8 @@ void p2k_install_dcs(void);
  * savedata/<game>.flash (4 MiB). */
 void p2k_install_bar3_flash(Pinball2000MachineState *s);
 
+/* p2k-pic-fixup.c: keep IRQ0 + cascade force-unmasked once XINU is up
+ * (mirrors unicorn.old/src/io.c:121-127). */
+void p2k_install_pic_fixup(void);
+
 #endif /* HW_PINBALL2000_INTERNAL_H */
