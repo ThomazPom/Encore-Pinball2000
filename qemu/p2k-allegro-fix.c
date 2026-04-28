@@ -1,20 +1,21 @@
 /*
  * ============================================================================
- * STATUS: TEMPORARY SYMPTOM PATCH — replace with proper QEMU device behaviour.
+ * STATUS: DIAGNOSTIC BRIDGE ONLY — opt-in via P2K_ALLEGRO_FIX=1.
  *
- * Why temporary: this module rewrites 4 bytes of the v2.10 game image's
- * `allegro_init` to NULL out a buggy "screen buffer pointer" store.
- * Modifying guest .text from the host is a band-aid; it relies on a
- * fixed instruction pattern. The real fix is to register a graphics
- * driver in the allegro driver list ([0x343e90]) so `set_gfx_mode(1, ...)`
- * succeeds and `gx_fb_init` never reaches the `allegro_exit` cleanup
- * branch in the first place.
+ * The original free_resource(0x35ab28, 1) wrong-type Fatal that this
+ * module worked around has been resolved at the device level by
+ * qemu/p2k-cyrix-ccr.c (commit f44066e): exposing Cyrix CCR index 0xb8
+ * lets the guest derive the correct GX MMIO base (0x40000000), so DC
+ * register reads return real values, mediagx_init succeeds, set_gfx_mode
+ * succeeds, and gx_fb_init never enters the allegro_exit cleanup branch.
  *
- * Removal condition: delete this file once a graphics driver is wired
- * (either by replicating the unicorn behaviour that registers one, or
- * by having QEMU's MediaGX device cause the driver list to populate
- * via the same constructor chain unicorn uses). Until then: kill
- * switch is P2K_NO_ALLEGRO_FIX.
+ * This module is kept as a diagnostic bridge so we can re-enable the
+ * symptom patch on demand if a future regression re-introduces the
+ * same Fatal during triage. It is NOT part of the normal boot path.
+ *
+ * Removal condition: delete once we are confident the device-level fix
+ * (Cyrix CCR + MediaGX MMIO mapping) cannot regress, AND once we have
+ * a regression test that catches a recurrence of the original Fatal.
  *
  * Background — without this patch, boot wedges at:
  *
