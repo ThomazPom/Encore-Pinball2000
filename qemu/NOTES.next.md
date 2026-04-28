@@ -324,13 +324,19 @@ not the new source of truth.
 
 ## Validation Matrix
 
-- [ ] SWE1 base: 5 min no Fatal, UART visible, graphics fluid, controls usable,
+- [~] SWE1 base: 5 min no Fatal, UART visible, graphics fluid, controls usable,
   DCS sound audible, no default symptom patch required.
+  Done: 180s headless run at HEAD (b3c4994), 0 real Fatals, exec_pass
+  reached 0x128b, 162 gameplay events, no interval_0_25ms hang. Still
+  pending in this row: 5-min target, DCS audio, manual controls feel.
 - [ ] SWE1 update: same bar, plus `--update` wrapper path.
-- [ ] RFM base: boot, graphics, UART, watchdog, no obvious game-specific crash.
+- [~] RFM base: boot, graphics, UART, watchdog, no obvious game-specific crash.
+  Done: 180s headless run at HEAD, 0 real Fatals, XINU V7 monitor up.
 - [ ] RFM update: same once update loader supports it.
-- [ ] `P2K_WATCHDOG_SCRIBBLER=0/default`: pass.
-- [ ] `P2K_PIC_FIXUP=0/default`: pass.
+- [x] `P2K_WATCHDOG_SCRIBBLER=0/default`: pass.
+  SWE1 + RFM 180s default boots show 0 watchdog Fatals.
+- [x] `P2K_PIC_FIXUP=0/default`: pass.
+  SWE1 + RFM 180s default boots show 0 PIC-related Fatals.
 - [ ] `P2K_NO_IRQ0_SHIM=1`: eventual experiment, not required until handoff is
   understood.
 - [ ] DCS mode A/B: I/O UART frontend and BAR4 frontend share core; neither
