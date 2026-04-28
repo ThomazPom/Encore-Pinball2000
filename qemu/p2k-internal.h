@@ -47,6 +47,7 @@ void p2k_install_display(void);
 
 /* p2k-dcs.c: DCS audio MMIO state machine on BAR4 (0x13000000, 16 MiB). */
 void p2k_install_dcs(void);
+void p2k_install_dcs_uart(void);
 
 /* p2k-bar3-flash.c: BAR3 update flash @ 0x12000000 seeded from
  * savedata/<game>.flash (4 MiB). */
