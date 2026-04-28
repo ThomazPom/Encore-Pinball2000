@@ -262,7 +262,11 @@ static void p2k_lpt_key_event(DeviceState *dev, QemuConsole *src,
     case Q_KEY_CODE_F12:
         if (down) p2k_lpt_dump_state();
         break;
-    default: break;
+    default:
+        if (down) {
+            fprintf(stderr, "[lpt] unhandled key qcode=%d\n", qcode);
+        }
+        break;
     }
 }
 
