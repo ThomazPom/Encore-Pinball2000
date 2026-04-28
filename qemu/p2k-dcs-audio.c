@@ -428,7 +428,37 @@ static void dcs_audio_on_cmd(uint16_t cmd)
     if (!a->enabled || !a->opened) return;
     a->cmd_count++;
 
-    Sample *s = get_sample_for_cmd(a, cmd);
+    /* Unicorn dispatch (sound.c sound_process_cmd / sound_execute_mixer):
+     *   0x0000        -> halt all
+     *   0x003A        -> boot dong
+     *   0x00AA        -> special 0x0FFF sample
+     *   0x55XX        -> mixer control (vol/pan); data word follows
+     *   cmd >= 0x0100 -> normal track trigger (lookup by cmd)
+     *   else          -> protocol byte (volume/echo/handshake), ignore.
+     * We do not currently parse the (cmd, data1, data2) triples that
+     * Unicorn's sound_execute_mixer handles, so 0x55XX commands and
+     * their following data words simply do not produce audio yet.
+     * Real triggers without a matching pb2k entry are logged at low
+     * verbosity; we no longer emit a synthetic blip for them. */
+    uint16_t lookup_cmd = cmd;
+    bool is_trigger = false;
+    if (cmd == 0x003A) {
+        is_trigger = true;
+    } else if (cmd == 0x00AA) {
+        lookup_cmd = 0x0FFF;
+        is_trigger = true;
+    } else if ((cmd & 0xFF00) == 0x5500) {
+        /* mixer control: vol/pan, no sample to start */
+        return;
+    } else if (cmd >= 0x0100) {
+        is_trigger = true;
+    }
+
+    if (!is_trigger) {
+        return;
+    }
+
+    Sample *s = get_sample_for_cmd(a, lookup_cmd);
     if (s) {
         start_voice(a, s);
         a->played_count++;
@@ -440,15 +470,10 @@ static void dcs_audio_on_cmd(uint16_t cmd)
         }
     } else {
         a->missed_count++;
-        a->blip_freq         = cmd_to_freq(cmd);
-        a->blip_samples_left = DCS_OUT_RATE / 16;       /* 62 ms */
-        a->blip_amp          = 8000;
-        a->blip_phase        = 0.0;
-        if (a->missed_count <= 12) {
-            info_report("dcs-audio: cmd 0x%04x → no sample, blip %u Hz "
-                        "(missed #%llu)",
-                        cmd, a->blip_freq,
-                        (unsigned long long)a->missed_count);
+        if (a->missed_count <= 8) {
+            info_report("dcs-audio: cmd 0x%04x → trigger w/o pb2k entry "
+                        "(missed #%llu, silent)",
+                        cmd, (unsigned long long)a->missed_count);
         }
     }
 }
