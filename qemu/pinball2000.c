@@ -97,6 +97,9 @@ static void pinball2000_init(MachineState *machine)
      * to the guest. */
     p2k_map_rom_windows(s);
     p2k_install_isa_stubs();
+    /* COM1/UART can fire IRQ4 on TX-empty so the guest's con_putc
+     * sem-wait actually returns. Without this, exec hangs in printf. */
+    p2k_isa_set_uart_irq(i8259[4]);
     p2k_install_superio();
     p2k_install_cyrix_ccr();
     p2k_install_pci_stub();

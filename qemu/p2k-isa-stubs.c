@@ -201,7 +201,26 @@ static const MemoryRegionOps p2k_post_ops = {
 
 static uint8_t s_uart_lcr;       /* bit 7 = DLAB */
 static uint8_t s_uart_scr;
+static uint8_t s_uart_ier;       /* bit 0 RDA, bit 1 THRI */
+static bool    s_uart_thri_pending;
 static bool    s_uart_to_stderr;
+static qemu_irq s_uart_irq;      /* ISA IRQ4 line, set by p2k_isa_set_uart_irq */
+
+void p2k_isa_set_uart_irq(qemu_irq irq)
+{
+    s_uart_irq = irq;
+}
+
+static void p2k_uart_update_irq(void)
+{
+    /* THRI fires whenever transmit holding is empty AND IER bit 1 is set.
+     * Our TX is "instant" (we already wrote to stderr) so THRE is always
+     * true after a write — pulse the line. i8259 is edge-triggered for
+     * ISA, so a pulse is sufficient. */
+    if (s_uart_irq && s_uart_thri_pending && (s_uart_ier & 0x02)) {
+        qemu_irq_pulse(s_uart_irq);
+    }
+}
 
 /* Pre-canned RX buffer fed into RBR.  Source: P2K_UART_INPUT env var.
  * Lets us send "continue\r\n" to the XINA monitor without a full chardev. */
@@ -219,8 +238,18 @@ static uint64_t p2k_uart_read(void *opaque, hwaddr addr, unsigned size)
             return c;
         }
         return 0x00;
-    case 1:  return 0x00;        /* IER */
-    case 2:  return 0x01;        /* IIR: no interrupt pending */
+    case 1:  return s_uart_ier;  /* IER */
+    case 2: {                    /* IIR */
+        /* Priority: RX-data > THR-empty > none. THRI clears on read. */
+        if (has_rx && (s_uart_ier & 0x01)) {
+            return 0x04;         /* RDA interrupt */
+        }
+        if (s_uart_thri_pending && (s_uart_ier & 0x02)) {
+            s_uart_thri_pending = false;
+            return 0x02;         /* THR-empty interrupt */
+        }
+        return 0x01;             /* no pending */
+    }
     case 3:  return s_uart_lcr;
     case 4:  return 0x00;        /* MCR */
     case 5:  return has_rx ? 0x61 : 0x60;  /* LSR: DR (if RX) | THRE | TEMT */
@@ -235,10 +264,25 @@ static void p2k_uart_write(void *opaque, hwaddr addr,
 {
     switch (addr) {
     case 0:
-        if (!(s_uart_lcr & 0x80) && s_uart_to_stderr) {
-            uint8_t c = val & 0xFF;
-            fwrite(&c, 1, 1, stderr);
-            fflush(stderr);
+        if (!(s_uart_lcr & 0x80)) {
+            if (s_uart_to_stderr) {
+                uint8_t c = val & 0xFF;
+                fwrite(&c, 1, 1, stderr);
+                fflush(stderr);
+            }
+            /* TX is instant — flag THR-empty so the next IIR read (or our
+             * pulse below) signals the guest. */
+            s_uart_thri_pending = true;
+            p2k_uart_update_irq();
+        }
+        break;
+    case 1:
+        if (!(s_uart_lcr & 0x80)) {
+            s_uart_ier = val & 0x0F;
+            /* Newly enabled THRI on an already-empty transmitter must fire
+             * an interrupt immediately (16550 semantics). */
+            s_uart_thri_pending = true;
+            p2k_uart_update_irq();
         }
         break;
     case 3:
@@ -275,7 +319,21 @@ void p2k_install_isa_stubs(void)
 {
     MemoryRegion *io = get_system_io();
 
-    s_uart_to_stderr = (getenv("P2K_UART_TO_STDERR") != NULL);
+    /* UART/XINA mirror to host stderr is ON by default so Fatal/NonFatal/
+     * monitor output is visible during bring-up without remembering an
+     * env var. Set P2K_NO_UART_STDERR=1 to silence. P2K_UART_TO_STDERR
+     * still works as an explicit override. */
+    {
+        const char *off = getenv("P2K_NO_UART_STDERR");
+        const char *on  = getenv("P2K_UART_TO_STDERR");
+        if (off && *off && off[0] != '0') {
+            s_uart_to_stderr = false;
+        } else if (on && *on && on[0] != '0') {
+            s_uart_to_stderr = true;
+        } else {
+            s_uart_to_stderr = true;  /* default ON */
+        }
+    }
     s_uart_input     = getenv("P2K_UART_INPUT");  /* e.g. "continue\r\n" */
 
     p2k_iostub(io, "p2k.i8042-data",   0x60,  1, &p2k_kbd_ops);

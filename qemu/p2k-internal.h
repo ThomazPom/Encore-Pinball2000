@@ -9,6 +9,7 @@
 #include "qemu/osdep.h"
 #include "hw/boards.h"
 #include "hw/i386/x86.h"
+#include "hw/irq.h"
 #include "qom/object.h"
 
 #include "pinball2000.h"
@@ -43,6 +44,7 @@ void p2k_map_rom_windows(Pinball2000MachineState *s);
 
 /* p2k-isa-stubs.c: minimal i8042 etc. so PRISM polling loops terminate. */
 void p2k_install_isa_stubs(void);
+void p2k_isa_set_uart_irq(qemu_irq irq);
 void p2k_install_pci_stub(void);
 void p2k_install_plx_bars(Pinball2000MachineState *s);
 
