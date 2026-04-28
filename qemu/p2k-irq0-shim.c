@@ -39,7 +39,7 @@
 #include "p2k-internal.h"
 
 #define P2K_IRQ0_SHIM_ADDR  0x00000500u
-#define P2K_IRQ0_SHIM_POLL  (1 * 1000 * 1000)     /* 1 ms */
+#define P2K_IRQ0_SHIM_POLL  (200 * 1000)          /* 0.2 ms — re-poll fast */
 
 static const uint8_t p2k_irq0_shim_code[5] = {
     0xB0, 0x20,           /* mov al, 0x20      */
@@ -72,36 +72,35 @@ static bool p2k_idt_loaded(CPUX86State **out_env)
 static void p2k_irq0_shim_tick(void *opaque)
 {
     CPUX86State *env = NULL;
-    if (!p2k_irq0_shim_installed && p2k_pic_ready() && p2k_idt_loaded(&env)) {
-        /* Write the EOI+IRET stub to low RAM. */
-        cpu_physical_memory_write(P2K_IRQ0_SHIM_ADDR,
-                                  p2k_irq0_shim_code,
-                                  sizeof(p2k_irq0_shim_code));
-
-        /* Patch IDT[0x20]:
-         *   bytes 0..1 = offset_lo
-         *   bytes 2..3 = selector
-         *   byte  4    = zero
-         *   byte  5    = type/attr
-         *   bytes 6..7 = offset_hi
-         * Read the current entry, replace only the offset, keep selector
-         * and attributes that XINU set up. */
+    if (p2k_pic_ready() && p2k_idt_loaded(&env)) {
         uint32_t idt_off = env->idt.base + 0x20 * 8;
         uint8_t  gate[8];
         cpu_physical_memory_read(idt_off, gate, sizeof(gate));
+        uint32_t cur_off = gate[0] | (gate[1] << 8) |
+                           (gate[6] << 16) | (gate[7] << 24);
 
-        gate[0] = (uint8_t)(P2K_IRQ0_SHIM_ADDR & 0xff);
-        gate[1] = (uint8_t)((P2K_IRQ0_SHIM_ADDR >> 8) & 0xff);
-        gate[6] = (uint8_t)((P2K_IRQ0_SHIM_ADDR >> 16) & 0xff);
-        gate[7] = (uint8_t)((P2K_IRQ0_SHIM_ADDR >> 24) & 0xff);
-
-        cpu_physical_memory_write(idt_off, gate, sizeof(gate));
-        p2k_irq0_shim_installed = true;
-        info_report("pinball2000: IRQ0 EOI+IRET shim installed at 0x%x; "
-                    "IDT[0x20] redirected (will be overridden by clkint)",
-                    P2K_IRQ0_SHIM_ADDR);
-        /* One-shot: do not re-arm. */
-        return;
+        /* Always force IDT[0x20] -> our EOI+IRET shim until we have a
+         * heuristic that can distinguish XINU's autogen panic dispatcher
+         * from real clkint(). XINU's autogen stubs are dispatcher-style
+         * `push <vector>; jmp <handler>` — they panic on any IRQ0 edge.
+         * The real clkint is installed much later by clkinit(); when
+         * audio/video phases come on-line we'll relax this gate. */
+        if (cur_off != P2K_IRQ0_SHIM_ADDR) {
+            cpu_physical_memory_write(P2K_IRQ0_SHIM_ADDR,
+                                      p2k_irq0_shim_code,
+                                      sizeof(p2k_irq0_shim_code));
+            gate[0] = (uint8_t)(P2K_IRQ0_SHIM_ADDR & 0xff);
+            gate[1] = (uint8_t)((P2K_IRQ0_SHIM_ADDR >> 8) & 0xff);
+            gate[6] = (uint8_t)((P2K_IRQ0_SHIM_ADDR >> 16) & 0xff);
+            gate[7] = (uint8_t)((P2K_IRQ0_SHIM_ADDR >> 24) & 0xff);
+            cpu_physical_memory_write(idt_off, gate, sizeof(gate));
+            if (!p2k_irq0_shim_installed) {
+                info_report("pinball2000: IRQ0 EOI+IRET shim installed at "
+                            "0x%x; IDT[0x20] held to shim",
+                            P2K_IRQ0_SHIM_ADDR);
+                p2k_irq0_shim_installed = true;
+            }
+        }
     }
     timer_mod(p2k_irq0_shim_timer,
               qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + P2K_IRQ0_SHIM_POLL);

@@ -94,20 +94,37 @@ static bool p2k_xinu_ready(void)
 static void p2k_pic_fixup_tick(void *opaque)
 {
     if (isa_pic && p2k_xinu_ready()) {
+        /* Strict gate: IDT[0x20] must point to our EOI+IRET shim at 0x500
+         * before we unmask IRQ0. Otherwise a stray PIT edge would dispatch
+         * into XINU's autogen panic stub (or, worse, garbage). The shim
+         * installer (p2k-irq0-shim.c) holds IDT[0x20] = 0x500 indefinitely
+         * for now, so this gate effectively means "wait until the shim is
+         * in place". */
+        CPUState *cs;
+        bool gated = true;
+        CPU_FOREACH(cs) {
+            X86CPU *cpu = X86_CPU(cs);
+            uint32_t off = p2k_read_idt20(&cpu->env);
+            if (off == 0x500u) {
+                gated = false;
+            }
+            break;
+        }
+        if (gated) {
+            goto rearm;
+        }
+
         if (!p2k_xinu_ready_logged) {
             info_report("pinball2000: PIC fix-up active "
                         "(IRQ0+cascade force-unmask, mirrors unicorn.old)");
             p2k_xinu_ready_logged = true;
         }
         if (isa_pic->imr & P2K_FORCED_UNMASK) {
-            /* Route through the official write handler so the i8259 does
-             * its IRR/ISR re-evaluation and forwards a pending IRQ to the
-             * CPU.  cpu_outb is safe — we are not the registered handler
-             * for port 0x21. */
             uint8_t newval = isa_pic->imr & ~P2K_FORCED_UNMASK;
             cpu_outb(0x21, newval);
         }
     }
+rearm:
     timer_mod(p2k_pic_fixup_timer,
               qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + P2K_PIC_FIXUP_NS);
 }
