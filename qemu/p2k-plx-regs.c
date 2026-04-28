@@ -206,7 +206,14 @@ static uint64_t p2k_plx_read(void *opaque, hwaddr addr, unsigned size)
 
     switch (off) {
     case 0x4C:                          /* INTCSR */
-        val = (val & ~0x04u) | 0x20u;   /* bit2=0, bit5=1 (PLX ready) */
+        /* Per disasm of pci_watchdog_bone() in SWE1 v2.10 (caller at
+         * 0x1a6f48, body at 0x1a6fa8): the function returns 1 iff
+         * (probe()==1 AND INTCSR bit2 == 0), and the *caller* fires
+         * "pci_watchdog_bone(): the watchdog has expired" Fatal when
+         * bone()==1.  So bit 2 = 1 means "no watchdog action needed"
+         * and bit 2 = 0 means "trigger Fatal".  Force bit2=1 and bit5=1
+         * (PLX ready). Replaces the unicorn RAM scribbler. */
+        val = val | 0x04u | 0x20u;
         break;
     case 0x50:                          /* CNTRL */
         val &= ~0x1F000000u;

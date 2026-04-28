@@ -175,19 +175,28 @@ static void p2k_wd_tick(void *opaque)
 
 void p2k_install_watchdog(void)
 {
-    if (getenv("P2K_NO_WATCHDOG")) {
-        info_report("pinball2000: watchdog scribbler DISABLED via env");
+    /* DEFAULT OFF: pci_watchdog_bone() now returns 0 ("no Fatal needed")
+     * naturally because PLX BAR0 INTCSR[bit 2]=1 (see qemu/p2k-plx-regs.c
+     * commit "qemu: PLX INTCSR bit2=1 ..."). The RAM scribbler is kept
+     * only as an opt-in safety net during further bring-up:
+     *     P2K_WATCHDOG_SCRIBBLER=1  -> re-enable.
+     * It will be deleted entirely once a few more boot scenarios (RFM,
+     * different update images) confirm the PLX path is sufficient. */
+    const char *force_off = getenv("P2K_NO_WATCHDOG");
+    const char *force_on  = getenv("P2K_WATCHDOG_SCRIBBLER");
+    bool enable = (force_on && *force_on && force_on[0] != '0');
+    if (force_off && *force_off && force_off[0] != '0') {
+        enable = false;
+    }
+    if (!enable) {
+        info_report("pinball2000: watchdog scribbler OFF (PLX INTCSR bit2=1 "
+                    "now satisfies pci_watchdog_bone naturally; opt-in via "
+                    "P2K_WATCHDOG_SCRIBBLER=1)");
         return;
     }
-    /* Re-armed: scribble the watchdog/dcs_probe cell (NOT the PCI sentinel
-     * cells at 0x2f0414/0x2f0418/0x2f041c/0x2f0420 — those are populated
-     * naturally by pci_probe now that PLX 9050 is exposed at dev9).
-     * The watchdog cell is the one referenced by pci_watchdog_bone()'s
-     * dcs_probe inner CMP — keeping it 0xFFFF makes the watchdog return
-     * "alive" so the game doesn't fault into the monitor> prompt. */
     p2k_wd_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, p2k_wd_tick, NULL);
     timer_mod(p2k_wd_timer,
               qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + P2K_WD_PRIME_DELAY_NS);
     info_report("pinball2000: watchdog scribbler armed "
-                "(skips PCI sentinels 0x2f0414..0x2f0420)");
+                "(opt-in via P2K_WATCHDOG_SCRIBBLER, skips PCI sentinels)");
 }
