@@ -125,6 +125,18 @@ typedef struct DcsAudio {
     uint64_t      cmd_by_uart_bp;
     uint64_t      cmd_by_other;
 
+    /* "played-but-never-rendered" detector.  We snapshot the played
+     * counter + the last play info on each successful start, and on
+     * the per-second status tick we check whether new plays appeared
+     * while peak stayed zero and active dropped to zero — meaning the
+     * voice was started and then disappeared before any callback
+     * actually saw it. */
+    uint64_t      last_played_count;
+    uint16_t      last_played_cmd;
+    const char   *last_played_name;
+    int           last_played_ch;
+    uint64_t      last_played_start_cb;
+
     /* startup hello + fallback blip */
     uint32_t      blip_freq;
     uint32_t      blip_samples_left;
@@ -395,9 +407,11 @@ static void start_voice_on_channel(DcsAudio *a, int ch, const Sample *s,
         /* Replacement: the old voice is being preempted by a new one
          * on the same channel.  Emit a one-line bucket-5 trace. */
         info_report("dcs-audio: ch%d REPLACE old(cmd=0x%04x name=%s "
-                    "pos=%zu/%zu vol=%u) ← new(cmd=0x%04x name=%s vol=%d)",
+                    "pos=%zu/%zu vol=%u cb_elapsed=%llu) ← "
+                    "new(cmd=0x%04x name=%s vol=%d)",
                     ch, vc->cmd, vc->name ? vc->name : "?",
                     vc->pos, vc->s->frames, vc->vol,
+                    (unsigned long long)(a->callbacks - vc->started_at_cb),
                     cmd, name ? name : "?", vol_8bit);
     }
     vc->s              = s;
@@ -408,6 +422,12 @@ static void start_voice_on_channel(DcsAudio *a, int ch, const Sample *s,
     vc->cmd            = cmd;
     vc->name           = name;
     vc->started_at_cb  = a->callbacks;
+    /* Remember last successful play for the played-but-never-rendered
+     * detector in the status tick. */
+    a->last_played_cmd      = cmd;
+    a->last_played_name     = name;
+    a->last_played_ch       = ch;
+    a->last_played_start_cb = a->callbacks;
 }
 
 static void stop_all_voices(DcsAudio *a)
@@ -416,9 +436,10 @@ static void stop_all_voices(DcsAudio *a)
         Voice *vc = &a->voices[i];
         if (vc->active && vc->s) {
             info_report("dcs-audio: ch%d STOP-ALL was(cmd=0x%04x name=%s "
-                        "pos=%zu/%zu)",
+                        "pos=%zu/%zu cb_elapsed=%llu)",
                         i, vc->cmd, vc->name ? vc->name : "?",
-                        vc->pos, vc->s->frames);
+                        vc->pos, vc->s->frames,
+                        (unsigned long long)(a->callbacks - vc->started_at_cb));
         }
         vc->s = NULL;
         vc->active = false;
@@ -447,9 +468,10 @@ static void render(DcsAudio *a, int16_t *out, int frames)
             if (!vc->active || !vc->s) continue;
             if (vc->pos >= vc->s->frames) {
                 info_report("dcs-audio: ch%d END  (cmd=0x%04x name=%s "
-                            "frames=%zu)",
+                            "frames=%zu cb_elapsed=%llu)",
                             v, vc->cmd, vc->name ? vc->name : "?",
-                            vc->s->frames);
+                            vc->s->frames,
+                            (unsigned long long)(a->callbacks - vc->started_at_cb));
                 vc->s = NULL;
                 vc->active = false;
                 continue;
@@ -707,6 +729,25 @@ static void dcs_audio_status_tick(void *opaque)
                         i, vc->cmd, vc->name ? vc->name : "?",
                         vc->pos, vc->s->frames, vc->vol, vc->pan);
         }
+        /* Played-but-never-rendered: new plays appeared in the last
+         * second but the mixer never produced a non-zero sample and
+         * has no active voices.  Strong signal that a voice started
+         * and was killed/ended before the audio callback saw it. */
+        if (a->played_count > a->last_played_count
+            && n_active == 0
+            && a->peak_mix_abs == 0) {
+            info_report("dcs-audio: WARN played-but-never-rendered "
+                        "delta=%llu last=ch%d cmd=0x%04x name=%s "
+                        "start_cb=%llu now_cb=%llu",
+                        (unsigned long long)(a->played_count
+                                             - a->last_played_count),
+                        a->last_played_ch,
+                        a->last_played_cmd,
+                        a->last_played_name ? a->last_played_name : "?",
+                        (unsigned long long)a->last_played_start_cb,
+                        (unsigned long long)a->callbacks);
+        }
+        a->last_played_count = a->played_count;
         a->peak_mix_abs = 0;            /* reset window */
     }
     timer_mod(a->status_timer,
