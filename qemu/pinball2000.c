@@ -103,6 +103,7 @@ static void pinball2000_init(MachineState *machine)
     p2k_install_bar3_flash(s);
     p2k_install_dcs();
     p2k_install_dcs_uart();
+    p2k_install_lpt_board();
     p2k_install_gx_stub();
     p2k_install_display();
     p2k_install_pic_fixup();

@@ -55,6 +55,10 @@ void p2k_install_display(void);
 void p2k_install_dcs(void);
 void p2k_install_dcs_uart(void);
 
+/* p2k-lpt-board.c: minimal LPT driver-board protocol on 0x378-0x37A
+ * (STATUS=0x87 signature + edge-detect dispatch, all inputs idle). */
+void p2k_install_lpt_board(void);
+
 /* p2k-bar3-flash.c: BAR3 update flash @ 0x12000000 seeded from
  * savedata/<game>.flash (4 MiB). */
 void p2k_install_bar3_flash(Pinball2000MachineState *s);
