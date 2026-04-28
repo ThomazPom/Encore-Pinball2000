@@ -254,6 +254,10 @@ static void p2k_lpt_key_event(DeviceState *dev, QemuConsole *src,
     case Q_KEY_CODE_C:                               /* coin slot 1 */
         if (down) s_phys8_coin_slots |=  (1u << 0);
         else      s_phys8_coin_slots &= ~(1u << 0);
+        fprintf(stderr, "[lpt] coin slot 1 %s (phys8=0x%02x door=%s)\n",
+                down ? "PRESSED" : "released",
+                s_phys8_coin_slots,
+                s_coin_door_closed ? "CLOSED" : "OPEN");
         break;
     case Q_KEY_CODE_F12:
         if (down) p2k_lpt_dump_state();

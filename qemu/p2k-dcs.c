@@ -42,6 +42,7 @@ static uint64_t p2k_dcs_read(void *opaque, hwaddr off, unsigned size)
 static void p2k_dcs_write(void *opaque, hwaddr off, uint64_t val,
                           unsigned size)
 {
+    static unsigned dropped_log = 0;
     if (off == 0) {
         if (size == 1) {
             p2k_dcs_core_set_echo(val & 0xFFu);
@@ -51,7 +52,14 @@ static void p2k_dcs_write(void *opaque, hwaddr off, uint64_t val,
         p2k_dcs_core_write_cmd(val & 0xFFFFu);
         return;
     }
-    /* off == 2 (flags) and everything else: writes are no-ops */
+    /* off == 2 (flags) and everything else: writes are no-ops.
+     * Log first 16 to catch attract-mode/credit-insert paths poking
+     * unexpected offsets we may need to honour. */
+    if (getenv("P2K_DCS_AUDIO_TRACE") && dropped_log < 16) {
+        warn_report("dcs-bar4: dropped write off=0x%" HWADDR_PRIx
+                    " size=%u val=0x%" PRIx64, off, size, val);
+        dropped_log++;
+    }
 }
 
 static const MemoryRegionOps p2k_dcs_ops = {
