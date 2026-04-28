@@ -94,12 +94,16 @@ QEMU_BIN=~/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386
 $QEMU_BIN -M pinball2000,game=swe1,roms-dir=$PWD/roms -m 16 -display sdl
 ```
 
-Useful env vars:
+Useful env vars (defaults reflect the post-bring-up state, see
+`qemu/NOTES.next.v2.md` for status of each temporary patch):
 
-| Var                            | Effect                                              |
-|--------------------------------|-----------------------------------------------------|
-| `P2K_UART_TO_STDERR=1`         | Mirror COM1 UART to host stderr                     |
-| `P2K_NO_IRQ0_SHIM=1`           | Disable IDT[0x20] shim                              |
-| `P2K_NO_PIC_FIXUP=1`           | Disable PIC IMR force-unmask timer                  |
-| `P2K_NO_WATCHDOG=1`            | Disable RAM-scribble watchdog suppressor            |
-| `P2K_NO_MEM_DETECT_PATCH=1`    | Disable BT-130 mem_detect prologue rewrite          |
+| Var                            | Default | Effect                                                                |
+|--------------------------------|---------|-----------------------------------------------------------------------|
+| `P2K_NO_UART_STDERR=1`         | OFF     | Silence COM1/UART mirror on host stderr (mirror is ON by default so Fatal/NonFatal/monitor output is visible without env tweaks). |
+| `P2K_UART_TO_STDERR=1`         | n/a     | Legacy explicit-on switch; same effect as the default — kept for compatibility. |
+| `P2K_PIC_FIXUP=1`              | OFF     | Re-arm the legacy 250µs IRQ0/cascade unmask timer. The timer is OFF by default since `b20f39b`; opt-in only as a regression fallback. |
+| `P2K_NO_PIC_FIXUP=1`           | OFF     | Force the legacy PIC fix-up timer off even if `P2K_PIC_FIXUP=1` is set (the override switch always wins). |
+| `P2K_NO_IRQ0_SHIM=1`           | OFF     | Disable the temporary IDT[0x20] EOI+IRET shim (the shim self-retires once XINU's `clkint` is installed). |
+| `P2K_WATCHDOG_SCRIBBLER=1`     | OFF     | Re-enable the legacy RAM-scribble watchdog suppressor. The PLX INTCSR bit2=1 path in `256cea1` retired this; opt-in only as a regression fallback. |
+| `P2K_NO_WATCHDOG=1`            | OFF     | Force the watchdog scribbler off even when `P2K_WATCHDOG_SCRIBBLER=1` is set. |
+| `P2K_NO_MEM_DETECT_PATCH=1`    | OFF     | Disable BT-130 mem_detect prologue rewrite                            |

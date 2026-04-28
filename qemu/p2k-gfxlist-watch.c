@@ -4,8 +4,9 @@
  * Purpose: investigate why the v2.10 game's pre-initialised
  * `_gfx_driver_list` array at 0x343e8c reads as zero at runtime,
  * causing set_gfx_mode(1, ...) to return -1 and gx_fb_init to take
- * the allegro_exit cleanup branch (which then triggers the
- * free_resource Fatal — see p2k-allegro-fix.c).
+ * the allegro_exit cleanup branch (which then triggered the
+ * free_resource Fatal historically — that Fatal is now resolved at
+ * the device level by qemu/p2k-cyrix-ccr.c, commit f44066e).
  *
  * In the v2.10 image .data segment, the array is initialised to:
  *
