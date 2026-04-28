@@ -82,7 +82,29 @@ static uint8_t s_cmos_data[128];
 static uint64_t p2k_cmos_read(void *opaque, hwaddr addr, unsigned size)
 {
     if (addr == 0) return s_cmos_addr;
-    return s_cmos_data[s_cmos_addr & 0x7F];
+    uint8_t reg = s_cmos_addr & 0x7F;
+    /* Mirror unicorn.old/src/io.c:1692-1711: live time on RTC reg reads. */
+    if (reg <= 0x09 || reg == 0x32) {
+        time_t t = time(NULL);
+        struct tm *tm = localtime(&t);
+        #define BCD(v) (uint8_t)((((v)/10)<<4) | ((v)%10))
+        s_cmos_data[0x00] = BCD(tm->tm_sec);
+        s_cmos_data[0x02] = BCD(tm->tm_min);
+        s_cmos_data[0x04] = BCD(tm->tm_hour);
+        s_cmos_data[0x06] = BCD(tm->tm_wday ? tm->tm_wday : 7);
+        s_cmos_data[0x07] = BCD(tm->tm_mday);
+        s_cmos_data[0x08] = BCD(tm->tm_mon + 1);
+        s_cmos_data[0x09] = BCD(tm->tm_year % 100);
+        s_cmos_data[0x32] = BCD((tm->tm_year + 1900) / 100);
+        /* Status register A: bit 7 = UIP (update-in-progress) — must
+         * be 0 most of the time so reads aren't gated.  Status B: BCD
+         * mode + 24h clock = 0x02. */
+        s_cmos_data[0x0A] = 0x26;   /* 32 kHz / 1024 Hz, UIP=0 */
+        s_cmos_data[0x0B] = 0x02;
+        s_cmos_data[0x0D] = 0x80;   /* battery valid */
+        #undef BCD
+    }
+    return s_cmos_data[reg];
 }
 
 static void p2k_cmos_write(void *opaque, hwaddr addr,
