@@ -24,6 +24,7 @@ typedef struct Pinball2000MachineState {
     uint8_t         *bank2;
     uint8_t         *bank3;
     uint8_t         *dcs_rom;       /* 8 MiB DCS sound, NULL if absent */
+    void            *pit;           /* ISADevice* for the QEMU i8254 (debug) */
 } Pinball2000MachineState;
 
 DECLARE_INSTANCE_CHECKER(Pinball2000MachineState, PINBALL2000_MACHINE,
@@ -92,5 +93,10 @@ void p2k_install_mem_detect(void);
 
 /* p2k-nic-dseg.c: BT-131 — seed SMC8216T LAN-ROM shadow at 0xD0008. */
 void p2k_install_nic_dseg(void);
+
+/* p2k-diag.c: read-only diagnostic sampler — periodically logs PIT
+ * channel programming, PIC IMR/ISR/IRR, RTC index, and IDT[0x20]/[0x28].
+ * Active only when env P2K_DIAG=1.  No effect on guest execution. */
+void p2k_install_diag(Pinball2000MachineState *s);
 
 #endif /* HW_PINBALL2000_INTERNAL_H */

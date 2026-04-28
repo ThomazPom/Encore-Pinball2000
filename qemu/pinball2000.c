@@ -81,7 +81,7 @@ static void pinball2000_init(MachineState *machine)
     i8259 = i8259_init(isa_bus, x86_allocate_cpu_irq());
     isa_bus_register_input_irqs(isa_bus, i8259);
 
-    i8254_pit_init(isa_bus, 0x40, 0, NULL);
+    s->pit = i8254_pit_init(isa_bus, 0x40, 0, NULL);
 
     /* Load game ROM bank0 (chips u100 + u101 interleaved). */
     if (p2k_load_bank0(s) < 0) {
@@ -113,6 +113,7 @@ static void pinball2000_init(MachineState *machine)
     p2k_install_vsync();
     p2k_install_watchdog();
     p2k_install_mem_detect();
+    p2k_install_diag(s);
 
     /* Arrange the PM-entry reset recipe to fire after every system reset. */
     qemu_register_reset(p2k_post_reset, s);
