@@ -90,23 +90,42 @@ static bool p2k_idt_loaded(CPUX86State **out_env)
     return false;
 }
 
+/* Heuristic: is the IDT[0x20] target the XINU autogen panic dispatcher?
+ * That stub starts with the unmistakable signature
+ *   55 89 E5 60 6A 20 E9 ?? ?? ?? ??
+ *   (push ebp; mov ebp,esp; pusha; push 0x20; jmp <ko>)
+ * Any other target — including a future real clkint installed by
+ * XINU's clkinit() — is left alone, so the shim self-retires when the
+ * guest is finally ready. */
+static bool p2k_idt20_is_panic_stub(uint32_t off)
+{
+    static const uint8_t sig[7] = {
+        0x55, 0x89, 0xE5, 0x60, 0x6A, 0x20, 0xE9
+    };
+    if (off < 0x100000 || off > 0x00f00000) {
+        return false;
+    }
+    uint8_t buf[7];
+    cpu_physical_memory_read(off, buf, sizeof(buf));
+    return memcmp(buf, sig, sizeof(sig)) == 0;
+}
+
+static bool p2k_shim_active = true;   /* flipped to false on self-retire */
+
 static void p2k_irq0_shim_tick(void *opaque)
 {
     CPUX86State *env = NULL;
-    if (p2k_pic_ready() && p2k_idt_loaded(&env)) {
+    if (p2k_shim_active && p2k_pic_ready() && p2k_idt_loaded(&env)) {
         uint32_t idt_off = env->idt.base + 0x20 * 8;
         uint8_t  gate[8];
         cpu_physical_memory_read(idt_off, gate, sizeof(gate));
         uint32_t cur_off = gate[0] | (gate[1] << 8) |
                            (gate[6] << 16) | (gate[7] << 24);
 
-        /* Always force IDT[0x20] -> our EOI+IRET shim until we have a
-         * heuristic that can distinguish XINU's autogen panic dispatcher
-         * from real clkint(). XINU's autogen stubs are dispatcher-style
-         * `push <vector>; jmp <handler>` — they panic on any IRQ0 edge.
-         * The real clkint is installed much later by clkinit(); when
-         * audio/video phases come on-line we'll relax this gate. */
-        if (cur_off != P2K_IRQ0_SHIM_ADDR) {
+        bool is_shim = (cur_off == P2K_IRQ0_SHIM_ADDR);
+        bool is_panic = !is_shim && p2k_idt20_is_panic_stub(cur_off);
+
+        if (is_panic) {
             cpu_physical_memory_write(P2K_IRQ0_SHIM_ADDR,
                                       p2k_irq0_shim_code,
                                       sizeof(p2k_irq0_shim_code));
@@ -117,10 +136,16 @@ static void p2k_irq0_shim_tick(void *opaque)
             cpu_physical_memory_write(idt_off, gate, sizeof(gate));
             if (!p2k_irq0_shim_installed) {
                 info_report("pinball2000: IRQ0 EOI+IRET shim installed at "
-                            "0x%x; IDT[0x20] held to shim",
-                            P2K_IRQ0_SHIM_ADDR);
+                            "0x%x; IDT[0x20] redirected from panic stub "
+                            "0x%08x", P2K_IRQ0_SHIM_ADDR, cur_off);
                 p2k_irq0_shim_installed = true;
             }
+        } else if (!is_shim) {
+            /* Guest installed a real clkint (or any non-panic handler).
+             * Step aside permanently — let the natural PIT path run. */
+            info_report("pinball2000: IRQ0 shim retiring — guest installed "
+                        "a real handler at IDT[0x20]=0x%08x", cur_off);
+            p2k_shim_active = false;
         }
     }
     timer_mod(p2k_irq0_shim_timer,
@@ -129,6 +154,11 @@ static void p2k_irq0_shim_tick(void *opaque)
 
 void p2k_install_irq0_shim(void)
 {
+    const char *off = getenv("P2K_NO_IRQ0_SHIM");
+    if (off && *off && off[0] != '0') {
+        info_report("pinball2000: IRQ0 shim disabled by P2K_NO_IRQ0_SHIM");
+        return;
+    }
     p2k_irq0_shim_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,
                                        p2k_irq0_shim_tick, NULL);
     timer_mod(p2k_irq0_shim_timer,
