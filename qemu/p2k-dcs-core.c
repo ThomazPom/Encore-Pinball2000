@@ -55,7 +55,18 @@ typedef struct {
 static DcsCore s_core;
 
 /* Optional audio sink registered by p2k-dcs-audio.c. NULL = silent. */
-void (*p2k_dcs_core_audio_hook)(uint16_t cmd) = NULL;
+/* Semantic audio hooks. Replaces the old single raw-cmd hook so the
+ * audio backend sees the same shape Unicorn's sound.c saw:
+ *   process_cmd(cmd)               -- direct sound triggers (Unicorn
+ *                                     sound_process_cmd path)
+ *   execute_mixer(cmd, d1, d2)     -- result of an ACE1 multi-word
+ *                                     accumulator (Unicorn
+ *                                     sound_execute_mixer path)
+ * NULL by default; p2k-dcs-audio.c installs sinks when audio is on. */
+void (*p2k_dcs_core_audio_process_cmd)(uint16_t cmd) = NULL;
+void (*p2k_dcs_core_audio_execute_mixer)(uint16_t cmd,
+                                         uint16_t data1,
+                                         uint16_t data2) = NULL;
 
 static void core_push(uint16_t v)
 {
@@ -117,12 +128,6 @@ void p2k_dcs_core_write_cmd(uint16_t cmd)
 {
     s_core.cnt_cmd++;
 
-    /* Optional audio-backend hook. NULL by default; p2k-dcs-audio.c
-     * registers a sink when P2K_DCS_AUDIO=1. */
-    if (p2k_dcs_core_audio_hook) {
-        p2k_dcs_core_audio_hook(cmd);
-    }
-
     /* Active (0x0E) suspend: only another 0x0E exits, then ack */
     if (s_core.active) {
         if (cmd == 0x0E) {
@@ -153,8 +158,12 @@ void p2k_dcs_core_write_cmd(uint16_t cmd)
         if (s_core.mixer[0] == 999 || s_core.mixer[0] == 1000) {
             core_push(0x100);
             core_push(0x10);
+        } else if (p2k_dcs_core_audio_execute_mixer) {
+            uint16_t m0 = (uint16_t)s_core.mixer[0];
+            uint16_t m1 = (uint16_t)(s_core.layer > 1 ? s_core.mixer[1] : 0);
+            uint16_t m2 = (uint16_t)(s_core.layer > 2 ? s_core.mixer[2] : 0);
+            p2k_dcs_core_audio_execute_mixer(m0, m1, m2);
         }
-        /* real sample dispatch deferred: no audio backend yet. */
         s_core.pending   = 0;
         s_core.layer     = 0;
         s_core.remaining = 0;
@@ -170,6 +179,9 @@ void p2k_dcs_core_write_cmd(uint16_t cmd)
     case 0x3A:
         core_push(0xCC01);
         core_push(10);
+        if (p2k_dcs_core_audio_process_cmd) {
+            p2k_dcs_core_audio_process_cmd(0x003A);
+        }
         break;
     case 0x1B:
         core_push(0xCC09);
@@ -178,6 +190,9 @@ void p2k_dcs_core_write_cmd(uint16_t cmd)
     case 0xAA:
         core_push(0xCC04);
         core_push(10);
+        if (p2k_dcs_core_audio_process_cmd) {
+            p2k_dcs_core_audio_process_cmd(0x00AA);
+        }
         break;
     case 0x0E:
         s_core.active  = 1;
@@ -189,7 +204,10 @@ void p2k_dcs_core_write_cmd(uint16_t cmd)
         core_push(0x0C);
         break;
     default:
-        /* Sound playback opcodes consume silently. */
+        /* Direct sound trigger (matches Unicorn sound_process_cmd default). */
+        if (p2k_dcs_core_audio_process_cmd) {
+            p2k_dcs_core_audio_process_cmd(cmd);
+        }
         break;
     }
 }

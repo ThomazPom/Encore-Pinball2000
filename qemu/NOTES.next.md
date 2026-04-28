@@ -373,17 +373,25 @@ not the new source of truth.
   concurrent voices into the QEMU `SWVoiceOut` callback. Cached per
   `track_cmd`. Build script (`scripts/build-qemu.sh`) injects a meson
   `dependency('vorbisfile', required: false)` so the link is
-  automatic when libvorbis is installed. Verified: SWE1 default
-  headless run loads 689 entries from `swe1_sound.bin`, decodes and
-  plays 12 distinct samples in ~45 s including the long boot-music
-  track (cmd 0x000e, 2 286 846 frames ≈ 52 s at 44.1 kHz). 0 Fatals.
-- [~] DCS protocol-byte filtering. The fallback blip path still fires
-  for cmds that have no matching pb2k entry (volume/echo/handshake
-  bytes such as 0x7F, 0x00, 0x90, 0x48, 0x4F, 0x80, 0x28). Drop the
-  blip default once the dispatch knows which cmds are sample triggers
-  vs control bytes. Reference: `unicorn.old/src/sound.c` track_vol /
-  track_pan command parsing. Removal condition: blip path only logs,
-  does not emit audio.
+  automatic when libvorbis is installed.
+
+  Dispatch is now driven by **semantic events** emitted from
+  `p2k-dcs-core` (matching Unicorn's split between
+  `sound_process_cmd` and `sound_execute_mixer`):
+    `p2k_dcs_core_audio_process_cmd(cmd)`             - direct trigger
+    `p2k_dcs_core_audio_execute_mixer(cmd, d1, d2)`   - ACE1 triple
+  The audio module no longer sees raw words. ACE1 multi-word
+  accumulation is interpreted in `p2k-dcs-core.c` and only the
+  resolved (cmd, data1, data2) is delivered. Mixer-trigger uses
+  `vol = (data1 >> 8) & 0xFF` per Unicorn `sound_execute_mixer`.
+
+  Verified: SWE1 default headless run loads 689 entries from
+  `swe1_sound.bin`, 0 Fatals, 6 real sample starts in ~45 s
+  including 52 s boot music (0x000e, 2.28M frames) and recurring
+  0x03ce; one 0x55aa mixer-ctrl event correctly routed via ACE1.
+  The audio-test-menu path that uses the ACE1/mixer triple is
+  now reachable; the test-menu samples themselves require manual
+  key navigation to validate.
 - [x] Re-prove late-Unicorn DCS byte-write clue: `0001de2` says io-handled
   writes `0x13c` high byte then low byte. It is concrete, but post-LPT-pace.
   Status: instrumented in `p2k-dcs-uart.c` behind `P2K_DCS_BYTE_TRACE=1`.

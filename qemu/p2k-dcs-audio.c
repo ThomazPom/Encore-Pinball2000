@@ -71,7 +71,10 @@ typedef struct {
     int           amp_q15;   /* 0..32767, simple per-voice volume */
 } Voice;
 
-extern void (*p2k_dcs_core_audio_hook)(uint16_t cmd);
+extern void (*p2k_dcs_core_audio_process_cmd)(uint16_t cmd);
+extern void (*p2k_dcs_core_audio_execute_mixer)(uint16_t cmd,
+                                                uint16_t data1,
+                                                uint16_t data2);
 
 typedef struct DcsAudio {
     QEMUSoundCard card;
@@ -344,7 +347,7 @@ static Sample *get_sample_for_cmd(DcsAudio *a, uint16_t cmd)
 /* Mixer + QEMU audio callback                                         */
 /* ------------------------------------------------------------------ */
 
-static void start_voice(DcsAudio *a, const Sample *s)
+static void start_voice(DcsAudio *a, const Sample *s, int vol_8bit)
 {
     /* Pick a free slot, else replace the most-advanced (oldest) one. */
     int best = -1;
@@ -357,9 +360,12 @@ static void start_voice(DcsAudio *a, const Sample *s)
         }
     }
     if (best < 0) best = 0;
+    if (vol_8bit < 0)   vol_8bit = 0;
+    if (vol_8bit > 255) vol_8bit = 255;
+    /* Map 0..255 -> 0..28000 (leaves headroom for mixing 8 voices). */
     a->voices[best].s       = s;
     a->voices[best].pos     = 0;
-    a->voices[best].amp_q15 = 28000;        /* leave headroom for mix */
+    a->voices[best].amp_q15 = (28000 * vol_8bit) / 255;
 }
 
 static void render(DcsAudio *a, int16_t *out, int frames)
@@ -422,48 +428,39 @@ static uint32_t cmd_to_freq(uint16_t cmd)
     return scale[cmd & 0x0F];
 }
 
-static void dcs_audio_on_cmd(uint16_t cmd)
+/* Process-cmd hook: receives semantic direct-trigger events from
+ * p2k-dcs-core (matches Unicorn sound.c sound_process_cmd contract). */
+static void dcs_audio_on_process_cmd(uint16_t cmd)
 {
     DcsAudio *a = &s_dcs_audio;
     if (!a->enabled || !a->opened) return;
     a->cmd_count++;
 
-    /* Unicorn dispatch (sound.c sound_process_cmd / sound_execute_mixer):
-     *   0x0000        -> halt all
+    /* Mirrors Unicorn sound.c sound_process_cmd:
+     *   0x0000        -> halt-all (we just stop starting new voices)
      *   0x003A        -> boot dong
      *   0x00AA        -> special 0x0FFF sample
-     *   0x55XX        -> mixer control (vol/pan); data word follows
-     *   cmd >= 0x0100 -> normal track trigger (lookup by cmd)
-     *   else          -> protocol byte (volume/echo/handshake), ignore.
-     * We do not currently parse the (cmd, data1, data2) triples that
-     * Unicorn's sound_execute_mixer handles, so 0x55XX commands and
-     * their following data words simply do not produce audio yet.
-     * Real triggers without a matching pb2k entry are logged at low
-     * verbosity; we no longer emit a synthetic blip for them. */
-    uint16_t lookup_cmd = cmd;
-    bool is_trigger = false;
-    if (cmd == 0x003A) {
-        is_trigger = true;
-    } else if (cmd == 0x00AA) {
-        lookup_cmd = 0x0FFF;
-        is_trigger = true;
-    } else if ((cmd & 0xFF00) == 0x5500) {
-        /* mixer control: vol/pan, no sample to start */
+     *   cmd >= 0x0100 -> normal track lookup
+     *   else          -> nothing (the ACE1/mixer path uses a different
+     *                   hook, so any low-cmd hitting here is genuinely
+     *                   a sound_process_cmd protocol byte). */
+    if (cmd == 0x0000) {
         return;
-    } else if (cmd >= 0x0100) {
-        is_trigger = true;
     }
 
-    if (!is_trigger) {
+    uint16_t lookup_cmd = cmd;
+    if (cmd == 0x00AA) {
+        lookup_cmd = 0x0FFF;
+    } else if (cmd != 0x003A && cmd < 0x0100) {
         return;
     }
 
     Sample *s = get_sample_for_cmd(a, lookup_cmd);
     if (s) {
-        start_voice(a, s);
+        start_voice(a, s, 255);
         a->played_count++;
-        if (a->played_count <= 12) {
-            info_report("dcs-audio: cmd 0x%04x → sample %zu frames "
+        if (a->played_count <= 16) {
+            info_report("dcs-audio: process_cmd 0x%04x → sample %zu frames "
                         "(played #%llu)",
                         cmd, s->frames,
                         (unsigned long long)a->played_count);
@@ -471,7 +468,54 @@ static void dcs_audio_on_cmd(uint16_t cmd)
     } else {
         a->missed_count++;
         if (a->missed_count <= 8) {
-            info_report("dcs-audio: cmd 0x%04x → trigger w/o pb2k entry "
+            info_report("dcs-audio: process_cmd 0x%04x → trigger w/o pb2k "
+                        "entry (missed #%llu, silent)",
+                        cmd, (unsigned long long)a->missed_count);
+        }
+    }
+}
+
+/* Execute-mixer hook: ACE1 multi-word accumulator finished.
+ * Mirrors Unicorn sound.c sound_execute_mixer:
+ *   cmd >> 8 == 0x55  -> vol/pan/global (we just log; mixer state
+ *                        is currently not modulating active voices)
+ *   else              -> play track (track_cmd=cmd) at vol=(d1>>8),
+ *                        pan=(d1 & 0xFF), channel=((d2 & 0x380)>>7).
+ * For now we route ALL non-0x55 mixer triples to a sample lookup
+ * by cmd, which is the audio-test-menu path the user asked about. */
+static void dcs_audio_on_execute_mixer(uint16_t cmd, uint16_t data1,
+                                       uint16_t data2)
+{
+    DcsAudio *a = &s_dcs_audio;
+    if (!a->enabled || !a->opened) return;
+    a->cmd_count++;
+
+    if ((cmd & 0xFF00) == 0x5500) {
+        /* Volume/pan control: not yet wired into per-voice state. */
+        if (a->cmd_count <= 32) {
+            info_report("dcs-audio: mixer-ctrl 0x%04x d1=0x%04x d2=0x%04x",
+                        cmd, data1, data2);
+        }
+        return;
+    }
+
+    int vol = (data1 >> 8) & 0xFF;
+    if (vol == 0) vol = 255;             /* default full volume */
+
+    Sample *s = get_sample_for_cmd(a, cmd);
+    if (s) {
+        start_voice(a, s, vol);
+        a->played_count++;
+        if (a->played_count <= 16) {
+            info_report("dcs-audio: mixer-trigger 0x%04x d1=0x%04x d2=0x%04x"
+                        " → sample %zu frames vol=%d (played #%llu)",
+                        cmd, data1, data2, s->frames, vol,
+                        (unsigned long long)a->played_count);
+        }
+    } else {
+        a->missed_count++;
+        if (a->missed_count <= 8) {
+            info_report("dcs-audio: mixer-trigger 0x%04x → no pb2k entry "
                         "(missed #%llu, silent)",
                         cmd, (unsigned long long)a->missed_count);
         }
@@ -539,7 +583,8 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
     a->blip_amp          = 16000;
     a->blip_phase        = 0.0;
 
-    p2k_dcs_core_audio_hook = dcs_audio_on_cmd;
+    p2k_dcs_core_audio_process_cmd   = dcs_audio_on_process_cmd;
+    p2k_dcs_core_audio_execute_mixer = dcs_audio_on_execute_mixer;
 
     info_report("pinball2000: DCS audio installed "
                 "(%d Hz S16 mono, %d-voice mixer, %d pb2k entries; "
