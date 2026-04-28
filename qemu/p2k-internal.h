@@ -56,4 +56,7 @@ void p2k_install_bar3_flash(Pinball2000MachineState *s);
  * (mirrors unicorn.old/src/io.c:121-127). */
 void p2k_install_pic_fixup(void);
 
+/* p2k-plx-regs.c: PLX 9050 BAR0 register file + 93C46 SEEPROM model. */
+void p2k_install_plx_regs(void);
+
 #endif /* HW_PINBALL2000_INTERNAL_H */
