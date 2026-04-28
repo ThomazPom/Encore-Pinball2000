@@ -71,6 +71,7 @@ void p2k_install_pic_fixup(void);
  * IDT[0x20] so early IRQ0 doesn't fall into XINU's panic dispatcher.
  * Naturally overridden when XINU's clkinit() installs real clkint. */
 void p2k_install_irq0_shim(void);
+void p2k_install_cyrix_0f3c(void);
 
 /* p2k-vsync.c: ~57 Hz VBLANK ticker — writes BAR2_SRAM[4]=1 + DC_TIMING2
  * at end-of-frame, cycles DC_TIMING2 0..240 in between. */

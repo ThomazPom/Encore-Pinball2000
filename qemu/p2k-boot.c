@@ -18,22 +18,29 @@
 
 #include "p2k-internal.h"
 
-/* Tiny GDT placed at a fixed RAM address well clear of the option ROM. */
-#define P2K_GDT_BASE    0x00007000u
-#define P2K_GDT_LIMIT   0x0000001Fu   /* 4 entries (null + code + data + tss) */
+/* Tiny GDT placed at a fixed RAM address well clear of the option ROM.
+ * Mirror unicorn.old/src/cpu.c:186 exactly: GDT_ADDR = 0x00001000.
+ * NOTE: 0x7000 was previously used here — but the game later JMPs to
+ * 0x7008 expecting it to be loaded code (PRISM relocates code to low
+ * RAM and 0x7008 collides with our GDT entry 1, decoded as invalid
+ * opcode → "Xinu trap! exception 6 eip 0x7008"). 0x1000 is what unicorn
+ * uses and it works there. */
+#define P2K_GDT_BASE    0x00001000u
+#define P2K_GDT_LIMIT   0x0000001Fu   /* 4 entries × 8 bytes - 1 = 0x1F */
 
 static void p2k_build_gdt(void)
 {
-    /* Flat 32-bit code (sel 0x08) + data (sel 0x10) descriptors. */
+    /* Mirror unicorn.old/src/cpu.c:174-183 exactly:
+     *   [0] Null
+     *   [1] CS=0x08: type 0x9F (code+conforming+readable+accessed) — UNICORN uses 0x9F
+     *   [2] DS=0x10: type 0x93 (data+writable+accessed)            — UNICORN uses 0x93
+     *   [3] 16-bit code at 0x18 (used by some PRISM transitions)
+     */
     static const uint8_t gdt[32] = {
-        /* 0x00: null */
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        /* 0x08: code, base=0, limit=0xFFFFF, G=1, D=1, P=1, DPL=0, Type=0xA */
-        0xFF, 0xFF, 0x00, 0x00, 0x00, 0x9A, 0xCF, 0x00,
-        /* 0x10: data, base=0, limit=0xFFFFF, G=1, D=1, P=1, DPL=0, Type=0x2 */
-        0xFF, 0xFF, 0x00, 0x00, 0x00, 0x92, 0xCF, 0x00,
-        /* 0x18: spare */
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0xFF, 0xFF, 0x00, 0x00, 0x00, 0x9F, 0xCF, 0x00,
+        0xFF, 0xFF, 0x00, 0x00, 0x00, 0x93, 0xCF, 0x00,
+        0xFF, 0xFF, 0x00, 0x00, 0x00, 0x9B, 0x0F, 0x00,
     };
     cpu_physical_memory_write(P2K_GDT_BASE, gdt, sizeof(gdt));
 }
@@ -72,16 +79,17 @@ void p2k_post_reset(void *opaque)
             continue;
         }
 
-        env->cr[0] |= CR0_PE_MASK;
+        env->cr[0] |= CR0_PE_MASK | CR0_ET_MASK;  /* PE=1 + ET=1 (387 present) — match unicorn */
         env->hflags |= HF_PE_MASK | HF_CS32_MASK | HF_SS32_MASK;
         env->hflags &= ~HF_ADDSEG_MASK;
 
         env->gdt.base  = P2K_GDT_BASE;
         env->gdt.limit = P2K_GDT_LIMIT;
 
-        /* CS sel 0x08, flat 4 GiB, 32-bit code, P=1, S=1, Type=0xA. */
+        /* CS sel 0x08, flat 4 GiB, 32-bit code, P=1, S=1, Type=0xF
+         * (code+conforming+readable+accessed) — match unicorn 0x9F. */
         p2k_set_seg(&env->segs[R_CS], P2K_INITIAL_CS_SEL, 0, 0xFFFFFFFFu,
-                    DESC_P_MASK | DESC_S_MASK | DESC_CS_MASK |
+                    DESC_P_MASK | DESC_S_MASK | DESC_CS_MASK | DESC_C_MASK |
                     DESC_R_MASK | DESC_A_MASK | DESC_G_MASK | DESC_B_MASK);
         /* Data segs sel 0x10, flat 4 GiB, P=1, S=1, Type=0x2 (RW). */
         for (int r = R_ES; r <= R_GS; r++) {

@@ -1,0 +1,146 @@
+/*
+ * pinball2000 — Cyrix 0F3C (BB0_RESET) #UD emulator.
+ *
+ * The MediaGX/Cyrix 5530 implements a non-Intel opcode `0F 3C` used by
+ * the XINU/Williams init code to manipulate Cyrix-specific MSR-style
+ * registers via [EDX]/[EDX+4]. Vanilla QEMU's TCG i386 CPU does not
+ * recognise this opcode and raises #UD (vector 6), which on the bare
+ * XINU IDT lands in trap_dispatch() → "Trap to monitor".
+ *
+ * Mirror unicorn.old/src/cpu.c:587-628: once XINU has loaded an IDT and
+ * installed clkint at IDT[0x20] (i.e. xinu_ready), inject a 32-bit
+ * trap-handler at 0x540 that:
+ *   - inspects the faulting instruction at [ESP+8] (return EIP)
+ *   - if the bytes are `0F 3C`: stores EAX/EBX into [EDX]/[EDX+4],
+ *     advances the saved EIP by 2, IRETs.
+ *   - otherwise: skip the instruction and IRET (best-effort, prevents
+ *     monitor-trap on other anomalies before clkint).
+ *
+ * Patch IDT[6] to a 32-bit interrupt gate { offset=0x540, sel=0x08,
+ * type=0x8E (P=1, DPL=0, 32-bit interrupt gate) }.
+ *
+ * Address 0x540 chosen to sit above the IRQ0 EOI shim at 0x500 (5 bytes)
+ * within the same XINU "low-mem below IVT" scratch area.
+ */
+
+#include "qemu/osdep.h"
+#include "qemu/error-report.h"
+#include "qemu/timer.h"
+#include "exec/cpu-common.h"
+#include "target/i386/cpu.h"
+
+#include "p2k-internal.h"
+
+#define P2K_CYRIX_STUB_ADDR  0x00000540u
+#define P2K_CYRIX_POLL_NS    (200 * 1000)        /* 0.2 ms */
+
+/* Hand-assembled 32-bit interrupt-handler stub.
+ *
+ * On entry, the CPU pushed (in order, top last):
+ *   [ESP+0]  EIP   (return address — the faulting instruction)
+ *   [ESP+4]  CS
+ *   [ESP+8]  EFLAGS
+ *
+ * Implementation:
+ *   PUSH EAX
+ *   PUSH ESI
+ *   MOV  ESI, [ESP+8]            ; load faulting EIP
+ *   CMP  WORD [ESI], 0x3C0F      ; little-endian 0F 3C
+ *   JNE  .not_cyrix
+ *   MOV  EAX, [ESP+4]            ; saved EAX (we pushed EAX first)
+ *   MOV  [EDX], EAX
+ *   MOV  [EDX+4], EBX
+ *   ADD  EDX, 8
+ *   ADD  DWORD [ESP+8], 2        ; skip the 0F 3C in return EIP
+ *   POP  ESI
+ *   POP  EAX
+ *   IRET
+ * .not_cyrix:
+ *   POP  ESI
+ *   POP  EAX
+ *   IRET                         ; let other #UD propagate (will re-trap)
+ */
+static const uint8_t p2k_cyrix_stub[] = {
+    0x50,                                     /* PUSH EAX            */
+    0x56,                                     /* PUSH ESI            */
+    0x8B, 0x74, 0x24, 0x08,                   /* MOV ESI,[ESP+8]     */
+    0x66, 0x81, 0x3E, 0x0F, 0x3C,             /* CMP WORD [ESI],0x3C0F */
+    0x75, 0x10,                               /* JNE .not_cyrix (+16) */
+    0x8B, 0x44, 0x24, 0x04,                   /* MOV EAX,[ESP+4]     */
+    0x89, 0x02,                               /* MOV [EDX],EAX       */
+    0x89, 0x5A, 0x04,                         /* MOV [EDX+4],EBX     */
+    0x83, 0xC2, 0x08,                         /* ADD EDX,8           */
+    0x83, 0x44, 0x24, 0x08, 0x02,             /* ADD DWORD [ESP+8],2 */
+    0x5E,                                     /* POP ESI             */
+    0x58,                                     /* POP EAX             */
+    0xCF,                                     /* IRET                */
+    /* .not_cyrix: */
+    0x5E,                                     /* POP ESI             */
+    0x58,                                     /* POP EAX             */
+    0xCF,                                     /* IRET                */
+};
+
+static QEMUTimer *p2k_cyrix_timer;
+static bool       p2k_cyrix_installed;
+
+static bool p2k_xinu_ready(CPUX86State **out_env)
+{
+    CPUState *cs;
+    CPU_FOREACH(cs) {
+        X86CPU *cpu = X86_CPU(cs);
+        CPUX86State *env = &cpu->env;
+        if (env->idt.base == 0 || env->idt.limit < 6 * 8 + 7) {
+            continue;
+        }
+        /* As soon as XINU has loaded *any* IDT we install the handler.
+         * unicorn waited for clkint at IDT[0x20], but our 0F3C ops fire
+         * during XINU sysinit() — well before clkinit() runs. */
+        *out_env = env;
+        return true;
+    }
+    return false;
+}
+
+static void p2k_cyrix_install(CPUX86State *env)
+{
+    cpu_physical_memory_write(P2K_CYRIX_STUB_ADDR,
+                              p2k_cyrix_stub, sizeof(p2k_cyrix_stub));
+
+    /* IDT[6] = 32-bit interrupt gate -> 0x08:0x540 */
+    uint32_t a = P2K_CYRIX_STUB_ADDR;
+    uint8_t gate[8] = {
+        (uint8_t)(a & 0xff),
+        (uint8_t)((a >> 8) & 0xff),
+        0x08, 0x00,            /* selector = 0x08 (kernel CS) */
+        0x00,                  /* zero */
+        0x8E,                  /* type = P=1, DPL=0, 32-bit interrupt gate */
+        (uint8_t)((a >> 16) & 0xff),
+        (uint8_t)((a >> 24) & 0xff),
+    };
+    cpu_physical_memory_write(env->idt.base + 6 * 8, gate, sizeof(gate));
+
+    info_report("pinball2000: Cyrix 0F3C #UD emulator installed at 0x%x; "
+                "IDT[6] redirected (xinu_ready, idt.base=0x%lx)",
+                P2K_CYRIX_STUB_ADDR, (unsigned long)env->idt.base);
+}
+
+static void p2k_cyrix_tick(void *opaque)
+{
+    CPUX86State *env = NULL;
+    if (!p2k_cyrix_installed && p2k_xinu_ready(&env)) {
+        p2k_cyrix_install(env);
+        p2k_cyrix_installed = true;
+        return;
+    }
+    timer_mod(p2k_cyrix_timer,
+              qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + P2K_CYRIX_POLL_NS);
+}
+
+void p2k_install_cyrix_0f3c(void)
+{
+    p2k_cyrix_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,
+                                   p2k_cyrix_tick, NULL);
+    timer_mod(p2k_cyrix_timer,
+              qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + P2K_CYRIX_POLL_NS);
+    info_report("pinball2000: Cyrix 0F3C #UD installer armed");
+}
