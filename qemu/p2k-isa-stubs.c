@@ -169,15 +169,27 @@ static uint8_t s_uart_lcr;       /* bit 7 = DLAB */
 static uint8_t s_uart_scr;
 static bool    s_uart_to_stderr;
 
+/* Pre-canned RX buffer fed into RBR.  Source: P2K_UART_INPUT env var.
+ * Lets us send "continue\r\n" to the XINA monitor without a full chardev. */
+static const char *s_uart_input;   /* pointer into env-var string */
+
 static uint64_t p2k_uart_read(void *opaque, hwaddr addr, unsigned size)
 {
+    bool has_rx = (s_uart_input && *s_uart_input);
     switch (addr) {
-    case 0:  return 0x00;        /* RBR: no RX data */
+    case 0:                      /* RBR */
+        if (has_rx) {
+            uint8_t c = (uint8_t)*s_uart_input++;
+            if (c == '\\' && *s_uart_input == 'n') { c = '\n'; s_uart_input++; }
+            else if (c == '\\' && *s_uart_input == 'r') { c = '\r'; s_uart_input++; }
+            return c;
+        }
+        return 0x00;
     case 1:  return 0x00;        /* IER */
     case 2:  return 0x01;        /* IIR: no interrupt pending */
     case 3:  return s_uart_lcr;
     case 4:  return 0x00;        /* MCR */
-    case 5:  return 0x60;        /* LSR: THRE | TEMT */
+    case 5:  return has_rx ? 0x61 : 0x60;  /* LSR: DR (if RX) | THRE | TEMT */
     case 6:  return 0x00;        /* MSR */
     case 7:  return s_uart_scr;
     }
@@ -229,6 +241,7 @@ void p2k_install_isa_stubs(void)
     MemoryRegion *io = get_system_io();
 
     s_uart_to_stderr = (getenv("P2K_UART_TO_STDERR") != NULL);
+    s_uart_input     = getenv("P2K_UART_INPUT");  /* e.g. "continue\r\n" */
 
     p2k_iostub(io, "p2k.i8042-data",   0x60,  1, &p2k_kbd_ops);
     p2k_iostub(io, "p2k.port61",       0x61,  1, &p2k_port61_ops);

@@ -90,6 +90,20 @@ static void p2k_wd_scan_once(void)
         if (cell < P2K_WD_BSS_LO || cell >= P2K_WD_BSS_HI) {
             continue;
         }
+    /* PCI sentinel cells written by pci_probe — DO NOT scribble these,
+     * they are populated naturally now that PLX 9050 is exposed at dev9.
+     * The watchdog/dcs_probe cell is at a different address; scribbling
+     * it 0xFFFF keeps the watchdog alive (per unicorn.old/src/io.c:248). */
+    static const uint32_t pci_sentinels[] = {
+        0x2f0414, 0x2f0418, 0x2f041c, 0x2f0420,
+    };
+    bool is_pci_sentinel = false;
+    for (size_t i = 0; i < ARRAY_SIZE(pci_sentinels); i++) {
+        if (cell == pci_sentinels[i]) { is_pci_sentinel = true; break; }
+    }
+    if (is_pci_sentinel) {
+        continue;
+    }
         bool seen = false;
         for (int i = 0; i < p2k_wd_n_cells; i++) {
             if (p2k_wd_cells[i] == cell) {
@@ -141,19 +155,19 @@ static void p2k_wd_tick(void *opaque)
 
 void p2k_install_watchdog(void)
 {
-    /* PLX 9050 (vendor 0x10B5) is now exposed at PCI dev9 (see
-     * p2k-pci.c), so pci_probe can find all four required vendors
-     * natively and write devNums into 0x2f0414/0x2f0418/0x2f041c/0x2f0420.
-     * The sentinel scribbler is no longer needed and would actively
-     * corrupt those cells (in particular 0x2f0418 — the Cx5520 cell —
-     * which gx_fb_reg_setup reads, panicking with
-     * "PCI_cx55xx_dev not set" if it stays 0xFFFF).
-     *
-     * Keep the scan helper compiled in for diagnostics but do NOT arm
-     * the timer.
-     */
-    (void)p2k_wd_timer;
-    (void)p2k_wd_tick;
-    info_report("pinball2000: PCI sentinel scribbler disabled "
-                "(PLX 9050 exposed at dev9, scribble no longer needed)");
+    if (getenv("P2K_NO_WATCHDOG")) {
+        info_report("pinball2000: watchdog scribbler DISABLED via env");
+        return;
+    }
+    /* Re-armed: scribble the watchdog/dcs_probe cell (NOT the PCI sentinel
+     * cells at 0x2f0414/0x2f0418/0x2f041c/0x2f0420 — those are populated
+     * naturally by pci_probe now that PLX 9050 is exposed at dev9).
+     * The watchdog cell is the one referenced by pci_watchdog_bone()'s
+     * dcs_probe inner CMP — keeping it 0xFFFF makes the watchdog return
+     * "alive" so the game doesn't fault into the monitor> prompt. */
+    p2k_wd_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, p2k_wd_tick, NULL);
+    timer_mod(p2k_wd_timer,
+              qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + P2K_WD_PRIME_DELAY_NS);
+    info_report("pinball2000: watchdog scribbler armed "
+                "(skips PCI sentinels 0x2f0414..0x2f0420)");
 }
