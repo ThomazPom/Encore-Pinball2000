@@ -61,6 +61,10 @@ void p2k_install_pic_fixup(void);
  * Naturally overridden when XINU's clkinit() installs real clkint. */
 void p2k_install_irq0_shim(void);
 
+/* p2k-vsync.c: ~57 Hz VBLANK ticker — writes BAR2_SRAM[4]=1 + DC_TIMING2
+ * at end-of-frame, cycles DC_TIMING2 0..240 in between. */
+void p2k_install_vsync(void);
+
 /* p2k-plx-regs.c: PLX 9050 BAR0 register file + 93C46 SEEPROM model. */
 void p2k_install_plx_regs(void);
 
