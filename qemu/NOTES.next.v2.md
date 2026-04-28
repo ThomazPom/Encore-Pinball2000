@@ -179,8 +179,12 @@ Legend:
   `P2K_NO_UART_STDERR=1`. Verified Fatal/NonFatal lines appear without env.
 - [ ] Implement desktop controls through LPT/switch matrix: F1/F2/F3/F4,
   F6-F12, Space/S, C/F10, arrows, Esc, Enter.
-- [ ] Wrapper parity: `--game`, `--roms`, `--savedata`, `--no-savedata`,
+- [~] Wrapper parity: `--game`, `--roms`, `--savedata`, `--no-savedata`,
   `--update`, `-v/-vv/-vvv`, fullscreen/headless.
+  scripts/run-qemu.sh now handles `--game`, `--roms`, `--savedata`,
+  `--no-savedata`, `--display`, `--headless`, `--monitor`, `--debug`,
+  `--uart-quiet`, `-v/-vv/-vvv`, and `--`. `--update <dir>` is parsed but
+  the machine does not yet consume it (warning emitted).
 - [ ] Preserve polished UX if cheap: `--bpp`, `--splash-screen`, screenshot,
   display flip.
 - [ ] Validate SWE1 base/update and RFM base/update long runs.
