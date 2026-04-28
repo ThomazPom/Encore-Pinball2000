@@ -37,6 +37,28 @@ static uint8_t p2k_dcs_lsr = 0x60u;   /* THRE | TEMT */
 static uint8_t p2k_dcs_msr = 0xB0u;   /* CTS | DSR | DCD */
 static uint8_t p2k_dcs_scr = 0x00u;
 
+/* Diagnostic: capture the late-Unicorn `0001de2` clue that DCS commands
+ * are sometimes issued as TWO byte writes to 0x13C — high then low —
+ * instead of a single word write.  Enable with P2K_DCS_BYTE_TRACE=1 to
+ * verify whether QEMU sees the same access shape from this guest.
+ *
+ * State: high-byte latch + a small ring of recent (high<<8 | low) pairs
+ * to log at boot end.  No effect on protocol unless trace is enabled. */
+static int      s_dcs_byte_trace = -1;     /* -1=unread, 0/1=resolved */
+static uint8_t  s_dcs_high_latch;
+static int      s_dcs_high_seen;
+static uint16_t s_dcs_last_byte_pair;
+static unsigned s_dcs_byte_pair_count;
+
+static bool p2k_dcs_byte_trace_enabled(void)
+{
+    if (s_dcs_byte_trace < 0) {
+        const char *e = getenv("P2K_DCS_BYTE_TRACE");
+        s_dcs_byte_trace = (e && *e && e[0] != '0') ? 1 : 0;
+    }
+    return s_dcs_byte_trace == 1;
+}
+
 static uint64_t p2k_dcs_uart_read(void *opaque, hwaddr addr, unsigned size)
 {
     int off = (int)addr;
@@ -88,7 +110,34 @@ static void p2k_dcs_uart_write(void *opaque, hwaddr addr,
 
     /* off=4 (0x13C) word -> DCS command. */
     if (off == 4 && size >= 2) {
+        if (p2k_dcs_byte_trace_enabled() && s_dcs_high_seen) {
+            warn_report("dcs-uart: word write 0x%04x at 0x13c voids "
+                        "pending byte-pair high=0x%02x",
+                        (unsigned)(val & 0xFFFF), s_dcs_high_latch);
+            s_dcs_high_seen = 0;
+        }
         p2k_dcs_core_write_cmd((uint16_t)(val & 0xFFFFu));
+        return;
+    }
+
+    /* off=4 (0x13C) byte: capture the high/low pattern Unicorn observed
+     * (`0001de2` clue). High byte first, then low byte — together they
+     * form a DCS command.  Only act when trace is enabled so we do not
+     * silently change protocol shape. */
+    if (off == 4 && size == 1 && p2k_dcs_byte_trace_enabled()) {
+        if (!s_dcs_high_seen) {
+            s_dcs_high_latch = (uint8_t)(val & 0xFFu);
+            s_dcs_high_seen  = 1;
+            return;
+        }
+        uint16_t cmd = (uint16_t)((s_dcs_high_latch << 8) | (val & 0xFFu));
+        s_dcs_high_seen = 0;
+        s_dcs_last_byte_pair = cmd;
+        s_dcs_byte_pair_count++;
+        info_report("dcs-uart: byte-pair cmd=0x%04x (#%u) "
+                    "[late-Unicorn 0001de2 clue]",
+                    cmd, s_dcs_byte_pair_count);
+        p2k_dcs_core_write_cmd(cmd);
         return;
     }
 

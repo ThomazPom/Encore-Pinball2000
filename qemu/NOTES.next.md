@@ -250,8 +250,12 @@ not the new source of truth.
 
 - [ ] DCS actual sound playback through QEMU audio backend. Use
   `unicorn.old/src/sound.c` as behavior reference, not blind copy.
-- [ ] Re-prove late-Unicorn DCS byte-write clue: `0001de2` says io-handled
+- [x] Re-prove late-Unicorn DCS byte-write clue: `0001de2` says io-handled
   writes `0x13c` high byte then low byte. It is concrete, but post-LPT-pace.
+  Status: instrumented in `p2k-dcs-uart.c` behind `P2K_DCS_BYTE_TRACE=1`.
+  60s SWE1 trace at HEAD shows ZERO byte writes to 0x13C — only word
+  writes are used. The clue does not reproduce at the current milestone;
+  re-evaluate if/when the post-LPT-pace path is reached.
 - [x] Make UART/XINA output visible by default, Unicorn-style, or ensure the
   wrapper always enables it for bring-up.
   Done: `p2k-isa-stubs.c` defaults `s_uart_to_stderr = true`; opt-out via
