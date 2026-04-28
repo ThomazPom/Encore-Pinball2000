@@ -95,24 +95,18 @@ is QEMU-side GX/MediaGX semantics, not only framebuffer readout.
 
 Next functional milestone after display/UART stability is DCS sound.
 
-Do this before broad CLI polish or optional cabinet features. The QEMU branch
-should reach at least the old Unicorn usability baseline: visible graphics,
-UART console, working sound, and basic input.
+Status (session 2026-04-28): the architectural half is DONE.  The DCS
+state machine is now centralized in `qemu/p2k-dcs-core.c`.  Both the
+BAR4 MMIO view (`p2k-dcs.c`) and the I/O 0x138-0x13F overlay
+(`p2k-dcs-uart.c`) are thin frontends that route into the shared core.
+The 16550-style register surface stays local to the I/O view because it
+only exists there, not on BAR4.  Old "PARTIALLY TEMPORARY" headers were
+removed from both views.
 
-Architecture goal:
-
-- Avoid two independent DCS implementations.
-- Create a shared DCS core/state machine for command decode, reset/ready
-  responses, command FIFO, and eventual host sample playback.
-- Keep BAR4/MMIO and I/O-UART/`0x138..0x13f` as thin frontends into that shared
-  core.
-- Port only the useful audio behavior from `unicorn.old/src/sound.c` and the
-  concrete but late-Unicorn `io-handled` byte-write clue from `0001de2`; re-prove
-  it in QEMU before treating it as settled.
-- Treat `bar4` and `io-handled` as compatibility paths/modes, not as duplicate
-  sound engines.
-- Do not make `bar4` the default just because it masks a bug in the I/O path;
-  prove which path each bundle naturally takes.
+Remaining DCS work is real audio output: pull the sample dispatch /
+ADSP-2105 mixer behavior from `unicorn.old/src/sound.c` and wire it to a
+QEMU audio backend.  Until then the protocol-only core is enough to get
+the game past DCS init (already proven).
 
 ## Watchdog / PLX INTCSR Candidate Fix
 
@@ -141,13 +135,34 @@ Current QEMU candidate:
 
 Validation still needed before deleting the fallback:
 
-- Long-run SWE1 with watchdog scribbler off by default.
-- At least one update bundle and RFM/RFM update coverage.
+- Long-run SWE1 with watchdog scribbler off by default.  DONE (180s, 0 Fatal).
+- At least one update bundle and RFM/RFM update coverage.  RFM base coverage
+  DONE (60s, 0 Fatal, XINU V7); update bundles deferred until the wrapper
+  grows a `--update` option (see "Future CLI Shape").
 - Confirm DCS sound still works once the DCS path is implemented.
 - Keep `P2K_WATCHDOG_SCRIBBLER=1` or equivalent only as a temporary opt-in
   fallback until the matrix is proven.
 - Update stale comments that still say `INTCSR` bit 2 clear is the healthy
-  value.
+  value.  DONE (header in `qemu/p2k-plx-regs.c`).
+
+## Retired Temporary Patches (post-bring-up audit)
+
+Tracked here so we know which boot bridges have been replaced by real
+device behavior or by empirical evidence that they were unneeded.
+
+- COM1 IRQ4 TX-empty signaling — real device behavior in
+  `qemu/p2k-isa-stubs.c`; XINU console no longer hangs (replaced the
+  earlier "exec is hung" symptom path).
+- PLX INTCSR bit2 polarity — fixed in `qemu/p2k-plx-regs.c`; the
+  watchdog scribbler is now opt-in via `P2K_WATCHDOG_SCRIBBLER=1`
+  instead of running by default.
+- DCS state duplication — collapsed into `qemu/p2k-dcs-core.c`;
+  BAR4 and I/O 0x138-0x13F views are now thin frontends.
+- PIC fix-up 250us timer — DEFAULT-OFF.  Empirically the legacy port
+  of `unicorn.old/src/io.c:121-127` was actively hurting throughput
+  (exec_pass plateau ~0x129 with timer armed vs ~0x6ef with timer off
+  on a 90s SWE1 run).  Opt-in via `P2K_PIC_FIXUP=1`; full removal
+  pending one more bundle/update sweep.
 
 ## Post-LPT-Pace Master Fixes
 
