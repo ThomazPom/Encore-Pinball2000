@@ -107,3 +107,6 @@ Useful env vars (defaults reflect the post-bring-up state, see
 | `P2K_WATCHDOG_SCRIBBLER=1`     | OFF     | Re-enable the legacy RAM-scribble watchdog suppressor. The PLX INTCSR bit2=1 path in `256cea1` retired this; opt-in only as a regression fallback. |
 | `P2K_NO_WATCHDOG=1`            | OFF     | Force the watchdog scribbler off even when `P2K_WATCHDOG_SCRIBBLER=1` is set. |
 | `P2K_NO_MEM_DETECT_PATCH=1`    | OFF     | Disable BT-130 mem_detect prologue rewrite                            |
+| `P2K_DCS_AUDIO=1`              | OFF     | Enable DCS audio backend (proof-of-path: 50 ms blip per DCS command). Requires a host audiodev — pass `-audio driver=pa` (or `alsa`/`sdl`/...) so QEMU can bind a default audio device. The wrapper does this automatically with `--audio pa`. |
+| `P2K_NO_DCS_AUDIO=1`           | OFF     | Force DCS audio off even if `P2K_DCS_AUDIO=1` is set.                |
+| `P2K_DCS_BYTE_TRACE=1`         | OFF     | Trace 8-bit byte writes to DCS port 0x13C and reconstruct the latched 16-bit command. Used to validate the late-Unicorn `0001de2` clue. |

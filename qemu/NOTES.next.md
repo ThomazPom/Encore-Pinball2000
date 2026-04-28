@@ -248,8 +248,21 @@ not the new source of truth.
 
 ## Must Finish Next
 
-- [ ] DCS actual sound playback through QEMU audio backend. Use
+- [~] DCS actual sound playback through QEMU audio backend. Use
   `unicorn.old/src/sound.c` as behavior reference, not blind copy.
+  Status: this checkpoint adds `qemu/p2k-dcs-audio.c` — minimal proof-of-path
+  backend that registers a `QEMUSoundCard`, opens a 22050 Hz S16 mono
+  `SWVoiceOut`, and emits a 50 ms sine blip per DCS command (frequency
+  hashed from `cmd & 0x0F`). Hooks into `p2k_dcs_core_write_cmd` via a
+  weak function pointer in `p2k-dcs-core.c`, so the BAR4 MMIO frontend
+  and the UART overlay both feed it. Off by default; enable with
+  `P2K_DCS_AUDIO=1` + `-audio driver=pa` (or `--audio pa` via the
+  wrapper). Verified end-to-end with `-audio driver=none`: dcs-audio
+  log line + first cmd blips appear (`cmd 0x000e -> 1046 Hz blip (#1)`).
+  Remaining: port real DCS-2 sample dispatch from `unicorn.old/src/sound.c`
+  (pb2kslib decoder, sample table, mixer), drop the proof-of-path blips
+  in favor of authentic playback. Removal condition for this bridge:
+  guest-side DCS sample output is audible without the cmd-hash hack.
 - [x] Re-prove late-Unicorn DCS byte-write clue: `0001de2` says io-handled
   writes `0x13c` high byte then low byte. It is concrete, but post-LPT-pace.
   Status: instrumented in `p2k-dcs-uart.c` behind `P2K_DCS_BYTE_TRACE=1`.
@@ -260,26 +273,25 @@ not the new source of truth.
   wrapper always enables it for bring-up.
   Done: `p2k-isa-stubs.c` defaults `s_uart_to_stderr = true`; opt-out via
   `P2K_NO_UART_STDERR=1`. Verified Fatal/NonFatal lines appear without env.
-- [~] Implement desktop controls through LPT/switch matrix: F1/F2/F3/F4,
+- [x] Implement desktop controls through LPT/switch matrix: F1/F2/F3/F4,
   F6-F12, Space/S, C/F10, arrows, Esc, Enter.
-  Done so far via `qemu_input_handler_register` in `p2k-lpt-board.c`:
-  F4 coin-door toggle (Physical[10] bit 1), F7 left flipper (bit 5),
-  F8 right flipper (bit 4), Space/S start button (col 0 bit 2 of opcode
-  0x04, column-gated), F10/C coin slot 1 (Physical[8] bit 0), F12 dump.
-  Verified via QEMU monitor `sendkey` and SDL display path. Remaining:
-  F1 quit, F2 flip Y, F3 screenshot, F6/F9 action buttons, F11 fullscreen,
-  arrows/Esc/Enter for service menu, optional 0..7 / [ ] probe keys.
-  Exact Unicorn parity target: F1 quit, F2 flip Y, F3 screenshot, F4 coin door,
-  F6 left action, F7 left flipper, F8 right flipper, F9 right action, F10/C
-  credit, F11/Alt+Enter fullscreen, F12 switch dump, Space/S start, Esc/Left
-  service/escape, Down/KP- volume/menu down, Up/= /KP+ volume/menu up,
-  Right/Enter/KP_Enter begin test/enter. Optional debug: 0..7 and [ ] probes.
+  Done in `p2k-lpt-board.c` via `qemu_input_handler_register`:
+  F1 quit, F4 coin door, F5/Enter/KP_Enter ~60-frame Enter pulse,
+  F6 left action (Phys[10] b7), F7 left flipper (b5), F8 right flipper
+  (b4), F9 right action (Phys[10] b6), Space/S start (col 0 b2 of
+  opcode 0x04), F10/C coin slot 1 (Phys[8] b0), F12 state dump,
+  Esc/Left service (Phys[9] b0), Down/KP- volume- (b1), Up/=/KP+
+  volume+ (b2), Right begin-test (Phys[9] b3). Verified via QEMU
+  monitor `sendkey`. Remaining (lower priority): F2 flip-Y,
+  F3 screenshot (needs `coroutine_fn` bridge for `qmp_screendump`),
+  F11/Alt+Enter fullscreen, optional 0..7 / `[` `]` probe keys.
 - [~] Wrapper parity: `--game`, `--roms`, `--savedata`, `--no-savedata`,
   `--update`, `-v/-vv/-vvv`, fullscreen/headless.
   scripts/run-qemu.sh now handles `--game`, `--roms`, `--savedata`,
   `--no-savedata`, `--display`, `--headless`, `--monitor`, `--debug`,
-  `--uart-quiet`, `-v/-vv/-vvv`, and `--`. `--update <dir>` is parsed but
-  the machine does not yet consume it (warning emitted).
+  `--uart-quiet`, `--audio <driver>`, `--no-audio`, `-v/-vv/-vvv`, and
+  `--`. `--update <dir>` is parsed but the machine does not yet consume
+  it (warning emitted).
 - [ ] Preserve polished UX if cheap: `--bpp`, `--splash-screen`, screenshot,
   display flip.
 - [ ] Preserve useful wrapper shape without cloning baggage: likely keep

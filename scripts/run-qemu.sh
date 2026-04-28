@@ -19,6 +19,12 @@
 #   --monitor <spec>      QEMU -monitor target (e.g. stdio, tcp:127.0.0.1:55555).
 #   --debug <opts>        QEMU -d options (e.g. int,cpu_reset,in_asm).
 #   --uart-quiet          Pass P2K_NO_UART_STDERR=1 to silence the UART mirror.
+#   --audio <driver>      Enable DCS audio with the named QEMU audio backend
+#                         (pa, alsa, sdl, coreaudio, dsound, none). Sets
+#                         P2K_DCS_AUDIO=1 + `-audio driver=<driver>` so the
+#                         AUD_register_card binds. Default: off (silent).
+#   --no-audio            Force DCS audio off even if P2K_DCS_AUDIO is set
+#                         in the environment.
 #   -v|-vv|-vvv           Increase verbosity (info/debug/trace) — currently
 #                         maps to P2K_DIAG=1 plus optional QEMU -d trace levels.
 #   --tcg-only            Smoke-test the host QEMU binary alone (no Pinball
@@ -43,6 +49,7 @@ MONITOR=""
 DEBUG=""
 TCG_ONLY=0
 VERBOSITY=0
+AUDIO=""
 EXTRA=()
 
 while [[ $# -gt 0 ]]; do
@@ -57,6 +64,8 @@ while [[ $# -gt 0 ]]; do
     --monitor)      MONITOR="$2"; shift 2 ;;
     --debug)        DEBUG="$2"; shift 2 ;;
     --uart-quiet)   export P2K_NO_UART_STDERR=1; shift ;;
+    --audio)        AUDIO="$2"; export P2K_DCS_AUDIO=1; shift 2 ;;
+    --no-audio)     AUDIO="none"; unset P2K_DCS_AUDIO; shift ;;
     -v)             VERBOSITY=1; shift ;;
     -vv)            VERBOSITY=2; shift ;;
     -vvv)           VERBOSITY=3; shift ;;
@@ -107,6 +116,15 @@ ARGS=( -no-reboot -m 16 -display "$DISPLAY_MODE" )
 [[ -n "$MONITOR" ]] && ARGS+=( -monitor "$MONITOR" )
 [[ $HEADLESS -eq 1 ]] && ARGS+=( -serial stdio )
 [[ -n "$DEBUG" ]] && ARGS+=( -d "$DEBUG" -D /tmp/p2k_qemu.log )
+
+# Audio: opt-in. -audio driver=<x> is the simplest way to set the
+# default audiodev; QEMU's AUD_register_card binds to it. With no
+# --audio flag, no audiodev is configured and DCS audio stays silent
+# regardless of P2K_DCS_AUDIO. Suggested values:
+#   pa | alsa | sdl | dsound | coreaudio | none
+if [[ -n "$AUDIO" && "$AUDIO" != "none" ]]; then
+  ARGS+=( -audio "driver=$AUDIO" )
+fi
 
 if [[ $TCG_ONLY -eq 1 ]]; then
   ARGS=( -M isapc "${ARGS[@]}" -bios "$ROMS_DIR/bios.bin" )

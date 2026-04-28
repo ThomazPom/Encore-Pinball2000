@@ -54,6 +54,9 @@ typedef struct {
 
 static DcsCore s_core;
 
+/* Optional audio sink registered by p2k-dcs-audio.c. NULL = silent. */
+void (*p2k_dcs_core_audio_hook)(uint16_t cmd) = NULL;
+
 static void core_push(uint16_t v)
 {
     if (s_core.count >= DCS_RESP_RING) {
@@ -113,6 +116,12 @@ uint16_t p2k_dcs_core_read_resp(void)
 void p2k_dcs_core_write_cmd(uint16_t cmd)
 {
     s_core.cnt_cmd++;
+
+    /* Optional audio-backend hook. NULL by default; p2k-dcs-audio.c
+     * registers a sink when P2K_DCS_AUDIO=1. */
+    if (p2k_dcs_core_audio_hook) {
+        p2k_dcs_core_audio_hook(cmd);
+    }
 
     /* Active (0x0E) suspend: only another 0x0E exits, then ack */
     if (s_core.active) {

@@ -72,6 +72,9 @@ uint8_t  p2k_dcs_core_get_echo(void);
 void p2k_install_dcs(void);
 /* p2k-dcs-uart.c: I/O 0x138-0x13F UART/DCS frontend. */
 void p2k_install_dcs_uart(void);
+/* p2k-dcs-audio.c: optional QEMU audiodev backend (proof-of-path).
+ * Off by default; enable with P2K_DCS_AUDIO=1 (see qemu/README.md). */
+void p2k_install_dcs_audio(void);
 
 /* p2k-lpt-board.c: minimal LPT driver-board protocol on 0x378-0x37A
  * (STATUS=0x87 signature + edge-detect dispatch, all inputs idle). */
