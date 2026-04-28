@@ -86,4 +86,8 @@ void p2k_install_watchdog(void);
 /* p2k-plx-regs.c: PLX 9050 BAR0 register file + 93C46 SEEPROM model. */
 void p2k_install_plx_regs(void);
 
+/* p2k-mem-detect.c: BT-130 — patch XINU mem_detect() prologue to
+ * return 14 MiB instead of the 4 MiB the stub controller reports. */
+void p2k_install_mem_detect(void);
+
 #endif /* HW_PINBALL2000_INTERNAL_H */
