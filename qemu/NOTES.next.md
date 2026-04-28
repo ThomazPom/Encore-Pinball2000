@@ -12,6 +12,82 @@ Legend:
 - `[!]`: temporary, symptom-shaped, rollback/delete candidate.
 - Rule: every future commit should check an item, add an item, or retire one.
 
+## Unicorn Breakthrough Ledger Before QEMU
+
+This is the pre-QEMU archaeology. Use it to remember what the project learned,
+not to blindly port late-Unicorn patches. `unicorn.old/` is a reference library,
+not the new source of truth.
+
+- [x] Early DCS BAR4 sound path: `2f5e52d` forced BAR4 mode, disabled UART,
+  and produced working audio commands. Lesson: the sample table and playback
+  path in `unicorn.old/src/sound.c` are valuable references for QEMU audio.
+- [x] LPT switch-matrix discovery: `d1c25db`, `aeb76d0`, `a6e1066`,
+  `81b342c`, `98fb68e`, `143caa8`, `84fc15d` mapped polarity, shift-register
+  behavior, switch table routing, coin door, service buttons, and trace tools.
+  Lesson: desktop controls must update the emulated LPT/switch matrix, not PS/2.
+- [x] User-control ergonomics: `69f579f`, `e24ccc4`, `1feac34`, `6897d3c`,
+  `46e51c0`, `585289a`, `85b8118` built the practical desktop UX: start,
+  credits, flippers, fullscreen, screenshots, probe keys, and splash screen.
+  Lesson: preserve the workflow even if QEMU implements it differently.
+- [~] Debug RAM-injection era: `e82fe0a`, `b3b90f2`, `1c12c19`, `6b65e78`,
+  `51412c1` tried brute-force Start/game-state patches, then removed them.
+  Lesson: useful for discovery only; do not reintroduce gameplay RAM patches.
+- [x] UART/net console lesson: `641b590` raised UART IRQ4 after RX bytes.
+  QEMU equivalent is `9fcd992` for TX-empty. Lesson: XINU console waits on
+  serial IRQ behavior; model COM1, do not fake monitor progress.
+- [x] Cabinet/LPT passthrough research: `a0cb997`, `4c0e88a`, `804d2c2`,
+  `8f7f06a`, `745c56e`, `caf5de0`, `d2429d0`, `67cebab`, `eb2a6f4` covered
+  ppdev/raw I/O, permissions, USB-LPT incompatibility, and public protocol docs.
+  Lesson: QEMU desktop should stay rootless; real cabinet mode can come later.
+- [x] DCS mode duality breakthrough: `4db3f2d`, `c967fe7`, `aa13af4`,
+  `c0b8f47`, `c8d82c1`, `113a3ed`, `3f2106e`, `6426dc6` established BAR4
+  vs io-handled topology and the danger of mode-specific patching. Lesson:
+  QEMU should share one DCS core behind BAR4 and I/O frontends.
+- [~] DCS/watchdog coupling era: `753d515`, `6495c42`, `ad543e8`, `b6357f1`,
+  `ae427e9`, `e5b7c43`, `90fe7bc` found that watchdog/probe scribbles could
+  make DCS appear fixed. Lesson: very useful clue, but avoid RAM scribbles in
+  QEMU; model PLX/DCS behavior instead.
+- [x] ROM/update/assets pipeline: `9edcd4d`, `1435252`, `c404352`,
+  `fbff370`, `f55332e`, `27adf49` improved RFM chip choice, all-terrain update
+  loading, latest-update selection, savedata/config/bpp/fullscreen/shape-based
+  sound scanning. Lesson: QEMU wrapper should recover the useful user-facing
+  pieces, not the old CPU backend.
+- [x] Logging/diagnostics hygiene: `e235631`, `dd93497`, `4ab57f4`, `1fc1916`,
+  `47a5e20` made logs usable and docs closer to code. Lesson: QEMU diagnostics
+  should be tiered and quiet by default except UART/Fatal visibility.
+- [~] LPT purist/raw control era: `38b07c7`, `a0e956d`, `6192acc`,
+  `ec53b63`, `f81eb88`, `0bf1782`, `4b02a63` moved toward verbatim guest CTL
+  and cabinet-purist semantics. Lesson: future QEMU cabinet mode should disable
+  symptom patches and trust real device lines where possible.
+- [!] LPT pacing era: `deb5e53`, `e87a5ea`, `b2ed869` tried bus pacing for
+  driver-board settling. Lesson: it made things feel smoother but at the wrong
+  layer; do not pace LPT as game timing in QEMU.
+- [~] LPT/PDB protocol fixes: `817afac`, `dd56b99`, `d619cfb`, `2c2c180`,
+  `88174c4` found opcode/status details, blanking/health behavior, +50V relay,
+  watchdog, and CSV tracing. Lesson: port protocol facts after verification,
+  keep tracing as diagnostic.
+- [~] Pre-vticks IRQ0 breakthrough: `be99437` fixed cadence enough to reach
+  attract and exposed PLX/watchdog dependencies. Lesson: historically important,
+  but mixed cadence, watchdog, PLX pointer and stats; do not port wholesale.
+- [!] Virtual-time/IRQ0 experiment stack: `6b3919b`, `352c0e2`, `a5bc0ee`,
+  `b35516b`, `bce0828`, `fcf7f79`, `516210d`, `39f7c20`, `7e57775`,
+  `eafc7ea`, `075faf8`, `5b0d407`, `c377122`, `72868be`, `6bead4b`,
+  `d9bf97b`, `ed354f5`, `d58b88f`, `412e1bf`, `233e1da`, `5b68c40`,
+  `e472565`, `709f582` produced excellent forensics but too many Unicorn-side
+  guards. Lesson: QEMU migration exists to delete this timing layer.
+- [~] Late DCS byte-write clue: `0001de2` found io-handled commands written as
+  high-byte then low-byte to `0x13c`. Lesson: concrete and likely useful, but
+  post-LPT-pace; QEMU must re-prove it with shared DCS core and sound output.
+- [!] DCS default flip false-good: `cc630fb` made BAR4 default because sound
+  worked, then `958b190` reverted/helped document the gap. Lesson: do not hide
+  io-handled bugs by changing defaults.
+- [~] `#UD` / Cyrix opcode clue: `516210d` also claimed/fixed a non-Cyrix
+  `#UD` interrupt-frame leak. Lesson: relevant only if QEMU keeps custom
+  `0F 3C`; verify against QEMU handler bytes.
+- [x] Human lesson: the best Unicorn period proved the ROMs can run, graphics
+  can be fluid, and DCS can play. The late period proved Unicorn timing and
+  synthetic IRQ injection were the wrong long-term maintenance surface.
+
 ## Product Target
 
 - [ ] Baseline user experience: launch SWE1 from one wrapper command, see fluid
@@ -180,8 +256,15 @@ Legend:
   wrapper always enables it for bring-up.
   Done: `p2k-isa-stubs.c` defaults `s_uart_to_stderr = true`; opt-out via
   `P2K_NO_UART_STDERR=1`. Verified Fatal/NonFatal lines appear without env.
-- [ ] Implement desktop controls through LPT/switch matrix: F1/F2/F3/F4,
+- [~] Implement desktop controls through LPT/switch matrix: F1/F2/F3/F4,
   F6-F12, Space/S, C/F10, arrows, Esc, Enter.
+  Done so far via `qemu_input_handler_register` in `p2k-lpt-board.c`:
+  F4 coin-door toggle (Physical[10] bit 1), F7 left flipper (bit 5),
+  F8 right flipper (bit 4), Space/S start button (col 0 bit 2 of opcode
+  0x04, column-gated), F10/C coin slot 1 (Physical[8] bit 0), F12 dump.
+  Verified via QEMU monitor `sendkey` and SDL display path. Remaining:
+  F1 quit, F2 flip Y, F3 screenshot, F6/F9 action buttons, F11 fullscreen,
+  arrows/Esc/Enter for service menu, optional 0..7 / [ ] probe keys.
   Exact Unicorn parity target: F1 quit, F2 flip Y, F3 screenshot, F4 coin door,
   F6 left action, F7 left flipper, F8 right flipper, F9 right action, F10/C
   credit, F11/Alt+Enter fullscreen, F12 switch dump, Space/S start, Esc/Left
