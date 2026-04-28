@@ -107,7 +107,8 @@ Architecture goal:
 - Keep BAR4/MMIO and I/O-UART/`0x138..0x13f` as thin frontends into that shared
   core.
 - Port only the useful audio behavior from `unicorn.old/src/sound.c` and the
-  proven `io-handled` byte-write lesson from `0001de2`.
+  concrete but late-Unicorn `io-handled` byte-write clue from `0001de2`; re-prove
+  it in QEMU before treating it as settled.
 - Treat `bar4` and `io-handled` as compatibility paths/modes, not as duplicate
   sound engines.
 - Do not make `bar4` the default just because it masks a bug in the I/O path;

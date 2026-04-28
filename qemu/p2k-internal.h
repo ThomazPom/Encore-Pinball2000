@@ -58,8 +58,20 @@ void p2k_install_gfxlist_watch(Pinball2000MachineState *s);
 /* p2k-display.c: 640×480 SDL/QEMU display reading FB at RAM 0x800000. */
 void p2k_install_display(void);
 
-/* p2k-dcs.c: DCS audio MMIO state machine on BAR4 (0x13000000, 16 MiB). */
+/* p2k-dcs-core.c: single shared DCS-2 state machine.  Both p2k-dcs.c
+ * (BAR4 MMIO) and p2k-dcs-uart.c (I/O 0x138-0x13F) MUST be thin views
+ * over this core; do not introduce a parallel queue/handshake again. */
+void     p2k_dcs_core_reset(void);
+void     p2k_dcs_core_write_cmd(uint16_t cmd);
+uint16_t p2k_dcs_core_read_resp(void);
+bool     p2k_dcs_core_has_resp(void);
+uint8_t  p2k_dcs_core_flag_byte(void);
+void     p2k_dcs_core_set_echo(uint8_t v);
+uint8_t  p2k_dcs_core_get_echo(void);
+
+/* p2k-dcs.c: BAR4 MMIO frontend (0x13000000, 16 MiB). */
 void p2k_install_dcs(void);
+/* p2k-dcs-uart.c: I/O 0x138-0x13F UART/DCS frontend. */
 void p2k_install_dcs_uart(void);
 
 /* p2k-lpt-board.c: minimal LPT driver-board protocol on 0x378-0x37A
