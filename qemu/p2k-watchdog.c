@@ -141,11 +141,19 @@ static void p2k_wd_tick(void *opaque)
 
 void p2k_install_watchdog(void)
 {
-    p2k_wd_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, p2k_wd_tick, NULL);
-    timer_mod(p2k_wd_timer,
-              qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + P2K_WD_PRIME_DELAY_NS);
-    info_report("pinball2000: PCI sentinel scribbler armed "
-                "(scan after %d ms, then %d ms re-scribble cadence)",
-                (int)(P2K_WD_PRIME_DELAY_NS / 1000000),
-                (int)(P2K_WD_PERIOD_NS / 1000000));
+    /* PLX 9050 (vendor 0x10B5) is now exposed at PCI dev9 (see
+     * p2k-pci.c), so pci_probe can find all four required vendors
+     * natively and write devNums into 0x2f0414/0x2f0418/0x2f041c/0x2f0420.
+     * The sentinel scribbler is no longer needed and would actively
+     * corrupt those cells (in particular 0x2f0418 — the Cx5520 cell —
+     * which gx_fb_reg_setup reads, panicking with
+     * "PCI_cx55xx_dev not set" if it stays 0xFFFF).
+     *
+     * Keep the scan helper compiled in for diagnostics but do NOT arm
+     * the timer.
+     */
+    (void)p2k_wd_timer;
+    (void)p2k_wd_tick;
+    info_report("pinball2000: PCI sentinel scribbler disabled "
+                "(PLX 9050 exposed at dev9, scribble no longer needed)");
 }
