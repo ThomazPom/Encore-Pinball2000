@@ -48,6 +48,7 @@ void p2k_install_plx_bars(Pinball2000MachineState *s);
 
 /* p2k-gx.c: 16 MiB Cyrix MediaGX MMIO + framebuffer stub at 0x40000000. */
 void p2k_install_gx_stub(void);
+void p2k_install_gp_blt(void);
 
 /* p2k-display.c: 640×480 SDL/QEMU display reading FB at RAM 0x800000. */
 void p2k_install_display(void);
