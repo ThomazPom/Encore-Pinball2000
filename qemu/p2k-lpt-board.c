@@ -35,6 +35,7 @@
 #include "exec/ioport.h"
 #include "ui/input.h"
 #include "ui/console.h"
+#include "system/runstate.h"
 
 #include "p2k-internal.h"
 
@@ -175,6 +176,12 @@ static void p2k_lpt_key_event(DeviceState *dev, QemuConsole *src,
     bool down = key->down;
 
     switch (qcode) {
+    case Q_KEY_CODE_F1:                              /* Unicorn parity: quit */
+        if (down) {
+            fprintf(stderr, "[lpt] F1 → shutdown request\n");
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_UI);
+        }
+        break;
     case Q_KEY_CODE_F4:
         if (down) {
             s_coin_door_closed = !s_coin_door_closed;
@@ -231,6 +238,6 @@ void p2k_install_lpt_board(void)
 
     info_report("pinball2000: LPT driver-board installed at I/O 0x378-0x37a "
                 "(STATUS=0x87, edge-detect dispatch, "
-                "keys: F4 door, F7/F8 flippers, Space/S start, "
+                "keys: F1 quit, F4 door, F7/F8 flippers, Space/S start, "
                 "F10/C coin, F12 dump)");
 }
