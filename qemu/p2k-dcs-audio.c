@@ -135,8 +135,8 @@ static void dcs_audio_on_cmd(uint16_t cmd)
      * Still emit a blip — we can refine later. Keep blips short so
      * back-to-back commands don't fuse into a drone. */
     a->blip_freq         = cmd_to_freq(cmd);
-    a->blip_samples_left = DCS_AUDIO_RATE / 20;     /* 50 ms */
-    a->blip_amp          = 6000;                    /* low to avoid clipping */
+    a->blip_samples_left = DCS_AUDIO_RATE / 8;      /* 125 ms — audible */
+    a->blip_amp          = 18000;                   /* well above noise floor */
     a->blip_phase        = 0.0;
 
     if (a->cmd_count <= 8) {
@@ -185,6 +185,13 @@ void p2k_install_dcs_audio(void)
     AUD_set_active_out(a->voice, 1);
     a->enabled = true;
     a->opened  = true;
+
+    /* Startup "hello" tone so the user can confirm audio is wired
+     * before the guest issues any DCS command. 600 ms at 660 Hz. */
+    a->blip_freq         = 660;
+    a->blip_samples_left = DCS_AUDIO_RATE * 600 / 1000;
+    a->blip_amp          = 16000;
+    a->blip_phase        = 0.0;
 
     p2k_dcs_core_audio_hook = dcs_audio_on_cmd;
 

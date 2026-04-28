@@ -1,8 +1,10 @@
 # QEMU Next V2 Roadmap
 
-Purpose: one auditable roadmap from QEMU day 0. This file should make it easy
-to answer four questions: what is done, what remains, which commits are real
-foundations, and which commits were temporary bridges or false-good patches.
+Purpose: one auditable roadmap from project day 0. This file should make it
+easy to answer four questions: what is done, what remains, which commits are
+real foundations, and which commits were temporary bridges or false-good
+patches. Do not keep obsolete code recipes here; keep only decisions, lessons,
+and removal criteria.
 
 Legend:
 
@@ -11,6 +13,99 @@ Legend:
 - `[~]`: partial or needs verification.
 - `[!]`: temporary, symptom-shaped, rollback/delete candidate.
 - Rule: every future commit should check an item, add an item, or retire one.
+
+## Foundation / POC Breakthrough Ledger
+
+These are the discoveries before the later "Encore/Unicorn mature" era. They
+are significant because they proved the project was viable at all.
+
+- [x] `93bd72f` Encore v0.1: ROM auto-detect, savedata, modular architecture.
+  Lesson: the project had a real emulator skeleton, not just scripts.
+- [x] `0be2167` Encore v0.2: MMIO callback fix, EEPROM verify, XINA boot.
+  Lesson: PRISM/XINA could boot under Unicorn with the right low-level hooks.
+- [x] `b19a2d0` reached `Game(Williams - Episode I)` banner.
+  Lesson: the guest code path was not fundamentally blocked by ROM loading.
+- [x] `34a05ed` EIP write-back, display init, GP BLT, framebuffer aliasing.
+  Lesson: CPU state sync and MediaGX-ish memory views were core bring-up facts.
+- [x] `2a881aa` DC_TIMING2 read-increment made graphics rendering active.
+  Lesson: small display register semantics could gate the whole visible game.
+- [x] `76f542a` SWE1 booted with full graphics display.
+  Lesson: the graphics path was achievable before later timing experiments.
+- [x] `e59277c` FPS jumped from about 5 to 50-56 via direct memory/display
+  throttling.
+  Lesson: host-side presentation overhead was a real bottleneck and could be
+  removed without changing game logic.
+- [~] `5933e01`, `dd26b2e`, `286252c` optimized `uc_emu_stop`, direct RAM,
+  EIP writeback, and `clock_gettime` frequency.
+  Lesson: useful performance for Unicorn, mostly irrelevant once QEMU owns CPU.
+- [~] `775d4f`, `ee0a3af`, `eb3cd8d`, `ac2213f` explored iteration timers,
+  tcyc bypass, wall-clock PIT at guest-programmed 4003 Hz, and CMOS/RTC.
+  Lesson: these explain why old runs felt alive; QEMU should keep RTC/PIT
+  semantics but not rebuild the Unicorn timer loop.
+- [x] `6601cbc`, `eb9492b`, `4904387` wired early coin door/service/slam tilt
+  and fixed default coin-door/sound-path assumptions.
+  Lesson: cabinet state defaults matter during boot and tests.
+- [x] `fbd2f2d` activated LPT before PinIO probe (`BT-94`).
+  Lesson: device activation order affects guest hardware discovery.
+- [x] `512b324` matched i386 POC sound management.
+  Lesson: there was an earlier i386 sound reference worth preserving through
+  `unicorn.old/src/sound.c` and QEMU DCS work.
+- [x] `1fa5337` DCS2 sound board init via I/O command interface + serial
+  protocol.
+  Lesson: DCS was not just BAR4; command/serial protocol mattered from early
+  POCs.
+- [x] `2f5e52d` DCS2 BAR4 mode produced working audio commands.
+  Lesson: early audio success was real, even if later defaults/modes got muddy.
+- [x] `e27a5a8`, `8354805`, `3c9deda` fixed stuck volume/buttons by returning
+  open switch values (`0xFF`) on columns/rendering opcodes.
+  Lesson: default-open cabinet inputs are a boot/playability invariant.
+- [x] `6fe4944`, `d1c25db`, `89401bc`, `aeb76d0` refined LPT shift-register
+  and mixed-polarity switch columns.
+  Lesson: the switch matrix is not "just buttons"; polarity and serial state
+  are device semantics.
+- [x] `a6e1066`, `84fc15d`, `b431951`, `a3b6d38`, `81b342c`, `143caa8`,
+  `98fb68e`, `9825b2b`, `625784a`, `69f579f` converged the practical key and
+  service/test behavior.
+  Lesson: this is the origin of the Unicorn key parity target now being ported
+  to QEMU.
+- [!] `e82fe0a`, `b3b90f2`, `1c12c19`, `2e5e815` were Start-button RAM/code
+  patch forensics.
+  Lesson: valuable exploration, explicitly reverted by `51412c1`; never port
+  as behavior.
+- [x] `f08ec28`, `a32c487`, `641b590` added serial/keyboard TCP and fixed UART
+  IRQ4 RX behavior.
+  Lesson: XINA console access is important; keyboard TCP is likely baseline
+  baggage, while serial/UART behavior remains real.
+- [x] `3f9032f`, `33c05f8`, `6f89f76`, `4e834e8` dropped dead per-version
+  patches and added symbol/multi-bundle infrastructure.
+  Lesson: prefer ROM/symbol-driven generic behavior over hardcoded version
+  gates.
+- [x] `b1db763`, `1435252`, `557e753`, `b093ce0`, `fbff370` built the update
+  loader/distribution path.
+  Lesson: QEMU wrapper must recover `--update` and savedata/update ergonomics.
+- [x] `609c8ef`, `98006cf`, `ca33590` made the large Encore documentation tree
+  and ground-truth audit.
+  Lesson: docs are part of the product, but QEMU docs must be decontaminated
+  and current.
+
+## Quarantined External POC References
+
+These live outside this repo (`../poc-nucore`, `../poc-nucore-i386`,
+`../nucore-portable`). They were alpha forensics, not product architecture.
+Do not port their patch recipes, direct QEMU internals, guest stubs, or
+constructor/IDT survival tactics.
+
+- [~] Keep as evidence only: historical boot logs, display observations,
+  symbols/update notes, rough device-address hints, and NuCore comparison logs.
+- [~] Re-check only when useful: DCS/resource observations, display pipeline
+  clues, and i386 POC sound-management references such as the path later echoed
+  by `512b324`.
+- [!] Do not import: direct PIC/PicState mutation, old QEMU TCG surgery,
+  SIG/translation-block hacks, synthetic guest stubs, constructor trampolines,
+  fake IDT handlers, or permanent IRQ masking.
+- [!] If a POC idea is still tempting, it must graduate through current QEMU
+  proof: ROM/symbol evidence, clean device model, gated experiment, successful
+  SWE1/RFM validation, then removal of the old workaround.
 
 ## Unicorn Breakthrough Ledger Before QEMU
 
@@ -285,6 +380,18 @@ not the new source of truth.
   monitor `sendkey`. Remaining (lower priority): F2 flip-Y,
   F3 screenshot (needs `coroutine_fn` bridge for `qmp_screendump`),
   F11/Alt+Enter fullscreen, optional 0..7 / `[` `]` probe keys.
+
+- [~] DCS audio audible by default. Initial `447dad4` was off-by-default
+  and required `--audio pa`; the user reported "could not hear a thing".
+  Followup: `scripts/run-qemu.sh` auto-detects PulseAudio (then ALSA)
+  when `--audio` is absent and exports `P2K_DCS_AUDIO=1` automatically.
+  Blip duration bumped 50→125 ms and amplitude 6000→18000 so blips are
+  unmistakable. `p2k-dcs-audio.c` also emits a 600 ms 660 Hz "hello"
+  tone at install time so the user immediately knows the backend is
+  live before any DCS command fires. Verified via wrapper:
+  `[run-qemu] audio: auto-detected PulseAudio` followed by `DCS audio
+  installed` and a stream of cmd blips. `--no-audio` still silences.
+  Remaining: real DCS-2 sample dispatch port (next bullet).
 - [~] Wrapper parity: `--game`, `--roms`, `--savedata`, `--no-savedata`,
   `--update`, `-v/-vv/-vvv`, fullscreen/headless.
   scripts/run-qemu.sh now handles `--game`, `--roms`, `--savedata`,

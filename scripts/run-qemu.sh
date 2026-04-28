@@ -91,6 +91,26 @@ if [[ -z "$DISPLAY_MODE" ]]; then
   fi
 fi
 
+# Audio auto-detect: if the user didn't pick anything, try to pick a
+# working host backend so DCS audio is audible by default. We probe
+# PulseAudio first (most common on Linux desktops), then ALSA. If
+# nothing answers, fall back to silent ("none" = no -audio, hook stays
+# wired but inaudible). User can always override with --audio / --no-audio.
+if [[ -z "$AUDIO" ]]; then
+  if command -v pactl >/dev/null 2>&1 && pactl info >/dev/null 2>&1; then
+    AUDIO=pa
+    export P2K_DCS_AUDIO=1
+    echo "[run-qemu] audio: auto-detected PulseAudio (use --no-audio to silence)" >&2
+  elif [[ -e /proc/asound/cards ]] && grep -q '^.[0-9]' /proc/asound/cards 2>/dev/null; then
+    AUDIO=alsa
+    export P2K_DCS_AUDIO=1
+    echo "[run-qemu] audio: auto-detected ALSA (use --no-audio to silence)" >&2
+  else
+    AUDIO=none
+    echo "[run-qemu] audio: no host backend detected; running silent" >&2
+  fi
+fi
+
 if [[ $VERBOSITY -ge 1 ]]; then export P2K_DIAG=1; fi
 
 if [[ -n "$UPDATE_DIR" ]]; then
