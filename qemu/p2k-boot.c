@@ -67,6 +67,9 @@ void p2k_post_reset(void *opaque)
     cpu_physical_memory_write(P2K_OPTROM_LOAD_ADDR,
                               s->bank0, P2K_OPTROM_SIZE);
 
+    /* 1a. Seed BT-131 NIC LAN ROM in D-segment (mirrors unicorn). */
+    p2k_install_nic_dseg();
+
     /* 2. Lay down a flat-mode GDT for the protected-mode jump. */
     p2k_build_gdt();
 

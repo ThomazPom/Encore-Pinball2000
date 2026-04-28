@@ -90,4 +90,7 @@ void p2k_install_plx_regs(void);
  * return 14 MiB instead of the 4 MiB the stub controller reports. */
 void p2k_install_mem_detect(void);
 
+/* p2k-nic-dseg.c: BT-131 — seed SMC8216T LAN-ROM shadow at 0xD0008. */
+void p2k_install_nic_dseg(void);
+
 #endif /* HW_PINBALL2000_INTERNAL_H */
