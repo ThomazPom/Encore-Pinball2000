@@ -706,7 +706,9 @@ static void dcs_audio_status_tick(void *opaque)
         info_report("dcs-audio status: cb=%llu frames=%llu "
                     "AUD_write calls=%llu bytes=%llu zero=%llu peak=%d "
                     "active=%d/%d global_vol=%u played=%llu missed=%llu "
-                    "src{BAR4=%llu UART.w=%llu UART.bp=%llu other=%llu}",
+                    "mode=%s "
+                    "src{BAR4=%llu UART.w=%llu UART.bp=%llu other=%llu "
+                    "BAR4_rej=%llu}",
                     (unsigned long long)a->callbacks,
                     (unsigned long long)a->frames_rendered,
                     (unsigned long long)a->aud_write_calls,
@@ -717,10 +719,12 @@ static void dcs_audio_status_tick(void *opaque)
                     a->global_vol,
                     (unsigned long long)a->played_count,
                     (unsigned long long)a->missed_count,
+                    p2k_dcs_core_mode_name(),
                     (unsigned long long)a->cmd_by_bar4,
                     (unsigned long long)a->cmd_by_uart_w,
                     (unsigned long long)a->cmd_by_uart_bp,
-                    (unsigned long long)a->cmd_by_other);
+                    (unsigned long long)a->cmd_by_other,
+                    p2k_dcs_bar4_rejected_count());
         for (int i = 0; i < DCS_VOICES; i++) {
             Voice *vc = &a->voices[i];
             if (!vc->active || !vc->s) continue;

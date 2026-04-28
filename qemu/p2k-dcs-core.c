@@ -72,6 +72,51 @@ void (*p2k_dcs_core_audio_execute_mixer)(uint16_t cmd,
  * just before each write_cmd; read by audio sinks for tracing. */
 static const char *s_dcs_source_tag = "?";
 
+/* DCS dispatch mode (Unicorn parity: --dcs-mode bar4 | io-handled).
+ *  - bar4 (default):     game uses BAR4 MMIO at 0x13000000 for DCS commands.
+ *                        Both frontends accept writes; that's how it has
+ *                        always run.
+ *  - io-handled:         BAR4 frontend MUST NOT carry DCS commands.  The
+ *                        UART frontend at 0x138-0x13F is the only legal
+ *                        DCS data-path.  Selected via env P2K_DCS_MODE
+ *                        or run-qemu.sh --dcs-mode.
+ * Acceptance for io-handled: UART.w or UART.bp counter must grow during
+ * the run; sound must work; boot must remain stable. */
+typedef enum {
+    P2K_DCS_MODE_BAR4 = 0,
+    P2K_DCS_MODE_IO_HANDLED = 1,
+} P2KDcsMode;
+
+static P2KDcsMode s_dcs_mode = P2K_DCS_MODE_BAR4;
+static bool       s_dcs_mode_resolved = false;
+
+P2KDcsMode p2k_dcs_core_mode(void)
+{
+    if (!s_dcs_mode_resolved) {
+        const char *e = getenv("P2K_DCS_MODE");
+        if (e && *e) {
+            if (!strcmp(e, "io-handled") || !strcmp(e, "io_handled") ||
+                !strcmp(e, "io")) {
+                s_dcs_mode = P2K_DCS_MODE_IO_HANDLED;
+            } else {
+                s_dcs_mode = P2K_DCS_MODE_BAR4;
+            }
+        }
+        s_dcs_mode_resolved = true;
+    }
+    return s_dcs_mode;
+}
+
+bool p2k_dcs_core_mode_is_io_handled(void)
+{
+    return p2k_dcs_core_mode() == P2K_DCS_MODE_IO_HANDLED;
+}
+
+const char *p2k_dcs_core_mode_name(void)
+{
+    return p2k_dcs_core_mode_is_io_handled() ? "io-handled" : "bar4";
+}
+
 void p2k_dcs_core_note_source(const char *src)
 {
     s_dcs_source_tag = src ? src : "?";

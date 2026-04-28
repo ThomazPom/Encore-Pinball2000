@@ -30,6 +30,13 @@
 #                         AUD_register_card binds. Default: off (silent).
 #   --no-audio            Force DCS audio off even if P2K_DCS_AUDIO is set
 #                         in the environment.
+#   --dcs-mode <mode>     bar4 (default) | io-handled. In io-handled mode
+#                         the BAR4 MMIO frontend REJECTS DCS command words
+#                         (logged + counted) so we can validate the UART
+#                         (I/O 0x138-0x13F) data path without the BAR4 path
+#                         silently masking failures. Acceptance for io-handled:
+#                         dcs-audio status must show UART.w>0 or UART.bp>0,
+#                         sound must work, boot must remain stable.
 #   -v|-vv|-vvv           Increase verbosity (info/debug/trace) — currently
 #                         maps to P2K_DIAG=1 plus optional QEMU -d trace levels.
 #   --tcg-only            Smoke-test the host QEMU binary alone (no Pinball
@@ -71,6 +78,7 @@ while [[ $# -gt 0 ]]; do
     --uart-quiet)   export P2K_NO_UART_STDERR=1; shift ;;
     --audio)        AUDIO="$2"; export P2K_DCS_AUDIO=1; shift 2 ;;
     --no-audio)     AUDIO="none"; unset P2K_DCS_AUDIO; shift ;;
+    --dcs-mode)     export P2K_DCS_MODE="$2"; shift 2 ;;
     -v)             VERBOSITY=1; shift ;;
     -vv)            VERBOSITY=2; shift ;;
     -vvv)           VERBOSITY=3; shift ;;

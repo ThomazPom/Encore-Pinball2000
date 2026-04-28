@@ -39,13 +39,42 @@ static uint64_t p2k_dcs_read(void *opaque, hwaddr off, unsigned size)
     return 0;
 }
 
+static unsigned long long s_bar4_rejected_count = 0;
+
+unsigned long long p2k_dcs_bar4_rejected_count(void)
+{
+    return s_bar4_rejected_count;
+}
+
 static void p2k_dcs_write(void *opaque, hwaddr off, uint64_t val,
                           unsigned size)
 {
     static unsigned dropped_log = 0;
+    static unsigned rejected_log = 0;
     if (off == 0) {
         if (size == 1) {
+            /* Echo byte: harmless to keep working in both modes so the
+             * game's PCI-side liveness probes don't see a dead device. */
             p2k_dcs_core_set_echo(val & 0xFFu);
+            return;
+        }
+        if (p2k_dcs_core_mode_is_io_handled()) {
+            /* In io-handled mode, BAR4 must NOT be the DCS data path.
+             * Reject every DCS command word here so we can prove the
+             * game is writing them, then expect the game to switch
+             * to the UART (I/O 0x138-0x13F) path. */
+            s_bar4_rejected_count++;
+            if (rejected_log < 32) {
+                warn_report("dcs-bar4: REJECTED cmd=0x%04x "
+                            "(mode=io-handled, total rejected=%llu)",
+                            (unsigned)(val & 0xFFFF),
+                            s_bar4_rejected_count);
+                rejected_log++;
+            } else if (rejected_log == 32) {
+                warn_report("dcs-bar4: REJECTED log throttled "
+                            "(further rejects counted only)");
+                rejected_log++;
+            }
             return;
         }
         p2k_dcs_core_note_source("BAR4");
@@ -89,6 +118,10 @@ void p2k_install_dcs(void)
                           "p2k.bar4-dcs", P2K_BAR4_SIZE);
     memory_region_add_subregion(sm, P2K_BAR4_BASE, mr);
 
-    info_report("pinball2000: DCS BAR4 MMIO @ 0x%08x (16 MiB) [shared core]",
-                P2K_BAR4_BASE);
+    info_report("pinball2000: DCS BAR4 MMIO @ 0x%08x (16 MiB) [shared core, "
+                "mode=%s%s]",
+                P2K_BAR4_BASE, p2k_dcs_core_mode_name(),
+                p2k_dcs_core_mode_is_io_handled() ?
+                    " — DCS cmds REJECTED on BAR4, expect UART path" :
+                    "");
 }

@@ -594,3 +594,37 @@ New diagnostic surface (`P2K_DCS_AUDIO_TRACE=1`):
 - `chN REPLACE old(...) ← new(...)` when a sample preempts another on
   the same channel.
 - `chN STOP-ALL was(...)` when 0x0000 halts active voices.
+
+## DCS Mode Switch — `P2K_DCS_MODE=bar4|io-handled` (Phase 1)
+
+Unicorn parity for `--dcs-mode io-handled`. Selectable via env or
+`scripts/run-qemu.sh --dcs-mode io-handled`. Default remains `bar4`
+so existing behaviour is unchanged.
+
+In `io-handled`:
+- `qemu/p2k-dcs.c` BAR4 frontend REJECTS DCS command words at off=0
+  (echo bytes + reads still respond so the game's PCI-side liveness
+  probes don't see a dead device). Each rejected cmd gets a
+  `dcs-bar4: REJECTED cmd=0x.... (mode=io-handled, total rejected=N)`
+  warn (first 32 logged, rest counted).
+- `dcs-audio status` line gains `mode=...` and `BAR4_rej=N` so we can
+  see at a glance whether the BAR4 path is silenced and the UART path
+  is exercising.
+- Acceptance for io-handled: the status `src{}` must show
+  `UART.w>0` or `UART.bp>0`, sound must work, boot remains stable.
+
+**Phase 2 (NOT YET IMPLEMENTED).** Empirically, simply rejecting BAR4
+does not cause the game to fall back to the UART path on its own — it
+keeps writing the same BAR4 cmds. To match Unicorn's working
+io-handled flow we still need:
+1. The CMP/JNE `83 F8 01 75 21 A3 ?? ?? ?? ??` prologue patch to
+   `MOV EAX, 0` (Unicorn does the inverse for bar4-patch). Pure
+   one-shot guest RAM scan once XINU is up; no per-bundle table.
+2. OR make BAR4 visibly unresponsive at probe-time so the game's
+   natural CMP EAX,1 falls into the JNE I/O-port branch. Needs
+   investigation of which read/write the probe inspects.
+
+Until Phase 2 lands, `--dcs-mode io-handled` produces a clean negative
+result (silence + REJECTED stream + UART.w/UART.bp=0) which is exactly
+the proof-of-bucket the user requested: "BAR4 audio is not proof that
+io-handled is fixed".
