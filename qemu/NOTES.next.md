@@ -392,6 +392,35 @@ not the new source of truth.
   The audio-test-menu path that uses the ACE1/mixer triple is
   now reachable; the test-menu samples themselves require manual
   key navigation to validate.
+
+  `cba0856` then ported the **full Unicorn 8-channel semantics**:
+  fixed channels (process_cmd: ch=cmd&7; 0x003A→ch0; 0x00AA→ch7;
+  execute_mixer: ch=(data2&0x380)>>7), 0x0000=halt-all,
+  per-channel vol, global volume from 0x55AA, per-channel vol/pan
+  from 0x55AB/AE/AC. Re-trigger on a channel halts the previous
+  voice (Unicorn semantics). Renderer scales per-voice via
+  `vol * global_vol * 28000 / (255*255)`. Pan is stored but the
+  current `SWVoiceOut` is mono, so true L/R panning is deferred.
+
+  Trace upgrade in same commit: one `info_report` per audio event
+  with source / cmd / data1 / data2 / channel / vol / pan / lookup
+  key / pb2k entry name (or MISS reason) / sample frames /
+  played-or-missed counter. Default ON for the first 64 events;
+  forced via `P2K_DCS_AUDIO_TRACE=1`. This satisfies the user's
+  per-event diagnostic request and lets us bucket future failures
+  (no event vs. missing pb2k entry vs. decode failure vs. silent
+  voice).
+
+  Open follow-ups (audio-test-menu samples that still don't play):
+  - `S0001-LP1` and `S0001-LP2` collide on track_cmd 0x0001 because
+    `strtoul` stops at `-`. Need to differentiate by `-LP` suffix
+    if the game distinguishes them.
+  - `S0FFF` does not exist in pb2kslib, so 0x00AA→0x0FFF will
+    always miss. Verify whether real hardware also misses or maps
+    elsewhere.
+  - `0x55ab` / `0x55ac` are arriving via `process_cmd` rather than
+    `execute_mixer`, suggesting some 0x55-family writes happen
+    outside the ACE1 wrapper. Audit `p2k-dcs-core.c` ACE1 detection.
 - [x] Re-prove late-Unicorn DCS byte-write clue: `0001de2` says io-handled
   writes `0x13c` high byte then low byte. It is concrete, but post-LPT-pace.
   Status: instrumented in `p2k-dcs-uart.c` behind `P2K_DCS_BYTE_TRACE=1`.
@@ -419,13 +448,20 @@ not the new source of truth.
   `09f300f` made the wrapper auto-enable it when PulseAudio/ALSA is available
   and added an install-time hello tone. This checkpoint replaces the
   cmd-hash blip with real pb2kslib sample playback through libvorbisfile.
-- [~] Wrapper parity: `--game`, `--roms`, `--savedata`, `--no-savedata`,
+- [x] Wrapper parity: `--game`, `--roms`, `--savedata`, `--no-savedata`,
   `--update`, `-v/-vv/-vvv`, fullscreen/headless.
   scripts/run-qemu.sh now handles `--game`, `--roms`, `--savedata`,
   `--no-savedata`, `--display`, `--headless`, `--monitor`, `--debug`,
-  `--uart-quiet`, `--audio <driver>`, `--no-audio`, `-v/-vv/-vvv`, and
-  `--`. `--update <dir>` is parsed but the machine does not yet consume
-  it (warning emitted).
+  `--uart-quiet`, `--audio <driver>`, `--no-audio`, `-v/-vv/-vvv`,
+  `--`, and `--update <dir>`. `d7cf24e` made `--update` actually load
+  the bundle: machine string property `update=<path>` →
+  `p2k-bar3-flash.c` scans for `*_bootdata/im_flsh0/game/symbols.rom`
+  and assembles them into BAR3 per `unicorn.old/src/rom.c:526-576`
+  layout, applied after the savedata seed. Verified end-to-end with
+  SWE1 v2.10: VALIDATING UPDATE BOOT/SYS/GAME/SYMBOLS pass, STARTING
+  UPDATE GAME CODE reached, `XINA: V1.38` and 15482-symbol table
+  load, `Trough` + `swd Debug` events fire, exec_pass advances,
+  0 Fatals over 60 s.
 - [ ] Preserve polished UX if cheap: `--bpp`, `--splash-screen`, screenshot,
   display flip.
 - [ ] Preserve useful wrapper shape without cloning baggage: likely keep
