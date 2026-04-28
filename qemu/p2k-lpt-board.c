@@ -55,8 +55,10 @@ static uint8_t s_coin_door_closed = 1;
 
 /* Live cabinet input state (driven by p2k_lpt_key_event below). */
 static uint8_t s_phys10_buttons;     /* Physical[10] bits 4-7 (flippers/actions) */
+static uint8_t s_phys9_service;      /* Physical[9]  bits 0-3 (service menu) */
 static uint8_t s_phys8_coin_slots;   /* Physical[8]  bits 0-3 (coin slots) */
 static int     s_start_button_held;  /* sw=2 → col 0 bit 2 */
+static int     s_enter_pulse;        /* F5 short-press: ~60 LPT frames high */
 
 static int calc_bitwise_sum(uint8_t val)
 {
@@ -79,7 +81,11 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
         return v;
     }
     case 0x02: return 0xF0;                           /* status hi nibble */
-    case 0x03: return 0x00;                           /* coin-door buttons idle */
+    case 0x03: {                                      /* Physical[9] service menu */
+        uint8_t v = s_phys9_service & 0x0F;
+        if (s_enter_pulse > 0) { v |= 0x08; s_enter_pulse--; }
+        return v;
+    }
     case 0x04: {
         int sel  = calc_bitwise_sum(s_rendering_data_val);   /* 1..8 if one-hot */
         int col  = (sel >= 1 && sel <= 8) ? (sel - 1) : 0;
@@ -190,6 +196,18 @@ static void p2k_lpt_key_event(DeviceState *dev, QemuConsole *src,
                     s_coin_door_closed);
         }
         break;
+    case Q_KEY_CODE_F5:                              /* short Enter pulse */
+    case Q_KEY_CODE_KP_ENTER:
+    case Q_KEY_CODE_RET:
+        if (down) {
+            s_enter_pulse = 60;                      /* ~60 LPT frames */
+            fprintf(stderr, "[lpt] Enter pulse fired (~60 frames)\n");
+        }
+        break;
+    case Q_KEY_CODE_F6:                              /* LEFT action button */
+        if (down) s_phys10_buttons |=  (1u << 7);
+        else      s_phys10_buttons &= ~(1u << 7);
+        break;
     case Q_KEY_CODE_F7:                              /* LEFT flipper */
         if (down) s_phys10_buttons |=  (1u << 5);
         else      s_phys10_buttons &= ~(1u << 5);
@@ -197,6 +215,30 @@ static void p2k_lpt_key_event(DeviceState *dev, QemuConsole *src,
     case Q_KEY_CODE_F8:                              /* RIGHT flipper */
         if (down) s_phys10_buttons |=  (1u << 4);
         else      s_phys10_buttons &= ~(1u << 4);
+        break;
+    case Q_KEY_CODE_F9:                              /* RIGHT action button */
+        if (down) s_phys10_buttons |=  (1u << 6);
+        else      s_phys10_buttons &= ~(1u << 6);
+        break;
+    case Q_KEY_CODE_ESC:                             /* Service / Escape */
+    case Q_KEY_CODE_LEFT:
+        if (down) s_phys9_service |=  (1u << 0);
+        else      s_phys9_service &= ~(1u << 0);
+        break;
+    case Q_KEY_CODE_DOWN:                            /* Volume− / Menu Down */
+    case Q_KEY_CODE_KP_SUBTRACT:
+        if (down) s_phys9_service |=  (1u << 1);
+        else      s_phys9_service &= ~(1u << 1);
+        break;
+    case Q_KEY_CODE_UP:                              /* Volume+ / Menu Up */
+    case Q_KEY_CODE_KP_ADD:
+    case Q_KEY_CODE_EQUAL:
+        if (down) s_phys9_service |=  (1u << 2);
+        else      s_phys9_service &= ~(1u << 2);
+        break;
+    case Q_KEY_CODE_RIGHT:                           /* Begin Test / Enter */
+        if (down) s_phys9_service |=  (1u << 3);
+        else      s_phys9_service &= ~(1u << 3);
         break;
     case Q_KEY_CODE_SPC:
     case Q_KEY_CODE_S: {                             /* Start button (sw=2) */
@@ -238,6 +280,7 @@ void p2k_install_lpt_board(void)
 
     info_report("pinball2000: LPT driver-board installed at I/O 0x378-0x37a "
                 "(STATUS=0x87, edge-detect dispatch, "
-                "keys: F1 quit, F4 door, F7/F8 flippers, Space/S start, "
-                "F10/C coin, F12 dump)");
+                "keys: F1 quit | F4 door | F5/Enter pulse | F6/F9 actions | "
+                "F7/F8 flippers | Space/S start | F10/C coin | F12 dump | "
+                "Esc/Left service | Up/Down volume | Right enter)");
 }
