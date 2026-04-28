@@ -116,6 +116,7 @@ static void p2k_dcs_uart_write(void *opaque, hwaddr addr,
                         (unsigned)(val & 0xFFFF), s_dcs_high_latch);
             s_dcs_high_seen = 0;
         }
+        p2k_dcs_core_note_source("UART:0x13c.w");
         p2k_dcs_core_write_cmd((uint16_t)(val & 0xFFFFu));
         return;
     }
@@ -137,6 +138,7 @@ static void p2k_dcs_uart_write(void *opaque, hwaddr addr,
         info_report("dcs-uart: byte-pair cmd=0x%04x (#%u) "
                     "[late-Unicorn 0001de2 clue]",
                     cmd, s_dcs_byte_pair_count);
+        p2k_dcs_core_note_source("UART:0x13c.bp");
         p2k_dcs_core_write_cmd(cmd);
         return;
     }

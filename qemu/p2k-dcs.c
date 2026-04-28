@@ -47,6 +47,7 @@ static void p2k_dcs_write(void *opaque, hwaddr off, uint64_t val,
             p2k_dcs_core_set_echo(val & 0xFFu);
             return;
         }
+        p2k_dcs_core_note_source("BAR4");
         p2k_dcs_core_write_cmd(val & 0xFFFFu);
         return;
     }

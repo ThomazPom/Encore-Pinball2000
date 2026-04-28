@@ -31,6 +31,7 @@
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
+#include "qemu/timer.h"
 #include "qapi/error.h"
 #include "audio/audio.h"
 
@@ -71,6 +72,9 @@ typedef struct {
     uint8_t       vol;       /* 0..255 per Unicorn */
     uint8_t       pan;       /* 0..255 (0x7F = center) */
     bool          active;
+    uint16_t      cmd;       /* originating DCS cmd id (or lookup_cmd) */
+    const char   *name;      /* pb2k entry name (interned, points into entries[]) */
+    uint64_t      started_at_cb;  /* a->callbacks at start time (replacement age) */
 } Voice;
 
 extern void (*p2k_dcs_core_audio_process_cmd)(uint16_t cmd);
@@ -102,6 +106,24 @@ typedef struct DcsAudio {
     Voice         voices[DCS_VOICES];
     uint8_t       global_vol;     /* 0..255, applied to all channels */
     bool          trace;          /* P2K_DCS_AUDIO_TRACE=1 */
+
+    /* Render/output proof.  Updated by the audio callback thread; we
+     * sample from the QEMU main thread via the per-second timer.  Reads
+     * are not strictly atomic but tearing is benign for diagnostics. */
+    uint64_t      callbacks;          /* dcs_audio_callback() entries */
+    uint64_t      aud_write_calls;    /* AUD_write() invocations */
+    uint64_t      aud_write_bytes;    /* total bytes accepted by AUD_write */
+    uint64_t      aud_write_zero;     /* AUD_write returning 0 */
+    int32_t       peak_mix_abs;       /* max |sample| since last status log */
+    uint64_t      frames_rendered;    /* total frames produced */
+
+    /* Per-second status timer + source-tag attribution (raw cmd
+     * histogram by source) — diagnostic only. */
+    QEMUTimer    *status_timer;
+    uint64_t      cmd_by_bar4;
+    uint64_t      cmd_by_uart_w;
+    uint64_t      cmd_by_uart_bp;
+    uint64_t      cmd_by_other;
 
     /* startup hello + fallback blip */
     uint32_t      blip_freq;
@@ -357,27 +379,49 @@ static Sample *get_sample_for_cmd(DcsAudio *a, uint16_t cmd,
 /* ------------------------------------------------------------------ */
 
 /* Start sample on a fixed channel (Unicorn semantics: re-trigger on
- * the same channel halts the previous voice). */
+ * the same channel halts the previous voice).  Logs replacement so we
+ * can see if a sample is being immediately stomped by another. */
 static void start_voice_on_channel(DcsAudio *a, int ch, const Sample *s,
-                                   int vol_8bit, int pan_8bit)
+                                   int vol_8bit, int pan_8bit,
+                                   uint16_t cmd, const char *name)
 {
     if (ch < 0 || ch >= DCS_VOICES) ch = 0;
     if (vol_8bit < 0)   vol_8bit = 0;
     if (vol_8bit > 255) vol_8bit = 255;
     if (pan_8bit < 0)   pan_8bit = 0;
     if (pan_8bit > 255) pan_8bit = 255;
-    a->voices[ch].s      = s;
-    a->voices[ch].pos    = 0;
-    a->voices[ch].vol    = (uint8_t)vol_8bit;
-    a->voices[ch].pan    = (uint8_t)pan_8bit;
-    a->voices[ch].active = true;
+    Voice *vc = &a->voices[ch];
+    if (vc->active && vc->s) {
+        /* Replacement: the old voice is being preempted by a new one
+         * on the same channel.  Emit a one-line bucket-5 trace. */
+        info_report("dcs-audio: ch%d REPLACE old(cmd=0x%04x name=%s "
+                    "pos=%zu/%zu vol=%u) ← new(cmd=0x%04x name=%s vol=%d)",
+                    ch, vc->cmd, vc->name ? vc->name : "?",
+                    vc->pos, vc->s->frames, vc->vol,
+                    cmd, name ? name : "?", vol_8bit);
+    }
+    vc->s              = s;
+    vc->pos            = 0;
+    vc->vol            = (uint8_t)vol_8bit;
+    vc->pan            = (uint8_t)pan_8bit;
+    vc->active         = true;
+    vc->cmd            = cmd;
+    vc->name           = name;
+    vc->started_at_cb  = a->callbacks;
 }
 
 static void stop_all_voices(DcsAudio *a)
 {
     for (int i = 0; i < DCS_VOICES; i++) {
-        a->voices[i].s = NULL;
-        a->voices[i].active = false;
+        Voice *vc = &a->voices[i];
+        if (vc->active && vc->s) {
+            info_report("dcs-audio: ch%d STOP-ALL was(cmd=0x%04x name=%s "
+                        "pos=%zu/%zu)",
+                        i, vc->cmd, vc->name ? vc->name : "?",
+                        vc->pos, vc->s->frames);
+        }
+        vc->s = NULL;
+        vc->active = false;
     }
 }
 
@@ -386,6 +430,7 @@ static void render(DcsAudio *a, int16_t *out, int frames)
     /* Per-channel mix:
      *   amp_q15 = (vol * global_vol * 28000) / (255 * 255)
      * leaves headroom for summing 8 voices. */
+    int32_t local_peak = 0;
     for (int i = 0; i < frames; i++) {
         int32_t mix = 0;
         if (a->blip_samples_left > 0) {
@@ -401,6 +446,10 @@ static void render(DcsAudio *a, int16_t *out, int frames)
             Voice *vc = &a->voices[v];
             if (!vc->active || !vc->s) continue;
             if (vc->pos >= vc->s->frames) {
+                info_report("dcs-audio: ch%d END  (cmd=0x%04x name=%s "
+                            "frames=%zu)",
+                            v, vc->cmd, vc->name ? vc->name : "?",
+                            vc->s->frames);
                 vc->s = NULL;
                 vc->active = false;
                 continue;
@@ -413,19 +462,26 @@ static void render(DcsAudio *a, int16_t *out, int frames)
         if (mix >  32767) mix =  32767;
         if (mix < -32768) mix = -32768;
         out[i] = (int16_t)mix;
+        int32_t am = mix < 0 ? -mix : mix;
+        if (am > local_peak) local_peak = am;
     }
+    a->frames_rendered += (uint64_t)frames;
+    if (local_peak > a->peak_mix_abs) a->peak_mix_abs = local_peak;
 }
 
 static void dcs_audio_callback(void *opaque, int avail_bytes)
 {
     DcsAudio *a = opaque;
     if (!a->voice) return;
+    a->callbacks++;
     int16_t buf[1024];
     while (avail_bytes >= (int)sizeof(buf)) {
         int frames = sizeof(buf) / sizeof(buf[0]);
         render(a, buf, frames);
         size_t w = AUD_write(a->voice, buf, sizeof(buf));
-        if (w == 0) break;
+        a->aud_write_calls++;
+        a->aud_write_bytes += (uint64_t)w;
+        if (w == 0) { a->aud_write_zero++; break; }
         avail_bytes -= (int)w;
     }
     if (avail_bytes > 0) {
@@ -434,7 +490,10 @@ static void dcs_audio_callback(void *opaque, int avail_bytes)
             frames = sizeof(buf) / sizeof(buf[0]);
         }
         render(a, buf, frames);
-        AUD_write(a->voice, buf, frames * sizeof(buf[0]));
+        size_t w = AUD_write(a->voice, buf, frames * sizeof(buf[0]));
+        a->aud_write_calls++;
+        a->aud_write_bytes += (uint64_t)w;
+        if (w == 0) a->aud_write_zero++;
     }
 }
 
@@ -457,6 +516,18 @@ static uint32_t cmd_to_freq(uint16_t cmd)
     }                                                          \
 } while (0)
 
+/* Source-tag attribution: read once per cmd from the core. */
+static const char *evt_source(DcsAudio *a)
+{
+    const char *src = p2k_dcs_core_source();
+    if (!src) src = "?";
+    if (!strcmp(src, "BAR4"))           a->cmd_by_bar4++;
+    else if (!strcmp(src, "UART:0x13c.w"))  a->cmd_by_uart_w++;
+    else if (!strcmp(src, "UART:0x13c.bp")) a->cmd_by_uart_bp++;
+    else                                a->cmd_by_other++;
+    return src;
+}
+
 /* Process-cmd hook: receives semantic direct-trigger events from
  * p2k-dcs-core (matches Unicorn sound.c sound_process_cmd contract). */
 static void dcs_audio_on_process_cmd(uint16_t cmd)
@@ -464,15 +535,20 @@ static void dcs_audio_on_process_cmd(uint16_t cmd)
     DcsAudio *a = &s_dcs_audio;
     if (!a->enabled || !a->opened) return;
     a->cmd_count++;
+    const char *src = evt_source(a);
 
     /* Mirrors Unicorn sound.c sound_process_cmd:
      *   0x0000        -> halt all channels
      *   0x003A        -> boot dong on channel 0
      *   0x00AA        -> 0x0FFF special on channel 7
-     *   cmd >= 0x0100 -> normal track on channel (cmd & 7)
-     *   else          -> ignore (protocol byte). */
+     *   cmd in [0x0100, 0x1000) -> normal track on channel (cmd & 7)
+     *   else          -> ignore (protocol byte / out-of-range).
+     * Unicorn SAMPLE_CACHE_SIZE = 0x1000 (sound.c:14). Anything >= 0x1000
+     * is silently ignored — that filters mixer-ctrl raw words like
+     * 0x55AB/0x55AC and the 0xFF7F/0x80XX/0x82XX protocol noise out
+     * of the "missed" trace bucket. */
     if (cmd == 0x0000) {
-        TRACE_EVT(a, "process_cmd 0x0000 → STOP ALL");
+        TRACE_EVT(a, "[%s] process_cmd 0x0000 → STOP ALL", src);
         stop_all_voices(a);
         return;
     }
@@ -485,29 +561,31 @@ static void dcs_audio_on_process_cmd(uint16_t cmd)
     } else if (cmd == 0x00AA) {
         channel = 7;
         lookup_cmd = 0x0FFF;
-    } else if (cmd >= 0x0100) {
+    } else if (cmd >= 0x0100 && cmd < 0x1000) {
         channel = cmd & 7;
         lookup_cmd = cmd;
     } else {
-        TRACE_EVT(a, "process_cmd 0x%04x → ignored (protocol byte)", cmd);
+        TRACE_EVT(a, "[%s] process_cmd 0x%04x → ignored "
+                  "(out of cache range)", src, cmd);
         return;
     }
 
     const char *name = NULL;
     Sample *s = get_sample_for_cmd(a, lookup_cmd, &name);
     if (s) {
-        start_voice_on_channel(a, channel, s, /*vol*/255, /*pan*/0x7F);
+        start_voice_on_channel(a, channel, s, /*vol*/255, /*pan*/0x7F,
+                               lookup_cmd, name);
         a->played_count++;
         TRACE_EVT(a,
-                  "process_cmd 0x%04x → key=0x%04x name=%s frames=%zu "
+                  "[%s] process_cmd 0x%04x → key=0x%04x name=%s frames=%zu "
                   "ch=%d vol=255 pan=127 (played #%llu)",
-                  cmd, lookup_cmd, name ? name : "?", s->frames, channel,
-                  (unsigned long long)a->played_count);
+                  src, cmd, lookup_cmd, name ? name : "?", s->frames,
+                  channel, (unsigned long long)a->played_count);
     } else {
         a->missed_count++;
         TRACE_EVT(a,
-                  "process_cmd 0x%04x → key=0x%04x %s (missed #%llu)",
-                  cmd, lookup_cmd,
+                  "[%s] process_cmd 0x%04x → key=0x%04x %s (missed #%llu)",
+                  src, cmd, lookup_cmd,
                   name ? "decode-failed" : "no-pb2k-entry",
                   (unsigned long long)a->missed_count);
     }
@@ -525,15 +603,16 @@ static void dcs_audio_on_execute_mixer(uint16_t cmd, uint16_t data1,
     DcsAudio *a = &s_dcs_audio;
     if (!a->enabled || !a->opened) return;
     a->cmd_count++;
+    const char *src = evt_source(a);
 
     if ((cmd & 0xFF00) == 0x5500) {
         switch (cmd) {
         case 0x55AA:
-            /* Global volume from data1 (full 16-bit, clip to 8). */
-            a->global_vol = (uint8_t)(data1 > 255 ? 255 : data1);
+            /* Unicorn sound_set_global_volume: data1 & 0xFF (low byte). */
+            a->global_vol = (uint8_t)(data1 & 0xFF);
             TRACE_EVT(a,
-                      "execute_mixer 0x%04x d1=0x%04x → GLOBAL_VOL=%u",
-                      cmd, data1, a->global_vol);
+                      "[%s] execute_mixer 0x%04x d1=0x%04x → GLOBAL_VOL=%u",
+                      src, cmd, data1, a->global_vol);
             break;
         case 0x55AB:
         case 0x55AE: {
@@ -541,8 +620,8 @@ static void dcs_audio_on_execute_mixer(uint16_t cmd, uint16_t data1,
             int vol = data1 & 0xFF;
             a->voices[ch].vol = (uint8_t)vol;
             TRACE_EVT(a,
-                      "execute_mixer 0x%04x d1=0x%04x → ch%d VOL=%d",
-                      cmd, data1, ch, vol);
+                      "[%s] execute_mixer 0x%04x d1=0x%04x → ch%d VOL=%d",
+                      src, cmd, data1, ch, vol);
             break;
         }
         case 0x55AC: {
@@ -550,15 +629,15 @@ static void dcs_audio_on_execute_mixer(uint16_t cmd, uint16_t data1,
             int pan = data1 & 0xFF;
             a->voices[ch].pan = (uint8_t)pan;
             TRACE_EVT(a,
-                      "execute_mixer 0x%04x d1=0x%04x → ch%d PAN=%d",
-                      cmd, data1, ch, pan);
+                      "[%s] execute_mixer 0x%04x d1=0x%04x → ch%d PAN=%d",
+                      src, cmd, data1, ch, pan);
             break;
         }
         default:
             TRACE_EVT(a,
-                      "execute_mixer 0x%04x d1=0x%04x d2=0x%04x → "
+                      "[%s] execute_mixer 0x%04x d1=0x%04x d2=0x%04x → "
                       "unknown mixer-ctrl",
-                      cmd, data1, data2);
+                      src, cmd, data1, data2);
             break;
         }
         return;
@@ -567,28 +646,71 @@ static void dcs_audio_on_execute_mixer(uint16_t cmd, uint16_t data1,
     int channel = (data2 & 0x380) >> 7;
     int vol     = (data1 >> 8) & 0xFF;
     int pan     = data1 & 0xFF;
-    if (vol == 0) vol = 255;            /* Unicorn used 0xFF default */
+    /* Unicorn does NOT default vol=0 to full; vol=0 → silent voice
+     * (Mix_Volume(track_idx, 0)). Match that. */
 
     const char *name = NULL;
     Sample *s = get_sample_for_cmd(a, cmd, &name);
     if (s) {
-        start_voice_on_channel(a, channel, s, vol, pan);
+        start_voice_on_channel(a, channel, s, vol, pan, cmd, name);
         a->played_count++;
         TRACE_EVT(a,
-                  "execute_mixer 0x%04x d1=0x%04x d2=0x%04x → "
+                  "[%s] execute_mixer 0x%04x d1=0x%04x d2=0x%04x → "
                   "name=%s frames=%zu ch=%d vol=%d pan=%d (played #%llu)",
-                  cmd, data1, data2, name ? name : "?", s->frames,
+                  src, cmd, data1, data2, name ? name : "?", s->frames,
                   channel, vol, pan,
                   (unsigned long long)a->played_count);
     } else {
         a->missed_count++;
         TRACE_EVT(a,
-                  "execute_mixer 0x%04x d1=0x%04x d2=0x%04x → "
+                  "[%s] execute_mixer 0x%04x d1=0x%04x d2=0x%04x → "
                   "key=0x%04x %s (missed #%llu)",
-                  cmd, data1, data2, cmd,
+                  src, cmd, data1, data2, cmd,
                   name ? "decode-failed" : "no-pb2k-entry",
                   (unsigned long long)a->missed_count);
     }
+}
+
+/* Per-second status report.  Logs render/output proof + active voices
+ * + source histogram so we can bucket missing audio without rebuilding. */
+static void dcs_audio_status_tick(void *opaque)
+{
+    DcsAudio *a = opaque;
+    if (a->enabled) {
+        int n_active = 0;
+        for (int i = 0; i < DCS_VOICES; i++) {
+            if (a->voices[i].active) n_active++;
+        }
+        info_report("dcs-audio status: cb=%llu frames=%llu "
+                    "AUD_write calls=%llu bytes=%llu zero=%llu peak=%d "
+                    "active=%d/%d global_vol=%u played=%llu missed=%llu "
+                    "src{BAR4=%llu UART.w=%llu UART.bp=%llu other=%llu}",
+                    (unsigned long long)a->callbacks,
+                    (unsigned long long)a->frames_rendered,
+                    (unsigned long long)a->aud_write_calls,
+                    (unsigned long long)a->aud_write_bytes,
+                    (unsigned long long)a->aud_write_zero,
+                    (int)a->peak_mix_abs,
+                    n_active, DCS_VOICES,
+                    a->global_vol,
+                    (unsigned long long)a->played_count,
+                    (unsigned long long)a->missed_count,
+                    (unsigned long long)a->cmd_by_bar4,
+                    (unsigned long long)a->cmd_by_uart_w,
+                    (unsigned long long)a->cmd_by_uart_bp,
+                    (unsigned long long)a->cmd_by_other);
+        for (int i = 0; i < DCS_VOICES; i++) {
+            Voice *vc = &a->voices[i];
+            if (!vc->active || !vc->s) continue;
+            info_report("dcs-audio   ch%d cmd=0x%04x name=%s pos=%zu/%zu "
+                        "vol=%u pan=%u",
+                        i, vc->cmd, vc->name ? vc->name : "?",
+                        vc->pos, vc->s->frames, vc->vol, vc->pan);
+        }
+        a->peak_mix_abs = 0;            /* reset window */
+    }
+    timer_mod(a->status_timer,
+              qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 1000);
 }
 
 /* ------------------------------------------------------------------ */
@@ -662,6 +784,14 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
 
     p2k_dcs_core_audio_process_cmd   = dcs_audio_on_process_cmd;
     p2k_dcs_core_audio_execute_mixer = dcs_audio_on_execute_mixer;
+
+    /* Per-second status timer when trace is on (render/output proof). */
+    if (a->trace) {
+        a->status_timer = timer_new_ms(QEMU_CLOCK_VIRTUAL,
+                                       dcs_audio_status_tick, a);
+        timer_mod(a->status_timer,
+                  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 1000);
+    }
 
     info_report("pinball2000: DCS audio installed "
                 "(%d Hz S16 mono, %d-voice mixer, %d pb2k entries; "

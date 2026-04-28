@@ -68,6 +68,12 @@ bool     p2k_dcs_core_has_resp(void);
 uint8_t  p2k_dcs_core_flag_byte(void);
 void     p2k_dcs_core_set_echo(uint8_t v);
 uint8_t  p2k_dcs_core_get_echo(void);
+/* Source tag for diagnostic classification: each frontend (BAR4 MMIO,
+ * UART overlay) calls note_source() with a short literal tag right
+ * BEFORE p2k_dcs_core_write_cmd().  The audio hooks read it via
+ * p2k_dcs_core_source() to attribute every cmd to its frontend. */
+void        p2k_dcs_core_note_source(const char *src);
+const char *p2k_dcs_core_source(void);
 
 /* p2k-dcs.c: BAR4 MMIO frontend (0x13000000, 16 MiB). */
 void p2k_install_dcs(void);

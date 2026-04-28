@@ -535,3 +535,62 @@ not the new source of truth.
 - [ ] Default run uses device behavior, not temporary bridges.
 - [ ] Every remaining patch has a gate, a metric, and a deletion condition.
 - [ ] New commits keep this roadmap current.
+
+## DCS Audio — Render/Output Proof Findings (post-S03D6 evidence)
+
+Bucket classification with `P2K_DCS_AUDIO=1 P2K_DCS_AUDIO_TRACE=1` and the
+new per-second status timer + voice REPLACE/END + AUD_write counters:
+
+- [x] Bucket #4 (silent voice) RULED OUT.  Status tick shows
+  `dcs_audio_callback` fires ~47/s, `AUD_write` writes ~88KB/s, never
+  returns 0.  Peak mix amplitude reaches ~23000 (full headroom of 28000)
+  whenever a sample is active.  Render/output path is healthy.
+- [x] Bucket #5 (immediate REPLACE/STOP-ALL) RULED OUT.  All boot-sequence
+  voices (dcs-bong, S03CE, S032F, S07DD) play to natural `END` event, no
+  REPLACE log fired in normal runs.
+- [x] Source-tag attribution: at this milestone every single DCS cmd
+  arrives via BAR4 MMIO.  Zero from UART word-write, zero from UART
+  byte-pair.  The `P2K_DCS_BYTE_TRACE` byte-pair reconstruction is
+  dormant — keep it as a UART-frontend option, but it is not in the
+  failure path here.
+- [x] Bogus 0xFFFF / 0x8100 / 0x8000 / 0x0001 / 0xFF00 / 0x8200 / 0xFF7F /
+  0x000C / 0x00F9 / 0x55AB / 0x55AC / 0x3FFF / 0x3F7F: all classified as
+  Unicorn-bound-ignored (cmd >= 0x1000 or cmd in (0x00, 0x100) outside
+  the special 0x003A/0x00AA cases).  Unicorn `SAMPLE_CACHE_SIZE = 0x1000`
+  in `unicorn.old/src/sound.c:14` does the same filtering.  No sample
+  lookup attempted; trace says `→ ignored (out of cache range)`.
+- [x] Bucket #2 (lookup miss) for legitimate cmds: exactly the samples
+  not in the pb2kslib container (e.g. S03E7, S03E8 in current swe1
+  container).  These are content gaps, not engine bugs.
+- [~] Bucket #1 (no DCS event) for credit-insert / ship intro / audio-
+  test menu: under `--no-savedata --update v2.10`, the game never
+  exits the `Trough 1::m_test_report_start` self-test loop within 90 s
+  (continuous "Left Drop Target Hit" events).  Coin/start/menu keys
+  set the LPT phys bits (Enter pulse logged) but no DCS event follows
+  because the game has not reached an attract / credit-accepting
+  state.  Compare with Unicorn under same conditions before any more
+  audio code changes.
+
+Unicorn-parity correctness fixes shipped this pass (no architecture
+churn, no guest patch):
+
+- [x] `process_cmd` upper bound: `cmd >= 0x0100 && cmd < 0x1000`.  Mirrors
+  `unicorn.old/src/sound.c:14, 436-456`.  Filters out 0xFFXX / 0x8XXX /
+  0x55AB-AC / 0x3FXX protocol noise from the missed-sample bucket.
+- [x] `0x55AA` global volume: `data1 & 0xFF` (low byte) instead of
+  clamp-to-255.  Mirrors Unicorn `sound_set_global_volume`.
+- [x] Removed `vol == 0 → 255` default in `execute_mixer` direct-trigger
+  path.  Unicorn passes vol=0 through to silent voice (Mix_Volume(0)).
+
+New diagnostic surface (`P2K_DCS_AUDIO_TRACE=1`):
+
+- One status line per second: `cb=N frames=N AUD_write calls=N bytes=N
+  zero=N peak=N active=K/8 global_vol=V played=N missed=N
+  src{BAR4=N UART.w=N UART.bp=N other=N}` plus per-active-channel
+  detail with cmd/name/pos/vol/pan.
+- Per-event source tag in TRACE_EVT (`[BAR4]` / `[UART:0x13c.w]` /
+  `[UART:0x13c.bp]`).
+- `chN END  (cmd=… name=… frames=…)` when a voice finishes naturally.
+- `chN REPLACE old(...) ← new(...)` when a sample preempts another on
+  the same channel.
+- `chN STOP-ALL was(...)` when 0x0000 halts active voices.

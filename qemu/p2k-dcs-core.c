@@ -68,6 +68,20 @@ void (*p2k_dcs_core_audio_execute_mixer)(uint16_t cmd,
                                          uint16_t data1,
                                          uint16_t data2) = NULL;
 
+/* Source tag (frontend attribution).  Set by p2k_dcs_core_note_source()
+ * just before each write_cmd; read by audio sinks for tracing. */
+static const char *s_dcs_source_tag = "?";
+
+void p2k_dcs_core_note_source(const char *src)
+{
+    s_dcs_source_tag = src ? src : "?";
+}
+
+const char *p2k_dcs_core_source(void)
+{
+    return s_dcs_source_tag;
+}
+
 static void core_push(uint16_t v)
 {
     if (s_core.count >= DCS_RESP_RING) {
