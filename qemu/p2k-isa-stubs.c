@@ -29,16 +29,50 @@
 
 #include "p2k-internal.h"
 
-/* ---------- i8042 keyboard ------------------------------------------------ */
+/* ---------- i8042 keyboard ------------------------------------------------
+ *
+ * Minimal AT-style controller, ported from unicorn.old/src/io.c:1670-1881.
+ *
+ *   port 0x60 (data):
+ *     read   -> outbuf, clears OBF
+ *     write  -> ignored (placeholder until we model PS/2 cmds)
+ *
+ *   port 0x64 (status/cmd):
+ *     read   -> kbc_status (initial 0x14: self-test passed, IBF clear)
+ *     write  -> latch a sensible response into outbuf and set OBF.
+ *               0xAA  controller self-test       outbuf := 0x55
+ *               0xAB  interface test             outbuf := 0x00
+ *               otherwise outbuf stays as-is, but OBF is asserted so
+ *               polling loops complete.
+ */
+
+static uint8_t s_kbc_status = 0x14;   /* self-test passed, IBF clear */
+static uint8_t s_kbc_outbuf = 0x55;
 
 static uint64_t p2k_kbd_read(void *opaque, hwaddr addr, unsigned size)
 {
-    return 0x00;  /* IBF=0, OBF=0, no error */
+    uint8_t port = (uint8_t)(uintptr_t)opaque;
+    if (port == 0x60) {
+        s_kbc_status &= ~0x01u;   /* OBF cleared on data read */
+        return s_kbc_outbuf;
+    }
+    return s_kbc_status;          /* port 0x64 status */
 }
 
 static void p2k_kbd_write(void *opaque, hwaddr addr,
                           uint64_t val, unsigned size)
 {
+    uint8_t port = (uint8_t)(uintptr_t)opaque;
+    if (port == 0x64) {
+        switch (val & 0xFF) {
+        case 0xAA: s_kbc_outbuf = 0x55; break;  /* self-test OK */
+        case 0xAB: s_kbc_outbuf = 0x00; break;  /* interface test OK */
+        case 0x20: /* read CCB */ s_kbc_outbuf = 0x45; break;
+        case 0xD1: case 0xFE: default: break;
+        }
+        s_kbc_status = 0x15;  /* OBF + self-test passed */
+    }
+    /* port 0x60 data writes — ignored (no real PS/2 device). */
 }
 
 static const MemoryRegionOps p2k_kbd_ops = {
@@ -232,7 +266,8 @@ static void p2k_iostub(MemoryRegion *io, const char *name,
                        const MemoryRegionOps *ops)
 {
     MemoryRegion *mr = g_new(MemoryRegion, 1);
-    memory_region_init_io(mr, NULL, ops, NULL, name, size);
+    void *opaque = (void *)(uintptr_t)base;
+    memory_region_init_io(mr, NULL, ops, opaque, name, size);
     memory_region_add_subregion(io, base, mr);
 }
 
