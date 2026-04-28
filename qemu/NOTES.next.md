@@ -1,204 +1,264 @@
-# QEMU Parking Lot
+# QEMU Next V2 Roadmap
 
-Small notes we want to remember without interrupting current bring-up work.
+Purpose: one auditable roadmap from QEMU day 0. This file should make it easy
+to answer four questions: what is done, what remains, which commits are real
+foundations, and which commits were temporary bridges or false-good patches.
 
-## Future CLI Shape
+Legend:
 
-Do not clone the full Unicorn CLI by default. The QEMU wrapper should preserve
-user workflows, not old implementation baggage.
+- `[x]`: accepted for current baseline.
+- `[ ]`: not done.
+- `[~]`: partial or needs verification.
+- `[!]`: temporary, symptom-shaped, rollback/delete candidate.
+- Rule: every future commit should check an item, add an item, or retire one.
 
-Likely keep:
+## Product Target
 
-- `--game swe1|rfm|auto` once RFM is proven.
-- `--roms PATH`.
-- `--savedata PATH` and `--no-savedata`.
-- `--update none|latest|VERSION|PATH`.
-- `-v`, `-vv`, `-vvv` / `--verbose`.
-- `--headless`.
-- `--fullscreen` if QEMU display backend support stays simple.
-- `--bpp 16|32` if it remains useful for presentation/debug compatibility.
-- `--splash-screen` if we keep the old polished startup / fallback UX.
-- `--dcs-mode io-handled|bar4-fallback` while both paths exist.
-- `--lpt-device none|emu|/dev/parportN|0xBASE` when cabinet passthrough lands.
-- `--lpt-trace FILE`.
-- `--config FILE` later, if we still want config-file ergonomics.
-- Unicorn-style gameplay key bindings, but routed through the emulated LPT
-  driver-board / switch matrix path, not through PS/2 keyboard injection.
-  Preserve this explicit Unicorn desktop-control inventory:
+- [ ] Baseline user experience: launch SWE1 from one wrapper command, see fluid
+  graphics, see UART/XINA output by default, hear DCS sound, use Unicorn-style
+  desktop controls, and run long enough without Fatal storms.
+- [ ] Architecture target: QEMU owns CPU, i8254 PIT, i8259 PIC, timers,
+  interrupt delivery, display surface, and audio backend. P2K code models
+  missing board devices; it should not rebuild Unicorn timing.
+- [ ] Cleanliness target: symptom patches are gated, logged, and have removal
+  conditions. Device behavior should replace patches whenever possible.
+- [ ] Regression target: SWE1 base, SWE1 update, RFM base, and RFM update each
+  get at least one long run with UART, display, controls, watchdog, and DCS
+  state observed.
 
-  Host/window controls:
-  - `F1`: quit emulator.
-  - `F2`: flip display vertically.
-  - `F3`: screenshot.
-  - `F11` / `Alt+Enter`: toggle fullscreen.
-  - `F12`: dump guest switch state / switch matrix diagnostics.
+## Milestones
 
-  Cabinet/gameplay controls:
-  - `Space` / `S`: Start button (`sw=2` / physical column 0 bit 2 in the
-    Unicorn mapping).
-  - `F10` / `C`: insert credit / coin.
-  - `F6`: left action button.
-  - `F7`: left flipper.
-  - `F8`: right flipper.
-  - `F9`: right action button.
-  - `F4`: toggle coin door closed/open interlock.
+- [x] M0 Decontaminate: archive Unicorn into `unicorn.old/` and start a QEMU
+  board branch. Commit: `d8c5d57`.
+- [x] M1 Boot QEMU i386: pinned QEMU source/build, custom machine, PRISM PM
+  entry starts. Commit: `8bbb89f`.
+- [x] M2 Load ROMs correctly: bank0 deinterleave, PLX aliases, bank priority,
+  bank1/2/3, DCS ROM. Commits: `86aba35`, `2e10434`, `424ec6f`.
+- [x] M3 Memory/flash map: BAR2/BAR3/BAR4, flash protocol, NVRAM/flash seed,
+  sentinel windows. Commits: `767bb48`, `b66481d`, `d39ffa2`, `56d8eac`.
+- [~] M4 PCI/PLX model: enough CF8/CFC and PLX behavior to boot; still not a
+  real QEMU `PCIDevice` architecture. Commits: `32e7f10`, `a00ec47`,
+  `e3365ca`, `256cea1`.
+- [x] M5 ISA/UART/RTC probes: i8042, COM1, RTC, SuperIO-ish probes enough for
+  XINA/XINU. Commits: `3c75d1d`, `17f0199`, `1cec4f0`, `9fcd992`, `3a07ad8`.
+- [~] M6 PIT/PIC/IRQ0: QEMU owns i8254/i8259; legacy PIC fixup is default-off;
+  IRQ0 shim still needs final removal proof. Commits: `224a5eb`, `e6712a9`,
+  `32e7300`, `dacd397`, `b20f39b`.
+- [x] M7 Display/GX: visible QEMU display, GX base, BLT engine, Cyrix CCR
+  discovery. Commits: `989a546`, `9e400d3`, `80c9cbb`, `f44066e`.
+- [~] M8 DCS protocol: BAR4 and I/O UART share one DCS core; sound output is
+  still missing. Commits: `bd1a858`, `6d70e52`, `8bac2af`.
+- [~] M9 Cabinet/LPT controls: minimal LPT board exists; Unicorn-style desktop
+  key bindings and cabinet passthrough are not done. Commit: `dc97214`.
+- [ ] M10 Product wrapper: Unicorn-like CLI, savedata/update options, default
+  UART visibility, fullscreen/headless, bpp/splash compatibility.
+- [ ] M11 Validation matrix: SWE1/RFM base/update, long-run, no default
+  symptom patches, DCS sound, controls, UART, watchdog.
+- [ ] M12 Optional diagnostics/compat knobs: keep guest-programmed PIT as
+  default, but allow later fixed-rate diagnostics such as 4004/4096 Hz without
+  replacing the hardware model.
 
-  Coin-door service/test controls:
-  - `Esc` / `Left`: button 1, service credits in attract or Escape in tests.
-  - `Down` / keypad minus: button 2, volume down or menu down.
-  - `Up` / equals / keypad plus: button 3, volume up or menu up.
-  - `Right` / `Enter` / keypad Enter: button 4, begin test or Enter.
+## Commit Ledger From QEMU Day 0
 
-  Optional debug controls from Unicorn, if still useful:
-  - `0`..`7`: force/probe physical switch bits.
-  - `[` / `]`: decrement/increment probe column.
+- [x] `d8c5d57` archive Unicorn into `unicorn.old/`, scaffold QEMU board.
+  Keep. This is the decontamination boundary.
+- [x] `8bbb89f` build and run SWE1 PRISM PM-entry on pinned QEMU i386.
+  Keep. Foundation for the custom QEMU path.
+- [x] `86aba35` map bank0 at PLX/option-ROM/BAR5/alias windows.
+  Keep. Required ROM visibility.
+- [x] `2e10434` fix bank0 deinterleave and ROM overlap priority.
+  Keep. Required correctness fix.
+- [x] `3c75d1d` early ISA stubs for i8042/port61/CMOS/POST/COM1.
+  Keep as baseline, but later commits refine specific devices.
+- [!] `32e7f10` minimal CF8/CFC PCI config stub.
+  Keep temporarily. It got boot moving, but real QEMU devices should replace
+  hardcoded config-space fiction.
+- [x] `767bb48` BAR2/BAR3/BAR4 RAM stubs.
+  Keep. Basic memory map.
+- [x] `989a546` Cyrix MediaGX GX_BASE MMIO stub.
+  Keep. Early graphics-device surface.
+- [x] `9e400d3` framebuffer alias and `p2k-display.c`.
+  Keep. First visible graphics path.
+- [~] `bd1a858` first BAR4 DCS audio MMIO state machine.
+  Superseded by shared DCS core; keep the useful behavior only.
+- [x] `b66481d` seed BAR3 from savedata flash.
+  Keep. Persistence/flash continuity.
+- [!] `224a5eb` PIC IRQ0/cascade force-unmask timer.
+  Rollback candidate. Default-off since `b20f39b`; delete after bundle sweep.
+- [x] `e3365ca` PLX BAR0 + 93C46 SEEPROM model.
+  Keep. Device behavior.
+- [x] `d39ffa2` seed BAR2 from NVRAM and add Intel 28F320 protocol.
+  Keep. Flash/NVRAM behavior.
+- [!] `e6712a9` IRQ0 EOI+IRET shim at `0x500`.
+  Boot bridge. Verify QEMU PIT/PIC can survive without it before deletion.
+- [~] `941d3ab` VSYNC ticker around BAR2/DC_TIMING2.
+  Verify. Useful display progress, but confirm it matches guest expectations.
+- [!] `911ca7e` watchdog cell scribbler.
+  False-good symptom patch. Replaced by PLX INTCSR bit2 behavior.
+- [x] `a00ec47` expose PLX 9050 raw ID at PCI dev9.
+  Keep for now. Helped PCI probe; eventually fold into real PLX device.
+- [x] `318d93d` disable PCI sentinel scribbler.
+  Keep. Good removal of a symptom patch.
+- [~] `6d70e52` DCS-2 UART overlay at I/O `0x138-0x13F`.
+  Keep as frontend only. Shared core should own DCS state.
+- [x] `424ec6f` load PLX banks 1/2/3 and DCS sound ROM.
+  Keep. Required assets.
+- [x] `56d8eac` BAR2 SRAM plus sentinel window.
+  Keep. Memory behavior.
+- [x] `17f0199` CMOS RTC live time and status.
+  Keep. Real device-ish behavior.
+- [x] `dc97214` minimal LPT driver-board on `0x378-0x37A`.
+  Keep as stub. Needs key mapping, possible cabinet passthrough, protocol proof.
+- [!] `518a78e` re-arm watchdog scribbler excluding PCI sentinels.
+  Temporary regression bridge. Now opt-in only; delete after validation matrix.
+- [~] `c698c24` GDT/CR0/Cyrix `0F 3C` #UD emulator.
+  Verify. May be needed, but exact QEMU-era requirement should be proved.
+- [!] `32e7300` hold IDT[0x20] to EOI shim until clkint and gate PIC unmask.
+  Boot bridge. Keep only with self-retire proof.
+- [~] `3a07ad8` SuperIO W83977EF + CS5530 EEPROM I/O stubs.
+  Verify which fields are truly needed; avoid growing fake hardware blindly.
+- [!] `6408d5f` BT-130 mem_detect prologue patch.
+  Symptom-shaped. Replace with correct RAM/PCI resource behavior if possible.
+- [~] `b037ecc` BT-131 NIC LAN ROM seed in D-segment.
+  Likely harmless, but prove whether guest requires it.
+- [x] `9388676` mark temporary symptom patches with removal conditions.
+  Keep. Good hygiene.
+- [x] `663a617` read-only PIT/PIC/IDT diagnostic sampler.
+  Keep as diagnostic only.
+- [x] `dacd397` IRQ0 shim self-retires when guest installs real clkint.
+  Keep for now. It improves a boot bridge by adding a removal path.
+- [x] `80c9cbb` GP BLT engine MMIO.
+  Keep. Graphics behavior.
+- [~] `d7b99d8` nulluser idle `JMP$ -> HLT;JMP-3`.
+  Verify. Performance/idle improvement, but prove it does not hide scheduler
+  bugs.
+- [x] `0a6fa5c` temporary `allegro_init` runtime patch.
+  Deleted post-`9ccf4b4`. Module removed from build; SWE1+RFM default still 0 Fatals.
+- [x] `5a3388b` demote allegro patch to opt-in and add gfxlist diagnostic.
+  Keep. Good containment.
+- [x] `f44066e` Cyrix CCR I/O `0x22/0x23`.
+  Keep. Realer device behavior; fixes `free_resource` class failure.
+- [x] `396d312` document allegro patch as superseded.
+  Historical; module is now physically deleted.
+- [x] `1cec4f0` model i8042 self-test/OBF.
+  Keep. Probe behavior.
+- [x] `9fcd992` COM1 IRQ4 TX-empty signaling.
+  Keep. Real device behavior; fixes `exec is hung`.
+- [x] `256cea1` PLX INTCSR bit2=1 retires `pci_watchdog_bone` Fatal.
+  Keep. Strong ROM/disasm-backed fix, better than RAM scribbling.
+- [x] `bbdf1a3` stale-comment sweep + watchdog validation matrix.
+  Keep. Hygiene and proof tracking.
+- [x] `8bac2af` collapse DCS state into shared core.
+  Keep. Correct architecture; audio output still pending.
+- [x] `b20f39b` retire PIC fixup timer by default.
+  Keep. Good rollback of symptom layer.
+- [x] `9ccf4b4` record DCS shared-core and PIC retirement in notes.
+  Keep. Documentation milestone.
 
-  These bindings are user-facing compatibility. Internally they should update
-  the emulated P2K driver-board/switch-matrix state. They should not be
-  implemented as raw PS/2 keyboard injection unless a specific guest path is
-  proven to require PS/2.
+## Current Baseline
 
-Likely adapt:
+- [x] Branch is decontaminated; old implementation exists only under
+  `unicorn.old/` as reference, not source of truth.
+- [x] QEMU build is pinned and narrow: i386-softmmu custom machine, not a full
+  multi-system product.
+- [x] SWE1 reaches running graphics with QEMU CPU/PIT/PIC/timers.
+- [x] QEMU PLX INTCSR fix avoids the watchdog RAM scribbler by default.
+- [x] QEMU COM1 IRQ4 TX-empty unblocks XINU console waits.
+- [x] QEMU display is functional enough to play/test visually.
+- [~] DCS protocol initializes, but actual audio playback remains missing.
+- [~] LPT board exists, but user-facing controls are not yet Unicorn parity.
+- [~] Some bridge patches remain: IRQ0 shim, mem_detect patch, PCI stub,
+  optional watchdog scribbler, optional PIC fixup.
 
-- `--serial-tcp PORT`: keep as wrapper sugar for QEMU serial TCP, because it is
-  the clean path to the XINA/monitor console.
-- `--cabinet-purist`: replace with clearer QEMU-era options such as `--cabinet`
-  or `--no-symptom-patches` if needed.
-- `--flipscreen`: only keep if cabinet display orientation proves useful.
+## Must Finish Next
 
-Likely drop:
+- [ ] DCS actual sound playback through QEMU audio backend. Use
+  `unicorn.old/src/sound.c` as behavior reference, not blind copy.
+- [ ] Re-prove late-Unicorn DCS byte-write clue: `0001de2` says io-handled
+  writes `0x13c` high byte then low byte. It is concrete, but post-LPT-pace.
+- [x] Make UART/XINA output visible by default, Unicorn-style, or ensure the
+  wrapper always enables it for bring-up.
+  Done: `p2k-isa-stubs.c` defaults `s_uart_to_stderr = true`; opt-out via
+  `P2K_NO_UART_STDERR=1`. Verified Fatal/NonFatal lines appear without env.
+- [ ] Implement desktop controls through LPT/switch matrix: F1/F2/F3/F4,
+  F6-F12, Space/S, C/F10, arrows, Esc, Enter.
+  Exact Unicorn parity target: F1 quit, F2 flip Y, F3 screenshot, F4 coin door,
+  F6 left action, F7 left flipper, F8 right flipper, F9 right action, F10/C
+  credit, F11/Alt+Enter fullscreen, F12 switch dump, Space/S start, Esc/Left
+  service/escape, Down/KP- volume/menu down, Up/= /KP+ volume/menu up,
+  Right/Enter/KP_Enter begin test/enter. Optional debug: 0..7 and [ ] probes.
+- [~] Wrapper parity: `--game`, `--roms`, `--savedata`, `--no-savedata`,
+  `--update`, `-v/-vv/-vvv`, fullscreen/headless.
+  scripts/run-qemu.sh now handles `--game`, `--roms`, `--savedata`,
+  `--no-savedata`, `--display`, `--headless`, `--monitor`, `--debug`,
+  `--uart-quiet`, `-v/-vv/-vvv`, and `--`. `--update <dir>` is parsed but
+  the machine does not yet consume it (warning emitted).
+- [ ] Preserve polished UX if cheap: `--bpp`, `--splash-screen`, screenshot,
+  display flip.
+- [ ] Preserve useful wrapper shape without cloning baggage: likely keep
+  `--game`, `--roms`, `--savedata`, `--no-savedata`, `--update`, verbosity,
+  `--headless`, fullscreen, `--bpp`, `--splash-screen`, `--dcs-mode`,
+  `--lpt-device`, `--lpt-trace`; likely drop old Unicorn CPU/PIT pacing,
+  keyboard TCP, HTTP, record/replay, xina-script, and net-bridge for baseline.
+- [ ] Keep PIT semantics honest: default is guest-programmed QEMU i8254.
+  SWE1 has been observed around divisor 298, about 4003.97 Hz. Any 4004/4096
+  override is a diagnostic/compat option, not the default truth.
+- [ ] Validate SWE1 base/update and RFM base/update long runs.
+- [ ] Define QEMU cabinet/purist semantics: no default symptom patches, later
+  real parport, desktop emu rootless.
+- [x] Fix README/env drift: `P2K_PIC_FIXUP=1` is opt-in; `P2K_NO_PIC_FIXUP`
+  is only an override switch.
+  Done in `qemu/README.md` env-var table: defaults column added, semantics
+  flipped for PIC fixup and watchdog scribbler, UART switch documented.
 
-- `--keyboard-tcp PORT`: probably Unicorn baggage. XINA/monitor access should
-  go through serial TCP, and gameplay input should go through the cabinet/LPT
-  switch-matrix path, not PS/2 scancode injection. Reconsider only if a proven
-  guest path genuinely requires raw PS/2 keyboard input.
-- `--record` / `--replay`, `--http`, `--xina-script`, `--net-bridge`: useful
-  someday maybe, but not part of the baseline.
-- Any old Unicorn CPU/PIT/IRQ pacing option. QEMU owns CPU execution, i8254 PIT,
-  i8259 PIC, timers, and interrupt delivery.
+## Temporary Patch Registry
 
-## PIT Configurability
+- [!] PIC fixup timer: introduced `224a5eb`, retired default `b20f39b`.
+  Owner: PIT/PIC cleanup. Removal condition: bundle sweep passes with OFF.
+- [!] Watchdog RAM scribbler: introduced `911ca7e`, rearmed `518a78e`,
+  replaced by `256cea1`. Removal condition: SWE1/RFM/update matrix passes.
+- [x] Allegro runtime patch: introduced `0a6fa5c`, superseded by `f44066e`,
+  module deleted post-`9ccf4b4`. Removal condition met.
+- [!] IRQ0 shim: introduced `e6712a9`, improved `dacd397`.
+  Removal condition: real clkint handoff proven and no early IRQ0 crash.
+- [!] `mem_detect` patch: introduced `6408d5f`.
+  Removal condition: correct QEMU RAM/PCI resource behavior replaces it.
+- [!] CF8/CFC PCI stub: introduced `32e7f10`.
+  Removal condition: important devices become real `PCIDevice` models.
+- [~] nulluser HLT patch: introduced `d7b99d8`.
+  Removal/keep condition: measured idle benefit, no scheduler masking.
 
-Default should remain guest-programmed PIT behavior. SWE1 currently programs
-PIT channel 0 divisor around 298, i.e. about 4003.97 Hz. Later, a diagnostic
-or compatibility override may expose fixed rates such as guest/default, 4004,
-or 4096 Hz, but this must not replace the default hardware model.
+## Historical Clues, Not Proof
 
-## Display Ownership
+- [~] `817afac`: LPT opcode `0x00 -> 0xF0`. Verify before porting.
+- [~] `0001de2`: io-handled DCS byte writes to `0x13c`, high then low.
+  Strong clue, but post-LPT-pace; QEMU must re-prove it.
+- [~] `516210d`: Unicorn `#UD`/`0F3C` interrupt-frame issue. Relevant only if
+  QEMU keeps custom `0F 3C` behavior; verify handler bytes.
+- [~] `2c2c180`: LPT/PDB CSV tracing. Diagnostic only.
+- [~] `be99437`: IRQ0/PLX/watchdog lesson from unstable transition. Do not
+  port wholesale.
 
-Distinguish host framebuffer presentation from guest-visible graphics device
-initialization. A QEMU `DisplaySurface` can be a simple RAM view, but that does
-not prove `set_gfx_mode()` sees a valid MediaGX/Allegro device. Long-term goal
-is QEMU-side GX/MediaGX semantics, not only framebuffer readout.
+## Validation Matrix
 
-## DCS Sound Priority
+- [ ] SWE1 base: 5 min no Fatal, UART visible, graphics fluid, controls usable,
+  DCS sound audible, no default symptom patch required.
+- [ ] SWE1 update: same bar, plus `--update` wrapper path.
+- [ ] RFM base: boot, graphics, UART, watchdog, no obvious game-specific crash.
+- [ ] RFM update: same once update loader supports it.
+- [ ] `P2K_WATCHDOG_SCRIBBLER=0/default`: pass.
+- [ ] `P2K_PIC_FIXUP=0/default`: pass.
+- [ ] `P2K_NO_IRQ0_SHIM=1`: eventual experiment, not required until handoff is
+  understood.
+- [ ] DCS mode A/B: I/O UART frontend and BAR4 frontend share core; neither
+  masks a bug in the other.
 
-Next functional milestone after display/UART stability is DCS sound.
+## Acceptance Bar
 
-Status (session 2026-04-28): the architectural half is DONE.  The DCS
-state machine is now centralized in `qemu/p2k-dcs-core.c`.  Both the
-BAR4 MMIO view (`p2k-dcs.c`) and the I/O 0x138-0x13F overlay
-(`p2k-dcs-uart.c`) are thin frontends that route into the shared core.
-The 16550-style register surface stays local to the I/O view because it
-only exists there, not on BAR4.  Old "PARTIALLY TEMPORARY" headers were
-removed from both views.
-
-Remaining DCS work is real audio output: pull the sample dispatch /
-ADSP-2105 mixer behavior from `unicorn.old/src/sound.c` and wire it to a
-QEMU audio backend.  Until then the protocol-only core is enough to get
-the game past DCS init (already proven).
-
-## Watchdog / PLX INTCSR Candidate Fix
-
-Track this as a strong QEMU improvement over the old Unicorn/mainline watchdog
-workaround. The core polarity fix is ROM/disasm-backed and likely correct; the
-remaining caution is bundle coverage and interaction with future DCS work.
-
-Old Unicorn/mainline family:
-
-- Scanned the guest for the `pci_watchdog_bone()` / `pci_read_watchdog()` path.
-- Periodically scribbled guest RAM watchdog/probe cells.
-- Also primed a guest PLX BAR pointer so `[ptr + 0x4c]` reached the emulated
-  PLX register window.
-- Comments and polarity around `INTCSR` bit 2 were historically confusing.
-
-Current QEMU candidate:
-
-- ROM inspection for SWE1 v2.10 shows the caller Fatals when
-  `pci_watchdog_bone()` returns 1.
-- `pci_watchdog_bone()` returns 1 when the probe succeeds and PLX `INTCSR`
-  bit 2 is clear.
-- Therefore forcing PLX `INTCSR` bit 2 set makes this path return 0 and skip
-  the Fatal without RAM scribbling.
-- This is likely cleaner than the Unicorn/mainline RAM scribbler, because it
-  moves the behavior into the PLX device model.
-
-Validation still needed before deleting the fallback:
-
-- Long-run SWE1 with watchdog scribbler off by default.  DONE (180s, 0 Fatal).
-- At least one update bundle and RFM/RFM update coverage.  RFM base coverage
-  DONE (60s, 0 Fatal, XINU V7); update bundles deferred until the wrapper
-  grows a `--update` option (see "Future CLI Shape").
-- Confirm DCS sound still works once the DCS path is implemented.
-- Keep `P2K_WATCHDOG_SCRIBBLER=1` or equivalent only as a temporary opt-in
-  fallback until the matrix is proven.
-- Update stale comments that still say `INTCSR` bit 2 clear is the healthy
-  value.  DONE (header in `qemu/p2k-plx-regs.c`).
-
-## Retired Temporary Patches (post-bring-up audit)
-
-Tracked here so we know which boot bridges have been replaced by real
-device behavior or by empirical evidence that they were unneeded.
-
-- COM1 IRQ4 TX-empty signaling — real device behavior in
-  `qemu/p2k-isa-stubs.c`; XINU console no longer hangs (replaced the
-  earlier "exec is hung" symptom path).
-- PLX INTCSR bit2 polarity — fixed in `qemu/p2k-plx-regs.c`; the
-  watchdog scribbler is now opt-in via `P2K_WATCHDOG_SCRIBBLER=1`
-  instead of running by default.
-- DCS state duplication — collapsed into `qemu/p2k-dcs-core.c`;
-  BAR4 and I/O 0x138-0x13F views are now thin frontends.
-- PIC fix-up 250us timer — DEFAULT-OFF.  Empirically the legacy port
-  of `unicorn.old/src/io.c:121-127` was actively hurting throughput
-  (exec_pass plateau ~0x129 with timer armed vs ~0x6ef with timer off
-  on a 90s SWE1 run).  Opt-in via `P2K_PIC_FIXUP=1`; full removal
-  pending one more bundle/update sweep.
-
-## Post-LPT-Pace Master Fixes
-
-Treat later Unicorn/mainline fixes from the post-LPT-pace era as possible
-clues, not automatically correct patches.
-
-- Prefer porting device behavior that is independently justified by ROM,
-  symbols, logs, or hardware docs.
-- Avoid importing timing/guard/scribble layers just because they made one
-  Unicorn run more stable.
-- The PLX `INTCSR` bit-2 polarity fix above is stronger than that category:
-  it is backed by the actual `pci_watchdog_bone()` caller/callee bytes.
-
-Short-list of claims/lessons worth checking surgically:
-
-These came from a difficult late-Unicorn phase where master often said it had
-"fixed" things while the architecture was still unstable. Treat each item as a
-lead to verify, not as proven truth.
-
-- `817afac`: claimed/found that emulated LPT opcode `0x00` should return
-  `0xF0`, not `0x00`. Verify against protocol evidence or current guest
-  behavior before porting.
-- `0001de2`: claimed/found that `io-handled` DCS needs byte writes to port
-  `0x13c` for sound command delivery. Likely relevant, but prove it in the QEMU
-  DCS path. Historical nuance: around the LPT-pace era, `io-handled` sound
-  appeared genuinely strong/useful, while late master had many timing/IRQ guard
-  experiments and sound became harder to interpret. Use the earlier good
-  behavior as a clue, but re-prove QEMU sound cleanly instead of trusting the
-  final master state. The `unicorn.old/` snapshot is currently the most
-  functional practical reference for this path; use it to understand expected
-  behavior, not as code to copy blindly.
-- `516210d`: claimed/found a `#UD` / `0F3C` non-Cyrix interrupt-frame issue.
-  Only relevant if QEMU keeps a custom 0F3C handler; verify against actual
-  handler bytes and IRET frame behavior.
-- `2c2c180`: env-gated PDB/LPT CSV tracing looks useful for comparing traffic
-  to hardware or NuCore. This is diagnostic tooling, not a behavioral fix.
-- `be99437`: historically useful because it exposed that IRQ0/PLX/watchdog
-  behavior mattered, but it mixed too many changes and belongs to the unstable
-  pre/post-LPT-pace transition. Do not port wholesale.
+- [ ] Manual run feels at least as usable as the best Unicorn desktop baseline:
+  graphics, UART, sound, controls, save/update path.
+- [ ] Diagnostics show QEMU PIT/PIC/timers own timing; no Unicorn vticks,
+  guard stack, or LPT pacing.
+- [ ] No default RAM scribbler, no default PIC fixup, no permanent IRQ0 shim.
+- [ ] Every remaining patch has a gate, a metric, and a deletion condition.
+- [ ] New commits keep this roadmap current.
