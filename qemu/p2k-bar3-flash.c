@@ -17,6 +17,8 @@
 #include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "exec/address-spaces.h"
+#include <dirent.h>
+#include <sys/stat.h>
 
 #include "pinball2000.h"
 #include "p2k-internal.h"
@@ -130,6 +132,92 @@ static const MemoryRegionOps p2k_bar3_ops = {
     .impl  = { .min_access_size = 1, .max_access_size = 4, .unaligned = true },
 };
 
+/* Scan dir (one level) for a file whose basename ends with `suffix`.
+ * Returns malloced full path, or NULL. */
+static char *find_with_suffix(const char *dir, const char *suffix)
+{
+    DIR *d = opendir(dir);
+    if (!d) return NULL;
+    struct dirent *e;
+    char *result = NULL;
+    while ((e = readdir(d))) {
+        size_t nl = strlen(e->d_name), sl = strlen(suffix);
+        if (nl >= sl && strcmp(e->d_name + nl - sl, suffix) == 0) {
+            result = g_strdup_printf("%s/%s", dir, e->d_name);
+            break;
+        }
+    }
+    closedir(d);
+    return result;
+}
+
+/* Read whole file into a freshly allocated buffer. */
+static uint8_t *slurp(const char *path, size_t *out_sz)
+{
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return NULL;
+    fseek(fp, 0, SEEK_END);
+    long sz = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    if (sz <= 0) { fclose(fp); return NULL; }
+    uint8_t *buf = g_malloc(sz);
+    size_t n = fread(buf, 1, sz, fp);
+    fclose(fp);
+    if (n != (size_t)sz) { g_free(buf); return NULL; }
+    *out_sz = n;
+    return buf;
+}
+
+/* Assemble the update bundle into the flash buffer, mirroring
+ * unicorn.old/src/rom.c:526-576 layout:
+ *   [0      .. 0x8000)  bootdata (truncated if larger)
+ *   [0x8000 .. +A    )  im_flsh0
+ *   [+A     .. +A+B  )  game
+ *   [+A+B   .. +A+B+C)  symbols
+ * Returns true if applied. */
+static bool assemble_update(const char *dir)
+{
+    char *p_boot = find_with_suffix(dir, "_bootdata.rom");
+    char *p_im   = find_with_suffix(dir, "_im_flsh0.rom");
+    char *p_game = find_with_suffix(dir, "_game.rom");
+    char *p_syms = find_with_suffix(dir, "_symbols.rom");
+
+    if (!p_boot || !p_im || !p_game || !p_syms) {
+        warn_report("pinball2000: update dir %s missing one of "
+                    "*_bootdata/im_flsh0/game/symbols.rom — ignored", dir);
+        g_free(p_boot); g_free(p_im); g_free(p_game); g_free(p_syms);
+        return false;
+    }
+
+    size_t s_boot=0, s_im=0, s_game=0, s_syms=0;
+    uint8_t *b_boot = slurp(p_boot, &s_boot);
+    uint8_t *b_im   = slurp(p_im,   &s_im);
+    uint8_t *b_game = slurp(p_game, &s_game);
+    uint8_t *b_syms = slurp(p_syms, &s_syms);
+
+    bool ok = (b_boot && b_im && b_game && b_syms);
+    if (ok) {
+        size_t boot_copy = s_boot > 0x8000 ? 0x8000 : s_boot;
+        size_t off = 0;
+        memcpy(s_flash + off, b_boot, boot_copy); off = 0x8000;
+        if (off + s_im   <= P2K_BAR3_SIZE) { memcpy(s_flash + off, b_im,   s_im);   off += s_im; }   else ok = false;
+        if (ok && off + s_game <= P2K_BAR3_SIZE) { memcpy(s_flash + off, b_game, s_game); off += s_game; } else ok = false;
+        if (ok && off + s_syms <= P2K_BAR3_SIZE) { memcpy(s_flash + off, b_syms, s_syms); off += s_syms; } else ok = false;
+        if (ok) {
+            info_report("pinball2000: update bundle assembled into BAR3 "
+                        "(boot=%zu im=%zu game=%zu syms=%zu, total=0x%zx)",
+                        s_boot, s_im, s_game, s_syms, off);
+        } else {
+            warn_report("pinball2000: update bundle exceeds BAR3 size; "
+                        "skipped");
+        }
+    }
+
+    g_free(b_boot); g_free(b_im); g_free(b_game); g_free(b_syms);
+    g_free(p_boot); g_free(p_im); g_free(p_game); g_free(p_syms);
+    return ok;
+}
+
 void p2k_install_bar3_flash(Pinball2000MachineState *s)
 {
     s_flash = g_malloc(P2K_BAR3_SIZE);
@@ -145,6 +233,11 @@ void p2k_install_bar3_flash(Pinball2000MachineState *s)
         info_report("pinball2000: BAR3 seeded from %s (%zu bytes)", path, n);
     } else {
         warn_report("pinball2000: BAR3 flash %s not loaded", path);
+    }
+
+    if (s->update_path && *s->update_path) {
+        info_report("pinball2000: applying update from %s", s->update_path);
+        assemble_update(s->update_path);
     }
 
     MemoryRegion *mr = g_new(MemoryRegion, 1);

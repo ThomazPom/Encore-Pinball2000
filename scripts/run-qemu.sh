@@ -11,8 +11,13 @@
 #   --no-savedata         Run without persistent savedata (clean boot).
 #                         Implemented by cd'ing into a temp dir with no
 #                         savedata/ subdir for this run only.
-#   --update <dir>        Stage an update bundle. Currently informational —
-#                         NOTE: the machine does not yet consume updates/.
+#   --update <dir>        Stage an update bundle. The directory must
+#                         contain *_bootdata.rom + *_im_flsh0.rom +
+#                         *_game.rom + *_symbols.rom (e.g.
+#                         updates/pin2000_50069_0210_…/50069). The
+#                         machine assembles them into BAR3 flash at
+#                         boot, overriding any savedata/<game>.flash
+#                         seed. Layout matches Unicorn rom.c:526-576.
 #   --display <mode>      QEMU -display backend (sdl, gtk, none).
 #                         Default: sdl on a graphical session, none otherwise.
 #   --headless            Shortcut for --display none -serial stdio.
@@ -114,7 +119,13 @@ fi
 if [[ $VERBOSITY -ge 1 ]]; then export P2K_DIAG=1; fi
 
 if [[ -n "$UPDATE_DIR" ]]; then
-  echo "[run-qemu] WARNING: --update <dir> not yet consumed by machine; staging directory only" >&2
+  if [[ ! -d "$UPDATE_DIR" ]]; then
+    echo "[run-qemu] ERROR: --update path is not a directory: $UPDATE_DIR" >&2
+    exit 1
+  fi
+  # Resolve to absolute path so it works regardless of QEMU cwd.
+  UPDATE_DIR_ABS="$(cd "$UPDATE_DIR" && pwd)"
+  echo "[run-qemu] applying update from $UPDATE_DIR_ABS" >&2
 fi
 
 # The machine reads savedata/<game>.* relative to cwd. Choose cwd accordingly.
@@ -153,7 +164,11 @@ if [[ $TCG_ONLY -eq 1 ]]; then
   exec "$QEMU_BIN" "${ARGS[@]}" "${EXTRA[@]}"
 fi
 
-ARGS=( -M pinball2000,game="$GAME",roms-dir="$ROMS_DIR" "${ARGS[@]}" )
+MACHINE_OPTS="pinball2000,game=$GAME,roms-dir=$ROMS_DIR"
+if [[ -n "$UPDATE_DIR" ]]; then
+  MACHINE_OPTS+=",update=$UPDATE_DIR_ABS"
+fi
+ARGS=( -M "$MACHINE_OPTS" "${ARGS[@]}" )
 echo "[run-qemu] cwd=$RUN_CWD"
 echo "[run-qemu] $QEMU_BIN ${ARGS[*]} ${EXTRA[*]:-}"
 cd "$RUN_CWD"

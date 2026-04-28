@@ -156,6 +156,17 @@ static void p2k_set_roms_dir(Object *obj, const char *value, Error **errp)
     g_free(s->roms_dir);
     s->roms_dir = g_strdup(value);
 }
+static char *p2k_get_update(Object *obj, Error **errp)
+{
+    Pinball2000MachineState *s = PINBALL2000_MACHINE(obj);
+    return g_strdup(s->update_path ?: "");
+}
+static void p2k_set_update(Object *obj, const char *value, Error **errp)
+{
+    Pinball2000MachineState *s = PINBALL2000_MACHINE(obj);
+    g_free(s->update_path);
+    s->update_path = (value && *value) ? g_strdup(value) : NULL;
+}
 
 static void pinball2000_class_init(ObjectClass *oc, void *data)
 {
@@ -180,6 +191,12 @@ static void pinball2000_class_init(ObjectClass *oc, void *data)
                                   p2k_get_roms_dir, p2k_set_roms_dir);
     object_class_property_set_description(oc, "roms-dir",
         "Directory containing game ROM chip files (default: ./roms)");
+    object_class_property_add_str(oc, "update",
+                                  p2k_get_update, p2k_set_update);
+    object_class_property_set_description(oc, "update",
+        "Directory holding *_bootdata.rom + *_im_flsh0.rom + *_game.rom + "
+        "*_symbols.rom; assembled into BAR3 flash at boot (overrides "
+        "savedata seed). Empty/unset = no update.");
 }
 
 static const TypeInfo pinball2000_machine_info = {
