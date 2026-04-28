@@ -141,8 +141,19 @@ static void p2k_al_tick(void *opaque)
 void p2k_install_allegro_fix(Pinball2000MachineState *s)
 {
     (void)s;
-    if (getenv("P2K_NO_ALLEGRO_FIX")) {
-        info_report("pinball2000: allegro_init bug fix DISABLED via env");
+    /*
+     * OPT-IN ONLY. This module is a diagnostic bridge for use while
+     * investigating why the allegro graphics driver list at [0x343e90]
+     * is empty under QEMU. It rewrites guest .text and periodically
+     * scrubs guest BSS, which is exactly the kind of host-side surgery
+     * we are trying to eliminate. The real fix is to make some QEMU
+     * device behavior cause the driver list to populate naturally
+     * (matching the original hardware / unicorn path). Enable only
+     * with P2K_ALLEGRO_FIX=1 for triage of downstream Fatals.
+     */
+    if (!getenv("P2K_ALLEGRO_FIX")) {
+        info_report("pinball2000: allegro_init bug fix DISABLED "
+                    "(opt-in: set P2K_ALLEGRO_FIX=1 for diagnostic bridge)");
         return;
     }
     p2k_al_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, p2k_al_tick, NULL);

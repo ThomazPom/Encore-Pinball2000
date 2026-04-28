@@ -51,6 +51,7 @@ void p2k_install_gx_stub(void);
 void p2k_install_gp_blt(void);
 void p2k_install_nulluser_hlt(Pinball2000MachineState *s);
 void p2k_install_allegro_fix(Pinball2000MachineState *s);
+void p2k_install_gfxlist_watch(Pinball2000MachineState *s);
 
 /* p2k-display.c: 640×480 SDL/QEMU display reading FB at RAM 0x800000. */
 void p2k_install_display(void);
