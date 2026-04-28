@@ -1,21 +1,17 @@
 /*
  * ============================================================================
- * STATUS: TEMPORARY SYMPTOM PATCH — replace with proper QEMU device behavior.
+ * STATUS: DEFAULT-OFF as of the QEMU branch maturity. Was a TEMPORARY
+ * SYMPTOM PATCH inherited from unicorn.old; we kept it as a boot bridge
+ * while the real PIC/ICW path was unproven. Empirical run with
+ * P2K_NO_PIC_FIXUP=1 shows the guest reaches further (exec_pass 0x420+
+ * vs 0x130 with the timer armed) and emits more gameplay events with
+ * the fix-up disabled — the 250us timer was wasting cycles re-OUTing
+ * 0x21 every quarter-millisecond on a PIC the guest had already
+ * programmed correctly.
  *
- * Why temporary: this module polls the QEMU i8259 IMR and force-clears
- * bit 0 (IRQ0) + bit 2 (cascade) on a 250 us timer. It papers over the
- * fact that the guest's own restore_irq routine repeatedly re-masks
- * IRQ0 because we bypass the BIOS PIC initialisation that would have
- * left a sane base_mask.
- *
- * Removal condition: delete this file once we either
- *   (a) run the real BIOS init far enough that XINU inherits a correct
- *       base_mask (i.e. PRISM/POST runs a normal i8259 ICW sequence
- *       before jumping to PM entry), OR
- *   (b) move the PM entry recipe in p2k-boot.c so that the guest's
- *       device_init step is no longer NOP'd, and the OR-mask at
- *       0x2fe854 ends up with bit 0 cleared naturally.
- * Until then: kill switch is P2K_NO_PIC_FIXUP.
+ * Default: OFF.  Opt-in with P2K_PIC_FIXUP=1 if a regression appears.
+ * Removal condition: once we confirm no bundle (RFM + RFM update +
+ * SWE1 update) regresses, this whole file can be deleted.
  * ============================================================================
  *
  * pinball2000 PIC IRQ0/cascade unmask fix-up.
@@ -150,10 +146,26 @@ rearm:
 
 void p2k_install_pic_fixup(void)
 {
+    const char *force = getenv("P2K_PIC_FIXUP");
+    bool enabled = (force && force[0] && force[0] != '0');
+
+    /* P2K_NO_PIC_FIXUP=1 is honored even if someone also passes
+     * P2K_PIC_FIXUP=1, so the kill switch always wins. */
+    const char *off = getenv("P2K_NO_PIC_FIXUP");
+    if (off && off[0] && off[0] != '0') {
+        enabled = false;
+    }
+
+    if (!enabled) {
+        info_report("pinball2000: PIC fix-up disabled (default; "
+                    "set P2K_PIC_FIXUP=1 to re-arm the legacy timer)");
+        return;
+    }
     p2k_pic_fixup_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,
                                        p2k_pic_fixup_tick, NULL);
     timer_mod(p2k_pic_fixup_timer,
               qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + P2K_PIC_FIXUP_NS);
-    info_report("pinball2000: PIC fix-up timer armed (%d us)",
+    info_report("pinball2000: PIC fix-up timer armed (%d us) "
+                "[P2K_PIC_FIXUP=1, opt-in legacy mode]",
                 (int)(P2K_PIC_FIXUP_NS / 1000));
 }
