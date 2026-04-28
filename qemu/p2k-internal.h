@@ -56,6 +56,11 @@ void p2k_install_bar3_flash(Pinball2000MachineState *s);
  * (mirrors unicorn.old/src/io.c:121-127). */
 void p2k_install_pic_fixup(void);
 
+/* p2k-irq0-shim.c: one-shot inject EOI+IRET stub at 0x500 and patch
+ * IDT[0x20] so early IRQ0 doesn't fall into XINU's panic dispatcher.
+ * Naturally overridden when XINU's clkinit() installs real clkint. */
+void p2k_install_irq0_shim(void);
+
 /* p2k-plx-regs.c: PLX 9050 BAR0 register file + 93C46 SEEPROM model. */
 void p2k_install_plx_regs(void);
 
