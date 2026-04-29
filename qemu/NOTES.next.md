@@ -724,18 +724,28 @@ io-handled-rejects-BAR4 era; both modes now route through BAR4.
        prnull `JMP $` busy-spin without needing the `HLT;JMP -3`
        rewrite. Removed file + call site + header decl.
 
-3. **`p2k-vsync.c` periodic RAM cell scribble.** (~~`p2k-watchdog.c`~~
-   ✅ DELETED 2026-04: PLX INTCSR bit2=1 in `p2k-plx-regs.c` had been
-   satisfying `pci_watchdog_bone()` naturally for several commits, the
-   scribbler had been default-OFF since `256cea1`, and the full
-   validation matrix passes without it.)
-   `p2k-vsync.c` writes specific RAM cells via
-   `cpu_physical_memory_write` from a QEMU timer to keep the BAR2 vsync
-   flag and the GX DC_TIMING2 scanline counter alternating. Same
-   pattern as Unicorn's "vsync cell" trick — works, but ties device
-   behavior to opaque guest BSS / MMIO addresses scanned at boot.
-   - Cleaner: model the GX VBLANK GPIO as a real readable register
-     (already partial in `p2k-display.c`) so the guest's natural read
-     observes the alternating bit. With that in place the vsync timer
-     scribble becomes deletable.
+3. **`p2k-vsync.c` periodic RAM cell scribble.** Still timer-driven for
+   both DC_TIMING2 and BAR2[+4]. Attempted MMIO conversion of
+   DC_TIMING2 (commit `42971b1`, **reverted** in `3cc1af7`):
+   functionally correct from the audio matrix (14 samples, 0 Fatal,
+   matrix passed), but produced a **black-screen regression** in the
+   on-screen display path. The display rendering code reads
+   DC_TIMING2 directly via `memory_region_get_ram_ptr()` on
+   `p2k.gx.regs1`, bypassing the MMIO overlay; the RAM cell stayed at
+   its initial 0 because nothing was writing it any more. So the
+   constraint is: anything that replaces DC_TIMING2 must keep the
+   value visible to *both* the guest CPU bus access *and* host-side
+   `memory_region_get_ram_ptr()` consumers, or else also convert the
+   host-side display reader to go through the MMIO bus.
+   (~~`p2k-watchdog.c`~~ ✅ DELETED 2026-04: PLX INTCSR bit2=1 in
+   `p2k-plx-regs.c` had been satisfying `pci_watchdog_bone()` naturally
+   for several commits, the scribbler had been default-OFF since
+   `256cea1`, and the full validation matrix passes without it.)
+   - Cleaner exit (long-term): model the entire VBLANK device as a
+     small QOM device that owns BOTH the DC_TIMING2 register (read by
+     guest CPU via MMIO) AND the BAR2[+4] flag, with the host display
+     code reading the device state via a getter function rather than
+     poking RAM. Until then leave the timer scribbler in place — the
+     dirty pattern is well-contained and validated.
+
 
