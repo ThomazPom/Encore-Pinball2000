@@ -124,4 +124,10 @@ void p2k_install_nic_dseg(void);
  * No effect on guest execution. */
 void p2k_install_diag(Pinball2000MachineState *s);
 
+/* p2k-timing-audit.c: single-line "is QEMU virtual time really driving
+ * this run?" panel. Reports clock/icount/PIT/PIC/IDT/host-slow scale.
+ * Default ON (initial line @3 s, exit line at shutdown). With P2K_DIAG=1
+ * also emits one line every 5 s. Disable with P2K_NO_TIMING_AUDIT=1. */
+void p2k_install_timing_audit(Pinball2000MachineState *s);
+
 #endif /* HW_PINBALL2000_INTERNAL_H */

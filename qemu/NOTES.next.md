@@ -308,6 +308,15 @@ not the new source of truth.
   Symptom-shaped. Replace with correct RAM/PCI resource behavior if possible.
 - [~] `b037ecc` BT-131 NIC LAN ROM seed in D-segment.
   Likely harmless, but prove whether guest requires it.
+  Cleaned in this commit: replaced one-shot host `cpu_physical_memory_write`
+  with an 8-byte read-only MMIO shadow at 0xD0008 (overlay priority 1 over
+  system RAM). No more guest-BSS poke. `p2k-boot.c` post-reset hook gone.
+- [x] `p2k-timing-audit.c`: single-line PIT/PIC/IDT/wall-vs-vtime panel.
+  Default-on (initial @3 s + exit). Periodic 5 s with `P2K_DIAG=1`. Disable
+  with `P2K_NO_TIMING_AUDIT=1`. Proved live SWE1 v2.10:
+  `idt20=0x0022c4c6 handler=clkint pit0_hz=4003.97 scale=1.000x host_slow=no`
+  — clean QEMU virtual time, no external pacing, IRQ0 reaches the real
+  clkint with no shim in between.
 - [x] `9388676` mark temporary symptom patches with removal conditions.
   Keep. Good hygiene.
 - [x] `663a617` read-only PIT/PIC/IDT diagnostic sampler.
