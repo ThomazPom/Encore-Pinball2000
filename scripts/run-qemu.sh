@@ -18,6 +18,11 @@
 #                         machine assembles them into BAR3 flash at
 #                         boot, overriding any savedata/<game>.flash
 #                         seed. Layout matches Unicorn rom.c:526-576.
+#                         When omitted AND no savedata flash is
+#                         present, the machine auto-discovers the
+#                         newest matching bundle in updates/ — without
+#                         this, BAR3 would be all-0xFF and XINU stalls
+#                         at "NO UPDATE" (same trap as Unicorn).
 #   --display <mode>      QEMU -display backend (sdl, gtk, none).
 #                         Default: sdl on a graphical session, none otherwise.
 #   --headless            Shortcut for --display none -serial stdio.

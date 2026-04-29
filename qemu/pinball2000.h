@@ -57,7 +57,6 @@
  * That masked, among other things, swe1-default's wild-jump-into-GDT
  * at phys 0x1008 — which is why `P2K_GDT_BASE` is now `0x88000` and
  * not `0x1000`. Documented further in `qemu/p2k-boot.c`.
- */
  *
  * PCI bridge: PLX 9054
  *   BAR0  = ROM window (game ROM bank, paged)

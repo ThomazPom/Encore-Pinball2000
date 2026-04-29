@@ -218,6 +218,95 @@ static bool assemble_update(const char *dir)
     return ok;
 }
 
+/* Map game alias ("swe1" / "rfm") to the Williams Pinball 2000 game number
+ * used in the updates/ directory layout. Mirrors unicorn.old/src/rom.c:640-641.
+ */
+static uint32_t game_num_for(const char *game)
+{
+    if (!game) return 0;
+    if (strcmp(game, "swe1") == 0) return 50069;
+    if (strcmp(game, "rfm")  == 0) return 50070;
+    return 0;
+}
+
+/* Auto-discover the newest update bundle in <updates_root>/ for `game`.
+ *
+ * Williams ships the production cabinet with the update flash already
+ * programmed.  unicorn.old/src/rom.c:633-816 mirrors that by ALWAYS
+ * loading a fresh update bundle from updates/ at boot — even when no
+ * --update was passed and even with --no-savedata.  Without this XINU
+ * stalls at the "NO UPDATE" path right after [STARTING GAME CODE]
+ * because the resource walker reads BAR3, gets 0xFF, and never reaches
+ * timer init.
+ *
+ * Layout:  updates/pin2000_<game_num>_<version>_<date>_B_10000000/<game_num>/
+ *          pin2000_<game_num>_<version>_{bootdata,im_flsh0,game,symbols}.rom
+ *
+ * Selection: pick the newest <version> found (lexicographic, since
+ * versions are zero-padded "0120", "0140", "0210", "0260", ...).
+ *
+ * Returns malloced path to the inner game-num subdir, or NULL.
+ */
+static char *autodiscover_update(const char *updates_root, const char *game)
+{
+    uint32_t gn = game_num_for(game);
+    if (!gn) return NULL;
+    DIR *d = opendir(updates_root);
+    if (!d) return NULL;
+
+    char prefix[64];
+    int plen = snprintf(prefix, sizeof(prefix), "pin2000_%u_", gn);
+
+    char *best_outer = NULL;       /* outer dir name      */
+    char  best_ver[16] = {0};      /* highest version seen */
+    struct dirent *e;
+    while ((e = readdir(d))) {
+        if (strncmp(e->d_name, prefix, plen) != 0) continue;
+        const char *ver = e->d_name + plen;
+        /* Version is the next 4 chars before the next '_'. */
+        if (strlen(ver) < 5 || ver[4] != '_') continue;
+        char vbuf[8];
+        memcpy(vbuf, ver, 4); vbuf[4] = '\0';
+        if (best_outer == NULL || strcmp(vbuf, best_ver) > 0) {
+            g_free(best_outer);
+            best_outer = g_strdup(e->d_name);
+            g_strlcpy(best_ver, vbuf, sizeof(best_ver));
+        }
+    }
+    closedir(d);
+    if (!best_outer) return NULL;
+
+    /* Inner subdir is the bare game number. */
+    char *inner = g_strdup_printf("%s/%s/%u", updates_root, best_outer, gn);
+    g_free(best_outer);
+    struct stat st;
+    if (stat(inner, &st) != 0 || !S_ISDIR(st.st_mode)) {
+        g_free(inner);
+        return NULL;
+    }
+    return inner;
+}
+
+/* Try a few likely roots for the updates/ directory:
+ *   1. ./updates  (matches Unicorn cwd-relative behavior)
+ *   2. <roms_dir>/../updates  (works under --no-savedata where cwd is /tmp)
+ * Returns malloced path to the inner game-num subdir, or NULL.
+ */
+static char *find_default_update(const char *roms_dir, const char *game)
+{
+    char *hit = autodiscover_update("updates", game);
+    if (hit) return hit;
+    if (roms_dir && *roms_dir) {
+        char *parent = g_path_get_dirname(roms_dir);
+        char *root = g_strdup_printf("%s/updates", parent);
+        g_free(parent);
+        hit = autodiscover_update(root, game);
+        g_free(root);
+        if (hit) return hit;
+    }
+    return NULL;
+}
+
 void p2k_install_bar3_flash(Pinball2000MachineState *s)
 {
     s_flash = g_malloc(P2K_BAR3_SIZE);
@@ -227,17 +316,38 @@ void p2k_install_bar3_flash(Pinball2000MachineState *s)
     char path[1024];
     snprintf(path, sizeof(path), "savedata/%s.flash", game);
     FILE *fp = fopen(path, "rb");
+    bool seeded = false;
     if (fp) {
         size_t n = fread(s_flash, 1, P2K_BAR3_SIZE, fp);
         fclose(fp);
         info_report("pinball2000: BAR3 seeded from %s (%zu bytes)", path, n);
+        seeded = true;
     } else {
-        warn_report("pinball2000: BAR3 flash %s not loaded", path);
+        info_report("pinball2000: BAR3 flash %s not present "
+                    "(fresh-from-factory; will look for updates/)", path);
     }
 
     if (s->update_path && *s->update_path) {
-        info_report("pinball2000: applying update from %s", s->update_path);
+        info_report("pinball2000: applying update from %s (--update)",
+                    s->update_path);
         assemble_update(s->update_path);
+    } else if (!seeded) {
+        /* No persistent flash AND no explicit --update: auto-discover the
+         * newest bundle in updates/, mirroring unicorn.old/src/rom.c:633-816.
+         * Without this, XINU stalls at "NO UPDATE" right after STARTING GAME
+         * CODE and never reaches PIT/clkint init. */
+        char *auto_dir = find_default_update(s->roms_dir, game);
+        if (auto_dir) {
+            info_report("pinball2000: applying auto-discovered update %s "
+                        "(no savedata flash, no --update)", auto_dir);
+            assemble_update(auto_dir);
+            g_free(auto_dir);
+        } else {
+            warn_report("pinball2000: no savedata flash AND no update bundle "
+                        "found under updates/ — XINU will likely hang at "
+                        "[STARTING GAME CODE]; pass --update <dir> or place "
+                        "savedata/%s.flash", game);
+        }
     }
 
     MemoryRegion *mr = g_new(MemoryRegion, 1);
