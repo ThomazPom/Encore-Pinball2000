@@ -628,3 +628,85 @@ Until Phase 2 lands, `--dcs-mode io-handled` produces a clean negative
 result (silence + REJECTED stream + UART.w/UART.bp=0) which is exactly
 the proof-of-bucket the user requested: "BAR4 audio is not proof that
 io-handled is fixed".
+
+## Dirtiness Audit (post `8577c0a`, io-handled default)
+
+Honest list of the dirtiest things still in tree, with cleaner alternatives.
+Use this as a candidate-for-deletion / refactor checklist; don't action
+without separate proof that the cleaner alternative actually works.
+
+### DCS subsystem — top 3
+
+1. **`p2k-dcs-audio.c` is a 845-line in-process Vorbis decoder + 8-voice
+   software mixer rolled by hand.**
+   Bypasses QEMU's audio framework conventions: parses pb2kslib container,
+   XOR-decodes payload, mmaps blobs, decodes Ogg via libvorbisfile, then
+   does its own per-channel volume/pan/mix into a single SWVoiceOut callback.
+   This is the largest opaque surface in the DCS code.
+   - Cleaner: split into (a) a tiny `dcs-sample-source` (pure container
+     reader, no audio), (b) a thin QEMU `AudioCardState`-style mixer that
+     uses qemu/audio.h primitives only, (c) push the channel/voice table
+     into a small struct array instead of the current scattered statics
+     (~20 in this file).
+   - Even cleaner alternative: emit one PCM stream per channel via QEMU's
+     normal audio path and let the host mixer do the mixing; we then own
+     only "sample lookup + start/stop/volume", not the mix loop.
+
+2. **Synthesized "blip" / proof-of-path tone fallback (`p2k-dcs-audio.c`
+   lines ~140-145, 457-465, 522).**
+   Dead-on-success bring-up code that synthesizes a sine when sample
+   lookup misses. Currently masks real cache-miss bugs with audible noise.
+   - Cleaner: delete entirely. Cache miss should be a single counted log
+     line, not a sound. Keep `missed #N` accounting only.
+
+3. **pb2kslib auto-discovery walks `/mnt/...` at startup.**
+   `p2k-dcs-audio.c` opens directories, scans for the container by name,
+   chooses one heuristically. Side effect: build is sensitive to host
+   layout; a stale container can be picked silently.
+   - Cleaner: require an explicit `--pb2kslib <path>` (or env
+     `P2K_PB2KSLIB`) with no auto-discovery. Hard-fail loud if missing
+     and `P2K_DCS_AUDIO=1` was requested. (Wrapper script can still
+     auto-fill the arg from a single canonical seed dir.)
+
+### Whole codebase — top 3
+
+1. **`p2k-mem-detect.c`: post-boot RAM .text scribble of XINU's
+   `mem_detect()` to change its return value (0x400 → 0xE00 pages).**
+   Scans RAM for a function prologue + immediate `MOV EAX, 0x400 ; RET`
+   and overwrites a single byte. This is exactly the class of trick the
+   user has rejected for DCS — kept here because the underlying device
+   model is wrong.
+   - Cleaner: properly emulate the MediaGX/CS5530 memory controller's
+     size-discovery registers so the natural `mem_detect()` walk reports
+     14 MB without any patch. Keep the scribble path but gate it behind
+     `P2K_MEMDETECT_PATCH=1` and default it OFF once the device path works.
+     Exit criterion: boot reaches XINU ready with the env unset.
+
+2. **Guest-visible RAM stubs + IDT rewrites: `p2k-irq0-shim.c`,
+   `p2k-cyrix-0f3c.c`, `p2k-nulluser-hlt.c`.**
+   Each installs a small shim at a fixed RAM address and patches an IDT
+   entry to vector to it. They paper over real CPU/timer semantics
+   (HLT wake-up, IRQ0 reentry, Cyrix opcode 0F 3C). Visible to any guest
+   code that walks the IDT or disassembles those addresses.
+   - Cleaner per file:
+     * `p2k-cyrix-0f3c.c` — implement the Cyrix `BB0_RESET` opcode in
+       QEMU's i386 translator (or a `cpu_x86_register` helper). One
+       upstream-style patch instead of an injected ISR.
+     * `p2k-irq0-shim.c` — drive the PIT/PIC interrupt path correctly so
+       the natural IDT entry runs. The shim only exists because IRQ0 was
+       being missed during HLT spin.
+     * `p2k-nulluser-hlt.c` — fix the HLT/IF wake semantics in i386 TCG
+       for the MediaGX timing window, then delete the patch site.
+
+3. **`p2k-vsync.c` + `p2k-watchdog.c` periodic RAM cell scribbles.**
+   Both write specific RAM cells via `cpu_physical_memory_write` from a
+   QEMU timer to keep liveness flags fresh. Same pattern as Unicorn's
+   "watchdog cell" trick — works, but ties device behavior to opaque
+   guest BSS addresses scanned at boot.
+   - Cleaner: model the GX VBLANK GPIO as a real readable register
+     (already partial in `p2k-display.c`) so the guest's natural read
+     observes the alternating bit; model the PCI watchdog endpoint
+     (PLX9054 EEPROM/LPT side) so the guest's natural write/read keeps
+     the watchdog satisfied. With both in place the timer scribbles
+     become deletable.
+
