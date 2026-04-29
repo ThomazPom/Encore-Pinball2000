@@ -11,14 +11,25 @@
  * silently.
  *
  * Removal condition: implement Cyrix/MediaGX `0F 3C` semantics in QEMU's
- * i386 TCG decoder (translate.c) or as a CPU model extension that sets
- * `cpu->cc->ud_emul()` — at which point the natural #UD never fires,
- * IDT[6] stays the guest's own, and this whole file can be deleted.
- * Visible exit criterion: boot reaches attract / menu_init with
- * P2K_NO_CYRIX_STUB=1 set (proves the stub is no longer load-bearing).
+ * i386 TCG decoder (target/i386/tcg/translate.c) so the natural #UD
+ * never fires, IDT[6] stays the guest's own, and this file can be
+ * deleted. Visible exit criterion: full validation matrix passes with
+ * P2K_NO_CYRIX_STUB=1 (proves the stub is no longer load-bearing).
  *
- * Until then: keep the env-var kill switch P2K_NO_CYRIX_STUB so the
- * patch can be disabled while wiring the proper fix.
+ * Validation 2026-04 — kill-switch is currently still load-bearing:
+ *
+ *   matrix run with P2K_NO_CYRIX_STUB=1 (vs baseline same matrix):
+ *     swe1-default       : F=0 T=1   (was T=0)  Cyx=2  monitor-loop
+ *     swe1-update-0210   : F=0 T=1   (was T=0)  samples 2 (was 14)
+ *     rfm-default        : F=0 T=0
+ *     rfm-update-0260    : F=0 T=1   (was T=0)  samples 0 (was 2)
+ *
+ *   so disabling the stub regresses 3 of 4 configs (one trap +
+ *   loss of attract audio on the update paths). We keep it on by
+ *   default until a real TCG decoder lands.
+ *
+ * Until then: the env-var kill switch P2K_NO_CYRIX_STUB lets the
+ * patch be disabled while wiring the proper fix.
  * ============================================================================
  *
  * pinball2000 — Cyrix 0F3C (BB0_RESET) #UD emulator.
@@ -41,8 +52,9 @@
  * Patch IDT[6] to a 32-bit interrupt gate { offset=0x540, sel=0x08,
  * type=0x8E (P=1, DPL=0, 32-bit interrupt gate) }.
  *
- * Address 0x540 chosen to sit above the IRQ0 EOI shim at 0x500 (5 bytes)
- * within the same XINU "low-mem below IVT" scratch area.
+ * Address 0x540 chosen to sit in the XINU "low-mem below IVT" scratch
+ * area (the IRQ0 EOI shim that previously lived just below at 0x500
+ * has since been deleted; the address is preserved for diff stability).
  */
 
 #include "qemu/osdep.h"
@@ -54,7 +66,7 @@
 #include "p2k-internal.h"
 
 #define P2K_CYRIX_STUB_ADDR  0x00000540u
-#define P2K_CYRIX_POLL_NS    (200 * 1000)        /* 0.2 ms */
+#define P2K_CYRIX_POLL_NS    (2 * 1000 * 1000)   /* 2 ms */
 
 /* Hand-assembled 32-bit interrupt-handler stub.
  *
