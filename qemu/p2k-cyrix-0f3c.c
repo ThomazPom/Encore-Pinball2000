@@ -1,4 +1,26 @@
 /*
+ * ============================================================================
+ * STATUS: TEMPORARY SYMPTOM PATCH — replace with proper QEMU CPU behavior.
+ *
+ * Why temporary: this module patches the guest's IDT[6] to vector to a
+ * 32-byte hand-injected handler at physical 0x540 that emulates the
+ * Cyrix-specific `0F 3C` (BB0_RESET) opcode in software. Mutating the
+ * guest interrupt vector table and injecting executable bytes into low
+ * RAM is a band-aid — it works because no guest code reads or rewrites
+ * IDT[6] after sysinit, but any change in that assumption breaks us
+ * silently.
+ *
+ * Removal condition: implement Cyrix/MediaGX `0F 3C` semantics in QEMU's
+ * i386 TCG decoder (translate.c) or as a CPU model extension that sets
+ * `cpu->cc->ud_emul()` — at which point the natural #UD never fires,
+ * IDT[6] stays the guest's own, and this whole file can be deleted.
+ * Visible exit criterion: boot reaches attract / menu_init with
+ * P2K_NO_CYRIX_STUB=1 set (proves the stub is no longer load-bearing).
+ *
+ * Until then: keep the env-var kill switch P2K_NO_CYRIX_STUB so the
+ * patch can be disabled while wiring the proper fix.
+ * ============================================================================
+ *
  * pinball2000 — Cyrix 0F3C (BB0_RESET) #UD emulator.
  *
  * The MediaGX/Cyrix 5530 implements a non-Intel opcode `0F 3C` used by
@@ -124,12 +146,21 @@ static void p2k_cyrix_install(CPUX86State *env)
                 P2K_CYRIX_STUB_ADDR, (unsigned long)env->idt.base);
 }
 
+static void p2k_cyrix_disarm(void)
+{
+    if (p2k_cyrix_timer) {
+        timer_free(p2k_cyrix_timer);
+        p2k_cyrix_timer = NULL;
+    }
+}
+
 static void p2k_cyrix_tick(void *opaque)
 {
     CPUX86State *env = NULL;
     if (!p2k_cyrix_installed && p2k_xinu_ready(&env)) {
         p2k_cyrix_install(env);
         p2k_cyrix_installed = true;
+        p2k_cyrix_disarm();
         return;
     }
     timer_mod(p2k_cyrix_timer,
@@ -138,6 +169,12 @@ static void p2k_cyrix_tick(void *opaque)
 
 void p2k_install_cyrix_0f3c(void)
 {
+    const char *off = getenv("P2K_NO_CYRIX_STUB");
+    if (off && *off && off[0] != '0') {
+        info_report("pinball2000: Cyrix 0F3C #UD stub disabled by "
+                    "P2K_NO_CYRIX_STUB");
+        return;
+    }
     p2k_cyrix_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,
                                    p2k_cyrix_tick, NULL);
     timer_mod(p2k_cyrix_timer,

@@ -112,6 +112,14 @@ static bool p2k_idt20_is_panic_stub(uint32_t off)
 
 static bool p2k_shim_active = true;   /* flipped to false on self-retire */
 
+static void p2k_irq0_shim_disarm(void)
+{
+    if (p2k_irq0_shim_timer) {
+        timer_free(p2k_irq0_shim_timer);
+        p2k_irq0_shim_timer = NULL;
+    }
+}
+
 static void p2k_irq0_shim_tick(void *opaque)
 {
     CPUX86State *env = NULL;
@@ -142,10 +150,15 @@ static void p2k_irq0_shim_tick(void *opaque)
             }
         } else if (!is_shim) {
             /* Guest installed a real clkint (or any non-panic handler).
-             * Step aside permanently — let the natural PIT path run. */
+             * Step aside permanently — let the natural PIT path run.
+             * Disarm the timer; we don't repair IDT[0x20] post-retirement
+             * (no observed need; current code already gated all repair on
+             * p2k_shim_active=true). */
             info_report("pinball2000: IRQ0 shim retiring — guest installed "
                         "a real handler at IDT[0x20]=0x%08x", cur_off);
             p2k_shim_active = false;
+            p2k_irq0_shim_disarm();
+            return;
         }
     }
     timer_mod(p2k_irq0_shim_timer,
