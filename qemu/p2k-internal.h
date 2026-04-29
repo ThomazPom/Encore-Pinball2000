@@ -103,6 +103,18 @@ void p2k_install_pic_fixup(void);
 void p2k_install_cyrix_ccr(void);
 void p2k_install_superio(void);
 
+/* p2k-mediagx-gate.c: runtime gate for Cyrix/MediaGX TCG opcode
+ * extensions (0F 3A/3B/3C/3D and friends). pinball2000 init must call
+ * p2k_mediagx_enable_extensions() so the helpers added by
+ * qemu/upstream-patches/0001-i386-tcg-cyrix-mediagx-shim.patch take
+ * effect; outside the pinball2000 machine the gate stays FALSE and the
+ * helpers behave as plain #UD (preserving SSE4 dispatch on 0F 3A).
+ * p2k_mediagx_note_opcode/get_opcode_count back the per-opcode hit
+ * counters used by the diag panel. */
+void     p2k_mediagx_enable_extensions(void);
+unsigned p2k_mediagx_note_opcode(uint8_t op2);
+unsigned p2k_mediagx_get_opcode_count(uint8_t op2);
+
 /* p2k-vsync.c: ~57 Hz VBLANK ticker — writes BAR2_SRAM[4]=1 + DC_TIMING2
  * at end-of-frame, cycles DC_TIMING2 0..240 in between. */
 void p2k_install_vsync(void);

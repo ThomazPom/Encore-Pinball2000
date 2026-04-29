@@ -96,6 +96,11 @@ static void pinball2000_init(MachineState *machine)
      * 1 MiB bank0 image at 0x08000000/0x14000000/0xFF000000 are visible
      * to the guest. */
     p2k_map_rom_windows(s);
+    /* Enable Cyrix MediaGX TCG opcode extensions for THIS machine only
+     * (0F 3C shim + log/UD on the other documented MediaGX 0F 3x
+     * slots). Stock i386 stays #UD on these. */
+    p2k_mediagx_enable_extensions();
+
     p2k_install_isa_stubs();
     /* COM1/UART can fire IRQ4 on TX-empty so the guest's con_putc
      * sem-wait actually returns. Without this, exec hangs in printf. */

@@ -1,0 +1,267 @@
+i386/tcg: add Cyrix MediaGX 0F 3x decoder + 0F 3C compatibility shim (Pinball 2000).
+
+Per the Cyrix MediaGX Processor Data Book v2.0, section 4.1.5 (Display
+Driver Instructions) + Table 4-6, the MediaGX defines four documented
+opcodes in the 0F 3x slot space:
+
+  0F 3A  BB0_RESET   reset BLT-buffer-0 pointer
+  0F 3B  BB1_RESET   reset BLT-buffer-1 pointer
+  0F 3C  CPU_WRITE   EBX = internal-CPU-register addr; EAX = data
+  0F 3D  CPU_READ    EBX = internal-CPU-register addr; EAX = data
+
+Per section 4.1.6 they are gated on GCR (index B8h) bits[3:2] —
+SCRATCHPAD_SIZE — and should #UD when that field is zero.
+
+  Datasheet: https://datasheets.chipdb.org/Cyrix/MediaGX/gxmdb_v20.pdf
+
+This patch is the *instrumentation + shim* step, not the full MediaGX
+implementation. It adds:
+
+  1. A runtime gate `p2k_mediagx_extensions_enabled` (defined and
+     toggled by the pinball2000 machine in qemu/p2k-mediagx-gate.c).
+     Default FALSE, so a stock qemu-system-i386 run is unaffected.
+
+  2. Two TCG helpers in target/i386/tcg/misc_helper.c:
+       helper_p2k_mediagx_log_0f3x_shim  — used by the 0F 3C shim
+         entry. If gate FALSE, raises #UD (preserving stock behavior).
+         If gate TRUE, logs a rate-limited line with EIP / EAX / EBX /
+         ECX / EDX / EFLAGS and returns so the shim store can run.
+       helper_p2k_mediagx_log_0f3x_ud    — used by the observation
+         entries (0F 36/37/39/3B/3D/3F). Logs only when the gate is
+         TRUE, then *always* raises #UD. Stock behavior is unchanged
+         for these slots since they were #UD already.
+
+  3. New decoder entries in target/i386/tcg/decode-new.c.inc:
+       [0x36], [0x37], [0x39], [0x3b], [0x3d], [0x3f]  — observation
+       [0x3c]                                          — shim
+
+     0F 38 and 0F 3a are deliberately NOT touched: they are the SSSE3
+     and SSE4.1+ escape prefixes for the 3-byte opcode map, and we
+     must not break SSE4 dispatch on stock i386. The MediaGX-doc
+     mapping of 0F 3A = BB0_RESET cannot be honoured at the same time
+     as SSE4 prefix dispatch; if a real BB0_RESET implementation is
+     ever needed for Pinball 2000, it will require a separate decoder
+     hook gated on the runtime flag, splitting the slot into "MediaGX
+     mode" vs "SSE4 prefix mode". Pinball 2000's XINU has not been
+     observed to issue 0F 3A so this is deferred.
+
+  4. `gen_CYRIX_0F3C_shim` in emit.c.inc reproduces the observable side
+     effect of the legacy Unicorn / low-RAM IDT[6] stub the Pinball
+     2000 XINU bring-up code relied on:
+
+         [DS:EDX]   := EAX        ; 32-bit
+         [DS:EDX+4] := EBX        ; 32-bit
+         EDX        += 8
+
+     This is NOT the documented CPU_WRITE semantics (EBX as internal-
+     register address). It is a compatibility shim — sufficient for
+     the boot matrix because XINU's 0F 3C users only rely on this
+     pointer-walk pattern, not on MediaGX internal-register state.
+     Real CPU_WRITE/READ + BB0/BB1_RESET semantics are the long-term
+     direction (tracked in qemu/NOTES.next.md).
+
+Without the gate, any stock qemu-system-i386 run that hit 0F 3C would
+have run our shim store, which is wrong outside the pinball2000
+machine. The gate restores stock #UD behavior.
+
+Long-term direction (tracked in NOTES.next.md):
+  * Implement real CPU_WRITE / CPU_READ semantics with EBX as internal-
+    register address; model the few CPU-internal registers Pinball 2000
+    actually touches (BLT buffer base/pointer, GP-DMA descriptors).
+  * Implement BB0_RESET / BB1_RESET if/when the guest actually issues
+    them (currently neither has been observed; the new log entries
+    will tell us for sure).
+  * Honour the GCR[B8h] SCRATCHPAD_SIZE gate via qemu/p2k-cyrix-ccr.c
+    so the documented #UD-when-disabled behavior is preserved.
+  * Resolve the 0F 3A vs SSE4-prefix collision properly if a guest
+    issuance of 0F 3A is observed.
+
+
+--- a/target/i386/helper.h
++++ b/target/i386/helper.h
+@@ -1,3 +1,12 @@
++/* Pinball 2000 / Cyrix MediaGX TCG opcode-extension helpers.
++ * Implementation in target/i386/tcg/misc_helper.c, runtime gate in
++ * hw/i386/p2k-mediagx-gate.c (machine-set, default FALSE so stock
++ * i386 is unaffected). */
++DEF_HELPER_FLAGS_3(p2k_mediagx_log_0f3x_shim, TCG_CALL_NO_WG,
++                   void, env, i32, tl)
++DEF_HELPER_FLAGS_3(p2k_mediagx_log_0f3x_ud,   TCG_CALL_NO_WG,
++                   noreturn, env, i32, tl)
++
+ DEF_HELPER_FLAGS_4(cc_compute_all, TCG_CALL_NO_RWG_SE, tl, tl, tl, tl, int)
+ DEF_HELPER_FLAGS_4(cc_compute_c, TCG_CALL_NO_RWG_SE, tl, tl, tl, tl, int)
+ DEF_HELPER_FLAGS_3(cc_compute_nz, TCG_CALL_NO_RWG_SE, tl, tl, tl, int)
+--- a/target/i386/tcg/misc_helper.c
++++ b/target/i386/tcg/misc_helper.c
+@@ -25,6 +25,69 @@
+ #include "exec/cputlb.h"
+ #include "helper-tcg.h"
+ 
++/* ====================================================================
++ * Pinball 2000 / Cyrix MediaGX TCG opcode-extension helpers.
++ *
++ * Backed by qemu/p2k-mediagx-gate.c (linked into hw/i386/). Gate is
++ * FALSE by default; pinball2000 machine init flips it TRUE. When FALSE
++ * these helpers behave as plain #UD so a stock qemu-system-i386 run
++ * is not affected by the decode-table additions in decode-new.c.inc.
++ * ==================================================================== */
++extern bool     p2k_mediagx_extensions_enabled;
++extern unsigned p2k_mediagx_note_opcode(uint8_t op2);
++
++static void p2k_mediagx_log(CPUX86State *env, uint32_t op2,
++                            target_ulong eip, const char *kind,
++                            unsigned hit)
++{
++    qemu_log_mask(LOG_GUEST_ERROR,
++        "p2k-mediagx: %s 0F %02X #%u "
++        "EIP=" TARGET_FMT_lx " "
++        "EAX=%08x EBX=%08x ECX=%08x EDX=%08x "
++        "ESI=%08x EDI=%08x EBP=%08x ESP=%08x "
++        "EFLAGS=%08x CS=%04x DS=%04x\n",
++        kind, op2 & 0xFFu, hit, eip,
++        (uint32_t)env->regs[R_EAX], (uint32_t)env->regs[R_EBX],
++        (uint32_t)env->regs[R_ECX], (uint32_t)env->regs[R_EDX],
++        (uint32_t)env->regs[R_ESI], (uint32_t)env->regs[R_EDI],
++        (uint32_t)env->regs[R_EBP], (uint32_t)env->regs[R_ESP],
++        (uint32_t)env->eflags,
++        env->segs[R_CS].selector, env->segs[R_DS].selector);
++}
++
++/* Used by the 0F 3C compatibility-shim decoder entry. If the gate is
++ * off we behave like vanilla i386: #UD. Otherwise we log (rate-limited)
++ * and return so the caller-emitted shim store runs. */
++void helper_p2k_mediagx_log_0f3x_shim(CPUX86State *env, uint32_t op2,
++                                      target_ulong eip)
++{
++    if (!p2k_mediagx_extensions_enabled) {
++        raise_exception_err_ra(env, EXCP06_ILLOP, 0, GETPC());
++    }
++    unsigned hit = p2k_mediagx_note_opcode((uint8_t)op2);
++    /* First 16 unconditionally, then every 1024th. */
++    if (hit <= 16 || (hit & 0x3FFu) == 0) {
++        p2k_mediagx_log(env, op2, eip, "shim", hit);
++    }
++}
++
++/* Used by the 0F 36/37/39/3B/3D/3F observation decoder entries. We
++ * don't have a real implementation; we just want to know *if* the
++ * guest hits them. Always raises #UD (matching stock i386 behavior),
++ * but logs first occurrences when the gate is on. */
++G_NORETURN void helper_p2k_mediagx_log_0f3x_ud(CPUX86State *env,
++                                               uint32_t op2,
++                                               target_ulong eip)
++{
++    if (p2k_mediagx_extensions_enabled) {
++        unsigned hit = p2k_mediagx_note_opcode((uint8_t)op2);
++        if (hit <= 16 || (hit & 0x3FFu) == 0) {
++            p2k_mediagx_log(env, op2, eip, "log+UD", hit);
++        }
++    }
++    raise_exception_err_ra(env, EXCP06_ILLOP, 0, GETPC());
++}
++
+ /*
+  * NOTE: the translator must set DisasContext.cc_op to CC_OP_EFLAGS
+  * after generating a call to a helper that uses this.
+--- a/target/i386/tcg/decode-new.c.inc
++++ b/target/i386/tcg/decode-new.c.inc
+@@ -1178,6 +1178,34 @@
+     [0x34] = X86_OP_ENTRY0(SYSENTER,                          chk2(i64_amd, prot_or_vm86)),
+     [0x35] = X86_OP_ENTRY0(SYSEXIT,                           chk3(i64_amd, prot, cpl0)),
+ 
++    /* pinball2000: Cyrix MediaGX 0F 3x decoder. Active only when the
++     * runtime gate (hw/i386/p2k-mediagx-gate.c) is enabled by the
++     * pinball2000 machine init. Stock i386 stays #UD on these slots
++     * because the helpers raise #UD when the gate is FALSE.
++     *
++     * 0x3C is the documented CPU_WRITE; we run a compatibility shim
++     * that mirrors the legacy Unicorn IDT[6] stub side effect (NOT
++     * true CPU_WRITE semantics — see emit.c.inc).
++     *
++     * 0x36 / 0x37 / 0x39 / 0x3B / 0x3D / 0x3F are observation entries:
++     * they log (rate-limited) and raise #UD. They exist so we can see
++     * *if* the Pinball 2000 guest ever issues these documented
++     * (0x3B BB1_RESET, 0x3D CPU_READ) or undocumented MediaGX opcodes.
++     *
++     * 0x38 / 0x3A are deliberately untouched: they are SSSE3 / SSE4
++     * escape prefixes for the 3-byte opcode map and overriding them
++     * would break stock i386. If the guest ever issues the documented
++     * MediaGX 0F 3A BB0_RESET, a separate gated decoder hook will be
++     * needed (the 3-byte map dispatcher would have to consult the
++     * runtime flag first). */
++    [0x36] = X86_OP_ENTRY0(CYRIX_0F3x_log_ud),
++    [0x37] = X86_OP_ENTRY0(CYRIX_0F3x_log_ud),
++    [0x39] = X86_OP_ENTRY0(CYRIX_0F3x_log_ud),
++    [0x3b] = X86_OP_ENTRY0(CYRIX_0F3x_log_ud),
++    [0x3c] = X86_OP_ENTRY0(CYRIX_0F3C_shim),
++    [0x3d] = X86_OP_ENTRY0(CYRIX_0F3x_log_ud),
++    [0x3f] = X86_OP_ENTRY0(CYRIX_0F3x_log_ud),
++
+     [0x40] = X86_OP_ENTRY2(CMOVcc,     G,v, E,v, cpuid(CMOV)),
+     [0x41] = X86_OP_ENTRY2(CMOVcc,     G,v, E,v, cpuid(CMOV)),
+     [0x42] = X86_OP_ENTRY2(CMOVcc,     G,v, E,v, cpuid(CMOV)),
+--- a/target/i386/tcg/emit.c.inc
++++ b/target/i386/tcg/emit.c.inc
+@@ -4648,6 +4648,61 @@
+ #define gen_WRMSR gen_unreachable
+ #endif
+ 
++/* pinball2000: Cyrix MediaGX/5530 opcode 0F 3C compatibility shim.
++ *
++ * The Cyrix MediaGX databook documents 0F 3C as CPU_WRITE: EBX holds an
++ * internal-CPU-register address, EAX holds the data, and the result is
++ * written into a CPU-internal configuration register (BLT buffer base /
++ * pointer, GP-DMA descriptors, etc). True CPU_WRITE semantics are NOT
++ * implemented here.
++ *
++ * Instead this generator first invokes the gated log helper (which
++ * raises #UD if the pinball2000 machine isn't active, preserving stock
++ * i386 behavior) and then reproduces the observable side effect of the
++ * Unicorn / legacy QEMU low-RAM IDT[6] stub that Pinball 2000's XINU
++ * bring-up code relies on:
++ *
++ *     [DS:EDX]   := EAX        ; 32-bit
++ *     [DS:EDX+4] := EBX        ; 32-bit
++ *     EDX        += 8
++ *
++ * (Reference: unicorn.old/src/cpu.c:587-628 and the deleted
++ * qemu/p2k-cyrix-0f3c.c host-side stub.) The XINU users of 0F 3C
++ * happen to only care about this pointer-walk pattern, not about the
++ * real CPU_WRITE register address space, so emulating the shim is
++ * sufficient for the matrix. Long-term direction is real CPU_WRITE /
++ * CPU_READ (0F 3D) handling, gated to the MediaGX/pinball2000 machine.
++ */
++static void gen_CYRIX_0F3C_shim(DisasContext *s, X86DecodedInsn *decode)
++{
++    /* Log first; helper raises #UD if the gate is off (stock i386). */
++    gen_helper_p2k_mediagx_log_0f3x_shim(tcg_env,
++                                         tcg_constant_i32(0x3C),
++                                         eip_cur_tl(s));
++    /* Observable side-effect mirror of the old Unicorn / IDT[6] stub. */
++    gen_lea_v_seg(s, cpu_regs[R_EDX], R_DS, s->override);
++    tcg_gen_qemu_st_tl(cpu_regs[R_EAX], s->A0, s->mem_index, MO_LEUL);
++    tcg_gen_addi_tl(s->A0, s->A0, 4);
++    tcg_gen_qemu_st_tl(cpu_regs[R_EBX], s->A0, s->mem_index, MO_LEUL);
++    tcg_gen_addi_tl(cpu_regs[R_EDX], cpu_regs[R_EDX], 8);
++}
++
++/* pinball2000: observation entry for the unimplemented MediaGX 0F 3x
++ * slots (0F 36/37/39/3B/3D/3F). Always raises #UD; logs the regs +
++ * EIP rate-limited when the pinball2000 gate is enabled, so we can
++ * see if the guest ever issues a documented MediaGX opcode we haven't
++ * implemented yet (notably 0F 3B BB1_RESET and 0F 3D CPU_READ). */
++static void gen_CYRIX_0F3x_log_ud(DisasContext *s, X86DecodedInsn *decode)
++{
++    /* decode->b holds the second byte of the 0F-prefix opcode (see
++     * do_decode_0F in decode-new.c.inc). */
++    uint32_t op2 = (uint32_t)(decode->b & 0xFFu);
++    gen_helper_p2k_mediagx_log_0f3x_ud(tcg_env,
++                                       tcg_constant_i32(op2),
++                                       eip_cur_tl(s));
++    s->base.is_jmp = DISAS_NORETURN;
++}
++
+ static void gen_WRxxBASE(DisasContext *s, X86DecodedInsn *decode)
+ {
+     TCGv base = cpu_seg_base[s->modrm & 8 ? R_GS : R_FS];
