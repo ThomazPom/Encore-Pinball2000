@@ -130,6 +130,16 @@ void p2k_install_diag(Pinball2000MachineState *s);
  * update boots. Documented as a temporary compatibility bridge. */
 void p2k_install_probe_cell_shim(void);
 
+/* p2k-bar2-factory-seed.c: STRICTLY GATED BAR2 SRAM (NVRAM2) overlay
+ * for --update none / P2K_NO_AUTO_UPDATE only. Loads
+ * savedata/<game>.factory.nvram2 if present and overlays it on top of
+ * the regular (essentially-empty) NVRAM2, so XINU on the BASE v0.40
+ * ROM path can skip "Automatic Factory Reset" if a captured
+ * post-Factory-Reset NVRAM is provided. Inert without the env gate;
+ * inert if the file does not exist. NEVER active on normal update
+ * boots. */
+void p2k_install_bar2_factory_seed(Pinball2000MachineState *s);
+
 
 /* p2k-timing-audit.c: single-line "is QEMU virtual time really driving
  * this run?" panel. Reports clock/icount/PIT/PIC/IDT/host-slow scale.
