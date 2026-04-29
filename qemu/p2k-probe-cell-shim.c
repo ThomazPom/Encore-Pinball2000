@@ -64,18 +64,66 @@
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "exec/cpu-common.h"
+#include "hw/core/cpu.h"
+#include "target/i386/cpu.h"
 
 #include "p2k-internal.h"
 
 #define SCAN_BASE        0x00100000u
 #define SCAN_SIZE        0x00300000u   /* 3 MiB — wide enough for SWE1/RFM */
 #define POLL_NS          (50ull * 1000ull * 1000ull) /* 50 ms */
-#define SCRIBBLE_VAL     0x0000FFFFu
+
+/* Two staged scribble values, mirroring Unicorn's polarity flip:
+ *
+ *   Pre-XINU  : 0x0000FFFF — early boot code reads this cell as a
+ *               boot-sentinel; writing 0 there derails the path
+ *               before clkint/scheduling is up.
+ *   Post-XINU : 0x00000000 — once XINU is up, the only consumer is
+ *               dcs_probe() which returns 1 ↔ cell != 0xFFFF.
+ *               Writing 0 (cell != 0xFFFF) → probe → 1 → DCS detected
+ *               → game writes dcs_mode=1 → audio init runs.
+ *
+ * If the cell stays at 0xFFFF forever, the natural DCS probe returns 0
+ * ("no DCS") even after XINU is alive, and audio never starts.
+ *
+ * See unicorn.old/src/cpu.c:766-801 for the original staging. */
+#define SCRIBBLE_PRE_XINU   0x0000FFFFu
+#define SCRIBBLE_POST_XINU  0x00000000u
+
+/* Delay between probe-cell first-located and the polarity flip.
+ * Unicorn waits for the UART "XINU: V7" substring + 50 batches
+ * (~10M insns). We don't have a UART line collector here, so use a
+ * conservative virtual-time delay long enough for XINU sysinit() to
+ * finish — measured at ~2-3 s of vtime on this host. 5 s gives margin
+ * without making the audio start visibly late. */
+#define POST_XINU_DELAY_NS  (5ull * 1000ull * 1000ull * 1000ull)
 
 static QEMUTimer *s_timer;
 static uint32_t   s_probe_cell;       /* guest phys addr; 0 = not found yet */
 static int        s_scan_attempts;    /* bound the work we do */
 static bool       s_logged_hit;
+static int64_t    s_located_at_ns;    /* vtime when probe cell was found */
+static bool       s_post_xinu;        /* polarity flipped */
+static int        s_post_xinu_writes; /* count after flip, for audit */
+
+/* Read IDT[0x20] handler offset from the live CPU. Returns 0 if IDT is
+ * not yet set up or vector 0x20 is missing. Used as our "XINU is up"
+ * heuristic, mirroring unicorn.old/src/cpu.c:566-579 (handler > RAM
+ * threshold). */
+static uint32_t current_idt20_handler(void)
+{
+    CPUState *cs;
+    CPU_FOREACH(cs) {
+        CPUX86State *env = &X86_CPU(cs)->env;
+        if (!env->idt.base || env->idt.limit < 0x20 * 8 + 7) {
+            return 0;
+        }
+        uint8_t g[8];
+        cpu_physical_memory_read(env->idt.base + 0x20 * 8, g, sizeof(g));
+        return g[0] | (g[1] << 8) | (g[6] << 16) | (g[7] << 24);
+    }
+    return 0;
+}
 
 /* Scan a contiguous live RAM window for the watchdog string and walk
  * back to the CMP [<probe_cell>], 0xFFFF inside dcs_probe().
@@ -200,15 +248,48 @@ static void p2k_probe_cell_tick(void *opaque)
             s_scan_attempts++;
             if (s_probe_cell && !s_logged_hit) {
                 s_logged_hit = true;
+                s_located_at_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
                 info_report("p2k-probe-cell-shim: located probe cell at "
-                            "0x%08x — scribbling 0x%04x every 50 ms "
+                            "0x%08x — phase=pre-XINU scribble=0x%08x "
+                            "every 50 ms; will flip to 0x%08x after %us "
+                            "vtime so DCS probe returns PRESENT "
                             "(--update none compatibility bridge)",
-                            s_probe_cell, SCRIBBLE_VAL);
+                            s_probe_cell, SCRIBBLE_PRE_XINU,
+                            SCRIBBLE_POST_XINU,
+                            (unsigned)(POST_XINU_DELAY_NS / 1000000000ull));
             }
         }
     } else {
-        uint32_t v = SCRIBBLE_VAL;
+        /* Staged polarity flip — virtual-time gated. We can't easily
+         * watch UART for "XINU: V7" here, and the IDT[0x20] check
+         * fires immediately because XINU's panic-stub installs almost
+         * instantly. A vtime delay matches Unicorn's "+50 batches"
+         * after xinu_booted reasonably well. */
+        if (!s_post_xinu) {
+            int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+            if (now - s_located_at_ns >= (int64_t)POST_XINU_DELAY_NS) {
+                s_post_xinu = true;
+                uint32_t h = current_idt20_handler();
+                info_report("p2k-probe-cell-shim: phase=post-XINU "
+                            "(IDT[0x20]=0x%08x, vtime+%us) — switching "
+                            "scribble to 0x%08x at [0x%08x] so DCS "
+                            "probe returns PRESENT",
+                            h,
+                            (unsigned)(POST_XINU_DELAY_NS / 1000000000ull),
+                            SCRIBBLE_POST_XINU, s_probe_cell);
+            }
+        }
+
+        uint32_t v = s_post_xinu ? SCRIBBLE_POST_XINU : SCRIBBLE_PRE_XINU;
         cpu_physical_memory_write(s_probe_cell, &v, sizeof(v));
+        if (s_post_xinu) {
+            s_post_xinu_writes++;
+            if (s_post_xinu_writes == 1) {
+                info_report("p2k-probe-cell-shim: first post-XINU "
+                            "scribble committed; awaiting first DCS "
+                            "command from guest");
+            }
+        }
     }
 
     timer_mod(s_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + POLL_NS);

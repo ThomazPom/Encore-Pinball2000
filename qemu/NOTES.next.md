@@ -521,14 +521,18 @@ not the new source of truth.
   + per-tick `RAM_WR32` (unicorn.old/src/io.c:248-422 +
   unicorn.old/src/cpu.c:766-801): pattern-scans the watchdog string,
   walks back to the `81 3D <addr32> FF FF 00 00` inside `dcs_probe()`,
-  writes `0xFFFF` every 50 ms so the probe returns "DCS PRESENT".
-  Locked cell on SWE1 v0.40 base = `0x002797c4`. Without it `--update
-  none` wedges right after `pci_probe()` because XINU has no clkint yet
-  and the false-alarm watchdog Fatal sends EIP into the panic stub.
+  then writes the probe cell on a 50 ms vtime tick. STAGED polarity
+  matching Unicorn's pre/post `xinu_ready` flip:
+  pre-XINU `0x0000FFFF` (boot sentinel), post-XINU `0x00000000`
+  (so dcs_probe returns "DCS PRESENT" → game writes dcs_mode=1 →
+  audio init runs). Phase flip is virtual-time gated (5 s after first
+  cell located) because we don't watch UART for the "XINU: V7"
+  substring. Locked cell on SWE1 v0.40 base = `0x002797c4`.
+  Without the staged flip, the cell stays `0xFFFF` forever and DCS
+  audio never initialises (no sound). With it, S03CE etc. play.
   Removal condition: when QEMU's DCS/PLX9054 model returns the right
-  value at the probe address natively (real device behavior), delete
-  `p2k-probe-cell-shim.c` and stop calling
-  `p2k_install_probe_cell_shim()` from `pinball2000.c`.
+  value at the probe address natively, delete the file and stop
+  calling `p2k_install_probe_cell_shim()` from `pinball2000.c`.
 
 ## Historical Clues, Not Proof
 
