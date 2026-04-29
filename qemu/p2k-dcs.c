@@ -39,13 +39,6 @@ static uint64_t p2k_dcs_read(void *opaque, hwaddr off, unsigned size)
     return 0;
 }
 
-static unsigned long long s_bar4_rejected_count = 0;
-
-unsigned long long p2k_dcs_bar4_rejected_count(void)
-{
-    return s_bar4_rejected_count;
-}
-
 static void p2k_dcs_write(void *opaque, hwaddr off, uint64_t val,
                           unsigned size)
 {

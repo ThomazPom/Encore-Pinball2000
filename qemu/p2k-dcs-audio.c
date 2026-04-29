@@ -1,7 +1,7 @@
 /*
  * p2k-dcs-audio.c — Real DCS sample playback via pb2kslib.
  *
- * Architecture (per user directive):
+ * Architecture:
  *   - QEMU owns the audio backend (audiodev) and the output voice.
  *   - This module describes WHAT to play: decode the pb2kslib container
  *     once at install, look up samples by DCS command id, decode the
@@ -19,13 +19,17 @@
  *     - fields[9] = size        : size of OGG payload
  *   payload bytes are XOR'd with 0x3A; after de-XOR, plain Ogg Vorbis.
  *
+ * Container path resolution (host-agnostic):
+ *   1. $P2K_PB2KSLIB if set
+ *   2. <roms_dir>/<game>_sound.bin (e.g. roms/swe1_sound.bin)
+ *   No directory walks, no name-prefix scoring, no host-specific paths.
+ *
  * Defaults:
  *   - OFF unless P2K_DCS_AUDIO=1 is set (the wrapper does this when a
  *     host audiodev is auto-detected).
  *   - P2K_NO_DCS_AUDIO=1 forces off.
- *   - When the pb2kslib container can't be located/parsed, fall back to
- *     the synthesized-blip mode (proof-of-path), still hooked through
- *     the same voice/mixer.
+ *   - When the pb2kslib container can't be located/parsed, audio stays
+ *     installed but cmd lookups will all miss (counted, not synthesised).
  */
 
 #include "qemu/osdep.h"
@@ -37,14 +41,10 @@
 
 #include "p2k-internal.h"
 
-#include <math.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <dirent.h>
-#include <strings.h>
-#include <ctype.h>
 
 #include <vorbis/vorbisfile.h>
 
@@ -136,12 +136,6 @@ typedef struct DcsAudio {
     const char   *last_played_name;
     int           last_played_ch;
     uint64_t      last_played_start_cb;
-
-    /* startup hello + fallback blip */
-    uint32_t      blip_freq;
-    uint32_t      blip_samples_left;
-    uint32_t      blip_amp;
-    double        blip_phase;
 } DcsAudio;
 
 static DcsAudio s_dcs_audio;
@@ -163,40 +157,41 @@ static bool pb2k_validate(const uint8_t hdr[16], off_t fsize)
     return true;
 }
 
-static bool pb2k_find_container(const char *roms_dir, const char *game_prefix,
-                                char *out, size_t out_sz)
+/* Deterministic container resolution.  Tries, in order:
+ *   1. $P2K_PB2KSLIB
+ *   2. <roms_dir>/<game>_sound.bin
+ * The selected path must exist, be regular, and have a valid header.
+ * No directory walks, no scoring — host-agnostic by construction. */
+static bool pb2k_path_is_valid(const char *path)
 {
-    DIR *d = opendir(roms_dir);
-    if (!d) return false;
-    char best[512] = { 0 };
-    int  best_score = -1;
-    struct dirent *de;
-    while ((de = readdir(d)) != NULL) {
-        if (de->d_name[0] == '.') continue;
-        char path[512];
-        snprintf(path, sizeof(path), "%s/%s", roms_dir, de->d_name);
-        struct stat st;
-        if (stat(path, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size < 64) continue;
-        int fd = open(path, O_RDONLY);
-        if (fd < 0) continue;
-        uint8_t hdr[16];
-        ssize_t n = read(fd, hdr, 16);
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return false;
+    struct stat st;
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size < 64) {
         close(fd);
-        if (n != 16 || !pb2k_validate(hdr, st.st_size)) continue;
-        int score = 0;
-        size_t plen = game_prefix ? strlen(game_prefix) : 0;
-        if (plen && strncasecmp(de->d_name, game_prefix, plen) == 0) score += 10;
-        if (score > best_score) {
-            best_score = score;
-            strncpy(best, path, sizeof(best) - 1);
-            best[sizeof(best) - 1] = '\0';
-        }
+        return false;
     }
-    closedir(d);
-    if (best_score < 0) return false;
-    strncpy(out, best, out_sz - 1);
-    out[out_sz - 1] = '\0';
-    return true;
+    uint8_t hdr[16];
+    ssize_t n = read(fd, hdr, 16);
+    close(fd);
+    return (n == 16 && pb2k_validate(hdr, st.st_size));
+}
+
+static bool pb2k_resolve_path(const char *roms_dir, const char *game,
+                              char *out, size_t out_sz)
+{
+    const char *override = getenv("P2K_PB2KSLIB");
+    if (override && *override) {
+        if (pb2k_path_is_valid(override)) {
+            snprintf(out, out_sz, "%s", override);
+            return true;
+        }
+        warn_report("dcs-audio: P2K_PB2KSLIB=%s is not a valid pb2kslib "
+                    "container; falling back to default lookup", override);
+    }
+    if (!roms_dir || !game) return false;
+    snprintf(out, out_sz, "%s/%s_sound.bin", roms_dir, game);
+    return pb2k_path_is_valid(out);
 }
 
 static void pb2k_load(DcsAudio *a, const char *path)
@@ -454,15 +449,6 @@ static void render(DcsAudio *a, int16_t *out, int frames)
     int32_t local_peak = 0;
     for (int i = 0; i < frames; i++) {
         int32_t mix = 0;
-        if (a->blip_samples_left > 0) {
-            const double dphi = 2.0 * M_PI * (double)a->blip_freq / DCS_OUT_RATE;
-            uint32_t total = a->blip_samples_left;
-            double env = (total < 256) ? (total / 256.0) : 1.0;
-            mix += (int32_t)(sin(a->blip_phase) * a->blip_amp * env);
-            a->blip_phase += dphi;
-            if (a->blip_phase > 2.0 * M_PI) a->blip_phase -= 2.0 * M_PI;
-            a->blip_samples_left--;
-        }
         for (int v = 0; v < DCS_VOICES; v++) {
             Voice *vc = &a->voices[v];
             if (!vc->active || !vc->s) continue;
@@ -517,16 +503,6 @@ static void dcs_audio_callback(void *opaque, int avail_bytes)
         a->aud_write_bytes += (uint64_t)w;
         if (w == 0) a->aud_write_zero++;
     }
-}
-
-/* Fallback proof-of-path tone when no sample matches the cmd id. */
-static uint32_t cmd_to_freq(uint16_t cmd)
-{
-    static const uint32_t scale[] = {
-        262, 294, 330, 349, 392, 440, 494, 523,
-        587, 659, 698, 784, 880, 988, 1046, 1175,
-    };
-    return scale[cmd & 0x0F];
 }
 
 /* One-line trace per audio event: shows enough to bucket the failure
@@ -707,8 +683,7 @@ static void dcs_audio_status_tick(void *opaque)
                     "AUD_write calls=%llu bytes=%llu zero=%llu peak=%d "
                     "active=%d/%d global_vol=%u played=%llu missed=%llu "
                     "mode=%s "
-                    "src{BAR4=%llu UART.w=%llu UART.bp=%llu other=%llu "
-                    "BAR4_rej=%llu}",
+                    "src{BAR4=%llu UART.w=%llu UART.bp=%llu other=%llu}",
                     (unsigned long long)a->callbacks,
                     (unsigned long long)a->frames_rendered,
                     (unsigned long long)a->aud_write_calls,
@@ -723,8 +698,7 @@ static void dcs_audio_status_tick(void *opaque)
                     (unsigned long long)a->cmd_by_bar4,
                     (unsigned long long)a->cmd_by_uart_w,
                     (unsigned long long)a->cmd_by_uart_bp,
-                    (unsigned long long)a->cmd_by_other,
-                    p2k_dcs_bar4_rejected_count());
+                    (unsigned long long)a->cmd_by_other);
         for (int i = 0; i < DCS_VOICES; i++) {
             Voice *vc = &a->voices[i];
             if (!vc->active || !vc->s) continue;
@@ -808,24 +782,20 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
         a->voices[i].s = NULL;
     }
 
-    /* Try to mount the pb2kslib container. Failure is non-fatal — the
-     * fallback blip path keeps proof-of-path audible. */
-    if (st && st->roms_dir) {
+    /* Mount the pb2kslib container.  Failure is non-fatal but loud:
+     * audio stays installed (so command tracing keeps working) and
+     * every cmd lookup will count as a miss. */
+    if (st && st->roms_dir && st->game) {
         char path[512];
-        const char *prefix = st->game ? st->game : "";
-        if (pb2k_find_container(st->roms_dir, prefix, path, sizeof(path))) {
+        if (pb2k_resolve_path(st->roms_dir, st->game, path, sizeof(path))) {
             pb2k_load(a, path);
         } else {
-            warn_report("dcs-audio: no pb2kslib container found in %s "
-                        "(samples will fall back to blips)", st->roms_dir);
+            warn_report("dcs-audio: pb2kslib not found "
+                        "(P2K_PB2KSLIB unset or invalid, "
+                        "%s/%s_sound.bin missing) — every sample lookup "
+                        "will miss", st->roms_dir, st->game);
         }
     }
-
-    /* 600 ms 660 Hz hello tone so the user knows audio is alive. */
-    a->blip_freq         = 660;
-    a->blip_samples_left = DCS_OUT_RATE * 600 / 1000;
-    a->blip_amp          = 16000;
-    a->blip_phase        = 0.0;
 
     p2k_dcs_core_audio_process_cmd   = dcs_audio_on_process_cmd;
     p2k_dcs_core_audio_execute_mixer = dcs_audio_on_execute_mixer;

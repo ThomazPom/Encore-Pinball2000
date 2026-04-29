@@ -75,21 +75,18 @@ uint8_t  p2k_dcs_core_get_echo(void);
 void        p2k_dcs_core_note_source(const char *src);
 const char *p2k_dcs_core_source(void);
 
-/* DCS dispatch mode (Unicorn parity: --dcs-mode bar4 | io-handled).
+/* DCS dispatch mode (Unicorn parity: --dcs-mode io-handled | bar4-patch).
  * Resolved once from env P2K_DCS_MODE on first call. */
 bool        p2k_dcs_core_mode_is_io_handled(void);
 const char *p2k_dcs_core_mode_name(void);
 
 /* p2k-dcs.c: BAR4 MMIO frontend (0x13000000, 16 MiB). */
 void p2k_install_dcs(void);
-/* Number of BAR4 word writes rejected because mode==io-handled.
- * Surfaced in dcs-audio status to confirm the BAR4 path is silenced. */
-unsigned long long p2k_dcs_bar4_rejected_count(void);
 /* p2k-dcs-uart.c: I/O 0x138-0x13F UART/DCS frontend. */
 void p2k_install_dcs_uart(void);
-/* p2k-dcs-audio.c: optional QEMU audiodev backend with real pb2kslib
- * sample playback (8-voice software mixer). Off by default; enable
- * with P2K_DCS_AUDIO=1 (see qemu/README.md). */
+/* p2k-dcs-audio.c: QEMU audiodev backend with real pb2kslib sample
+ * playback (8-voice software mixer). The wrapper enables it when it
+ * auto-detects a host backend; P2K_NO_DCS_AUDIO forces it off. */
 void p2k_install_dcs_audio(Pinball2000MachineState *s);
 
 /* p2k-lpt-board.c: minimal LPT driver-board protocol on 0x378-0x37A

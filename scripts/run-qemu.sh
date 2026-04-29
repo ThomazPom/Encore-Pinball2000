@@ -27,16 +27,16 @@
 #   --audio <driver>      Enable DCS audio with the named QEMU audio backend
 #                         (pa, alsa, sdl, coreaudio, dsound, none). Sets
 #                         P2K_DCS_AUDIO=1 + `-audio driver=<driver>` so the
-#                         AUD_register_card binds. Default: off (silent).
+#                         AUD_register_card binds. Default: auto-detected
+#                         when a host audio backend is available.
 #   --no-audio            Force DCS audio off even if P2K_DCS_AUDIO is set
 #                         in the environment.
-#   --dcs-mode <mode>     bar4 (default) | io-handled. In io-handled mode
-#                         the BAR4 MMIO frontend REJECTS DCS command words
-#                         (logged + counted) so we can validate the UART
-#                         (I/O 0x138-0x13F) data path without the BAR4 path
-#                         silently masking failures. Acceptance for io-handled:
-#                         dcs-audio status must show UART.w>0 or UART.bp>0,
-#                         sound must work, boot must remain stable.
+#   --pb2kslib <path>     Override the pb2kslib container path (sets
+#                         P2K_PB2KSLIB=<path>). Default lookup is
+#                         <roms_dir>/<game>_sound.bin. No directory walks.
+#   --dcs-mode <mode>     io-handled (default) | bar4-patch. Both run the
+#                         same BAR4 MMIO data path; the label only documents
+#                         which Unicorn-parity mode the current build matches.
 #   -v|-vv|-vvv           Increase verbosity (info/debug/trace) — currently
 #                         maps to P2K_DIAG=1 plus optional QEMU -d trace levels.
 #   --tcg-only            Smoke-test the host QEMU binary alone (no Pinball
@@ -78,6 +78,7 @@ while [[ $# -gt 0 ]]; do
     --uart-quiet)   export P2K_NO_UART_STDERR=1; shift ;;
     --audio)        AUDIO="$2"; export P2K_DCS_AUDIO=1; shift 2 ;;
     --no-audio)     AUDIO="none"; unset P2K_DCS_AUDIO; shift ;;
+    --pb2kslib)     export P2K_PB2KSLIB="$2"; shift 2 ;;
     --dcs-mode)     export P2K_DCS_MODE="$2"; shift 2 ;;
     -v)             VERBOSITY=1; shift ;;
     -vv)            VERBOSITY=2; shift ;;
@@ -156,10 +157,9 @@ ARGS=( -no-reboot -m 16 -display "$DISPLAY_MODE" )
 [[ $HEADLESS -eq 1 ]] && ARGS+=( -serial stdio )
 [[ -n "$DEBUG" ]] && ARGS+=( -d "$DEBUG" -D /tmp/p2k_qemu.log )
 
-# Audio: opt-in. -audio driver=<x> is the simplest way to set the
-# default audiodev; QEMU's AUD_register_card binds to it. With no
-# --audio flag, no audiodev is configured and DCS audio stays silent
-# regardless of P2K_DCS_AUDIO. Suggested values:
+# Audio: auto-detected unless --no-audio is passed. -audio driver=<x> is
+# the simplest way to set the default audiodev; QEMU's AUD_register_card
+# binds to it. Suggested values:
 #   pa | alsa | sdl | dsound | coreaudio | none
 if [[ -n "$AUDIO" && "$AUDIO" != "none" ]]; then
   ARGS+=( -audio "driver=$AUDIO" )

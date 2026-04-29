@@ -652,21 +652,19 @@ without separate proof that the cleaner alternative actually works.
      normal audio path and let the host mixer do the mixing; we then own
      only "sample lookup + start/stop/volume", not the mix loop.
 
-2. **Synthesized "blip" / proof-of-path tone fallback (`p2k-dcs-audio.c`
-   lines ~140-145, 457-465, 522).**
-   Dead-on-success bring-up code that synthesizes a sine when sample
-   lookup misses. Currently masks real cache-miss bugs with audible noise.
-   - Cleaner: delete entirely. Cache miss should be a single counted log
-     line, not a sound. Keep `missed #N` accounting only.
+2. **Synthesized "blip" / proof-of-path tone fallback.** ✅ DONE
+   Deleted: blip render block, `cmd_to_freq()` helper, struct fields,
+   600 ms 660 Hz hello tone. Cache miss is now a single counted log line.
 
-3. **pb2kslib auto-discovery walks `/mnt/...` at startup.**
-   `p2k-dcs-audio.c` opens directories, scans for the container by name,
-   chooses one heuristically. Side effect: build is sensitive to host
-   layout; a stale container can be picked silently.
-   - Cleaner: require an explicit `--pb2kslib <path>` (or env
-     `P2K_PB2KSLIB`) with no auto-discovery. Hard-fail loud if missing
-     and `P2K_DCS_AUDIO=1` was requested. (Wrapper script can still
-     auto-fill the arg from a single canonical seed dir.)
+3. **pb2kslib auto-discovery walks `/mnt/...` at startup.** ✅ DONE
+   Replaced opendir-walk-with-scoring with deterministic
+   `pb2k_resolve_path`: `$P2K_PB2KSLIB` env (if valid) or
+   `<roms_dir>/<game>_sound.bin`. Host-agnostic. `--pb2kslib <path>`
+   flag added to `scripts/run-qemu.sh`.
+
+Side cleanup (same commit): dropped `BAR4_rej` accounting and
+`p2k_dcs_bar4_rejected_count()` — vestige of the contaminated
+io-handled-rejects-BAR4 era; both modes now route through BAR4.
 
 ### Whole codebase — top 3
 
