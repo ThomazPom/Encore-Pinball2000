@@ -121,32 +121,30 @@ static void p2k_dcs_uart_write(void *opaque, hwaddr addr,
         return;
     }
 
-    /* off=4 (0x13C) byte: HISTORICAL diagnostic only. Unicorn
-     * (unicorn.old/src/io.c:1986-1991) explicitly DROPS byte writes
-     * to off=4 — only word writes (size>=2) become DCS commands;
-     * byte writes fall through to the 16550 MCR (case 4 below). The
-     * "0001de2" clue + 86c2412 ("byte-pair as real protocol") was a
-     * misread: SWE1 io-handled mode does NOT emit DCS commands as
-     * byte pairs in Unicorn's port handler. Synthesizing commands
-     * from byte writes here jams the real DCS pipe with garbage like
-     * 0x55aa / 0x609f / 0x00ec (observed in --no-savedata --update
-     * none, which made S03CE loop forever and no real audio init).
-     * Keep the latch+log strictly behind P2K_DCS_BYTE_TRACE so it
-     * remains a diagnostic aid, never a protocol path. */
-    if (off == 4 && size == 1 && p2k_dcs_byte_trace_enabled()) {
+    /* off=4 (0x13C) byte: high/low command pair.
+     * Per unicorn.old/src/io.c dcs2_port_write: SWE1's io-handled pump
+     * at 0x194efc emits 16-bit DCS commands as TWO outb to 0x13c (HIGH
+     * then LOW). Unicorn assembles the pair unconditionally; we do the
+     * same. The pair handler does NOT conflict with legacy 16550 use
+     * because byte writes to the data register are otherwise ignored. */
+    if (off == 4 && size == 1) {
         if (!s_dcs_high_seen) {
             s_dcs_high_latch = (uint8_t)(val & 0xFFu);
             s_dcs_high_seen  = 1;
-        } else {
-            uint16_t cmd = (uint16_t)((s_dcs_high_latch << 8) | (val & 0xFFu));
-            s_dcs_high_seen = 0;
-            s_dcs_last_byte_pair = cmd;
-            s_dcs_byte_pair_count++;
-            info_report("dcs-uart: [diag] byte-pair seen=0x%04x (#%u) "
-                        "[NOT delivered to core; Unicorn drops these]",
+            return;
+        }
+        uint16_t cmd = (uint16_t)((s_dcs_high_latch << 8) | (val & 0xFFu));
+        s_dcs_high_seen = 0;
+        s_dcs_last_byte_pair = cmd;
+        s_dcs_byte_pair_count++;
+        if (p2k_dcs_byte_trace_enabled() || s_dcs_byte_pair_count <= 16) {
+            info_report("dcs-uart: byte-pair cmd=0x%04x (#%u) "
+                        "[0x13c byte HIGH/LOW]",
                         cmd, s_dcs_byte_pair_count);
         }
-        /* Fall through to MCR write below (Unicorn-equivalent). */
+        p2k_dcs_core_note_source("UART:0x13c.bp");
+        p2k_dcs_core_write_cmd(cmd);
+        return;
     }
 
     /* Byte: 16550 registers. */
