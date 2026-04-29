@@ -50,33 +50,18 @@ static void p2k_dcs_write(void *opaque, hwaddr off, uint64_t val,
                           unsigned size)
 {
     static unsigned dropped_log = 0;
-    static unsigned rejected_log = 0;
     if (off == 0) {
         if (size == 1) {
-            /* Echo byte: harmless to keep working in both modes so the
-             * game's PCI-side liveness probes don't see a dead device. */
+            /* Echo byte: PCI-side liveness probe response. */
             p2k_dcs_core_set_echo(val & 0xFFu);
             return;
         }
-        if (p2k_dcs_core_mode_is_io_handled()) {
-            /* In io-handled mode, BAR4 must NOT be the DCS data path.
-             * Reject every DCS command word here so we can prove the
-             * game is writing them, then expect the game to switch
-             * to the UART (I/O 0x138-0x13F) path. */
-            s_bar4_rejected_count++;
-            if (rejected_log < 32) {
-                warn_report("dcs-bar4: REJECTED cmd=0x%04x "
-                            "(mode=io-handled, total rejected=%llu)",
-                            (unsigned)(val & 0xFFFF),
-                            s_bar4_rejected_count);
-                rejected_log++;
-            } else if (rejected_log == 32) {
-                warn_report("dcs-bar4: REJECTED log throttled "
-                            "(further rejects counted only)");
-                rejected_log++;
-            }
-            return;
-        }
+        /* DCS command word.  Per unicorn parity (see core mode docs):
+         * BAR4 carries DCS commands in BOTH io-handled and bar4-patch
+         * modes — `dcs_mode==1` either way.  The mode label only
+         * controls whether the CPU probe is .text-patched (we don't
+         * patch in either mode; our BAR4 device responds correctly
+         * to the natural probe). */
         p2k_dcs_core_note_source("BAR4");
         p2k_dcs_core_write_cmd(val & 0xFFFFu);
         return;
@@ -119,9 +104,6 @@ void p2k_install_dcs(void)
     memory_region_add_subregion(sm, P2K_BAR4_BASE, mr);
 
     info_report("pinball2000: DCS BAR4 MMIO @ 0x%08x (16 MiB) [shared core, "
-                "mode=%s%s]",
-                P2K_BAR4_BASE, p2k_dcs_core_mode_name(),
-                p2k_dcs_core_mode_is_io_handled() ?
-                    " — DCS cmds REJECTED on BAR4, expect UART path" :
-                    "");
+                "mode=%s]",
+                P2K_BAR4_BASE, p2k_dcs_core_mode_name());
 }

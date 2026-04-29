@@ -72,22 +72,41 @@ void (*p2k_dcs_core_audio_execute_mixer)(uint16_t cmd,
  * just before each write_cmd; read by audio sinks for tracing. */
 static const char *s_dcs_source_tag = "?";
 
-/* DCS dispatch mode (Unicorn parity: --dcs-mode bar4 | io-handled).
- *  - bar4 (default):     game uses BAR4 MMIO at 0x13000000 for DCS commands.
- *                        Both frontends accept writes; that's how it has
- *                        always run.
- *  - io-handled:         BAR4 frontend MUST NOT carry DCS commands.  The
- *                        UART frontend at 0x138-0x13F is the only legal
- *                        DCS data-path.  Selected via env P2K_DCS_MODE
- *                        or run-qemu.sh --dcs-mode.
- * Acceptance for io-handled: UART.w or UART.bp counter must grow during
- * the run; sound must work; boot must remain stable. */
+/* DCS dispatch mode (Unicorn parity: --dcs-mode io-handled | bar4-patch).
+ *
+ * IMPORTANT — what these modes really mean (per unicorn.old/src/cpu.c
+ * lines 638-799 and src/io.c lines 370-462):
+ *
+ * In BOTH unicorn modes the game ends up with `dcs_mode == 1` and writes
+ * its DCS commands via the BAR4 MMIO device.  There is no separate
+ * "I/O-port-only DCS data path" in unicorn.  The two modes only differ
+ * in HOW the natural DCS-detect probe at 0x1A2ABC is satisfied:
+ *
+ *  - io-handled (DEFAULT, what unicorn ships): no CPU .text patch.  The
+ *      probe cell is primed so the natural probe returns 1 ("device
+ *      present"); the game then writes dcs_mode=1 through its own code
+ *      and uses BAR4 normally.  The 0x138-0x13F UART overlay still
+ *      handles any I/O-port DCS traffic the game emits (byte-pair outb
+ *      sequences and word writes/reads).
+ *
+ *  - bar4-patch:  unicorn RAM-patches the probe's `CMP EAX,1 / JNE / MOV`
+ *      prologue to `MOV EAX, 1` so the store fires unconditionally.  Used
+ *      historically as a fallback "flex" demo.  We do NOT implement this
+ *      patch in QEMU — the only reason unicorn needs it is that older
+ *      builds had a flaky DCS device emulation that failed the natural
+ *      probe.  Our BAR4 device responds correctly, so the io-handled
+ *      path works without any CPU-side scribble.
+ *
+ * Practical effect in QEMU: P2K_DCS_MODE is essentially a label today.
+ * Both labels run the same code (no .text scribble in either case).
+ * The label is kept for honest diagnostics in logs and for forward
+ * compatibility if a true bar4-patch implementation is ever wanted. */
 typedef enum {
-    P2K_DCS_MODE_BAR4 = 0,
-    P2K_DCS_MODE_IO_HANDLED = 1,
+    P2K_DCS_MODE_IO_HANDLED = 0,
+    P2K_DCS_MODE_BAR4_PATCH = 1,
 } P2KDcsMode;
 
-static P2KDcsMode s_dcs_mode = P2K_DCS_MODE_BAR4;
+static P2KDcsMode s_dcs_mode = P2K_DCS_MODE_IO_HANDLED;
 static bool       s_dcs_mode_resolved = false;
 
 P2KDcsMode p2k_dcs_core_mode(void)
@@ -95,11 +114,13 @@ P2KDcsMode p2k_dcs_core_mode(void)
     if (!s_dcs_mode_resolved) {
         const char *e = getenv("P2K_DCS_MODE");
         if (e && *e) {
-            if (!strcmp(e, "io-handled") || !strcmp(e, "io_handled") ||
-                !strcmp(e, "io")) {
-                s_dcs_mode = P2K_DCS_MODE_IO_HANDLED;
+            if (!strcmp(e, "bar4-patch") || !strcmp(e, "bar4_patch") ||
+                !strcmp(e, "bar4")) {
+                s_dcs_mode = P2K_DCS_MODE_BAR4_PATCH;
             } else {
-                s_dcs_mode = P2K_DCS_MODE_BAR4;
+                /* "io-handled", "io_handled", "io", or anything else
+                 * defaults to the unicorn default. */
+                s_dcs_mode = P2K_DCS_MODE_IO_HANDLED;
             }
         }
         s_dcs_mode_resolved = true;
@@ -114,7 +135,7 @@ bool p2k_dcs_core_mode_is_io_handled(void)
 
 const char *p2k_dcs_core_mode_name(void)
 {
-    return p2k_dcs_core_mode_is_io_handled() ? "io-handled" : "bar4";
+    return p2k_dcs_core_mode_is_io_handled() ? "io-handled" : "bar4-patch";
 }
 
 void p2k_dcs_core_note_source(const char *src)

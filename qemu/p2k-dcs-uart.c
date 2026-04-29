@@ -121,16 +121,13 @@ static void p2k_dcs_uart_write(void *opaque, hwaddr addr,
         return;
     }
 
-    /* off=4 (0x13C) byte: high/low command pair (Unicorn `0001de2` clue —
-     * SWE1 io-handled pump @0x194efc emits 16-bit DCS commands as TWO
-     * outb to 0x13c, HIGH then LOW). In io-handled mode this is the
-     * only post-RESET data path, so it MUST be a real protocol path
-     * regardless of trace gating. In bar4 mode we keep it gated behind
-     * P2K_DCS_BYTE_TRACE so legacy bring-up that pokes 0x13C as a plain
-     * 16550 does not get reinterpreted. Mirrors unicorn.old/src/io.c
-     * dcs2_port_write. */
-    if (off == 4 && size == 1 &&
-        (p2k_dcs_core_mode_is_io_handled() || p2k_dcs_byte_trace_enabled())) {
+    /* off=4 (0x13C) byte: high/low command pair.
+     * Per unicorn.old/src/io.c dcs2_port_write: SWE1's io-handled pump
+     * at 0x194efc emits 16-bit DCS commands as TWO outb to 0x13c (HIGH
+     * then LOW). Unicorn assembles the pair unconditionally; we do the
+     * same. The pair handler does NOT conflict with legacy 16550 use
+     * because byte writes to the data register are otherwise ignored. */
+    if (off == 4 && size == 1) {
         if (!s_dcs_high_seen) {
             s_dcs_high_latch = (uint8_t)(val & 0xFFu);
             s_dcs_high_seen  = 1;
