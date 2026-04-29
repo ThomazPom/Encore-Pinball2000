@@ -121,11 +121,16 @@ static void p2k_dcs_uart_write(void *opaque, hwaddr addr,
         return;
     }
 
-    /* off=4 (0x13C) byte: capture the high/low pattern Unicorn observed
-     * (`0001de2` clue). High byte first, then low byte — together they
-     * form a DCS command.  Only act when trace is enabled so we do not
-     * silently change protocol shape. */
-    if (off == 4 && size == 1 && p2k_dcs_byte_trace_enabled()) {
+    /* off=4 (0x13C) byte: high/low command pair (Unicorn `0001de2` clue —
+     * SWE1 io-handled pump @0x194efc emits 16-bit DCS commands as TWO
+     * outb to 0x13c, HIGH then LOW). In io-handled mode this is the
+     * only post-RESET data path, so it MUST be a real protocol path
+     * regardless of trace gating. In bar4 mode we keep it gated behind
+     * P2K_DCS_BYTE_TRACE so legacy bring-up that pokes 0x13C as a plain
+     * 16550 does not get reinterpreted. Mirrors unicorn.old/src/io.c
+     * dcs2_port_write. */
+    if (off == 4 && size == 1 &&
+        (p2k_dcs_core_mode_is_io_handled() || p2k_dcs_byte_trace_enabled())) {
         if (!s_dcs_high_seen) {
             s_dcs_high_latch = (uint8_t)(val & 0xFFu);
             s_dcs_high_seen  = 1;
@@ -135,9 +140,11 @@ static void p2k_dcs_uart_write(void *opaque, hwaddr addr,
         s_dcs_high_seen = 0;
         s_dcs_last_byte_pair = cmd;
         s_dcs_byte_pair_count++;
-        info_report("dcs-uart: byte-pair cmd=0x%04x (#%u) "
-                    "[late-Unicorn 0001de2 clue]",
-                    cmd, s_dcs_byte_pair_count);
+        if (p2k_dcs_byte_trace_enabled() || s_dcs_byte_pair_count <= 16) {
+            info_report("dcs-uart: byte-pair cmd=0x%04x (#%u) "
+                        "[0x13c byte HIGH/LOW]",
+                        cmd, s_dcs_byte_pair_count);
+        }
         p2k_dcs_core_note_source("UART:0x13c.bp");
         p2k_dcs_core_write_cmd(cmd);
         return;

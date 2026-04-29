@@ -223,7 +223,14 @@ void p2k_dcs_core_write_cmd(uint16_t cmd)
             uint16_t m2 = (uint16_t)(s_core.layer > 2 ? s_core.mixer[2] : 0);
             p2k_dcs_core_audio_execute_mixer(m0, m1, m2);
         }
-        s_core.pending   = 0;
+        /* IMPORTANT: keep s_core.pending = 1.  Unicorn bar.c:946-948
+         * resets only layer/remaining/mixer after a triple — dcs_pending
+         * stays true, so every subsequent triple is also routed through
+         * execute_mixer (with channel = (data2 & 0x380) >> 7).  Resetting
+         * pending here was the bug that made post-ACE1 cmds fall through
+         * to process_cmd's "ch = cmd & 7" branch — wrong channel,
+         * stomped voices, ship/diag never audible.  0x0E (suspend) clears
+         * pending; another 0xACE1 simply re-arms (idempotent). */
         s_core.layer     = 0;
         s_core.remaining = 0;
         memset(s_core.mixer, 0, sizeof(s_core.mixer));
