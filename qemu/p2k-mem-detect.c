@@ -6,27 +6,35 @@
  * `mem_detect()` prologue so the function returns 14 MiB instead of 4.
  * Modifying guest .text from the host is the worst kind of band-aid —
  * it relies on a fixed instruction pattern, must scan RAM, and breaks
- * silently if the build changes. The real failure is that our Cyrix
- * MediaGX memory-controller stub does not answer the probes that
- * mem_detect() runs.
+ * silently if the build changes.
  *
- * Removal condition: delete this file once the MediaGX memory-controller
- * configuration registers (CCR3, MCRs at 0x22/0x23 index/data, etc.)
- * are modelled accurately enough that the guest's own mem_detect()
- * naturally computes the configured RAM size. At that point the
- * code-rewrite scan is unnecessary.
- * Until then: kill switch is P2K_NO_MEM_DETECT_PATCH.
+ * Why we can't replace it with device-register behavior: in this XINU
+ * build mem_detect() is compiled as a hardcoded
+ *     mov eax, 0x400 ; leave ; ret
+ * It does NOT probe any MediaGX/CS5530 memory-controller register —
+ * there is nothing for a more accurate device model to answer. The
+ * function literally returns the constant 4 MiB.
+ *
+ * Why the patch can't be moved to ROM-load time (one-shot, no timer):
+ * the boot loader copies/relocates the .text image from BAR3 flash
+ * (and/or bank0) into RAM at a different offset (~0x00233425 in tests),
+ * and the running copy diverges from both ROM sources. Patching the
+ * source images before relocation does not survive the copy. Verified
+ * 2026-04 by attempting bank0 + bar3-flash one-shot rewrite: the byte
+ * was patched at flash+0x18e5e8 / bank0+0x1739f8, but the runtime image
+ * at 0x00233425 was still 0x04, mem_detect still returned 4 MiB, and
+ * the boot regressed to no-audio.
+ *
+ * So we have to scan RAM at runtime and patch the live function copy.
+ * That is what this module does, with a self-retiring 250 ms timer.
+ *
+ * Removal condition: a future XINU build that probes a properly
+ * modelled CS5530 memory-controller, OR a CPU-side hook (TCG translation
+ * filter on the function entry that overrides EAX) that does not write
+ * guest .text. Until then: kill switch is P2K_NO_MEM_DETECT_PATCH.
  * ============================================================================
  *
  * pinball2000 BT-130: XINU mem_detect() patch.
- *
- * XINU's mem_detect() probes the MediaGX memory controller and returns
- * the system RAM size in 4 KiB pages.  In our QEMU machine the
- * controller is a stub, so the probe returns 0x400 pages (4 MiB) by
- * default, which is far too small — prnull's stack overflows during
- * cpp_call_ctors(), Location Mgr cannot allocate, and the game enters
- * an unrecoverable "Resource X cannot construct, Location Mgr is not
- * there yet" cascade with malloc(96) failing for everything.
  *
  * Real Pinball 2000 hardware reports 14 MiB; we have 16 MiB available
  * but cap at 14 MiB to match the unicorn reference.  The patch is the
@@ -41,7 +49,8 @@
  *
  * Pattern is ROM-agnostic (same across SWE1 v1.5 and RFM v1.6 per
  * unicorn).  We scan loaded game code in low RAM periodically until
- * we find + patch it, then disarm the timer.
+ * we find + patch it, then disarm and free the timer (no perpetual
+ * 250 ms wakeup leak).
  *
  * One concern per file: this module ONLY discovers and rewrites the
  * mem_detect prologue.  No other patches.
@@ -95,6 +104,10 @@ static void p2k_md_tick(void *opaque)
     if (!p2k_md_patched) {
         timer_mod(p2k_md_timer,
                   qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + P2K_MD_PERIOD_NS);
+    } else {
+        /* Self-retire: stop wasting 250 ms wakeups for the rest of the run. */
+        timer_free(p2k_md_timer);
+        p2k_md_timer = NULL;
     }
 }
 

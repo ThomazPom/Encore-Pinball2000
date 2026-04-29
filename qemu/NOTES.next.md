@@ -671,14 +671,29 @@ io-handled-rejects-BAR4 era; both modes now route through BAR4.
 1. **`p2k-mem-detect.c`: post-boot RAM .text scribble of XINU's
    `mem_detect()` to change its return value (0x400 → 0xE00 pages).**
    Scans RAM for a function prologue + immediate `MOV EAX, 0x400 ; RET`
-   and overwrites a single byte. This is exactly the class of trick the
-   user has rejected for DCS — kept here because the underlying device
-   model is wrong.
-   - Cleaner: properly emulate the MediaGX/CS5530 memory controller's
-     size-discovery registers so the natural `mem_detect()` walk reports
-     14 MB without any patch. Keep the scribble path but gate it behind
-     `P2K_MEMDETECT_PATCH=1` and default it OFF once the device path works.
-     Exit criterion: boot reaches XINU ready with the env unset.
+   and overwrites a single byte.
+   - Investigated 2026-04: cannot be replaced with device-register
+     behavior, because in this XINU build `mem_detect()` is hardcoded
+     `mov eax,0x400 ; leave ; ret` and does not probe any controller
+     register at all. There is nothing for a more accurate CS5530
+     model to answer.
+   - Investigated 2026-04: also cannot be moved to one-shot ROM-load
+     time. The boot copies/relocates the function from BAR3 flash and
+     bank0 to a different RAM offset (~0x00233425), and the running
+     copy diverges from both ROM sources. Patching the source images
+     does not survive the relocation (verified: bar3-flash+0x18e5e8
+     and bank0+0x1739f8 patched, RAM image at 0x00233425 still 0x04,
+     audio regressed to silent). The polling-RAM path is the only
+     mechanism that reaches the live function.
+   - Small cleanup applied: timer is now `timer_free`d after the
+     successful patch, no perpetual 250 ms wakeup leak (mirrors the
+     IRQ0-shim self-retire fix). Documented the device/relocation
+     gotchas in the file header so future attempts don't repeat them.
+   - Cleaner long-term: a CPU-side translation hook (TCG filter on
+     the function's entry address overriding EAX) would avoid writing
+     guest .text. Lower priority than the remaining IDT/RAM stubs.
+     Exit criterion still: boot reaches attract with
+     `P2K_NO_MEM_DETECT_PATCH=1`.
 
 2. **Guest-visible RAM stubs + IDT rewrites: ~~`p2k-irq0-shim.c`~~,
    `p2k-cyrix-0f3c.c`, `p2k-nulluser-hlt.c`.**
