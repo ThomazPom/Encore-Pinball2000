@@ -96,8 +96,8 @@ static bool p2k_xinu_ready(void)
      * QEMU build, XINU's autogen IDT[0x20] points to a panic dispatcher
      * inside game code (~0x232xxx), which is also > 0x100000 — that
      * threshold cannot distinguish "panic stub" from "real clkint".
-     * Instead, p2k_install_irq0_shim() guarantees IDT[0x20] points to a
-     * harmless EOI+IRET stub at 0x500 until clkinit() overwrites it. */
+     * The panic-stub *signature* check happens in p2k_idt20_is_safe()
+     * below, just before we unmask IRQ0. */
     CPU_FOREACH(cs) {
         X86CPU *cpu = X86_CPU(cs);
         CPUX86State *env = &cpu->env;
@@ -106,21 +106,40 @@ static bool p2k_xinu_ready(void)
     return false;
 }
 
+/* Self-sufficient safety gate: returns true iff IDT[0x20] points to a
+ * non-panic-stub handler in game code. The panic dispatcher's first
+ * 7 bytes are unmistakable:
+ *   55 89 E5 60 6A 20 E9 ?? ?? ?? ?? (push ebp; mov ebp,esp; pusha;
+ *                                     push 0x20; jmp <ko>)
+ * Any other target — including a real clkint installed by clkinit() —
+ * is treated as safe to unmask IRQ0 onto. */
+static bool p2k_idt20_is_safe(CPUX86State *env)
+{
+    uint32_t off = p2k_read_idt20(env);
+    if (off < 0x100000) {
+        return false;
+    }
+    static const uint8_t panic_sig[7] = {
+        0x55, 0x89, 0xE5, 0x60, 0x6A, 0x20, 0xE9
+    };
+    uint8_t buf[7];
+    cpu_physical_memory_read(off, buf, sizeof(buf));
+    return memcmp(buf, panic_sig, sizeof(buf)) != 0;
+}
+
 static void p2k_pic_fixup_tick(void *opaque)
 {
     if (isa_pic && p2k_xinu_ready()) {
-        /* Strict gate: IDT[0x20] must point to our EOI+IRET shim at 0x500
-         * before we unmask IRQ0. Otherwise a stray PIT edge would dispatch
-         * into XINU's autogen panic stub (or, worse, garbage). The shim
-         * installer (p2k-irq0-shim.c) holds IDT[0x20] = 0x500 indefinitely
-         * for now, so this gate effectively means "wait until the shim is
-         * in place". */
+        /* Don't unmask IRQ0 until IDT[0x20] is something other than the
+         * XINU autogen panic dispatcher — otherwise a stray PIT edge
+         * dispatches into "Trap to monitor". Previously this was gated
+         * on the now-deleted IRQ0 shim at 0x500; the signature check
+         * below replaces that without injecting any RAM stub. */
         CPUState *cs;
         bool gated = true;
         CPU_FOREACH(cs) {
             X86CPU *cpu = X86_CPU(cs);
-            uint32_t off = p2k_read_idt20(&cpu->env);
-            if (off == 0x500u) {
+            if (p2k_idt20_is_safe(&cpu->env)) {
                 gated = false;
             }
             break;

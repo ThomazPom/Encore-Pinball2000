@@ -680,7 +680,7 @@ io-handled-rejects-BAR4 era; both modes now route through BAR4.
      `P2K_MEMDETECT_PATCH=1` and default it OFF once the device path works.
      Exit criterion: boot reaches XINU ready with the env unset.
 
-2. **Guest-visible RAM stubs + IDT rewrites: `p2k-irq0-shim.c`,
+2. **Guest-visible RAM stubs + IDT rewrites: ~~`p2k-irq0-shim.c`~~,
    `p2k-cyrix-0f3c.c`, `p2k-nulluser-hlt.c`.**
    Each installs a small shim at a fixed RAM address and patches an IDT
    entry to vector to it. They paper over real CPU/timer semantics
@@ -690,9 +690,12 @@ io-handled-rejects-BAR4 era; both modes now route through BAR4.
      * `p2k-cyrix-0f3c.c` — implement the Cyrix `BB0_RESET` opcode in
        QEMU's i386 translator (or a `cpu_x86_register` helper). One
        upstream-style patch instead of an injected ISR.
-     * `p2k-irq0-shim.c` — drive the PIT/PIC interrupt path correctly so
-       the natural IDT entry runs. The shim only exists because IRQ0 was
-       being missed during HLT spin.
+     * ~~`p2k-irq0-shim.c`~~ ✅ DELETED. Smoke test with
+       `P2K_NO_IRQ0_SHIM=1` showed identical boot/audio/no-Fatals; the
+       shim was no longer load-bearing once `P2K_PIC_FIXUP` defaulted
+       OFF (`b20f39b`). Removed in this pass; pic-fixup's gate ported
+       to a self-contained panic-stub-signature check (no RAM stub
+       needed even for the opt-in regression path).
      * `p2k-nulluser-hlt.c` — fix the HLT/IF wake semantics in i386 TCG
        for the MediaGX timing window, then delete the patch site.
 

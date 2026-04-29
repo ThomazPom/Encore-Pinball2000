@@ -52,7 +52,6 @@ ship it with a written sunset criterion or do not ship it.
 | `p2k-cyrix-0f3c.c`    | Emulator for Cyrix-only `0F 3C` opcode (#UD trap → real op) | cpu glue       |
 | `p2k-pci.c`           | cf8/cfc dispatcher with vendor-IDs (TEMPORARY)              | symptom patch  |
 | `p2k-pic-fixup.c`     | Force-unmask IRQ0+cascade on the i8259 (TEMPORARY)          | symptom patch  |
-| `p2k-irq0-shim.c`     | Pin IDT[0x20] to a 0x500 EOI+IRET stub (TEMPORARY)          | symptom patch  |
 | `p2k-watchdog.c`      | RAM-scribble PCI/watchdog sentinels (TEMPORARY)             | symptom patch  |
 | `p2k-mem-detect.c`    | BT-130: rewrite XINU `mem_detect` prologue (TEMPORARY)      | symptom patch  |
 | `p2k-nic-dseg.c`      | BT-131: poke SMC8216T LAN-ROM shadow into D-seg (TEMPORARY) | symptom patch  |
@@ -103,7 +102,6 @@ Useful env vars (defaults reflect the post-bring-up state, see
 | `P2K_UART_TO_STDERR=1`         | n/a     | Legacy explicit-on switch; same effect as the default — kept for compatibility. |
 | `P2K_PIC_FIXUP=1`              | OFF     | Re-arm the legacy 250µs IRQ0/cascade unmask timer. The timer is OFF by default since `b20f39b`; opt-in only as a regression fallback. |
 | `P2K_NO_PIC_FIXUP=1`           | OFF     | Force the legacy PIC fix-up timer off even if `P2K_PIC_FIXUP=1` is set (the override switch always wins). |
-| `P2K_NO_IRQ0_SHIM=1`           | OFF     | Disable the temporary IDT[0x20] EOI+IRET shim (the shim self-retires once XINU's `clkint` is installed). |
 | `P2K_NO_CYRIX_STUB=1`          | OFF     | Disable the temporary Cyrix `0F 3C` (BB0_RESET) #UD emulator (IDT[6]+0x540 RAM stub). The proper fix is i386 TCG decoder support for opcode `0F 3C`. |
 | `P2K_WATCHDOG_SCRIBBLER=1`     | OFF     | Re-enable the legacy RAM-scribble watchdog suppressor. The PLX INTCSR bit2=1 path in `256cea1` retired this; opt-in only as a regression fallback. |
 | `P2K_NO_WATCHDOG=1`            | OFF     | Force the watchdog scribbler off even when `P2K_WATCHDOG_SCRIBBLER=1` is set. |

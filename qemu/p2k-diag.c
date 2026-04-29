@@ -2,8 +2,9 @@
  * pinball2000 read-only diagnostic sampler.
  *
  * Goal: see what the GUEST is actually doing with PIT/PIC/RTC/IDT,
- * so we can replace the symptom patches (p2k-irq0-shim, p2k-pic-fixup,
- * etc.) with real device behavior. Activates only when env P2K_DIAG=1.
+ * so we can replace the remaining symptom patches (p2k-pic-fixup,
+ * p2k-cyrix-0f3c, p2k-mem-detect, p2k-nulluser-hlt) with real device
+ * or CPU behavior. Activates only when env P2K_DIAG=1.
  *
  * Samples on a virtual-clock periodic tick (default 100 ms):
  *   - i8254 PIT channel 0/1/2: mode + initial_count + computed Hz + gate
