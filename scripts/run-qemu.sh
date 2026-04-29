@@ -133,13 +133,22 @@ fi
 if [[ $VERBOSITY -ge 1 ]]; then export P2K_DIAG=1; fi
 
 if [[ -n "$UPDATE_DIR" ]]; then
-  if [[ ! -d "$UPDATE_DIR" ]]; then
+  if [[ "$UPDATE_DIR" == "none" ]]; then
+    # Unicorn-parity: --update none means "skip the auto-discover, boot
+    # the BASE-image path with BAR3 left all-0xFF". Currently does not
+    # reach a usable state on SWE1 (XINU stalls before clkinit) — see
+    # qemu/NOTES.next.md. Kept as a deliberate opt-out for parity work.
+    export P2K_NO_AUTO_UPDATE=1
+    UPDATE_DIR=""
+    echo "[run-qemu] --update none → skipping auto-discover (P2K_NO_AUTO_UPDATE=1)" >&2
+  elif [[ ! -d "$UPDATE_DIR" ]]; then
     echo "[run-qemu] ERROR: --update path is not a directory: $UPDATE_DIR" >&2
     exit 1
+  else
+    # Resolve to absolute path so it works regardless of QEMU cwd.
+    UPDATE_DIR_ABS="$(cd "$UPDATE_DIR" && pwd)"
+    echo "[run-qemu] applying update from $UPDATE_DIR_ABS" >&2
   fi
-  # Resolve to absolute path so it works regardless of QEMU cwd.
-  UPDATE_DIR_ABS="$(cd "$UPDATE_DIR" && pwd)"
-  echo "[run-qemu] applying update from $UPDATE_DIR_ABS" >&2
 fi
 
 # The machine reads savedata/<game>.* relative to cwd. Choose cwd accordingly.

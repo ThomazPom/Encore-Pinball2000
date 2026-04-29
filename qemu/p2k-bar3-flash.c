@@ -331,11 +331,15 @@ void p2k_install_bar3_flash(Pinball2000MachineState *s)
         info_report("pinball2000: applying update from %s (--update)",
                     s->update_path);
         assemble_update(s->update_path);
-    } else if (!seeded) {
+    } else if (!seeded && getenv("P2K_NO_AUTO_UPDATE") == NULL) {
         /* No persistent flash AND no explicit --update: auto-discover the
-         * newest bundle in updates/, mirroring unicorn.old/src/rom.c:633-816.
+         * newest bundle in updates/, mirroring unicorn.old/src/main.c:843-862
+         * ("Real cabinets always shipped with at least one update flashed").
          * Without this, XINU stalls at "NO UPDATE" right after STARTING GAME
-         * CODE and never reaches PIT/clkint init. */
+         * CODE and never reaches PIT/clkint init. Set P2K_NO_AUTO_UPDATE=1
+         * (or pass --update none via run-qemu.sh) to opt out and force the
+         * BASE-image path — which currently does NOT reach a usable state
+         * (known parity gap with Unicorn; XINU stalls before clkinit). */
         char *auto_dir = find_default_update(s->roms_dir, game);
         if (auto_dir) {
             info_report("pinball2000: applying auto-discovered update %s "
@@ -348,6 +352,10 @@ void p2k_install_bar3_flash(Pinball2000MachineState *s)
                         "[STARTING GAME CODE]; pass --update <dir> or place "
                         "savedata/%s.flash", game);
         }
+    } else if (!seeded) {
+        info_report("pinball2000: P2K_NO_AUTO_UPDATE set — leaving BAR3 "
+                    "all-0xFF (base-image path; known stall on SWE1, see "
+                    "qemu/NOTES.next.md)");
     }
 
     MemoryRegion *mr = g_new(MemoryRegion, 1);
