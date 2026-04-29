@@ -116,7 +116,6 @@ static void pinball2000_init(MachineState *machine)
     p2k_install_pic_fixup();
     p2k_install_cyrix_0f3c();
     p2k_install_vsync();
-    p2k_install_watchdog();
     p2k_install_mem_detect();
     p2k_install_diag(s);
     p2k_install_gfxlist_watch(s);

@@ -724,15 +724,18 @@ io-handled-rejects-BAR4 era; both modes now route through BAR4.
        prnull `JMP $` busy-spin without needing the `HLT;JMP -3`
        rewrite. Removed file + call site + header decl.
 
-3. **`p2k-vsync.c` + `p2k-watchdog.c` periodic RAM cell scribbles.**
-   Both write specific RAM cells via `cpu_physical_memory_write` from a
-   QEMU timer to keep liveness flags fresh. Same pattern as Unicorn's
-   "watchdog cell" trick — works, but ties device behavior to opaque
-   guest BSS addresses scanned at boot.
+3. **`p2k-vsync.c` periodic RAM cell scribble.** (~~`p2k-watchdog.c`~~
+   ✅ DELETED 2026-04: PLX INTCSR bit2=1 in `p2k-plx-regs.c` had been
+   satisfying `pci_watchdog_bone()` naturally for several commits, the
+   scribbler had been default-OFF since `256cea1`, and the full
+   validation matrix passes without it.)
+   `p2k-vsync.c` writes specific RAM cells via
+   `cpu_physical_memory_write` from a QEMU timer to keep the BAR2 vsync
+   flag and the GX DC_TIMING2 scanline counter alternating. Same
+   pattern as Unicorn's "vsync cell" trick — works, but ties device
+   behavior to opaque guest BSS / MMIO addresses scanned at boot.
    - Cleaner: model the GX VBLANK GPIO as a real readable register
      (already partial in `p2k-display.c`) so the guest's natural read
-     observes the alternating bit; model the PCI watchdog endpoint
-     (PLX9054 EEPROM/LPT side) so the guest's natural write/read keeps
-     the watchdog satisfied. With both in place the timer scribbles
-     become deletable.
+     observes the alternating bit. With that in place the vsync timer
+     scribble becomes deletable.
 

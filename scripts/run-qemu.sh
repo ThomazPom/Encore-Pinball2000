@@ -44,8 +44,8 @@
 #   --                    All remaining args are passed straight to qemu-system-i386.
 #
 # Useful env passthrough (see qemu/README.md table):
-#   P2K_NO_UART_STDERR P2K_PIC_FIXUP P2K_NO_PIC_FIXUP P2K_NO_IRQ0_SHIM
-#   P2K_WATCHDOG_SCRIBBLER P2K_NO_WATCHDOG P2K_NO_MEM_DETECT_PATCH
+#   P2K_NO_UART_STDERR P2K_PIC_FIXUP P2K_NO_PIC_FIXUP
+#   P2K_NO_MEM_DETECT_PATCH
 #   P2K_DIAG P2K_UART_INPUT
 set -euo pipefail
 

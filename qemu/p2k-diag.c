@@ -4,7 +4,8 @@
  * Goal: see what the GUEST is actually doing with PIT/PIC/RTC/IDT,
  * so we can replace the remaining symptom patches (p2k-pic-fixup,
  * p2k-cyrix-0f3c, p2k-mem-detect) with real device
- * or CPU behavior. Activates only when env P2K_DIAG=1.
+ * or CPU behavior. Activates only when env P2K_DIAG=1 (or via
+ * `run-qemu.sh -v`). Off by default to keep routine boots quiet.
  *
  * Samples on a virtual-clock periodic tick (default 100 ms):
  *   - i8254 PIT channel 0/1/2: mode + initial_count + computed Hz + gate
@@ -385,10 +386,13 @@ static void p2k_diag_tick(void *opaque)
 
 void p2k_install_diag(Pinball2000MachineState *s)
 {
-    /* Default ON during bring-up. Set P2K_NO_DIAG=1 to silence. */
-    const char *off = getenv("P2K_NO_DIAG");
-    if (off && *off && off[0] != '0') {
-        info_report("pinball2000: diag sampler disabled by P2K_NO_DIAG");
+    /* Default OFF: diag sampler is opt-in via env P2K_DIAG=1
+     * (the run-qemu.sh wrapper exports P2K_DIAG=1 when -v is passed).
+     * Set unset/0/empty -> silent.
+     * The change-only logger is cheap, but the install message and
+     * timer scheduling are noise during routine boots. */
+    const char *on = getenv("P2K_DIAG");
+    if (!on || !*on || on[0] == '0') {
         return;
     }
     p2k_diag_state = s;
@@ -396,6 +400,6 @@ void p2k_install_diag(Pinball2000MachineState *s)
     timer_mod(p2k_diag_timer,
               qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + P2K_DIAG_POLL_NS);
     info_report("pinball2000: diag sampler ON (PIT/PIC/IDT/XINU-sched, "
-                "every %llu ms; set P2K_NO_DIAG=1 to silence)",
+                "every %llu ms; unset P2K_DIAG to silence)",
                 (unsigned long long)(P2K_DIAG_POLL_NS / 1000000ull));
 }
