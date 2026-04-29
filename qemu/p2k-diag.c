@@ -3,7 +3,7 @@
  *
  * Goal: see what the GUEST is actually doing with PIT/PIC/RTC/IDT,
  * so we can replace the remaining symptom patches (p2k-pic-fixup,
- * p2k-cyrix-0f3c, p2k-mem-detect, p2k-nulluser-hlt) with real device
+ * p2k-cyrix-0f3c, p2k-mem-detect) with real device
  * or CPU behavior. Activates only when env P2K_DIAG=1.
  *
  * Samples on a virtual-clock periodic tick (default 100 ms):

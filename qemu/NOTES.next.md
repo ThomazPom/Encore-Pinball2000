@@ -696,7 +696,7 @@ io-handled-rejects-BAR4 era; both modes now route through BAR4.
      `P2K_NO_MEM_DETECT_PATCH=1`.
 
 2. **Guest-visible RAM stubs + IDT rewrites: ~~`p2k-irq0-shim.c`~~,
-   `p2k-cyrix-0f3c.c`, `p2k-nulluser-hlt.c`.**
+   `p2k-cyrix-0f3c.c`, ~~`p2k-nulluser-hlt.c`~~.**
    Each installs a small shim at a fixed RAM address and patches an IDT
    entry to vector to it. They paper over real CPU/timer semantics
    (HLT wake-up, IRQ0 reentry, Cyrix opcode 0F 3C). Visible to any guest
@@ -704,15 +704,25 @@ io-handled-rejects-BAR4 era; both modes now route through BAR4.
    - Cleaner per file:
      * `p2k-cyrix-0f3c.c` — implement the Cyrix `BB0_RESET` opcode in
        QEMU's i386 translator (or a `cpu_x86_register` helper). One
-       upstream-style patch instead of an injected ISR.
+       upstream-style patch instead of an injected ISR. **Still
+       load-bearing as of 2026-04**: matrix with `P2K_NO_CYRIX_STUB=1`
+       regresses swe1-update from 14 → 2 audio samples and produces
+       monitor traps on swe1-default; cannot be deleted yet. Long-term
+       exit: TCG decoder for `0F 3C` so the natural #UD never fires.
      * ~~`p2k-irq0-shim.c`~~ ✅ DELETED. Smoke test with
        `P2K_NO_IRQ0_SHIM=1` showed identical boot/audio/no-Fatals; the
        shim was no longer load-bearing once `P2K_PIC_FIXUP` defaulted
        OFF (`b20f39b`). Removed in this pass; pic-fixup's gate ported
        to a self-contained panic-stub-signature check (no RAM stub
        needed even for the opt-in regression path).
-     * `p2k-nulluser-hlt.c` — fix the HLT/IF wake semantics in i386 TCG
-       for the MediaGX timing window, then delete the patch site.
+     * ~~`p2k-nulluser-hlt.c`~~ ✅ DELETED 2026-04. The full validation
+       matrix with `P2K_NO_NULLUSER_HLT=1` produced byte-identical
+       results to baseline (same audio samples, same Fatals/traps
+       counts, same starvation pattern on `*-default`). The patch had
+       become inert: once IRQ0 shim was removed and PIT/PIC/IDT
+       reached XINU `clkint` naturally, the scheduler preempted the
+       prnull `JMP $` busy-spin without needing the `HLT;JMP -3`
+       rewrite. Removed file + call site + header decl.
 
 3. **`p2k-vsync.c` + `p2k-watchdog.c` periodic RAM cell scribbles.**
    Both write specific RAM cells via `cpu_physical_memory_write` from a

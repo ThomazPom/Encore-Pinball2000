@@ -119,7 +119,6 @@ static void pinball2000_init(MachineState *machine)
     p2k_install_watchdog();
     p2k_install_mem_detect();
     p2k_install_diag(s);
-    p2k_install_nulluser_hlt(s);
     p2k_install_gfxlist_watch(s);
 
     /* Arrange the PM-entry reset recipe to fire after every system reset. */
