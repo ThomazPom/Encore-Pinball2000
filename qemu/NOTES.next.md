@@ -533,23 +533,6 @@ not the new source of truth.
   Removal condition: when QEMU's DCS/PLX9054 model returns the right
   value at the probe address natively, delete the file and stop
   calling `p2k_install_probe_cell_shim()` from `pinball2000.c`.
-- [!] `--update none` BAR2 SRAM factory seed (`p2k-bar2-factory-seed.c`).
-  Strictly gated on `P2K_NO_AUTO_UPDATE`; zero effect on auto-update.
-  Even within `--update none`, strictly opt-in: only acts if a real
-  factory NVRAM file exists at `$P2K_FACTORY_NVRAM`,
-  `savedata/<game>.factory.nvram2`, or `<roms>/../savedata/<game>.factory.nvram2`.
-  Without the file, logs one "no factory NVRAM found" line and does
-  NOTHING — no synthetic field guesses, no pattern poking, no guest
-  .text writes. When provided, overlays the first 128 KiB of the file
-  onto BAR2 SRAM @ `0x11000000` so the BASE v0.40 ROM path can skip
-  "Automatic Factory Reset". Note: the regular `savedata/<game>.nvram2`
-  loaded by `p2k-bars.c` is essentially empty in our checkout (only
-  `[0x4]=1`, which `p2k-vsync.c` re-pokes every frame anyway), so it
-  alone does not lift the guest out of Factory Reset.
-  Removal condition: drop this file once the v0.40 BASE ROM either
-  reaches a non-Factory-Reset state without any pre-seeded NVRAM, or
-  we model whatever device/RTC/SEEPROM read decides "skip Factory
-  Reset" so no NVRAM seed is required.
 
 ## Historical Clues, Not Proof
 

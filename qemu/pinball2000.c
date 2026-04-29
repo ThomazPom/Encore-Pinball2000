@@ -121,11 +121,6 @@ static void pinball2000_init(MachineState *machine)
     p2k_install_nic_dseg();
     p2k_install_gfxlist_watch(s);
     p2k_install_probe_cell_shim();
-    /* Strictly gated to --update none: optional BAR2 SRAM factory
-     * overlay so the v0.40 BASE-image path can skip Automatic Factory
-     * Reset if savedata/<game>.factory.nvram2 is provided. Inert
-     * without P2K_NO_AUTO_UPDATE; inert without the file. */
-    p2k_install_bar2_factory_seed(s);
 
     /* Arrange the PM-entry reset recipe to fire after every system reset. */
     qemu_register_reset(p2k_post_reset, s);
