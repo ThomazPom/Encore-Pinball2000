@@ -711,13 +711,31 @@ io-handled-rejects-BAR4 era; both modes now route through BAR4.
    (HLT wake-up, IRQ0 reentry, Cyrix opcode 0F 3C). Visible to any guest
    code that walks the IDT or disassembles those addresses.
    - Cleaner per file:
-     * `p2k-cyrix-0f3c.c` — implement the Cyrix `BB0_RESET` opcode in
-       QEMU's i386 translator (or a `cpu_x86_register` helper). One
-       upstream-style patch instead of an injected ISR. **Still
-       load-bearing as of 2026-04**: matrix with `P2K_NO_CYRIX_STUB=1`
-       regresses swe1-update from 14 → 2 audio samples and produces
-       monitor traps on swe1-default; cannot be deleted yet. Long-term
-       exit: TCG decoder for `0F 3C` so the natural #UD never fires.
+     * ~~`p2k-cyrix-0f3c.c`~~ ✅ DELETED 2026-04. Replaced with a
+       proper TCG decoder entry for opcode `0F 3C` shipped as the
+       upstream-style patch
+       `qemu/upstream-patches/0001-i386-tcg-cyrix-0f3c-shim.patch`,
+       applied idempotently by `scripts/build-qemu.sh` against the
+       extracted upstream QEMU 10.0.8 source tree. Generator name
+       `gen_CYRIX_0F3C_shim` is honest: it reproduces the observable
+       side effect that the legacy Unicorn / low-RAM IDT[6] stub
+       relied on (`[DS:EDX] := EAX; [DS:EDX+4] := EBX; EDX += 8`), NOT
+       true MediaGX `CPU_WRITE` semantics (EBX-as-internal-register-
+       address, EAX-as-data, write into CPU-internal config space).
+       The XINU users of `0F 3C` only depend on the pointer-walk
+       pattern, not on the real internal-register address space, so
+       the shim is sufficient; matrix shows F=0 T=0 Cyx=0 across all
+       four configs with the host stub removed and `IDT[6]` no longer
+       patched. Long-term exit: implement real `CPU_WRITE`/`CPU_READ`
+       (`0F 3D`) / `BB0_RESET` (`0F 3A`) / `BB1_RESET` (`0F 3B`)
+       semantics, gated to the pinball2000/MediaGX machine.
+       Side-effect of this deletion: the same commit had to **move
+       `P2K_GDT_BASE` from `0x1000` to `0x88000`** because swe1-default
+       cold boot wild-jumps to `0x1008` (inside our flat-mode GDT
+       entry 1) — the resulting `FF FF` decode was previously masked
+       by the IDT[6] catchall stub and surfaced once the stub was
+       gone. New address sits just past the PRISM option ROM
+       (`0x80000+0x8000`) where nothing else reads or writes.
      * ~~`p2k-irq0-shim.c`~~ ✅ DELETED. Smoke test with
        `P2K_NO_IRQ0_SHIM=1` showed identical boot/audio/no-Fatals; the
        shim was no longer load-bearing once `P2K_PIC_FIXUP` defaulted

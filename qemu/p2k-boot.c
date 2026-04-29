@@ -18,14 +18,29 @@
 
 #include "p2k-internal.h"
 
-/* Tiny GDT placed at a fixed RAM address well clear of the option ROM.
- * Mirror unicorn.old/src/cpu.c:186 exactly: GDT_ADDR = 0x00001000.
- * NOTE: 0x7000 was previously used here — but the game later JMPs to
- * 0x7008 expecting it to be loaded code (PRISM relocates code to low
- * RAM and 0x7008 collides with our GDT entry 1, decoded as invalid
- * opcode → "Xinu trap! exception 6 eip 0x7008"). 0x1000 is what unicorn
- * uses and it works there. */
-#define P2K_GDT_BASE    0x00001000u
+/* Tiny GDT placed at a fixed RAM address well clear of the option ROM
+ * AND well clear of the low-RAM range that PRISM/XINU jump into during
+ * cold boot. Historical context:
+ *
+ *   - 0x7000 was tried first → game later JMPs to 0x7008 (inside GDT
+ *     entry 1), which decodes the segment-limit bytes 0xFF 0xFF as the
+ *     opcode `FF /7` (undefined) and #UDs.
+ *
+ *   - 0x1000 (mirroring unicorn.old/src/cpu.c:186) hits the same class
+ *     of bug at 0x1008 in swe1-default cold boot. Unicorn only got
+ *     away with it because its IDT[6] catchall stub silently swallowed
+ *     the resulting #UD. Once we replaced that stub with proper TCG
+ *     support for Cyrix 0F 3C only (and deleted the catchall), the
+ *     latent wild-jump-into-GDT bug surfaced as a real Trap-to-monitor.
+ *
+ *   - 0x88000 is just past the PRISM option ROM (0x80000+0x8000) and
+ *     is plain DRAM that nothing else in our boot path reads or writes.
+ *     The GDT here is read once by the CPU on segment-register loads
+ *     during the PM transition; after XINU installs its own GDT this
+ *     region is no longer consulted, so even if XINU later reuses
+ *     0x88000 for something else there is no live dependency.
+ */
+#define P2K_GDT_BASE    0x00088000u
 #define P2K_GDT_LIMIT   0x0000001Fu   /* 4 entries × 8 bytes - 1 = 0x1F */
 
 static void p2k_build_gdt(void)

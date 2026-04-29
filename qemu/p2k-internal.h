@@ -100,7 +100,6 @@ void p2k_install_bar3_flash(Pinball2000MachineState *s);
  * (mirrors unicorn.old/src/io.c:121-127). */
 void p2k_install_pic_fixup(void);
 
-void p2k_install_cyrix_0f3c(void);
 void p2k_install_cyrix_ccr(void);
 void p2k_install_superio(void);
 

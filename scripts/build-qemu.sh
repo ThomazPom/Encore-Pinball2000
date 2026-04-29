@@ -33,6 +33,35 @@ if [[ ! -d "$SRC" ]]; then
   tar -xf "$TARBALL"
 fi
 
+# --- Apply our upstream-QEMU patches (idempotent) --------------------------
+# Patches in qemu/upstream-patches/*.patch are applied to the extracted
+# upstream source. We track applied patches via a sentinel file so re-runs
+# don't re-apply (which would fail). Touching/removing the sentinel forces
+# re-application on the next build (and the patches must be reverse-clean
+# against the current tree, otherwise we fail loudly).
+PATCH_DIR="$ROOT/qemu/upstream-patches"
+APPLIED_DIR="$SRC/.p2k-applied-patches"
+mkdir -p "$APPLIED_DIR"
+if [[ -d "$PATCH_DIR" ]]; then
+  for p in "$PATCH_DIR"/*.patch; do
+    [[ -e "$p" ]] || continue
+    name="$(basename "$p")"
+    sentinel="$APPLIED_DIR/$name"
+    cur_hash="$(sha1sum "$p" | awk '{print $1}')"
+    if [[ -f "$sentinel" ]] && [[ "$(cat "$sentinel")" == "$cur_hash" ]]; then
+      continue
+    fi
+    echo "[build-qemu] applying upstream patch $name"
+    if ! patch -d "$SRC" -p1 --forward --silent < "$p"; then
+      # Maybe a stale, different version of this patch is already applied.
+      echo "[build-qemu] patch $name failed forward; trying reverse-then-apply"
+      patch -d "$SRC" -p1 -R --silent < "$p" || true
+      patch -d "$SRC" -p1 --silent < "$p"
+    fi
+    echo "$cur_hash" > "$sentinel"
+  done
+fi
+
 # --- Inject our machine source ---------------------------------------------
 HW_I386="$SRC/hw/i386"
 echo "[build-qemu] copying qemu/{pinball2000,p2k-*}.{c,h} -> $HW_I386/"

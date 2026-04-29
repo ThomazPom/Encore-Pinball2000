@@ -1,0 +1,93 @@
+i386/tcg: add Cyrix MediaGX 0F 3C compatibility shim (Pinball 2000).
+
+Per the Cyrix MediaGX databook, opcode 0F 3C is CPU_WRITE (EBX = internal
+CPU-register address, EAX = data; the value is written into a CPU-internal
+configuration register such as the BLT buffer base/pointer or GP-DMA
+descriptor). True CPU_WRITE / CPU_READ (0F 3D) / BB0_RESET (0F 3A) /
+BB1_RESET (0F 3B) semantics are NOT implemented here.
+
+Instead, this patch reproduces the observable side effect of the legacy
+Unicorn / low-RAM IDT[6] stub that the Pinball 2000 XINU bring-up code
+already relied on:
+
+    [DS:EDX]   := EAX        ; 32-bit
+    [DS:EDX+4] := EBX        ; 32-bit
+    EDX        += 8
+
+Reference: unicorn.old/src/cpu.c:587-628 and the deleted host-side stub
+qemu/p2k-cyrix-0f3c.c. The XINU users of 0F 3C only rely on this
+pointer-walk pattern, not on the real internal-register address space, so
+the shim is sufficient for the four-config matrix.
+
+Without this patch, vanilla QEMU TCG raises #UD (vector 6) on 0F 3C and
+the bare XINU IDT lands in trap_dispatch() ("Trap to monitor"). With it,
+the entire qemu/p2k-cyrix-0f3c.c module (RAM stub at 0x540 + IDT[6]
+patch) becomes unnecessary and is deleted.
+
+Long-term direction: implement real MediaGX CPU_WRITE / CPU_READ /
+BB?_RESET semantics, ideally gated to the pinball2000 / MediaGX machine
+so other i386 guests retain their #UD behaviour. For now this shim is
+clearly named (gen_CYRIX_0F3C_shim) and clearly documented as
+compatibility only.
+
+--- a/target/i386/tcg/emit.c.inc
++++ b/target/i386/tcg/emit.c.inc
+@@ -4648,6 +4648,42 @@
+ #define gen_WRMSR gen_unreachable
+ #endif
+ 
++/* pinball2000: Cyrix MediaGX/5530 opcode 0F 3C compatibility shim.
++ *
++ * The Cyrix MediaGX databook documents 0F 3C as CPU_WRITE: EBX holds an
++ * internal-CPU-register address, EAX holds the data, and the result is
++ * written into a CPU-internal configuration register (BLT buffer base /
++ * pointer, GP-DMA descriptors, etc). True CPU_WRITE semantics are NOT
++ * implemented here.
++ *
++ * Instead, this generator reproduces the observable side effect of the
++ * Unicorn / legacy QEMU low-RAM IDT[6] stub that the Pinball 2000 XINU
++ * bring-up code is known to rely on:
++ *
++ *     [DS:EDX]   := EAX        ; 32-bit
++ *     [DS:EDX+4] := EBX        ; 32-bit
++ *     EDX        += 8
++ *
++ * (See unicorn.old/src/cpu.c:587-628 and the deleted
++ * qemu/p2k-cyrix-0f3c.c host-side stub.) The XINU users of 0F 3C
++ * happen to only care about this pointer-walk pattern, not about the
++ * real CPU_WRITE register address space, so emulating the shim is
++ * sufficient for the matrix.
++ *
++ * EIP is advanced past the 2-byte opcode by the caller after this
++ * generator returns. Long-term direction is real CPU_WRITE / CPU_READ
++ * (0F 3D) handling, gated to the MediaGX/pinball2000 machine; for now
++ * this shim replaces the dirtier IDT-patch + low-RAM-stub layer.
++ */
++static void gen_CYRIX_0F3C_shim(DisasContext *s, X86DecodedInsn *decode)
++{
++    gen_lea_v_seg(s, cpu_regs[R_EDX], R_DS, s->override);
++    tcg_gen_qemu_st_tl(cpu_regs[R_EAX], s->A0, s->mem_index, MO_LEUL);
++    tcg_gen_addi_tl(s->A0, s->A0, 4);
++    tcg_gen_qemu_st_tl(cpu_regs[R_EBX], s->A0, s->mem_index, MO_LEUL);
++    tcg_gen_addi_tl(cpu_regs[R_EDX], cpu_regs[R_EDX], 8);
++}
++
+ static void gen_WRxxBASE(DisasContext *s, X86DecodedInsn *decode)
+ {
+     TCGv base = cpu_seg_base[s->modrm & 8 ? R_GS : R_FS];
+--- a/target/i386/tcg/decode-new.c.inc
++++ b/target/i386/tcg/decode-new.c.inc
+@@ -1178,6 +1178,13 @@
+     [0x34] = X86_OP_ENTRY0(SYSENTER,                          chk2(i64_amd, prot_or_vm86)),
+     [0x35] = X86_OP_ENTRY0(SYSEXIT,                           chk3(i64_amd, prot, cpl0)),
+ 
++    /* pinball2000: Cyrix MediaGX 0F 3C compatibility shim (NOT true
++     * CPU_WRITE). Stores EAX into [DS:EDX], EBX into [DS:EDX+4], then
++     * EDX += 8. Reproduces the observable side effect of the legacy
++     * Unicorn IDT[6] stub. Generator in emit.c.inc. Real MediaGX
++     * CPU_WRITE/CPU_READ semantics are not implemented. */
++    [0x3C] = X86_OP_ENTRY0(CYRIX_0F3C_shim),
++
+     [0x40] = X86_OP_ENTRY2(CMOVcc,     G,v, E,v, cpuid(CMOV)),
+     [0x41] = X86_OP_ENTRY2(CMOVcc,     G,v, E,v, cpuid(CMOV)),
+     [0x42] = X86_OP_ENTRY2(CMOVcc,     G,v, E,v, cpuid(CMOV)),
