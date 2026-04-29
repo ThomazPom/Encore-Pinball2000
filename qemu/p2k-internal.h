@@ -104,8 +104,10 @@ void p2k_install_cyrix_0f3c(void);
 void p2k_install_cyrix_ccr(void);
 void p2k_install_superio(void);
 
-/* p2k-vsync.c: ~57 Hz VBLANK ticker — writes BAR2_SRAM[4]=1 + DC_TIMING2
- * at end-of-frame, cycles DC_TIMING2 0..240 in between. */
+/* p2k-vsync.c: ~57 Hz VBLANK source — installs a read-only MMIO at
+ * GX_BASE+0x8354 (DC_TIMING2) whose reads return the live VBLANK
+ * scanline counter, plus a small timer that maintains BAR2[+4] as
+ * the per-frame "vsync seen" flag in PLX SRAM. */
 void p2k_install_vsync(void);
 
 /* p2k-plx-regs.c: PLX 9050 BAR0 register file + 93C46 SEEPROM model. */

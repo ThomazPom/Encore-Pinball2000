@@ -724,18 +724,25 @@ io-handled-rejects-BAR4 era; both modes now route through BAR4.
        prnull `JMP $` busy-spin without needing the `HLT;JMP -3`
        rewrite. Removed file + call site + header decl.
 
-3. **`p2k-vsync.c` periodic RAM cell scribble.** (~~`p2k-watchdog.c`~~
-   ✅ DELETED 2026-04: PLX INTCSR bit2=1 in `p2k-plx-regs.c` had been
-   satisfying `pci_watchdog_bone()` naturally for several commits, the
-   scribbler had been default-OFF since `256cea1`, and the full
-   validation matrix passes without it.)
-   `p2k-vsync.c` writes specific RAM cells via
-   `cpu_physical_memory_write` from a QEMU timer to keep the BAR2 vsync
-   flag and the GX DC_TIMING2 scanline counter alternating. Same
-   pattern as Unicorn's "vsync cell" trick — works, but ties device
-   behavior to opaque guest BSS / MMIO addresses scanned at boot.
-   - Cleaner: model the GX VBLANK GPIO as a real readable register
-     (already partial in `p2k-display.c`) so the guest's natural read
-     observes the alternating bit. With that in place the vsync timer
-     scribble becomes deletable.
+3. **`p2k-vsync.c` periodic RAM cell scribble.** ✅ HALF-RETIRED 2026-04
+   (this commit). DC_TIMING2 (the MediaGX scanline-counter "register"
+   at GX_BASE+0x8354) is now a real read-only MMIO overlay whose read
+   handler returns the live counter / EOF marker — no host write into
+   guest GX RAM at a fake register address. The BAR2[+4] "vsync seen"
+   flag remains a single dword write per frame, because BAR2[+4] *is*
+   real PLX SRAM on the bus (the guest can read or clear it; dropping
+   guest writes via MMIO corrupts adjacent SRAM and trips the
+   `interval_0_25ms(): reserved memory at zero corrupted` Fatal). The
+   timer also drives the internal counter that the DC_TIMING2 read
+   handler reads.
+   (~~`p2k-watchdog.c`~~ ✅ DELETED 2026-04: PLX INTCSR bit2=1 in
+   `p2k-plx-regs.c` had been satisfying `pci_watchdog_bone()` naturally
+   for several commits, the scribbler had been default-OFF since
+   `256cea1`, and the full validation matrix passes without it.)
+   - Remaining dirt: the once-per-frame BAR2[+4]=1 write. Cleaner exit
+     would model the PLX SRAM-side vsync flag as a separate device
+     state owned by the GX VBLANK device, not a single dword scribble.
+     For now this is the smallest possible host write that preserves
+     the guest's own ability to clear the flag.
+
 
