@@ -10,13 +10,54 @@
 
 /* --- CPU / chipset --------------------------------------------------------
  * Cyrix MediaGX (i486-class core + integrated graphics + PCI host).
- * Custom opcode 0x0F 0x3C "BIST" — Cyrix-only. On a non-Cyrix CPU model
- * this faults #UD and the BIOS recovers via IRET (POP ESI; POP EAX;
- * ADD [ESP],1; IRET). NOT LEAVE+RET — that leaks 8 bytes of stack per
- * invocation and eventually trips the XINU IStack watchdog.
- * (Reference: unicorn.old commit 516210d.)
  *
- * South bridge: Cyrix CS5530 (ISA bridge + i8254 PIT + i8259 PIC).
+ * Custom 2-byte opcode `0F 3C` is the Cyrix MediaGX `CPU_WRITE`
+ * Display-Driver Instruction (per Cyrix MediaGX Processor Data Book
+ * v2.0, §4.1.5 + Table 4-6): EBX = internal CPU-register address,
+ * EAX = data, the value is written into a CPU-internal configuration
+ * register (BLT buffer base/pointer, GP-DMA descriptor, ...). The
+ * sibling instructions are `0F 3A` BB0_RESET, `0F 3B` BB1_RESET,
+ * `0F 3D` CPU_READ; per the data book they are gated on GCR index B8h
+ * scratchpad-size bits[3:2] != 0 and otherwise raise illegal opcode.
+ *
+ * Vanilla QEMU TCG raises #UD on `0F 3C` because the slot is empty in
+ * `opcodes_0F[]`. We ship an upstream-style patch
+ * (`qemu/upstream-patches/0001-i386-tcg-cyrix-0f3c-shim.patch`) that
+ * adds a generator `gen_CYRIX_0F3C_shim` for the slot. That generator
+ * is intentionally NOT a full CPU_WRITE implementation — it only
+ * reproduces the observable side-effect of the legacy Unicorn /
+ * IDT[6]+0x540 RAM stub that the Pinball 2000 XINU bring-up relied on:
+ *
+ *     [DS:EDX]   := EAX        ; 32-bit
+ *     [DS:EDX+4] := EBX        ; 32-bit
+ *     EDX        += 8
+ *
+ * That pointer-walk is what the XINU users of `0F 3C` actually depend
+ * on; it has no relation to the real internal-register address space
+ * documented in the data book. The shim exists because (a) it lets us
+ * delete the much dirtier guest-visible IDT[6] / low-RAM-stub layer,
+ * and (b) keeping the matrix passing while a proper CPU_WRITE /
+ * CPU_READ / BB?_RESET model is built incrementally.
+ *
+ * Long-term direction (NOT done yet — tracked in NOTES.next.md):
+ *   - implement real CPU_WRITE / CPU_READ semantics with EBX as the
+ *     internal-register address, plus models for the few CPU-internal
+ *     registers Pinball 2000 actually touches (BLT buffer base /
+ *     pointer, etc).
+ *   - implement BB0_RESET (`0F 3A`) / BB1_RESET (`0F 3B`) if the guest
+ *     ever issues them (currently it does not, per matrix logs).
+ *   - either gate the instructions to the pinball2000/MediaGX machine
+ *     or document that this QEMU build globally patches i386.
+ *   - extend p2k-cyrix-ccr.c so GCR[B8h] also reflects the
+ *     scratchpad-size field if a future XINU build queries it.
+ *
+ * Historical note: the previous host-side IDT[6] catchall (deleted
+ * with `qemu/p2k-cyrix-0f3c.c`) had a non-cyrix fall-through that did
+ * `LEAVE; RET` for every #UD, silently swallowing wild jumps as well.
+ * That masked, among other things, swe1-default's wild-jump-into-GDT
+ * at phys 0x1008 — which is why `P2K_GDT_BASE` is now `0x88000` and
+ * not `0x1000`. Documented further in `qemu/p2k-boot.c`.
+ */
  *
  * PCI bridge: PLX 9054
  *   BAR0  = ROM window (game ROM bank, paged)

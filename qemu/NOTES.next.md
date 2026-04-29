@@ -189,8 +189,13 @@ not the new source of truth.
   I/O UART frontends should be tested honestly against the shared core.
 - [~] `#UD` / Cyrix opcode clue: `516210d` claimed a non-Cyrix `#UD`
   interrupt-frame issue.
-  Lesson: relevant only if QEMU keeps custom `0F 3C`; verify against current
-  handler bytes before trusting it.
+  Lesson: only relevant to the deleted IDT[6] stub. The current path is
+  the TCG decoder shim in `qemu/upstream-patches/0001-i386-tcg-cyrix-0f3c-shim.patch`
+  which never enters that interrupt-frame path. Per Cyrix MediaGX
+  Processor Data Book v2.0 §4.1.5 + Table 4-6 the correct names are
+  `0F 3A` BB0_RESET, `0F 3B` BB1_RESET, `0F 3C` CPU_WRITE,
+  `0F 3D` CPU_READ — anything in the old notes calling `0F 3C`
+  "BB0_RESET" or "BIST" is stale.
 - [x] Human lesson: the best Unicorn period proved the ROMs can run, graphics
   can be fluid, and DCS can play. The late period proved Unicorn timing and
   synthetic IRQ injection were the wrong long-term maintenance surface.
@@ -298,8 +303,13 @@ not the new source of truth.
   Keep as stub. Needs key mapping, possible cabinet passthrough, protocol proof.
 - [!] `518a78e` re-arm watchdog RAM workaround excluding PCI sentinels.
   Temporary regression bridge. Now opt-in only; delete after validation matrix.
-- [~] `c698c24` GDT/CR0/Cyrix `0F 3C` #UD emulator.
-  Verify. May be needed, but exact QEMU-era requirement should be proved.
+- [x] `c698c24` GDT/CR0/Cyrix `0F 3C` #UD emulator.
+  Retired 2026-04 by `qemu/upstream-patches/0001-i386-tcg-cyrix-0f3c-shim.patch`
+  (TCG decoder entry for `0F 3C`) + deletion of `qemu/p2k-cyrix-0f3c.c`
+  + `P2K_GDT_BASE` move from 0x1000 to 0x88000. Note: the TCG entry is
+  only a compatibility shim reproducing the old IDT[6]-stub side
+  effect, NOT real MediaGX `CPU_WRITE` semantics — long-term direction
+  documented in the BB-class section below and in the patch header.
 - [!] `32e7300` early IRQ0 handoff bridge.
   Keep only with self-retire proof.
 - [~] `3a07ad8` SuperIO W83977EF + CS5530 EEPROM I/O stubs.

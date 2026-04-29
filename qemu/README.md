@@ -49,7 +49,6 @@ ship it with a written sunset criterion or do not ship it.
 | `p2k-vsync.c`         | ~57 Hz VSYNC ticker (BAR2[4]=1 + DC_TIMING2 walk)           | device         |
 | `p2k-isa-stubs.c`     | i8042 / CMOS / POST / COM1 minimal stubs                    | device         |
 | `p2k-superio.c`       | W83977EF (0x2E/0x2F) + Cyrix CC5530 (0xEA/0xEB) chip-IDs    | device         |
-| `p2k-cyrix-0f3c.c`    | Emulator for Cyrix-only `0F 3C` opcode (#UD trap → real op) | cpu glue       |
 | `p2k-pci.c`           | cf8/cfc dispatcher with vendor-IDs (TEMPORARY)              | symptom patch  |
 | `p2k-pic-fixup.c`     | Force-unmask IRQ0+cascade on the i8259 (TEMPORARY)          | symptom patch  |
 | `p2k-mem-detect.c`    | BT-130: rewrite XINU `mem_detect` prologue (TEMPORARY)      | symptom patch  |
@@ -62,8 +61,11 @@ Run after every system reset (registered with `qemu_register_reset`
 
 1. Copy first 32 KiB of bank0 to physical `0x80000` (PRISM option ROM).
 2. Seed BT-131 NIC LAN ROM shadow at `0xD0008..0xD000F`.
-3. Lay down the 4-entry GDT at `0x1000` (CS=0x9F, DS=0x93 — match
-   unicorn).
+3. Lay down the 4-entry GDT at `0x88000` (CS=0x9F, DS=0x93). The base
+   used to be `0x1000` (mirroring unicorn) but swe1-default cold boot
+   wild-jumps to `0x1008` (inside GDT entry 1, where the segment-limit
+   bytes `FF FF` decode as undefined opcode `FF /7`); the old IDT[6]
+   catchall hid this. New base sits just past the PRISM option ROM.
 4. Reprogram CPU0 to PM entry: `CR0 |= PE|ET`, `CS:EIP = 0x08:0x801D9`,
    flat 4 GiB segments, `EFLAGS.IF = 0`, `ESP = 0x8B000`.
 
@@ -101,7 +103,6 @@ Useful env vars (defaults reflect the post-bring-up state, see
 | `P2K_UART_TO_STDERR=1`         | n/a     | Legacy explicit-on switch; same effect as the default — kept for compatibility. |
 | `P2K_PIC_FIXUP=1`              | OFF     | Re-arm the legacy 250µs IRQ0/cascade unmask timer. The timer is OFF by default since `b20f39b`; opt-in only as a regression fallback. |
 | `P2K_NO_PIC_FIXUP=1`           | OFF     | Force the legacy PIC fix-up timer off even if `P2K_PIC_FIXUP=1` is set (the override switch always wins). |
-| `P2K_NO_CYRIX_STUB=1`          | OFF     | Disable the temporary Cyrix `0F 3C` (BB0_RESET) #UD emulator (IDT[6]+0x540 RAM stub). The proper fix is i386 TCG decoder support for opcode `0F 3C`. |
 | `P2K_NO_MEM_DETECT_PATCH=1`    | OFF     | Disable BT-130 mem_detect prologue rewrite                            |
 | `P2K_DIAG=1`                   | OFF     | Enable the read-only PIT/PIC/IDT/XINU-scheduler change-only sampler. The `run-qemu.sh -v` flag sets this automatically. Off by default to keep routine boots quiet. |
 | `P2K_DCS_AUDIO=1`              | OFF     | Enable DCS audio backend (real samples from `<roms_dir>/<game>_sound.bin`, no synthesized fallback). Requires a host audiodev — pass `-audio driver=pa` (or `alsa`/`sdl`/...) so QEMU can bind a default audio device. The wrapper does this automatically with `--audio pa`. |

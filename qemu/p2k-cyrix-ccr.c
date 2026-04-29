@@ -46,12 +46,28 @@
 
 #include "p2k-internal.h"
 
-/* GCR (index 0xb8) bits[1:0] encode the GX MMIO base in 1 GiB chunks:
- *   0 -> 0x00000000   1 -> 0x40000000
- *   2 -> 0x80000000   3 -> 0xc0000000
+/* GCR (index 0xb8) — Cyrix MediaGX Configuration Register, per
+ * MediaGX Processor Data Book v2.0 §4.1.6:
  *
- * p2k-gx.c maps the MMIO at 0x40000000, so the right answer is 1.
- * Bit 2 (0x04) is GCR_BASE_VALID/enable on real chip; ignored here.
+ *   bits[1:0] : GX_BASE — encode GX MMIO base in 1 GiB chunks
+ *               (0 -> 0x00000000   1 -> 0x40000000
+ *                2 -> 0x80000000   3 -> 0xc0000000)
+ *               p2k-gx.c maps the MMIO at 0x40000000, so we return 1.
+ *   bit  [2]  : GCR_BASE_VALID / enable on real chip; ignored here.
+ *   bits[3:2] : SCRATCHPAD_SIZE — non-zero enables the Display-Driver
+ *               Instructions (0F 3A BB0_RESET, 0F 3B BB1_RESET,
+ *               0F 3C CPU_WRITE, 0F 3D CPU_READ); zero leaves them
+ *               disabled and they should #UD. We currently report
+ *               zero here AND unconditionally accept 0F 3C in the TCG
+ *               decoder shim — i.e. our shim does not honour the
+ *               scratchpad gate. That is intentional during bring-up:
+ *               XINU never enables the scratchpad in our trace, but
+ *               does issue 0F 3C, so honouring the gate would
+ *               re-introduce the #UD we just removed. The long-term
+ *               fix is to (a) implement real CPU_WRITE / CPU_READ
+ *               semantics, (b) figure out where (if anywhere) XINU
+ *               enables the scratchpad, and (c) gate the decoder on
+ *               the scratchpad-size field.
  */
 #define P2K_CCR_GCR_INDEX     0xb8u
 #define P2K_CCR_GCR_VALUE     0x01u   /* 0x40000000 / (1<<30) = 1 */

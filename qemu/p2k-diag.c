@@ -3,9 +3,9 @@
  *
  * Goal: see what the GUEST is actually doing with PIT/PIC/RTC/IDT,
  * so we can replace the remaining symptom patches (p2k-pic-fixup,
- * p2k-cyrix-0f3c, p2k-mem-detect) with real device
- * or CPU behavior. Activates only when env P2K_DIAG=1 (or via
- * `run-qemu.sh -v`). Off by default to keep routine boots quiet.
+ * p2k-mem-detect) with real device or CPU behavior. Activates only
+ * when env P2K_DIAG=1 (or via `run-qemu.sh -v`). Off by default to
+ * keep routine boots quiet.
  *
  * Samples on a virtual-clock periodic tick (default 100 ms):
  *   - i8254 PIT channel 0/1/2: mode + initial_count + computed Hz + gate

@@ -1,10 +1,18 @@
 i386/tcg: add Cyrix MediaGX 0F 3C compatibility shim (Pinball 2000).
 
-Per the Cyrix MediaGX databook, opcode 0F 3C is CPU_WRITE (EBX = internal
-CPU-register address, EAX = data; the value is written into a CPU-internal
-configuration register such as the BLT buffer base/pointer or GP-DMA
-descriptor). True CPU_WRITE / CPU_READ (0F 3D) / BB0_RESET (0F 3A) /
-BB1_RESET (0F 3B) semantics are NOT implemented here.
+Per the Cyrix MediaGX Processor Data Book v2.0, §4.1.5 (Display Driver
+Instructions) + Table 4-6, opcode 0F 3C is CPU_WRITE: EBX holds the
+internal CPU-register address, EAX holds the data, and the value is
+written into a CPU-internal configuration register such as the BLT
+buffer base/pointer or a GP-DMA descriptor. The sibling instructions
+are 0F 3A BB0_RESET, 0F 3B BB1_RESET, 0F 3D CPU_READ; per §4.1.6 they
+are gated on the GCR (index B8h) SCRATCHPAD_SIZE field bits[3:2] and
+should #UD when that field is zero.
+
+  Datasheet: https://datasheets.chipdb.org/Cyrix/MediaGX/gxmdb_v20.pdf
+
+True CPU_WRITE / CPU_READ / BB0_RESET / BB1_RESET semantics are NOT
+implemented here, and the SCRATCHPAD_SIZE gate is NOT honoured.
 
 Instead, this patch reproduces the observable side effect of the legacy
 Unicorn / low-RAM IDT[6] stub that the Pinball 2000 XINU bring-up code
@@ -17,18 +25,28 @@ already relied on:
 Reference: unicorn.old/src/cpu.c:587-628 and the deleted host-side stub
 qemu/p2k-cyrix-0f3c.c. The XINU users of 0F 3C only rely on this
 pointer-walk pattern, not on the real internal-register address space, so
-the shim is sufficient for the four-config matrix.
+the shim is sufficient for the four-config matrix; the SCRATCHPAD_SIZE
+gate cannot be honoured yet because XINU never enables the scratchpad in
+our trace but does issue 0F 3C.
 
 Without this patch, vanilla QEMU TCG raises #UD (vector 6) on 0F 3C and
 the bare XINU IDT lands in trap_dispatch() ("Trap to monitor"). With it,
 the entire qemu/p2k-cyrix-0f3c.c module (RAM stub at 0x540 + IDT[6]
 patch) becomes unnecessary and is deleted.
 
-Long-term direction: implement real MediaGX CPU_WRITE / CPU_READ /
-BB?_RESET semantics, ideally gated to the pinball2000 / MediaGX machine
-so other i386 guests retain their #UD behaviour. For now this shim is
-clearly named (gen_CYRIX_0F3C_shim) and clearly documented as
-compatibility only.
+This is explicitly a compatibility shim, NOT a real MediaGX CPU_WRITE
+implementation. Long-term direction (tracked in qemu/NOTES.next.md):
+  * implement real CPU_WRITE / CPU_READ semantics with EBX as the
+    internal-register address, plus models for the few CPU-internal
+    registers Pinball 2000 actually touches (BLT buffer base/pointer,
+    GP-DMA descriptors, ...).
+  * implement BB0_RESET (0F 3A) / BB1_RESET (0F 3B) if/when the guest
+    issues them (currently it does not).
+  * extend qemu/p2k-cyrix-ccr.c so GCR[B8h] reflects SCRATCHPAD_SIZE
+    and gate the decoder on it.
+  * either gate the instructions to the pinball2000/MediaGX machine
+    or keep the global i386 patch but document it as such.
+
 
 --- a/target/i386/tcg/emit.c.inc
 +++ b/target/i386/tcg/emit.c.inc
