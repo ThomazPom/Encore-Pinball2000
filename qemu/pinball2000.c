@@ -120,6 +120,7 @@ static void pinball2000_init(MachineState *machine)
     p2k_install_timing_audit(s);
     p2k_install_nic_dseg();
     p2k_install_gfxlist_watch(s);
+    p2k_install_probe_cell_shim();
 
     /* Arrange the PM-entry reset recipe to fire after every system reset. */
     qemu_register_reset(p2k_post_reset, s);

@@ -515,6 +515,20 @@ not the new source of truth.
   Removal condition: important devices become real `PCIDevice` models.
 - [~] nulluser HLT patch: introduced `d7b99d8`.
   Removal/keep condition: measured idle benefit, no scheduler masking.
+- [!] `--update none` probe-cell scribble (`p2k-probe-cell-shim.c`).
+  Strictly gated on `P2K_NO_AUTO_UPDATE` (set by `--update none`); zero
+  effect on normal/auto-update boots. Mirrors Unicorn `apply_sgc_patches`
+  + per-tick `RAM_WR32` (unicorn.old/src/io.c:248-422 +
+  unicorn.old/src/cpu.c:766-801): pattern-scans the watchdog string,
+  walks back to the `81 3D <addr32> FF FF 00 00` inside `dcs_probe()`,
+  writes `0xFFFF` every 50 ms so the probe returns "DCS PRESENT".
+  Locked cell on SWE1 v0.40 base = `0x002797c4`. Without it `--update
+  none` wedges right after `pci_probe()` because XINU has no clkint yet
+  and the false-alarm watchdog Fatal sends EIP into the panic stub.
+  Removal condition: when QEMU's DCS/PLX9054 model returns the right
+  value at the probe address natively (real device behavior), delete
+  `p2k-probe-cell-shim.c` and stop calling
+  `p2k_install_probe_cell_shim()` from `pinball2000.c`.
 
 ## Historical Clues, Not Proof
 

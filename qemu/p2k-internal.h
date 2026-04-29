@@ -123,6 +123,14 @@ void p2k_install_nic_dseg(void);
  * No effect on guest execution. */
 void p2k_install_diag(Pinball2000MachineState *s);
 
+/* p2k-probe-cell-shim.c: STRICTLY GATED guest-data scribble for
+ * --update none / P2K_NO_AUTO_UPDATE parity. Mirrors Unicorn's
+ * "watchdog/probe-cell @ pci_watchdog_bone()" RAM_WR32 maintenance.
+ * Active ONLY when P2K_NO_AUTO_UPDATE is set. NEVER active on normal
+ * update boots. Documented as a temporary compatibility bridge. */
+void p2k_install_probe_cell_shim(void);
+
+
 /* p2k-timing-audit.c: single-line "is QEMU virtual time really driving
  * this run?" panel. Reports clock/icount/PIT/PIC/IDT/host-slow scale.
  * Default ON (initial line @3 s, exit line at shutdown). With P2K_DIAG=1

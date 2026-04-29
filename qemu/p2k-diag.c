@@ -368,6 +368,21 @@ static void p2k_diag_tick(void *opaque)
     p2k_diag_log_idt(&cur, &p2k_diag_last);
     p2k_diag_last = cur;
 
+    /* EIP sampler — useful for figuring out where the guest is stuck
+     * when there is no useful XINU sched state (e.g. base-image path
+     * --update none, where v0.40 layout differs from v2.10 symbols).
+     * Once per second; rate-limited via tick counter. */
+    if ((p2k_diag_ticks % 10) == 0) {
+        CPUX86State *env;
+        if (p2k_diag_pick_cpu(&env)) {
+            info_report("p2k-diag: cpu eip=0x%08x cs=0x%04x esp=0x%08x "
+                        "eflags=0x%08x cr0=0x%08x",
+                        (unsigned)env->eip, (unsigned)env->segs[R_CS].selector,
+                        (unsigned)env->regs[R_ESP],
+                        (unsigned)env->eflags, (unsigned)env->cr[0]);
+        }
+    }
+
     /* XINU scheduler liveness — only valid once guest has reached protected
      * mode and populated currpid (>0). Skip otherwise to avoid log noise. */
     if (cur.idt_base) {
