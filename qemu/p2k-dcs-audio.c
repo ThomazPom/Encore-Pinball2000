@@ -317,6 +317,7 @@ static Sample *decode_ogg_to_s16(const uint8_t *data, size_t size)
     if (!vi) { ov_clear(&vf); return NULL; }
     int src_chans = vi->channels;
     long src_rate = vi->rate;
+    info_report("dcs-audio: ogg src_chans=%d src_rate=%ld", src_chans, (long)src_rate);
 
     /* Decode all to interleaved S16 host-endian at native rate. */
     size_t cap = 1 << 15, got = 0;
@@ -500,8 +501,13 @@ static void render(DcsAudio *a, int16_t *out, int frames)
                 continue;
             }
             int32_t s = vc->s->pcm[vc->pos++];
-            int32_t amp = (int32_t)vc->vol * 28000 / 255;
-            int32_t contrib = (s * amp) >> 15;
+            /* Unicorn parity: SDL2_mixer applies channel_vol/MIX_MAX_VOLUME
+             * with MIX_MAX_VOLUME=128, and dcs_vol_to_sdl(255)=128, so
+             * vol=255 → unity-gain pass-through. Match that exactly:
+             *   contrib = s * vol / 255
+             * Multi-voice overflow is handled by the saturating clip
+             * after the per-frame sum — same as SDL_mixer's behaviour. */
+            int32_t contrib = (s * (int32_t)vc->vol) / 255;
             mix += contrib;
             int32_t ac = contrib < 0 ? -contrib : contrib;
             if (ac > a->voice_peak[v]) a->voice_peak[v] = ac;
