@@ -123,7 +123,9 @@ typedef struct DcsAudio {
     uint64_t      cmd_by_bar4;
     uint64_t      cmd_by_uart_w;
     uint64_t      cmd_by_uart_bp;
+    uint64_t      cmd_by_compat;       /* "compat:*" museum-mode bridges */
     uint64_t      cmd_by_other;
+    uint64_t      dong_played_count;   /* 0x003A on ch0 successful starts */
 
     /* "played-but-never-rendered" detector.  We snapshot the played
      * counter + the last play info on each successful start, and on
@@ -522,8 +524,17 @@ static const char *evt_source(DcsAudio *a)
     if (!strcmp(src, "BAR4"))           a->cmd_by_bar4++;
     else if (!strcmp(src, "UART:0x13c.w"))  a->cmd_by_uart_w++;
     else if (!strcmp(src, "UART:0x13c.bp")) a->cmd_by_uart_bp++;
+    else if (!strncmp(src, "compat:", 7))   a->cmd_by_compat++;
     else                                a->cmd_by_other++;
     return src;
+}
+
+/* Public accessor: has the boot dong (0x003A on ch0) been heard yet?
+ * Used by the museum-mode shim to suppress its synthetic dong injection
+ * if the guest's DCS path already produced one naturally. */
+bool p2k_dcs_audio_dong_observed(void)
+{
+    return s_dcs_audio.dong_played_count > 0;
 }
 
 /* Process-cmd hook: receives semantic direct-trigger events from
@@ -574,6 +585,9 @@ static void dcs_audio_on_process_cmd(uint16_t cmd)
         start_voice_on_channel(a, channel, s, /*vol*/255, /*pan*/0x7F,
                                lookup_cmd, name);
         a->played_count++;
+        if (lookup_cmd == 0x003A) {
+            a->dong_played_count++;
+        }
         TRACE_EVT(a,
                   "[%s] process_cmd 0x%04x → key=0x%04x name=%s frames=%zu "
                   "ch=%d vol=255 pan=127 (played #%llu)",
@@ -683,7 +697,7 @@ static void dcs_audio_status_tick(void *opaque)
                     "AUD_write calls=%llu bytes=%llu zero=%llu peak=%d "
                     "active=%d/%d global_vol=%u played=%llu missed=%llu "
                     "mode=%s "
-                    "src{BAR4=%llu UART.w=%llu UART.bp=%llu other=%llu}",
+                    "src{BAR4=%llu UART.w=%llu UART.bp=%llu compat=%llu other=%llu}",
                     (unsigned long long)a->callbacks,
                     (unsigned long long)a->frames_rendered,
                     (unsigned long long)a->aud_write_calls,
@@ -698,6 +712,7 @@ static void dcs_audio_status_tick(void *opaque)
                     (unsigned long long)a->cmd_by_bar4,
                     (unsigned long long)a->cmd_by_uart_w,
                     (unsigned long long)a->cmd_by_uart_bp,
+                    (unsigned long long)a->cmd_by_compat,
                     (unsigned long long)a->cmd_by_other);
         for (int i = 0; i < DCS_VOICES; i++) {
             Voice *vc = &a->voices[i];

@@ -105,6 +105,7 @@ static bool       s_logged_hit;
 static int64_t    s_located_at_ns;    /* vtime when probe cell was found */
 static bool       s_post_xinu;        /* polarity flipped */
 static int        s_post_xinu_writes; /* count after flip, for audit */
+static int64_t    s_post_xinu_at_ns;  /* vtime when polarity flipped (audit) */
 
 /* Read IDT[0x20] handler offset from the live CPU. Returns 0 if IDT is
  * not yet set up or vector 0x20 is missing. Used as our "XINU is up"
@@ -269,6 +270,7 @@ static void p2k_probe_cell_tick(void *opaque)
             int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
             if (now - s_located_at_ns >= (int64_t)POST_XINU_DELAY_NS) {
                 s_post_xinu = true;
+                s_post_xinu_at_ns = now;
                 uint32_t h = current_idt20_handler();
                 info_report("p2k-probe-cell-shim: phase=post-XINU "
                             "(IDT[0x20]=0x%08x, vtime+%us) — switching "

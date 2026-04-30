@@ -359,10 +359,26 @@ void p2k_dcs_core_write_cmd(uint16_t cmd)
         static int s_raw55_enable = -1;
         if (s_raw55_enable < 0) {
             const char *e = getenv("P2K_DCS_RAW_55_PAIR");
-            s_raw55_enable = (e && *e && *e != '0') ? 1 : 0;
+            const bool museum = (getenv("P2K_NO_AUTO_UPDATE") != NULL);
+            if (e && *e) {
+                /* Explicit user override takes precedence in either mode. */
+                s_raw55_enable = (*e != '0') ? 1 : 0;
+            } else if (museum) {
+                /* Museum-mode auto-enable: SWE1 base 0.40 with savedata
+                 * sends GLOBAL_VOL / per-ch vol/pan as raw 0x55XX+data1
+                 * via UART byte-pair (no ACE1 wrapper). Tagged as a
+                 * compatibility bridge in the source attribution. */
+                s_raw55_enable = 1;
+                p2k_dcs_core_note_source("compat:raw55-museum");
+            } else {
+                s_raw55_enable = 0;
+            }
             info_report("dcs-core: P2K_DCS_RAW_55_PAIR=%d "
-                        "(experimental raw 0x55XX+data1 → execute_mixer)",
-                        s_raw55_enable);
+                        "(experimental raw 0x55XX+data1 → execute_mixer)%s",
+                        s_raw55_enable,
+                        (s_raw55_enable && museum && !(e && *e))
+                            ? " [museum-shim auto-enabled by P2K_NO_AUTO_UPDATE]"
+                            : "");
         }
         if (s_raw55_enable && p2k_dcs_core_audio_execute_mixer) {
             p2k_dcs_core_audio_execute_mixer(s_core.raw55_header, cmd, 0);
