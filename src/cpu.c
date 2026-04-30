@@ -575,49 +575,7 @@ void cpu_run(void)
                         LOGV3("irq", "XINU ready: timer injection enabled EIP=0x%08x exec=%u idt_base=0x%x\n",
                             eip, (unsigned)g_emu.exec_count, g_emu.idt_base);
 
-                        /* Install Cyrix 0F3C emulator at 0x500 and patch IDT[6]. */
-                        {
-                            uint8_t h6[48];
-                            int p = 0;
-                            h6[p++] = 0x50;                         /* PUSH EAX */
-                            h6[p++] = 0x56;                         /* PUSH ESI */
-                            h6[p++] = 0x8B; h6[p++] = 0x74;        /* MOV ESI,[ESP+8] */
-                            h6[p++] = 0x24; h6[p++] = 0x08;
-                            h6[p++] = 0x66; h6[p++] = 0x81;        /* CMP WORD [ESI],0x3C0F */
-                            h6[p++] = 0x3E; h6[p++] = 0x0F; h6[p++] = 0x3C;
-                            h6[p++] = 0x75; h6[p++] = 0x14;        /* JNE .not_cyrix */
-                            h6[p++] = 0x8B; h6[p++] = 0x44;        /* MOV EAX,[ESP+4] */
-                            h6[p++] = 0x24; h6[p++] = 0x04;
-                            h6[p++] = 0x89; h6[p++] = 0x02;        /* MOV [EDX],EAX */
-                            h6[p++] = 0x89; h6[p++] = 0x5A;        /* MOV [EDX+4],EBX */
-                            h6[p++] = 0x04;
-                            h6[p++] = 0x83; h6[p++] = 0xC2;        /* ADD EDX,8 */
-                            h6[p++] = 0x08;
-                            h6[p++] = 0x83; h6[p++] = 0x44;        /* ADD DWORD [ESP+8],2 */
-                            h6[p++] = 0x24; h6[p++] = 0x08; h6[p++] = 0x02;
-                            h6[p++] = 0x5E;                         /* POP ESI */
-                            h6[p++] = 0x58;                         /* POP EAX */
-                            h6[p++] = 0xCF;                         /* IRET */
-                            /* .not_cyrix: */
-                            h6[p++] = 0x5E;                         /* POP ESI */
-                            h6[p++] = 0x58;                         /* POP EAX */
-                            h6[p++] = 0xB8; h6[p++] = 0xFF;        /* MOV EAX,-1 */
-                            h6[p++] = 0xFF; h6[p++] = 0xFF; h6[p++] = 0xFF;
-                            h6[p++] = 0xC9;                         /* LEAVE */
-                            h6[p++] = 0xC3;                         /* RET */
-                            uc_mem_write(uc, 0x500, h6, p);
-
-                            /* Use the runtime-detected IDT base — different
-                             * per game (SWE1=0x2F7AD8, RFM=0x325054, …). */
-                            uint32_t idt6 = g_emu.idt_base + 6u * 8u;
-                            uint8_t gate[8] = {
-                                0x00, 0x05, 0x08, 0x00,
-                                0x00, 0x8F, 0x00, 0x00
-                            };
-                            uc_mem_write(uc, idt6, gate, 8);
-                            LOG("cpu", "Installed 0F3C emulator at 0x500, IDT[6]=0x%x→0x500 (%d bytes)\n",
-                                idt6, p);
-                        }
+                        LOGV3("cpu", "MediaGX opcodes handled by host invalid-insn path; guest IDT[6] left untouched\n");
                     }
                 } else if (g_emu.exec_count % 5000 == 0) {
                     LOGV3("irq", "waiting for clkint: IDT[0x20]=0x%08x EIP=0x%08x exec=%u xinu_booted=%d\n",
@@ -714,18 +672,6 @@ void cpu_run(void)
                     efl |= 0x200;
                     uc_reg_write(uc, UC_X86_REG_EFLAGS, &efl);
 
-                    if (eip == 0x227238u || eip == 0x1CF800u || eip == 0x1D96AEu) {
-                        static int s_fatal_redir = 0;
-                        if (s_fatal_redir < 20)
-                            LOGV("cpu", "Fatal/panic HLT @0x%08x → prnull idle (#%d)\n",
-                                eip, ++s_fatal_redir);
-                        eip = 0xFF0000u;
-                        eip_dirty = 1;
-                        uint32_t safe_esp = 0xDFFFE0u;
-                        uc_reg_write(uc, UC_X86_REG_ESP, &safe_esp);
-                        goto handle_display;
-                    }
-
                     uint8_t irq_pend = g_emu.pic[0].irr & ~g_emu.pic[0].imr;
                     if (!irq_pend) {
                         eip++;
@@ -806,18 +752,6 @@ void cpu_run(void)
                 if (!(efl & 0x200)) {
                     efl |= 0x200;
                     uc_reg_write(uc, UC_X86_REG_EFLAGS, &efl);
-                }
-
-                /* Fatal/panic HLT → redirect to idle */
-                if (eip == 0x227238u || eip == 0x1CF800u || eip == 0x1D96AEu) {
-                    static int s_fatal_ok = 0;
-                    if (s_fatal_ok < 20)
-                        LOG("cpu", "Fatal HLT (OK path) @0x%08x (#%d)\n", eip, ++s_fatal_ok);
-                    eip = 0xFF0000u;
-                    eip_dirty = 1;
-                    uint32_t safe_esp = 0xDFFFE0u;
-                    uc_reg_write(uc, UC_X86_REG_ESP, &safe_esp);
-                    goto handle_display;
                 }
 
                 /* Normal HLT (idle loop) — sleep until interrupt pending */

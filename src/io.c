@@ -506,59 +506,6 @@ static void apply_sgc_patches(void)
      * block in cpu.c.  Less patches → version-agnostic.
      */
 
-    /* === prnull idle code at 0xFF0000 (can be written early, it's just code) === */
-    {
-        uint8_t idle_code[64];
-        idle_code[0] = 0xFB;  /* STI */
-        idle_code[1] = 0xF4;  /* HLT */
-        idle_code[2] = 0xEB;  /* JMP short -4 (back to STI) */
-        idle_code[3] = 0xFC;
-        for (int i = 4; i < 64; i++) idle_code[i] = 0x90; /* NOP pad */
-        uc_mem_write(g_emu.uc, 0x00FF0000u, idle_code, 64);
-        LOGV("sgc", "prnull idle code @ 0xFF0000 (STI+HLT+JMP)\n");
-    }
-
-    /* === BT-74: Patch nulluser idle loop JMP$ → HLT+JMP (game-agnostic) ===
-     * XINU's nulluser() ends with a "MOV [flag],1; NOP; JMP $" pattern that
-     * busy-spins forever. In Unicorn, the tight EB FE loop blocks interrupt
-     * delivery → no scheduling → frozen.
-     *
-     * Pattern (verified for SWE1 v1.5 @0x22f432 AND RFM v1.6 @0x002623e4 —
-     * same compiler, same XINU layout):
-     *   75 B1                     JNZ -0x4F      (end of ctor walk loop)
-     *   C7 05 ?? ?? ?? ??         MOV [imm32], imm32   (ready flag)
-     *   01 00 00 00
-     *   90                        NOP
-     *   EB FE                     JMP $          (← we patch THIS site)
-     * Fix: replace the trailing "90 EB FE" with "F4 EB FD" (HLT; JMP -3) so
-     * HLT exits Unicorn's emu_start, host delivers timer IRQ, scheduler
-     * preempts to next process. */
-    {
-        const uint32_t scan_base2 = 0x00100000u;
-        const uint32_t scan_size2 = 0x300000u;
-        uint8_t *mb = malloc(scan_size2);
-        int hits = 0;
-        if (mb && uc_mem_read(g_emu.uc, scan_base2, mb, scan_size2) == UC_ERR_OK) {
-            for (uint32_t off = 0; off + 17 < scan_size2; off++) {
-                if (mb[off]    != 0x75 || mb[off+1]  != 0xB1) continue;
-                if (mb[off+2]  != 0xC7 || mb[off+3]  != 0x05) continue;
-                if (mb[off+8]  != 0x01 || mb[off+9]  != 0x00 ||
-                    mb[off+10] != 0x00 || mb[off+11] != 0x00) continue;
-                if (mb[off+12] != 0x90 || mb[off+13] != 0xEB ||
-                    mb[off+14] != 0xFE) continue;
-                uint32_t patch_at = scan_base2 + off + 12;
-                uint8_t patch[3] = { 0xF4, 0xEB, 0xFD };
-                uc_mem_write(g_emu.uc, patch_at, patch, 3);
-                LOGV("sgc", "BT-74: nulluser idle JMP$ → HLT+JMP at 0x%08x\n", patch_at);
-                hits++;
-            }
-        }
-        if (hits == 0)
-            LOG("sgc", "BT-74: nulluser idle pattern not found in 0x%x-0x%x\n",
-                scan_base2, scan_base2 + scan_size2);
-        free(mb);
-    }
-
     /* DROPPED 2026-04-21 (RFM minimization pass):
      *   - Fatal() 0x1CF7F4 → HLT marker (BT-122)
      *   - Panic loop 0x1D96AE → HLT HLT
@@ -597,9 +544,8 @@ static void apply_sgc_patches(void)
 /* DROPPED 2026-04-21: apply_xinu_boot_patches() — orphaned and removed.
  * Was V1.12-hardcoded scheduler/prnull seed (pstate, magic, sched_en,
  * tick_init, clkruns at SWE1-V1.12 BSS addresses). Last call site removed
- * for RFM (was corrupting RAM); SWE1 paths never depended on it once the
- * pattern-scanned BT-74 idle-loop fix landed. Keep this comment as
- * historical marker; empirical tests prove no boot-time scheduler poke is needed. */
+ * for RFM (was corrupting RAM); SWE1 paths no longer depend on boot-time
+ * scheduler pokes. Keep this comment as historical marker. */
 
 /* ===== SMC8216T NIC emulation (BT-131) =====
  * ez0: port 0x300 irq 7 mac 00:00:c0:01:02:03 type SMC8216T (8 bit)
