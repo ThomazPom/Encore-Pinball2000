@@ -31,10 +31,20 @@
  *   forced and EEDO (bit27) reflecting the SEEPROM shift register.
  * - CNTRL writes drive the 93C46 state machine.
  *
+ * - DCS2 serial bit-bang on the same CNTRL bits 24..26 (clock/enable/
+ *   data) ported from unicorn.old/src/bar.c:191-317. The DCS chip and
+ *   the 93C46 SEEPROM both observe bits 24..26 simultaneously; bit 27
+ *   on read is OR'd from both (EEDO | DCS audio_ready/audio_ack). This
+ *   is real-hardware coexistence, not a compatibility bridge.
+ *
+ *   Without this, the game's PCI-side DCS detect never sees the
+ *   audio_ready=1 response and falls back to the I/O-port (UART byte-
+ *   pair) DCS path. On SWE1 base 0.40 (--update none) that fallback
+ *   does NOT emit cmd=0x003A → no boot dong, no S0001-LP1 attract
+ *   loop, only sparse UI clicks. With the serial responding, the
+ *   game stays on the BAR4 cmd path and emits the full DCS stream.
+ *
  * Out of scope (do not snowball this file):
- * - DCS2 serial bit-bang on the same CNTRL bits — that lives in
- *   p2k-dcs.c (or a future p2k-plx-dcs-serial.c).  EEPROM and DCS
- *   serial coexist on the wire; here we only cover EEPROM.
  * - Chip-select / mailbox writes (0x3C..0x48, 0x80+) — currently
  *   stored as plain dwords; add semantics on demand.
  */
@@ -193,6 +203,151 @@ static void seeprom_process_write(uint32_t cntrl_val)
     s_ee.last_sk = sk;
 }
 
+/* ---------- DCS2 serial bit-bang ----------------------------------------- *
+ *
+ * Ported from unicorn.old/src/bar.c:191-317. The DCS chip on PCI/BAR4
+ * is fronted by a 1-wire serial protocol carried on PLX CNTRL bits
+ * 24..26 (same physical lines as the 93C46 EEPROM bit-bang). The
+ * game's pci-side DCS detect bit-bangs an 8-bit command byte over
+ * these lines and reads bit 27 (output) for the chip's response. The
+ * specific command class=3 sub=0x03 (param=0xFF) sets `audio_ready`,
+ * which is the signal the game waits for before switching to BAR4
+ * cmd word writes.
+ *
+ * No host invention here — this is faithful to real silicon as
+ * documented in the unicorn POC (i386/bar4.c → ported to bar.c). */
+static struct {
+    int     enable_prev, clock_prev;
+    int     cmd_received, byte_complete;
+    int     bit_cnt;
+    uint8_t shift_reg;
+    uint8_t data_addr;
+    int     param;
+    int     audio_active, audio_ack, audio_ready;
+    int     cntrl_bit1, cntrl_bit2;
+} s_dcs_serial;
+
+static void dcs_serial_shift_bit(int data_bit)
+{
+    int pos = 7 - ((s_dcs_serial.bit_cnt - 1) & 7);
+    s_dcs_serial.shift_reg = (s_dcs_serial.shift_reg & ~(1 << pos)) |
+                             ((data_bit & 1) << pos);
+}
+
+static void dcs_serial_process_command(int continuing)
+{
+    int cls = (s_dcs_serial.param >> 6) & 3;
+
+    switch (cls) {
+    case 0: {
+        int sub_type = (s_dcs_serial.param >> 4) & 3;
+        switch (sub_type) {
+        case 0:
+            s_dcs_serial.audio_active = 0;
+            if (s_dcs_serial.cntrl_bit1 && s_dcs_serial.cntrl_bit2) return;
+            s_dcs_serial.audio_ready = 0;
+            return;
+        case 1:
+            s_dcs_serial.audio_active = 0;
+            return;
+        case 3:
+            s_dcs_serial.audio_active = 0;
+            if (s_dcs_serial.cntrl_bit1 && s_dcs_serial.cntrl_bit2) return;
+            if (!s_dcs_serial.audio_ready) {
+                info_report("dcs-serial: cmd=0x%02x → audio_ready=1 "
+                            "(DCS chip alive on PCI; game should now use BAR4)",
+                            s_dcs_serial.param);
+            }
+            s_dcs_serial.audio_ready = 1;
+            return;
+        default:
+            return;
+        }
+    }
+    case 1:
+        s_dcs_serial.audio_active = 0;
+        if (s_dcs_serial.cntrl_bit1 && s_dcs_serial.cntrl_bit2) return;
+        if (!continuing) {
+            s_dcs_serial.data_addr = (uint8_t)(s_dcs_serial.param & 0x3F);
+        }
+        return;
+    case 2:
+        s_dcs_serial.audio_active = 1;
+        if (continuing) return;
+        s_dcs_serial.data_addr = (uint8_t)(s_dcs_serial.param & 0x3F);
+        s_dcs_serial.audio_ack  = 0;
+        return;
+    case 3:
+        s_dcs_serial.audio_active = 0;
+        return;
+    }
+}
+
+static void dcs_serial_process_plx50(uint32_t val)
+{
+    int enable = (val >> 25) & 1;
+    int clock  = (val >> 24) & 1;
+    int data   = (val >> 26) & 1;
+
+    if (!enable) {
+        s_dcs_serial.cmd_received  = 0;
+        s_dcs_serial.byte_complete = 0;
+        s_dcs_serial.shift_reg     = 0;
+        s_dcs_serial.bit_cnt       = 0;
+        s_dcs_serial.audio_active  = 0;
+        s_dcs_serial.data_addr     = 0;
+        s_dcs_serial.audio_ack     = 0;
+    }
+
+    if (!s_dcs_serial.enable_prev && enable) {
+        s_dcs_serial.byte_complete = 0;
+        s_dcs_serial.param         = 0;
+        s_dcs_serial.shift_reg     = 0;
+        s_dcs_serial.cmd_received  = 0;
+        s_dcs_serial.audio_active  = 0;
+        s_dcs_serial.data_addr     = 0;
+        s_dcs_serial.audio_ack     = 0;
+    }
+
+    if (!s_dcs_serial.clock_prev && clock) {
+        if (!s_dcs_serial.cmd_received) {
+            if (data) s_dcs_serial.cmd_received = 1;
+        } else if (!s_dcs_serial.byte_complete) {
+            dcs_serial_shift_bit(data);
+            s_dcs_serial.bit_cnt++;
+            if (s_dcs_serial.bit_cnt == 8) {
+                s_dcs_serial.bit_cnt        = 0;
+                s_dcs_serial.byte_complete  = 1;
+                s_dcs_serial.param          = (int)s_dcs_serial.shift_reg;
+                dcs_serial_process_command(0);
+            }
+        } else {
+            dcs_serial_process_command(1);
+        }
+    }
+
+    s_dcs_serial.enable_prev = enable;
+    s_dcs_serial.clock_prev  = clock;
+    s_dcs_serial.cntrl_bit1  = (val >> 1) & 1;
+    s_dcs_serial.cntrl_bit2  = (val >> 2) & 1;
+}
+
+static uint32_t dcs_serial_get_plx50_bits(void)
+{
+    uint32_t bits = 0;
+    if (s_dcs_serial.audio_active) {
+        if (s_dcs_serial.audio_ack) {
+            bits |= 0x08000000u;        /* bit 27 = data ready */
+        } else {
+            s_dcs_serial.audio_ack = 1;
+        }
+    }
+    if (s_dcs_serial.audio_ready) {
+        bits |= 0x08000000u;            /* bit 27 = DCS init response */
+    }
+    return bits;
+}
+
 /* ---------- BAR0 MMIO ops ------------------------------------------------- */
 
 static uint64_t p2k_plx_read(void *opaque, hwaddr addr, unsigned size)
@@ -224,6 +379,7 @@ static uint64_t p2k_plx_read(void *opaque, hwaddr addr, unsigned size)
         if (s_ee.do_bit) {
             val |= 0x08000000u;         /* bit27 = EEDO */
         }
+        val |= dcs_serial_get_plx50_bits(); /* bit27 also = DCS audio ready */
         break;
     default:
         break;
@@ -249,6 +405,7 @@ static void p2k_plx_write(void *opaque, hwaddr addr,
 
     if (off == 0x50) {
         seeprom_process_write(nv);
+        dcs_serial_process_plx50(nv);   /* DCS chip shares CNTRL bits 24..26 */
     }
 }
 

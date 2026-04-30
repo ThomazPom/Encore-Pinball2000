@@ -203,14 +203,31 @@ bool p2k_dcs_core_has_resp(void)
     return s_core.count > 0;
 }
 
+/* BAR4 off=2: flag byte register.
+ *
+ * On READ: returns bit6=ready (always) | bit7=output-available.
+ * On WRITE: per Unicorn (bar.c:1006-1009), the game writes here to
+ * stash a value the next read will OR with the device-internal
+ * flags. Some boot DCS detect paths do a write-then-read sanity
+ * check; dropping the write makes BAR4 look dead and steers the
+ * game onto the UART byte-pair fallback path. Storing it is
+ * faithful to silicon. */
+static uint16_t s_dcs_flag_latch;
+
 uint8_t p2k_dcs_core_flag_byte(void)
 {
     s_core.cnt_flag++;
-    uint8_t f = 0x40u;              /* always ready to accept */
+    uint8_t f = (uint8_t)(s_dcs_flag_latch & 0xFFu);
+    f |= 0x40u;                         /* always ready to accept */
     if (s_core.count > 0) {
-        f |= 0x80u;                 /* response available */
+        f |= 0x80u;                     /* response available */
     }
     return f;
+}
+
+void p2k_dcs_core_set_flag(uint16_t v)
+{
+    s_dcs_flag_latch = v;
 }
 
 uint16_t p2k_dcs_core_read_resp(void)

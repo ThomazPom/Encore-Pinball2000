@@ -59,9 +59,16 @@ static void p2k_dcs_write(void *opaque, hwaddr off, uint64_t val,
         p2k_dcs_core_write_cmd(val & 0xFFFFu);
         return;
     }
-    /* off == 2 (flags) and everything else: writes are no-ops.
-     * Log first 16 to catch attract-mode/credit-insert paths poking
-     * unexpected offsets we may need to honour. */
+    /* off == 2 (flag byte): per Unicorn (bar.c:1006-1009) the game
+     * stashes a value here that the next read will reflect back.
+     * Forwarding to the core makes BAR4 look alive on the boot
+     * write-then-read DCS detect, keeping the game on the BAR4
+     * cmd path instead of falling back to UART byte-pair. */
+    if (off == 2) {
+        p2k_dcs_core_set_flag((uint16_t)val);
+        return;
+    }
+    /* Anything else: log first 16 to catch unexpected pokes. */
     if (getenv("P2K_DCS_AUDIO_TRACE") && dropped_log < 16) {
         warn_report("dcs-bar4: dropped write off=0x%" HWADDR_PRIx
                     " size=%u val=0x%" PRIx64, off, size, val);

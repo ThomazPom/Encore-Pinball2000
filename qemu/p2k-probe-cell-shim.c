@@ -96,7 +96,14 @@
  * conservative virtual-time delay long enough for XINU sysinit() to
  * finish — measured at ~2-3 s of vtime on this host. 5 s gives margin
  * without making the audio start visibly late. */
-#define POST_XINU_DELAY_NS  (5ull * 1000ull * 1000ull * 1000ull)
+/* Original Unicorn flips IMMEDIATELY when xinu_ready fires (which is when
+ * the watchdog string + dcs_probe code is present in RAM). The OLD 5s
+ * vtime-only delay was AFTER the game's dcs_probe() already ran, causing
+ * UART commitment. We now flip when (a) the game image is fully present
+ * in RAM (located by scan_for_probe_cell succeeded — implies symbols and
+ * code loaded) AND (b) at least 750 ms vtime has elapsed since location
+ * (lets XINU sysinit finish). */
+#define POST_XINU_DELAY_NS  (750ull * 1000ull * 1000ull)        /* 750 ms after locate */
 
 static QEMUTimer *s_timer;
 static uint32_t   s_probe_cell;       /* guest phys addr; 0 = not found yet */
@@ -268,16 +275,17 @@ static void p2k_probe_cell_tick(void *opaque)
          * after xinu_booted reasonably well. */
         if (!s_post_xinu) {
             int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-            if (now - s_located_at_ns >= (int64_t)POST_XINU_DELAY_NS) {
+            bool timeout = (now - s_located_at_ns >= (int64_t)POST_XINU_DELAY_NS);
+            if (timeout) {
                 s_post_xinu = true;
                 s_post_xinu_at_ns = now;
                 uint32_t h = current_idt20_handler();
                 info_report("p2k-probe-cell-shim: phase=post-XINU "
-                            "(IDT[0x20]=0x%08x, vtime+%us) — switching "
-                            "scribble to 0x%08x at [0x%08x] so DCS "
-                            "probe returns PRESENT",
+                            "(IDT[0x20]=0x%08x, vtime+%ums after locate) — "
+                            "switching scribble to 0x%08x at [0x%08x] so "
+                            "DCS probe returns PRESENT",
                             h,
-                            (unsigned)(POST_XINU_DELAY_NS / 1000000000ull),
+                            (unsigned)(POST_XINU_DELAY_NS / 1000000ull),
                             SCRIBBLE_POST_XINU, s_probe_cell);
             }
         }

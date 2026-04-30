@@ -65,6 +65,7 @@ void     p2k_dcs_core_write_cmd(uint16_t cmd);
 uint16_t p2k_dcs_core_read_resp(void);
 bool     p2k_dcs_core_has_resp(void);
 uint8_t  p2k_dcs_core_flag_byte(void);
+void     p2k_dcs_core_set_flag(uint16_t v);
 void     p2k_dcs_core_set_echo(uint8_t v);
 uint8_t  p2k_dcs_core_get_echo(void);
 /* Source tag for diagnostic classification: each frontend (BAR4 MMIO,
