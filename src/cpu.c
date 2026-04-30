@@ -986,14 +986,18 @@ void cpu_run(void)
          * Watcher pthread atomically asserts IRR0 every 250 µs; injection
          * happens at natural batch-end / HLT / hook returns.  No uc_emu_stop
          * tear-down (H2 showed that starves cli/sti windows). */
-        size_t batch = 200000;
+        size_t batch = hb_enabled ? 20000 : 200000;
         uint64_t timeout_us = 0;
         (void)hb_armed;
 
         /* Execute a batch of instructions.
          * eip is carried from previous iteration (or initial read before loop). */
-        /* TLB flush: every 64 cycles for DC_TIMING2 VSYNC detection. */
-        if ((g_emu.exec_count & 0x3F) == 0)
+        /* TLB flush: every 64 cycles for DC_TIMING2 VSYNC detection.
+         * In heartbeat mode this fires ~22 kHz at our emu_calls rate and
+         * stalls every batch by a full cache invalidation; the display
+         * tick at line ~1230 already flushes once per ~16 ms which is
+         * sufficient for VBLANK polling. */
+        if (!hb_enabled && (g_emu.exec_count & 0x3F) == 0)
             uc_ctl_flush_tlb(uc);
         uc_err err = uc_emu_start(uc, eip, 0, timeout_us, batch);
         if (hb_enabled) hb_emu_calls++;
