@@ -35,6 +35,7 @@
 #include "exec/ioport.h"
 #include "ui/input.h"
 #include "ui/console.h"
+#include "ui/surface.h"
 #include "system/runstate.h"
 
 #include "p2k-internal.h"
@@ -174,6 +175,49 @@ static void p2k_lpt_dump_state(void)
         s_rendering_status[1]);
 }
 
+static void p2k_lpt_screenshot(void)
+{
+    QemuConsole *con = qemu_console_lookup_by_index(0);
+    DisplaySurface *s = con ? qemu_console_surface(con) : NULL;
+    if (!s) {
+        fprintf(stderr, "[lpt] F3 screenshot: no console/surface\n");
+        return;
+    }
+    int w = surface_width(s), h = surface_height(s);
+    int stride = surface_stride(s);
+    int bpp = surface_bytes_per_pixel(s);
+    const uint8_t *data = surface_data(s);
+    if (!data || w <= 0 || h <= 0 || bpp < 3) {
+        fprintf(stderr, "[lpt] F3 screenshot: bad surface (w=%d h=%d bpp=%d)\n",
+                w, h, bpp);
+        return;
+    }
+    char path[256];
+    time_t now = time(NULL);
+    struct tm tm;
+    localtime_r(&now, &tm);
+    snprintf(path, sizeof(path), "/tmp/p2k_screen_%04d%02d%02d_%02d%02d%02d.ppm",
+             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+             tm.tm_hour, tm.tm_min, tm.tm_sec);
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        fprintf(stderr, "[lpt] F3 screenshot: open(%s): %s\n", path, strerror(errno));
+        return;
+    }
+    fprintf(f, "P6\n%d %d\n255\n", w, h);
+    /* Surface is little-endian ARGB8888: byte order B,G,R,A. PPM wants R,G,B. */
+    for (int y = 0; y < h; y++) {
+        const uint8_t *row = data + y * stride;
+        for (int x = 0; x < w; x++) {
+            const uint8_t *p = row + x * bpp;
+            uint8_t rgb[3] = { p[2], p[1], p[0] };
+            fwrite(rgb, 1, 3, f);
+        }
+    }
+    fclose(f);
+    fprintf(stderr, "[lpt] F3 screenshot: wrote %s (%dx%d)\n", path, w, h);
+}
+
 static void p2k_lpt_key_event(DeviceState *dev, QemuConsole *src,
                               InputEvent *evt)
 {
@@ -258,6 +302,9 @@ static void p2k_lpt_key_event(DeviceState *dev, QemuConsole *src,
                 down ? "PRESSED" : "released",
                 s_phys8_coin_slots,
                 s_coin_door_closed ? "CLOSED" : "OPEN");
+        break;
+    case Q_KEY_CODE_F3:                              /* screenshot to PPM */
+        if (down) p2k_lpt_screenshot();
         break;
     case Q_KEY_CODE_F12:
         if (down) p2k_lpt_dump_state();

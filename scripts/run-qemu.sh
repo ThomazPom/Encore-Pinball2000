@@ -162,7 +162,9 @@ KEY BINDINGS (delivered by the QEMU machine, not by this wrapper)
   Up / = / KP+              Volume up
   Right arrow               Begin test
   F12                       State dump
-  (F2 flip-Y, F3 screenshot, F11 fullscreen: not implemented yet —
+  F3                        Screenshot to /tmp/p2k_screen_<ts>.ppm
+  (Fullscreen toggle: use SDL's default Ctrl+Alt+F.
+   F2 flip-Y, F11 fullscreen-via-F-key: not implemented yet —
    see qemu/NOTES.next.md "Must Finish Next".)
 
 ENV PASSTHROUGH (advanced; see qemu/README.md for the full table)
