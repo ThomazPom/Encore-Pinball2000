@@ -465,8 +465,19 @@ static void render(DcsAudio *a, int16_t *out, int frames)
                 continue;
             }
             int32_t s = vc->s->pcm[vc->pos++];
-            int32_t amp = (int32_t)vc->vol * (int32_t)a->global_vol * 28000;
-            amp /= (255 * 255);
+            /* Unicorn parity (sound.c:302-308 + sound.c:346):
+             *   Mix_Volume(track_idx, dcs_vol_to_sdl(volume)) is called
+             *   on EVERY sound_play_track, so the per-channel SDL
+             *   volume is reset to the play's own `volume` parameter
+             *   (always 255 for sound_process_cmd). The earlier
+             *   sound_set_global_volume() does Mix_Volume(-1,...) which
+             *   sets ALL channels at once but is overwritten the next
+             *   time any track plays on that channel. So the global
+             *   volume value does NOT keep scaling subsequent plays.
+             *   Mirror that here: only the per-voice vol matters; the
+             *   global value is broadcast to all idle voices when
+             *   0x55AA arrives (see dcs_audio_on_execute_mixer). */
+            int32_t amp = (int32_t)vc->vol * 28000 / 255;
             mix += (s * amp) >> 15;
         }
         if (mix >  32767) mix =  32767;
@@ -620,10 +631,22 @@ static void dcs_audio_on_execute_mixer(uint16_t cmd, uint16_t data1,
     if ((cmd & 0xFF00) == 0x5500) {
         switch (cmd) {
         case 0x55AA:
-            /* Unicorn sound_set_global_volume: data1 & 0xFF (low byte). */
+            /* Unicorn sound_set_global_volume (sound.c:302-308):
+             *   Mix_Volume(-1, dcs_vol_to_sdl(global)) — sets ALL
+             *   channels' current volume in one shot. Subsequent
+             *   plays will reset their channel's volume to the
+             *   play's own `volume` parameter (sound_play_track at
+             *   sound.c:346), so this broadcast only affects voices
+             *   that are currently active or that play with no
+             *   per-track volume override. Mirror that here by
+             *   broadcasting the value to every voice's vc->vol. */
             a->global_vol = (uint8_t)(data1 & 0xFF);
+            for (int v = 0; v < DCS_VOICES; v++) {
+                a->voices[v].vol = a->global_vol;
+            }
             TRACE_EVT(a,
-                      "[%s] execute_mixer 0x%04x d1=0x%04x → GLOBAL_VOL=%u",
+                      "[%s] execute_mixer 0x%04x d1=0x%04x → GLOBAL_VOL=%u "
+                      "(broadcast to all 8 voices, per Unicorn Mix_Volume(-1))",
                       src, cmd, data1, a->global_vol);
             break;
         case 0x55AB:
