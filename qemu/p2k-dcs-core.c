@@ -50,6 +50,27 @@ typedef struct {
     uint32_t cnt_resp;
     uint32_t cnt_flag;
     bool     ready;
+
+    /* --- Legacy-pair diagnostic (read-only; no behavior change) ---
+     * SWE1 base 0.40 (--update none) emits 0x55aa, 0x609f, 0x00ec ...
+     * directly via UART byte-pair, with NO preceding 0xACE1 wrapper.
+     * Newer (update) DCS always wraps mixer-ctrl words in ACE1.
+     * To prove or disprove a "raw-pair" pre-ACE1 protocol we capture
+     * the word that immediately follows each unwrapped 0x55XX, log
+     * it, and tally. We do NOT alter dispatch.
+     *   raw55_armed   : last unwrapped cmd was 0x55XX, next is the
+     *                   candidate "data1" of a hypothetical raw pair
+     *   raw55_header  : the captured 0x55XX
+     *   cnt_*         : occurrence tallies for the post-mortem line
+     */
+    int      raw55_armed;
+    uint16_t raw55_header;
+    uint32_t cnt_raw_55xx;     /* 0x55XX seen outside ACE1 */
+    uint32_t cnt_in_ace1_55xx; /* 0x55XX seen inside ACE1 (normal) */
+    uint32_t cnt_ace1;         /* 0xACE1 wrappers seen */
+    uint32_t cnt_003a;         /* 0x003A boot-dong direct triggers */
+    uint32_t cnt_00aa;         /* 0x00AA audio init triggers */
+    uint32_t cnt_0e;           /* 0x0E suspend toggles */
 } DcsCore;
 
 static DcsCore s_core;
@@ -227,6 +248,9 @@ void p2k_dcs_core_write_cmd(uint16_t cmd)
             s_core.remaining = ((cmd >> 8) == 0x55) ? 1 : 2;
             s_core.mixer[0]  = cmd;
             s_core.layer     = 1;
+            if ((cmd >> 8) == 0x55) {
+                s_core.cnt_in_ace1_55xx++;
+            }
             return;
         }
         if (s_core.layer < (int)ARRAY_SIZE(s_core.mixer)) {
@@ -264,6 +288,7 @@ void p2k_dcs_core_write_cmd(uint16_t cmd)
         core_push(0x1000);
         break;
     case 0x3A:
+        s_core.cnt_003a++;
         core_push(0xCC01);
         core_push(10);
         if (p2k_dcs_core_audio_process_cmd) {
@@ -275,6 +300,7 @@ void p2k_dcs_core_write_cmd(uint16_t cmd)
         core_push(10);
         break;
     case 0xAA:
+        s_core.cnt_00aa++;
         core_push(0xCC04);
         core_push(10);
         if (p2k_dcs_core_audio_process_cmd) {
@@ -282,10 +308,12 @@ void p2k_dcs_core_write_cmd(uint16_t cmd)
         }
         break;
     case 0x0E:
+        s_core.cnt_0e++;
         s_core.active  = 1;
         s_core.pending = 0;
         break;
     case 0xACE1:
+        s_core.cnt_ace1++;
         s_core.pending = 1;
         core_push(0x0100);
         core_push(0x0C);
@@ -296,5 +324,55 @@ void p2k_dcs_core_write_cmd(uint16_t cmd)
             p2k_dcs_core_audio_process_cmd(cmd);
         }
         break;
+    }
+
+    /* --- Legacy raw-pair diagnostic + experimental knob ---
+     *
+     * Background: the SWE1 base 0.40 ROM in --update none emits the
+     * mixer-ctrl pair 0x55aa + 0x609f via UART byte-pair WITHOUT a
+     * preceding 0xACE1 wrapper. The default (auto-update) ROM emits
+     * the SAME semantic pair via BAR4 INSIDE an ACE1 wrapper; both
+     * decode to set_global_volume(0x9F). 0x003a (boot dong) is not
+     * emitted at all in base 0.40 — that protocol point is structurally
+     * absent in base, not blocked by missing DCS state.
+     *
+     * This block is read-only by default: it just captures the word
+     * after each unwrapped 0x55XX and logs it as a "raw-pair candidate"
+     * with running counters for ACE1 / 0x003a / 0x00aa. The optional
+     * env knob P2K_DCS_RAW_55_PAIR=1 routes the captured pair into
+     * execute_mixer the same way the ACE1 path does. It is OFF by
+     * default because:
+     *   - default boot never emits unwrapped 0x55XX (the path is dead
+     *     code there), so enabling it cannot affect the canonical
+     *     update-bundle audio path
+     *   - but we still want a single audited switch for any change
+     *     in DCS protocol semantics, separate from the 0x13c byte-pair
+     *     transport switch (P2K_DCS_NO_BYTE_PAIR)
+     */
+    if (s_core.raw55_armed) {
+        info_report("dcs-core: raw-pair candidate hdr=0x%04x data1=0x%04x "
+                    "src=%s (cnt_raw_55xx=%u cnt_in_ace1_55xx=%u "
+                    "cnt_ace1=%u cnt_003a=%u cnt_00aa=%u)",
+                    s_core.raw55_header, cmd, s_dcs_source_tag,
+                    s_core.cnt_raw_55xx, s_core.cnt_in_ace1_55xx,
+                    s_core.cnt_ace1, s_core.cnt_003a, s_core.cnt_00aa);
+        static int s_raw55_enable = -1;
+        if (s_raw55_enable < 0) {
+            const char *e = getenv("P2K_DCS_RAW_55_PAIR");
+            s_raw55_enable = (e && *e && *e != '0') ? 1 : 0;
+            info_report("dcs-core: P2K_DCS_RAW_55_PAIR=%d "
+                        "(experimental raw 0x55XX+data1 → execute_mixer)",
+                        s_raw55_enable);
+        }
+        if (s_raw55_enable && p2k_dcs_core_audio_execute_mixer) {
+            p2k_dcs_core_audio_execute_mixer(s_core.raw55_header, cmd, 0);
+        }
+        s_core.raw55_armed = 0;
+        s_core.raw55_header = 0;
+    }
+    if ((cmd >> 8) == 0x55 && cmd != 0x5800 && cmd != 0x5A00) {
+        s_core.cnt_raw_55xx++;
+        s_core.raw55_armed = 1;
+        s_core.raw55_header = cmd;
     }
 }

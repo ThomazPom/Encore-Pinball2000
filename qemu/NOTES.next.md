@@ -488,6 +488,32 @@ not the new source of truth.
   the per-file comment block at the byte-pair branch and the lessons
   section above. The earlier "did not reproduce at HEAD" finding was
   stale — it pre-dated our `--update none` support.
+- [x] Investigate base-0.40 raw mixer-pair hypothesis (no-ACE1 0x55XX
+  pre-pair). **Investigation 2026-04-30** added a passive diagnostic
+  in `p2k-dcs-core.c` (`raw-pair candidate ...` info_report + counters
+  for unwrapped 0x55XX, in-ACE1 0x55XX, ACE1 wrappers, 0x003a, 0x00aa)
+  plus an experimental `P2K_DCS_RAW_55_PAIR=1` knob that, when set,
+  routes the captured pair into `execute_mixer` the same way ACE1
+  does. A-B over 25-s SWE1 runs:
+  * default (auto-update): 0 unwrapped 0x55XX, 2× 0x003a, 1× 0x00aa,
+    BAR4 emits the canonical ACE1-wrapped `0x55aa d1=0x609f →
+    GLOBAL_VOL=159` triple. Unaffected by the new knob.
+  * `--update none`: 0 ACE1, 0 0x003a, 0 0x00aa; ROM emits the
+    SAME `0x55aa+0x609f` pair UNWRAPPED via UART byte-pair. With
+    the knob ON we observe the matching `[UART:0x13c.bp]
+    execute_mixer 0x55aa d1=0x609f → GLOBAL_VOL=159` line.
+  Conclusions:
+    1. SWE1 base 0.40 uses a raw pre-ACE1 mixer-pair encoding for at
+       least the 0x55aa global-volume command. The newer (update)
+       ROM upgraded the same logical command to ACE1-wrapped BAR4.
+    2. 0x003a (boot dong) is structurally absent in base 0.40 — not
+       blocked by missing QEMU device state. Adding a boot dong to
+       --update none would be a guest-data graft, not a fidelity fix.
+    3. The new knob is OFF by default. Enabling it is provably a
+       no-op for default boot (0 unwrapped 0x55XX events) and only
+       reaches the audio mixer in the `--update none` path. Decide
+       whether to flip the default once we confirm whether the ROM
+       expects more multi-word triples beyond the first 0x55aa pair.
 - [x] Make UART/XINA output visible by default, Unicorn-style, or ensure the
   wrapper always enables it for bring-up.
   Done: `p2k-isa-stubs.c` defaults `s_uart_to_stderr = true`; opt-out via
