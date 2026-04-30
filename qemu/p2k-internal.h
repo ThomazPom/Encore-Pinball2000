@@ -101,6 +101,7 @@ void p2k_install_bar3_flash(Pinball2000MachineState *s);
 void p2k_install_pic_fixup(void);
 
 void p2k_install_cyrix_ccr(void);
+uint8_t p2k_cyrix_ccr_get(uint8_t index);
 void p2k_install_superio(void);
 
 /* p2k-mediagx-gate.c: runtime gate for Cyrix/MediaGX TCG opcode

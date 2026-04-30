@@ -56,21 +56,17 @@
  *   bit  [2]  : GCR_BASE_VALID / enable on real chip; ignored here.
  *   bits[3:2] : SCRATCHPAD_SIZE — non-zero enables the Display-Driver
  *               Instructions (0F 3A BB0_RESET, 0F 3B BB1_RESET,
- *               0F 3C CPU_WRITE, 0F 3D CPU_READ); zero leaves them
- *               disabled and they should #UD. We currently report
- *               zero here AND unconditionally accept 0F 3C in the TCG
- *               decoder shim — i.e. our shim does not honour the
- *               scratchpad gate. That is intentional during bring-up:
- *               XINU never enables the scratchpad in our trace, but
- *               does issue 0F 3C, so honouring the gate would
- *               re-introduce the #UD we just removed. The long-term
- *               fix is to (a) implement real CPU_WRITE / CPU_READ
- *               semantics, (b) figure out where (if anywhere) XINU
- *               enables the scratchpad, and (c) gate the decoder on
- *               the scratchpad-size field.
+ *               0F 3C CPU_WRITE, 0F 3D CPU_READ); zero means they
+ *               must #UD. We report 11 (4 KiB scratchpad), which both
+ *               matches the on-silicon configuration the SWE1 ROM
+ *               assumes (it issues 0F3C without ever programming
+ *               GCR[B8h] itself) and lets the TCG helpers honour the
+ *               documented scratchpad-size gate at runtime.
+ *
+ * Final byte: 0x0D = (SCRATCHPAD_SIZE=11)<<2 | (GX_BASE=01).
  */
 #define P2K_CCR_GCR_INDEX     0xb8u
-#define P2K_CCR_GCR_VALUE     0x01u   /* 0x40000000 / (1<<30) = 1 */
+#define P2K_CCR_GCR_VALUE     0x0Du   /* SP=4KB, GX_BASE=0x40000000 */
 
 /* CCR3 (index 0xc3) is also written by the guest with bit 4 ("MAPEN")
  * set to enable access to the extended CCRs (0xb0+).  Read-back must
@@ -124,6 +120,14 @@ void p2k_install_cyrix_ccr(void)
                           "p2k.cyrix.ccr", 2);
     memory_region_add_subregion(get_system_io(), 0x22, &mr);
     info_report("pinball2000: installed Cyrix CCR at I/O 0x22/0x23 "
-                "(GCR[0xb8]=0x%02x -> GX_base_p=0x%08x)",
-                P2K_CCR_GCR_VALUE, (unsigned)P2K_CCR_GCR_VALUE << 30);
+                "(GCR[0xb8]=0x%02x -> GX_base_p=0x%08x, scratchpad=4KB)",
+                P2K_CCR_GCR_VALUE, (unsigned)(P2K_CCR_GCR_VALUE & 0x3) << 30);
+}
+
+uint8_t p2k_cyrix_ccr_get(uint8_t index)
+{
+    if (index == P2K_CCR_GCR_INDEX) {
+        return P2K_CCR_GCR_VALUE;
+    }
+    return p2k_ccr_storage[index];
 }

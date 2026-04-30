@@ -116,7 +116,7 @@ dispatch).
  DEF_HELPER_FLAGS_3(cc_compute_nz, TCG_CALL_NO_RWG_SE, tl, tl, tl, int)
 --- a/target/i386/tcg/misc_helper.c
 +++ b/target/i386/tcg/misc_helper.c
-@@ -25,6 +25,118 @@
+@@ -25,6 +25,129 @@
  #include "exec/cputlb.h"
  #include "helper-tcg.h"
  
@@ -138,6 +138,17 @@ dispatch).
 +                                               uint32_t value);
 +extern uint32_t p2k_mediagx_internal_reg_read(uint32_t ebx_addr);
 +extern void     p2k_mediagx_bb1_reset_internal(void);
++extern uint8_t  p2k_cyrix_ccr_get(uint8_t index);
++
++/* Databook §4.1.5: GCR[B8h] bits[3:2] = SCRATCHPAD_SIZE. Zero means
++ * the Display-Driver Instructions are disabled and must #UD. The
++ * pinball2000 CCR module exposes 0x0D so this check normally passes;
++ * if anything ever clears those bits the helper will refuse to act. */
++static inline bool p2k_mediagx_dd_enabled(void)
++{
++    return p2k_mediagx_extensions_enabled
++        && ((p2k_cyrix_ccr_get(0xb8u) & 0x0Cu) != 0u);
++}
 +
 +static void p2k_mediagx_log(CPUX86State *env, uint32_t op2,
 +                            target_ulong eip, const char *kind,
@@ -167,7 +178,7 @@ dispatch).
 + * side here and logs. */
 +void helper_p2k_mediagx_cpu_write(CPUX86State *env)
 +{
-+    if (!p2k_mediagx_extensions_enabled) {
++    if (!p2k_mediagx_dd_enabled()) {
 +        raise_exception_err_ra(env, EXCP06_ILLOP, 0, GETPC());
 +    }
 +    uint32_t ebx = (uint32_t)env->regs[R_EBX];
@@ -187,7 +198,7 @@ dispatch).
 + * discovered it should be added symmetrically with CPU_WRITE. */
 +void helper_p2k_mediagx_cpu_read(CPUX86State *env)
 +{
-+    if (!p2k_mediagx_extensions_enabled) {
++    if (!p2k_mediagx_dd_enabled()) {
 +        raise_exception_err_ra(env, EXCP06_ILLOP, 0, GETPC());
 +    }
 +    uint32_t ebx = (uint32_t)env->regs[R_EBX];
@@ -205,7 +216,7 @@ dispatch).
 + * (databook §4.1.5, Table 4-6). */
 +void helper_p2k_mediagx_bb1_reset(CPUX86State *env)
 +{
-+    if (!p2k_mediagx_extensions_enabled) {
++    if (!p2k_mediagx_dd_enabled()) {
 +        raise_exception_err_ra(env, EXCP06_ILLOP, 0, GETPC());
 +    }
 +    p2k_mediagx_bb1_reset_internal();
