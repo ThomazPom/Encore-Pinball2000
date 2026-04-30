@@ -324,13 +324,16 @@ void cpu_inject_interrupt(uint8_t vector)
 /* Check PIC for pending interrupts and inject highest priority.
  * Called from exec loop to handle non-timer IRQs (e.g. IRQ4 UART THRE). */
 
-static void check_and_inject_irq(void)
+/* Returns the injected vector + 1 (so 0 = nothing injected, IRQ0 vector
+ * 0x20 returns 0x21).  Used by the heartbeat path to count actual IRQ0
+ * deliveries vs IRR latches. */
+static int check_and_inject_irq(void)
 {
     /* Pre-check: don't even try if IF=0 (interrupts disabled) */
     uint32_t eflags = 0;
     uc_reg_read(g_emu.uc, UC_X86_REG_EFLAGS, &eflags);
     if (!(eflags & 0x200)) {
-        return;
+        return 0;
     }
 
     for (int pic_idx = 0; pic_idx < 2; pic_idx++) {
@@ -353,10 +356,11 @@ static void check_and_inject_irq(void)
                 pic->irr &= ~(1 << bit);
 
                 cpu_inject_interrupt(vector);
-                return;
+                return (int)vector + 1;
             }
         }
     }
+    return 0;
 }
 
 /* Code hook for tracing Init2 checkpoints */
@@ -490,6 +494,78 @@ void cpu_run(void)
     unsigned long prof_ticks_irr = 0;   /* ticks dropped: IRR already set */
     unsigned long prof_irq0_inject = 0; /* IRQ0 actually injected */
 
+    /* ===================================================================
+     * Wall-clock IRQ0 heartbeat experiment (opt-in).
+     *
+     *   P2K_HEARTBEAT_NS=<ns>   absolute period in nanoseconds (preferred,
+     *                           lets you express 244140 ns ≈ 4096 Hz or
+     *                           249750 ns ≈ 4004 Hz exactly).
+     *   P2K_HEARTBEAT_US=<us>   period in microseconds (250 → 4000 Hz).
+     *   P2K_HEARTBEAT_HZ=<hz>   target heartbeat frequency.
+     *
+     * When enabled, the loop:
+     *   1. Maintains an absolute monotonic deadline next_irq0_deadline_ns.
+     *   2. On each iteration computes elapsed periods; latches IRR0 once
+     *      and counts collapsed/missed edges.
+     *   3. Calls uc_emu_start with a microsecond TIMEOUT bounded by the
+     *      remaining time to the next deadline (instead of an instruction
+     *      count), so IRQ0 delivery is no longer dependent on a 200k-insn
+     *      batch returning opportunistically.
+     *   4. In the HLT path, sleeps to the next deadline absolute time
+     *      (not 5 ms relative) so we don't oversleep 20 IRQ0 periods.
+     *   5. Logs scheduled / latched / collapsed / missed / injected_irq0
+     *      and IF/IMR/ISR block counts plus a lateness histogram every
+     *      5 s.
+     *
+     * Goal of the experiment: prove (or disprove) that Unicorn can stay
+     * stable when IRQ0 is driven by host wall time at the documented
+     * 250 µs cadence, without LPT pacing and without instruction-count
+     * vticks.  This is NOT QEMU's built-in PIT/PIC; it's a plausibility
+     * test for the Erikie-style heartbeat model on top of Unicorn. */
+    uint64_t hb_period_ns = 0;
+    {
+        const char *s_ns = getenv("P2K_HEARTBEAT_NS");
+        const char *s_us = getenv("P2K_HEARTBEAT_US");
+        const char *s_hz = getenv("P2K_HEARTBEAT_HZ");
+        if (s_ns && *s_ns) {
+            hb_period_ns = strtoull(s_ns, NULL, 0);
+        } else if (s_us && *s_us) {
+            hb_period_ns = strtoull(s_us, NULL, 0) * 1000ULL;
+        } else if (s_hz && *s_hz) {
+            unsigned long hz = strtoul(s_hz, NULL, 0);
+            if (hz > 0) hb_period_ns = 1000000000ULL / hz;
+        }
+        /* Sanity clamp: 50 µs .. 100 ms */
+        if (hb_period_ns && (hb_period_ns < 50000ULL || hb_period_ns > 100000000ULL))
+            hb_period_ns = 0;
+    }
+    const bool hb_enabled = (hb_period_ns > 0);
+    bool     hb_armed = false;
+    uint64_t hb_next_deadline_ns = 0;
+    /* Anti-storm: if more than this many periods have elapsed since the
+     * last service, latch one IRQ0, count the rest as missed (lost), and
+     * reset the deadline phase to "now + period". */
+    const uint64_t HB_CATCHUP_CAP = 8;
+    /* Heartbeat counters (reset every 5 s alongside prof_*) */
+    unsigned long hb_scheduled  = 0; /* wall-clock periods elapsed */
+    unsigned long hb_latched    = 0; /* IRR0 transitioned 0 -> 1 */
+    unsigned long hb_collapsed  = 0; /* edge dropped: IRR0 already 1 */
+    unsigned long hb_missed     = 0; /* edge dropped: anti-storm cap */
+    unsigned long hb_injected   = 0; /* IRQ0 actually injected (vector 0x20) */
+    unsigned long hb_if_block   = 0; /* IRR0 set but EFLAGS.IF clear */
+    unsigned long hb_imr_block  = 0; /* IRR0 set, IF ok, but IMR0 set */
+    unsigned long hb_isr_block  = 0; /* IRR0 set, IF/IMR ok, but ISR0 set */
+    unsigned long hb_late_us[5] = {0,0,0,0,0}; /* <1, <10, <100, <1000, >=1000 µs */
+    unsigned long hb_hlt_sleeps = 0; /* HLT sleeps in heartbeat mode */
+    unsigned long hb_forced_if  = 0; /* HLT path force-set IF */
+    unsigned long hb_emu_calls  = 0; /* uc_emu_start calls in heartbeat mode */
+    if (hb_enabled) {
+        LOG("hb",
+            "wall-clock IRQ0 heartbeat ENABLED period=%llu ns (%.1f Hz)\n",
+            (unsigned long long)hb_period_ns,
+            1e9 / (double)hb_period_ns);
+    }
+
     /* Initial EIP read — carried across iterations to avoid double-read */
     uc_reg_read(uc, UC_X86_REG_EIP, &eip);
 
@@ -497,27 +573,78 @@ void cpu_run(void)
         /* Timer tick injection — wall-clock based at guest-programmed PIT rate.
          * The guest programs PIT CH0 with a divisor (e.g. 298 → ~4003 Hz).
          * We fire IRQ0 at that rate using host clock, like QEMU's internal PIT.
-         * Check every 64 iterations to reduce clock_gettime overhead. */
-        if (g_emu.xinu_ready && (g_emu.exec_count & 0x3F) == 0) {
+         * Check every 64 iterations to reduce clock_gettime overhead.
+         *
+         * In heartbeat mode (P2K_HEARTBEAT_*), the IRR-latch loop is replaced
+         * by an absolute-deadline-driven block that collapses missed edges
+         * and limits catch-up.  VSYNC and timer_pending drain stay identical.
+         *
+         * Also: the 64-iter throttle is bypassed in heartbeat mode because
+         * each iteration is one ~250 µs slice (~4 kHz), so the throttle
+         * would only let us check the deadline ~62 Hz — an order of
+         * magnitude below the heartbeat rate. */
+        if (g_emu.xinu_ready && (hb_enabled || (g_emu.exec_count & 0x3F) == 0)) {
             struct timespec now_ts;
             clock_gettime(CLOCK_MONOTONIC, &now_ts);
             uint64_t now_ns = (uint64_t)now_ts.tv_sec * 1000000000ULL + now_ts.tv_nsec;
-            static uint64_t last_tick_ns = 0;
-            if (last_tick_ns == 0) last_tick_ns = now_ns;
 
-            /* PIT period in nanoseconds: 1e9 / (1193182 / divisor) */
-            uint16_t div = g_emu.pit.count[0];
-            if (div == 0) div = 0xFFFF;
-            uint64_t pit_period_ns = (uint64_t)div * 838; /* 1e9/1193182 ≈ 838 ns per PIT tick */
+            if (hb_enabled) {
+                /* Wall-clock heartbeat (Erikie-style) */
+                if (!hb_armed) {
+                    hb_next_deadline_ns = now_ns + hb_period_ns;
+                    hb_armed = true;
+                }
+                if (now_ns >= hb_next_deadline_ns) {
+                    uint64_t late_ns = now_ns - hb_next_deadline_ns;
+                    /* Lateness histogram: bucket by µs */
+                    uint64_t late_us = late_ns / 1000ULL;
+                    if      (late_us < 1)    hb_late_us[0]++;
+                    else if (late_us < 10)   hb_late_us[1]++;
+                    else if (late_us < 100)  hb_late_us[2]++;
+                    else if (late_us < 1000) hb_late_us[3]++;
+                    else                     hb_late_us[4]++;
 
-            if (now_ns - last_tick_ns >= pit_period_ns) {
-                unsigned n_ticks = (unsigned)((now_ns - last_tick_ns) / pit_period_ns);
-                if (n_ticks > 4) n_ticks = 4; /* cap catch-up */
-                last_tick_ns += (uint64_t)n_ticks * pit_period_ns;
+                    uint64_t elapsed = (late_ns / hb_period_ns) + 1;
+                    hb_scheduled += elapsed;
 
-                /* Set IRR bit 0 (level-triggered: just assert, don't drop) */
-                g_emu.pic[0].irr |= 0x01;
-                prof_ticks_fired += n_ticks;
+                    if (elapsed > HB_CATCHUP_CAP) {
+                        /* Anti-storm: latch one, drop the rest, reset phase. */
+                        if (g_emu.pic[0].irr & 0x01)
+                            hb_collapsed += 1;
+                        else { g_emu.pic[0].irr |= 0x01; hb_latched += 1; }
+                        hb_missed   += elapsed - 1;
+                        hb_next_deadline_ns = now_ns + hb_period_ns;
+                    } else {
+                        if (g_emu.pic[0].irr & 0x01) {
+                            hb_collapsed += elapsed;
+                        } else {
+                            g_emu.pic[0].irr |= 0x01;
+                            hb_latched   += 1;
+                            hb_collapsed += elapsed - 1;
+                        }
+                        hb_next_deadline_ns += elapsed * hb_period_ns;
+                    }
+                    prof_ticks_fired += 1;
+                }
+            } else {
+                /* Legacy PIT-divisor pacing path (unchanged). */
+                static uint64_t last_tick_ns = 0;
+                if (last_tick_ns == 0) last_tick_ns = now_ns;
+
+                /* PIT period in nanoseconds: 1e9 / (1193182 / divisor) */
+                uint16_t div = g_emu.pit.count[0];
+                if (div == 0) div = 0xFFFF;
+                uint64_t pit_period_ns = (uint64_t)div * 838; /* 1e9/1193182 ≈ 838 ns per PIT tick */
+
+                if (now_ns - last_tick_ns >= pit_period_ns) {
+                    unsigned n_ticks = (unsigned)((now_ns - last_tick_ns) / pit_period_ns);
+                    if (n_ticks > 4) n_ticks = 4; /* cap catch-up */
+                    last_tick_ns += (uint64_t)n_ticks * pit_period_ns;
+
+                    /* Set IRR bit 0 (level-triggered: just assert, don't drop) */
+                    g_emu.pic[0].irr |= 0x01;
+                    prof_ticks_fired += n_ticks;
+                }
             }
 
             /* VSYNC at ~57 Hz (wall-clock based, independent of PIT rate) */
@@ -737,27 +864,68 @@ void cpu_run(void)
             uint8_t pending0 = g_emu.pic[0].irr & ~g_emu.pic[0].imr;
             uint8_t pending1 = g_emu.pic[1].irr & ~g_emu.pic[1].imr;
             int irq0_pending = (pending0 & 0x01) ? 1 : 0;
+            int injected_vec = 0;
             if (pending0 || pending1)
-                check_and_inject_irq();
+                injected_vec = check_and_inject_irq();
             /* IRQ injection modifies Unicorn's EIP — sync local copy */
             uc_reg_read(uc, UC_X86_REG_EIP, &eip);
 
             /* Track IRQ0 injection count */
             if (irq0_pending)
                 prof_irq0_inject++;
+
+            /* Heartbeat-mode block-state telemetry. Inspect raw IRQ0 state
+             * (before injection cleared it) to attribute non-delivery to
+             * IF / IMR / ISR. injected_vec == 0x21 means vector 0x20 = IRQ0. */
+            if (hb_enabled) {
+                if (injected_vec == 0x21)
+                    hb_injected += 1;
+                else if (g_emu.pic[0].irr & 0x01) {
+                    /* IRR0 still set → not delivered. Identify the gate. */
+                    uint32_t efl = 0;
+                    uc_reg_read(uc, UC_X86_REG_EFLAGS, &efl);
+                    if (!(efl & 0x200))
+                        hb_if_block += 1;
+                    else if (g_emu.pic[0].imr & 0x01)
+                        hb_imr_block += 1;
+                    else if (g_emu.pic[0].isr & 0x01)
+                        hb_isr_block += 1;
+                }
+            }
         }
 
         /* Fixed batch size — each call runs exactly this many TBs/instructions.
          * No uc_emu_stop from SIGALRM = no stop_request contamination.
-         * Every call does real work. */
+         * Every call does real work.
+         *
+         * Heartbeat mode: replace the instruction-count batch with a
+         * microsecond TIMEOUT bounded by the next IRQ0 deadline.  Keep a
+         * generous instruction-count safety cap in case Unicorn's timeout
+         * doesn't fire (defensive — UC_HOOK_BLOCK isn't used here). */
         size_t batch = 200000;
+        uint64_t timeout_us = 0;
+        if (hb_enabled && hb_armed) {
+            struct timespec t_now;
+            clock_gettime(CLOCK_MONOTONIC, &t_now);
+            uint64_t now_ns = (uint64_t)t_now.tv_sec * 1000000000ULL + t_now.tv_nsec;
+            int64_t remaining_ns = (int64_t)hb_next_deadline_ns - (int64_t)now_ns;
+            if (remaining_ns < 1000) remaining_ns = 1000; /* min 1 µs slice */
+            timeout_us = (uint64_t)remaining_ns / 1000ULL;
+            /* Upper safety: never let a single slice exceed 4 ms even if
+             * the deadline math is broken.  At 250 µs heartbeat this would
+             * never fire; at slower heartbeats (e.g. 1 ms) it just means
+             * we recompute the deadline more often. */
+            if (timeout_us > 4000) timeout_us = 4000;
+            batch = 1000000; /* generous safety cap, expect timeout to fire first */
+        }
 
         /* Execute a batch of instructions.
          * eip is carried from previous iteration (or initial read before loop). */
         /* TLB flush: every 64 cycles for DC_TIMING2 VSYNC detection. */
         if ((g_emu.exec_count & 0x3F) == 0)
             uc_ctl_flush_tlb(uc);
-        uc_err err = uc_emu_start(uc, eip, 0, 0, batch);
+        uc_err err = uc_emu_start(uc, eip, 0, timeout_us, batch);
+        if (hb_enabled) hb_emu_calls++;
 
         g_emu.exec_count++;
         prof_emu_calls++;
@@ -841,8 +1009,21 @@ void cpu_run(void)
                     if (!irq_pend) {
                         eip++;
                         eip_dirty = 1;
-                        static const struct timespec hlt_sleep = {0, 5000000}; /* 5ms */
-                        nanosleep(&hlt_sleep, NULL);
+                        if (hb_enabled && hb_armed) {
+                            /* Sleep to next IRQ0 deadline (absolute), not
+                             * a relative 5 ms — otherwise we oversleep
+                             * ~20 heartbeat periods on every idle HLT. */
+                            struct timespec abs_ts = {
+                                .tv_sec  = (time_t)(hb_next_deadline_ns / 1000000000ULL),
+                                .tv_nsec = (long)(hb_next_deadline_ns % 1000000000ULL),
+                            };
+                            clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &abs_ts, NULL);
+                            hb_hlt_sleeps++;
+                            hb_forced_if++;
+                        } else {
+                            static const struct timespec hlt_sleep = {0, 5000000}; /* 5ms */
+                            nanosleep(&hlt_sleep, NULL);
+                        }
                         g_emu.timer_pending = 1; /* force tick after HLT */
                     }
                     goto handle_display;
@@ -936,8 +1117,18 @@ void cpu_run(void)
                 if (!irq_pend) {
                     eip++;
                     eip_dirty = 1;
-                    static const struct timespec hlt_sleep = {0, 5000000}; /* 5ms */
-                    nanosleep(&hlt_sleep, NULL);
+                    if (hb_enabled && hb_armed) {
+                        struct timespec abs_ts = {
+                            .tv_sec  = (time_t)(hb_next_deadline_ns / 1000000000ULL),
+                            .tv_nsec = (long)(hb_next_deadline_ns % 1000000000ULL),
+                        };
+                        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &abs_ts, NULL);
+                        hb_hlt_sleeps++;
+                        hb_forced_if++;
+                    } else {
+                        static const struct timespec hlt_sleep = {0, 5000000}; /* 5ms */
+                        nanosleep(&hlt_sleep, NULL);
+                    }
                     g_emu.timer_pending = 1; /* force tick after HLT */
                 }
                 goto handle_display;
@@ -953,8 +1144,11 @@ handle_display:
         if (eip_dirty)
             uc_reg_write(uc, UC_X86_REG_EIP, &eip);
 
-        /* Display + heartbeat — check wall clock every 128 iterations. */
-        if ((g_emu.exec_count & 0x7F) == 0) {
+        /* Display + heartbeat — check wall clock every 128 iterations.
+         * In heartbeat mode each iteration is one ~250 µs slice (~4 kHz),
+         * so an 0x7F mask gives only ~31 Hz checks — well below the 60 Hz
+         * we want.  Use 0x7 (~500 Hz) under heartbeat. */
+        if ((g_emu.exec_count & (hb_enabled ? 0x7u : 0x7Fu)) == 0) {
             static struct timespec last_display = {0, 0};
             clock_gettime(CLOCK_MONOTONIC, &now);
             if (last_display.tv_sec == 0) last_display = now;
@@ -973,8 +1167,8 @@ handle_display:
             }
         }
 
-        /* Heartbeat log — checked every 128 iterations */
-        if ((g_emu.exec_count & 0x7F) == 0) {
+        /* Heartbeat log — checked every 128 iterations (every 8 in hb mode) */
+        if ((g_emu.exec_count & (hb_enabled ? 0x7u : 0x7Fu)) == 0) {
             clock_gettime(CLOCK_MONOTONIC, &now);
             double elapsed = (now.tv_sec - last_time.tv_sec) +
                              (now.tv_nsec - last_time.tv_nsec) / 1e9;
@@ -1040,6 +1234,27 @@ handle_display:
                 LOGV2("hb", "  PIC0: IRR=0x%02x IMR=0x%02x ISR=0x%02x  PIC1: IRR=0x%02x IMR=0x%02x ISR=0x%02x\n",
                     g_emu.pic[0].irr, g_emu.pic[0].imr, g_emu.pic[0].isr,
                     g_emu.pic[1].irr, g_emu.pic[1].imr, g_emu.pic[1].isr);
+                if (hb_enabled) {
+                    /* Wall-clock heartbeat experiment telemetry. */
+                    double target_hz = 1e9 / (double)hb_period_ns;
+                    double actual_hz = (double)hb_scheduled / (elapsed > 0 ? elapsed : 1.0);
+                    double inj_hz    = (double)hb_injected  / (elapsed > 0 ? elapsed : 1.0);
+                    double deliver_pct = hb_scheduled
+                        ? 100.0 * (double)hb_injected / (double)hb_scheduled
+                        : 0.0;
+                    LOG("hb-pace",
+                        "target=%.1fHz wall=%.1fHz inj=%.1fHz deliver=%.1f%% "
+                        "sched=%lu latched=%lu collapsed=%lu missed=%lu inj=%lu\n",
+                        target_hz, actual_hz, inj_hz, deliver_pct,
+                        hb_scheduled, hb_latched, hb_collapsed, hb_missed, hb_injected);
+                    LOG("hb-pace",
+                        "  blocks: IF=%lu IMR=%lu ISR=%lu  hlt_sleep=%lu forced_if=%lu  emu_calls=%lu\n",
+                        hb_if_block, hb_imr_block, hb_isr_block,
+                        hb_hlt_sleeps, hb_forced_if, hb_emu_calls);
+                    LOG("hb-pace",
+                        "  late_us histogram: <1=%lu <10=%lu <100=%lu <1000=%lu >=1000=%lu\n",
+                        hb_late_us[0], hb_late_us[1], hb_late_us[2], hb_late_us[3], hb_late_us[4]);
+                }
                 /* DM / DCS state — SWE1-V1.19 BSS layout. Gated on game_id
                  * so RFM heartbeats don't print garbage for these slots. */
                 if (g_emu.game_id == 50069u) {
@@ -1107,6 +1322,13 @@ handle_display:
                 }
                 fflush(stdout);
                 last_time = now;
+                if (hb_enabled) {
+                    hb_scheduled = hb_latched = hb_collapsed = hb_missed = 0;
+                    hb_injected = 0;
+                    hb_if_block = hb_imr_block = hb_isr_block = 0;
+                    hb_hlt_sleeps = hb_forced_if = hb_emu_calls = 0;
+                    for (int i = 0; i < 5; i++) hb_late_us[i] = 0;
+                }
             }
         }
     }
