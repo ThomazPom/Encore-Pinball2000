@@ -187,15 +187,18 @@ not the new source of truth.
 - [!] DCS default flip false-good: `cc630fb` made BAR4 default because sound
   worked, then `958b190` reverted/helped document the gap. Lesson: BAR4 and
   I/O UART frontends should be tested honestly against the shared core.
-- [~] `#UD` / Cyrix opcode clue: `516210d` claimed a non-Cyrix `#UD`
+- [x] `#UD` / Cyrix opcode clue: `516210d` claimed a non-Cyrix `#UD`
   interrupt-frame issue.
   Lesson: only relevant to the deleted IDT[6] stub. The current path is
-  the TCG decoder shim in `qemu/upstream-patches/0001-i386-tcg-cyrix-0f3c-shim.patch`
+  the TCG decoder entry in `qemu/upstream-patches/0001-i386-tcg-cyrix-mediagx-shim.patch`
   which never enters that interrupt-frame path. Per Cyrix MediaGX
   Processor Data Book v2.0 §4.1.5 + Table 4-6 the correct names are
   `0F 3A` BB0_RESET, `0F 3B` BB1_RESET, `0F 3C` CPU_WRITE,
   `0F 3D` CPU_READ — anything in the old notes calling `0F 3C`
-  "BB0_RESET" or "BIST" is stale.
+  "BB0_RESET" or "BIST" is stale. As of `80559a6`/`bfabb38` we
+  implement the real semantics (CPU_WRITE/CPU_READ/BB1_RESET) plus
+  the on-silicon scratchpad pipeline, gated on the pinball2000
+  machine and on GCR[B8h] SCRATCHPAD_SIZE.
 - [x] Human lesson: the best Unicorn period proved the ROMs can run, graphics
   can be fluid, and DCS can play. The late period proved Unicorn timing and
   synthetic IRQ injection were the wrong long-term maintenance surface.
@@ -304,12 +307,18 @@ not the new source of truth.
 - [!] `518a78e` re-arm watchdog RAM workaround excluding PCI sentinels.
   Temporary regression bridge. Now opt-in only; delete after validation matrix.
 - [x] `c698c24` GDT/CR0/Cyrix `0F 3C` #UD emulator.
-  Retired 2026-04 by `qemu/upstream-patches/0001-i386-tcg-cyrix-0f3c-shim.patch`
-  (TCG decoder entry for `0F 3C`) + deletion of `qemu/p2k-cyrix-0f3c.c`
-  + `P2K_GDT_BASE` move from 0x1000 to 0x88000. Note: the TCG entry is
-  only a compatibility shim reproducing the old IDT[6]-stub side
-  effect, NOT real MediaGX `CPU_WRITE` semantics — long-term direction
-  documented in the BB-class section below and in the patch header.
+  Retired 2026-04 by `qemu/upstream-patches/0001-i386-tcg-cyrix-mediagx-shim.patch`
+  + deletion of `qemu/p2k-cyrix-0f3c.c` + `P2K_GDT_BASE` move from
+  0x1000 to 0x88000. The TCG patch implements **real MediaGX
+  semantics** per databook §4.1.5/§4.1.6 (commits `80559a6` /
+  `bfabb38`): 0F3C CPU_WRITE updates the modeled internal register
+  selected by EBX with EAX (Table 4-8) AND emits the on-silicon
+  scratchpad pipeline (EAX,EBX → [DS:EDX], EDX += 8) the SWE1 ROM
+  depends on; 0F3D CPU_READ returns the modeled register value;
+  0F3B BB1_RESET resets L1_BB1_POINTER to L1_BB1_BASE; 0F36/37/39/3F
+  log+#UD; 0F3A reserved for SSE4 dispatch. The decoder is gated on
+  the pinball2000 machine and on GCR[B8h] SCRATCHPAD_SIZE (Table 4-1),
+  matching the databook exactly. Stock i386 binaries unaffected.
 - [!] `32e7300` early IRQ0 handoff bridge.
   Keep only with self-retire proof.
 - [~] `3a07ad8` SuperIO W83977EF + CS5530 EEPROM I/O stubs.
@@ -539,8 +548,10 @@ not the new source of truth.
 - [~] `817afac`: LPT opcode `0x00 -> 0xF0`. Verify before porting.
 - [~] `0001de2`: io-handled DCS byte writes to `0x13c`, high then low.
   Strong clue, but post-LPT-pace; QEMU must re-prove it.
-- [~] `516210d`: Unicorn `#UD`/`0F3C` interrupt-frame issue. Relevant only if
-  QEMU keeps custom `0F 3C` behavior; verify handler bytes.
+- [x] `516210d`: Unicorn `#UD`/`0F3C` interrupt-frame issue. Resolved
+  by upstream-style TCG patch implementing real MediaGX semantics
+  (commits `80559a6`/`bfabb38`); no QEMU-side custom interrupt frame
+  is involved.
 - [~] `2c2c180`: LPT/PDB CSV tracing. Diagnostic only.
 - [~] `be99437`: IRQ0/PLX/watchdog lesson from unstable transition. Context
   only.
@@ -740,23 +751,27 @@ io-handled-rejects-BAR4 era; both modes now route through BAR4.
    code that walks the IDT or disassembles those addresses.
    - Cleaner per file:
      * ~~`p2k-cyrix-0f3c.c`~~ ✅ DELETED 2026-04. Replaced with a
-       proper TCG decoder entry for opcode `0F 3C` shipped as the
-       upstream-style patch
-       `qemu/upstream-patches/0001-i386-tcg-cyrix-0f3c-shim.patch`,
+       proper TCG decoder entry for the MediaGX Display-Driver
+       Instructions, shipped as the upstream-style patch
+       `qemu/upstream-patches/0001-i386-tcg-cyrix-mediagx-shim.patch`,
        applied idempotently by `scripts/build-qemu.sh` against the
-       extracted upstream QEMU 10.0.8 source tree. Generator name
-       `gen_CYRIX_0F3C_shim` is honest: it reproduces the observable
-       side effect that the legacy Unicorn / low-RAM IDT[6] stub
-       relied on (`[DS:EDX] := EAX; [DS:EDX+4] := EBX; EDX += 8`), NOT
-       true MediaGX `CPU_WRITE` semantics (EBX-as-internal-register-
-       address, EAX-as-data, write into CPU-internal config space).
-       The XINU users of `0F 3C` only depend on the pointer-walk
-       pattern, not on the real internal-register address space, so
-       the shim is sufficient; matrix shows F=0 T=0 Cyx=0 across all
-       four configs with the host stub removed and `IDT[6]` no longer
-       patched. Long-term exit: implement real `CPU_WRITE`/`CPU_READ`
-       (`0F 3D`) / `BB0_RESET` (`0F 3A`) / `BB1_RESET` (`0F 3B`)
-       semantics, gated to the pinball2000/MediaGX machine.
+       extracted upstream QEMU 10.0.8 source tree. As of `80559a6`
+       this is **real MediaGX semantics** per databook §4.1.5/§4.1.6
+       (Table 4-6/4-7/4-8): 0F3C CPU_WRITE updates the modeled
+       internal register selected by EBX (BB0/BB1 BASE/POINTER,
+       PM_BASE, PM_MASK, plus an overflow table for unnamed
+       addresses) with EAX, AND emits the on-silicon scratchpad
+       pipeline (`[DS:EDX] := EAX; [DS:EDX+4] := EBX; EDX += 8`)
+       observed in the Pinball 2000 ROM via direct EIP/code-byte
+       trace; 0F3D CPU_READ returns the modeled register value;
+       0F3B BB1_RESET resets L1_BB1_POINTER to L1_BB1_BASE;
+       0F36/37/39/3F log+#UD (never observed in SWE1 boot);
+       0F3A untouched (collides with SSE4 escape prefix). All
+       gated to the pinball2000 machine via
+       `p2k_mediagx_extensions_enabled` and to GCR[B8h] bits[3:2]
+       SCRATCHPAD_SIZE per the databook (commit `bfabb38`). Matrix
+       (default / `--update none` / `--update none --no-savedata`)
+       reaches XINU V7 with zero Fatals.
        Side-effect of this deletion: the same commit had to **move
        `P2K_GDT_BASE` from `0x1000` to `0x88000`** because swe1-default
        cold boot wild-jumps to `0x1008` (inside our flat-mode GDT
