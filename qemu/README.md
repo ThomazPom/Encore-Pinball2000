@@ -89,10 +89,45 @@ is idempotent and cheap on incremental rebuilds.
 
 ## Run
 
+The product wrapper is `scripts/run-qemu.sh` — Unicorn-Encore-style CLI
+on top of the QEMU machine. `./scripts/run-qemu.sh --help` prints the
+authoritative arg list and key bindings. Common invocations:
+
+```sh
+./scripts/run-qemu.sh --game swe1                      # auto-pick newest update
+./scripts/run-qemu.sh --game swe1 --update none --no-savedata  # museum / base
+./scripts/run-qemu.sh --game swe1 --update 0210        # short-code resolve
+./scripts/run-qemu.sh --game rfm
+./scripts/run-qemu.sh --headless --game swe1           # -display none + -serial stdio
+./scripts/run-qemu.sh --game swe1 -vv                  # +DCS audio trace
+```
+
+Raw form (bypasses the wrapper) is still:
+
 ```sh
 QEMU_BIN=~/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386
 $QEMU_BIN -M pinball2000,game=swe1,roms-dir=$PWD/roms -m 16 -display sdl
 ```
+
+Wrapper flag → behavior summary (see `--help` for full list):
+
+| Flag                    | Effect                                                                  |
+|-------------------------|-------------------------------------------------------------------------|
+| `--game swe1\|rfm`      | Selects machine `game=` property (SWE1 default).                        |
+| `--roms <dir>`          | Sets `roms-dir=` (default `./roms`).                                    |
+| `--update <spec>`       | `auto` (machine picks newest), `latest` (wrapper resolves), `none` (museum, sets `P2K_NO_AUTO_UPDATE=1`), 4-digit `0210` / `2.10` short codes, or an explicit dir. |
+| `--savedata <dir>` / `--no-savedata` | Working directory for flash/nvram persistence; `--no-savedata` runs in a throwaway tmpdir. |
+| `--display sdl\|gtk\|none` / `--headless` / `--fullscreen` | Display backend; `--headless` implies `none` + serial stdio. |
+| `--audio auto\|pa\|alsa\|sdl\|none` / `--no-audio`         | Audiodev selection (auto-detects PulseAudio/ALSA on host). |
+| `--pb2kslib <path>`     | Override `P2K_PB2KSLIB` sample-cache path.                              |
+| `--uart-quiet`          | Sets `P2K_NO_UART_STDERR=1` (UART mirror normally on).                  |
+| `--uart-tcp host:port`  | Bind COM1 to a TCP server (mutually exclusive with `--headless`).       |
+| `--monitor`             | Adds `-monitor stdio` (or TCP if also `--headless`).                    |
+| `--diag` / `--trace-dcs` / `--trace-audio` / `--trace-timing` | Individual trace toggles. |
+| `-v` / `-vv` / `-vvv`   | Tiered: `-v`=`P2K_DIAG`, `-vv`=+`P2K_DCS_AUDIO_TRACE`, `-vvv`=+`P2K_DCS_BYTE_TRACE`. |
+| `--dcs-mode io-handled\|bar4-patch` | Documentation-only label (both modes route through BAR4 today). |
+| `--cabinet`, `--lpt parport`, `--parport`, `--bpp 16`, `--splash`, `--sound-loading preload` | Recognized but rejected with "not implemented yet". |
+| `--` / passthrough      | Everything after `--` is forwarded verbatim to QEMU.                    |
 
 Useful env vars (defaults reflect the post-bring-up state, see
 `qemu/NOTES.next.v2.md` for status of each temporary patch):

@@ -264,8 +264,16 @@ not the new source of truth.
 - [~] M9 Cabinet/LPT controls: desktop key parity is mostly implemented through
   the LPT switch matrix; cabinet passthrough and a few UX extras remain.
   Commits: `dc97214`, `283dda8`, `b3c4994`, `3096f03`.
-- [ ] M10 Product wrapper: Unicorn-like CLI, savedata/update options, default
-  UART visibility, fullscreen/headless, bpp/splash compatibility.
+- [x] M10 Product wrapper: `scripts/run-qemu.sh` is now Unicorn-CLI parity
+  (`--game`, `--roms`, `--update auto|latest|none|0210|2.10|<dir>`, `--savedata`/`--no-savedata`,
+  `--display sdl|gtk|none`, `--headless`, `--fullscreen`, `--audio auto|pa|alsa|sdl|none`,
+  `--no-audio`, `--pb2kslib`, `--monitor`, `--uart-quiet`, `--uart-tcp`,
+  `--diag`, `--trace-dcs`, `--trace-audio`, `--trace-timing`, `-v/-vv/-vvv`,
+  `--dcs-mode` doc-label, `--` passthrough). Cabinet/`--lpt parport`/`--parport`/
+  `--bpp 16`/`--splash`/`--sound-loading preload` recognized but rejected with a
+  clear "not implemented yet" instead of silently accepted. `--update` resolver
+  matches Unicorn's 4-digit normalization (`unicorn.old/src/main.c:34-120`).
+  `./scripts/run-qemu.sh --help` is the authoritative arg list.
 - [ ] M11 Validation matrix: SWE1/RFM base/update, long-run, no default
   symptom patches, DCS sound, controls, UART, watchdog.
 - [ ] M12 Optional diagnostics/compat knobs: keep guest-programmed PIT as
