@@ -309,16 +309,31 @@ not the new source of truth.
 - [x] `c698c24` GDT/CR0/Cyrix `0F 3C` #UD emulator.
   Retired 2026-04 by `qemu/upstream-patches/0001-i386-tcg-cyrix-mediagx-shim.patch`
   + deletion of `qemu/p2k-cyrix-0f3c.c` + `P2K_GDT_BASE` move from
-  0x1000 to 0x88000. The TCG patch implements **real MediaGX
-  semantics** per databook §4.1.5/§4.1.6 (commits `80559a6` /
-  `bfabb38`): 0F3C CPU_WRITE updates the modeled internal register
-  selected by EBX with EAX (Table 4-8) AND emits the on-silicon
-  scratchpad pipeline (EAX,EBX → [DS:EDX], EDX += 8) the SWE1 ROM
-  depends on; 0F3D CPU_READ returns the modeled register value;
-  0F3B BB1_RESET resets L1_BB1_POINTER to L1_BB1_BASE; 0F36/37/39/3F
-  log+#UD; 0F3A reserved for SSE4 dispatch. The decoder is gated on
-  the pinball2000 machine and on GCR[B8h] SCRATCHPAD_SIZE (Table 4-1),
-  matching the databook exactly. Stock i386 binaries unaffected.
+  0x1000 to 0x88000. The TCG patch implements the MediaGX
+  Display-Driver Instructions per databook §4.1.5/§4.1.6 (commits
+  `80559a6` / `bfabb38`):
+    * 0F3C CPU_WRITE — implemented. Updates the modeled internal
+      register selected by EBX with EAX (Table 4-8). Also emits the
+      EDX scratchpad pipeline (EAX,EBX → [DS:EDX], EDX += 8); this
+      side effect is **not described in the databook table** but is
+      directly observed in the SWE1 ROM (two back-to-back 0F3Cs
+      separated only by MOV reg,[abs32] loads, and post-instruction
+      EDX is reused as a write pointer). Treat it as observed
+      silicon/ROM contract.
+    * 0F3D CPU_READ — implemented. Returns modeled register value.
+    * 0F3B BB1_RESET — implemented. Resets L1_BB1_POINTER to BASE.
+    * 0F3A BB0_RESET — **deferred / unobserved**. The slot collides
+      with the SSE4 0F3A escape map in the existing decoder, and
+      the SWE1 boot trace never executes it. If a future game
+      issues it, the log+#UD entry on neighbouring 0F36/37/39/3F
+      already gives us a first-occurrence signal; wiring it will
+      need a separate decoder hook that does not break SSE4.
+    * 0F36/37/39/3F — log+#UD only (never observed in SWE1).
+  Decoder is gated on the pinball2000 machine
+  (`p2k_mediagx_extensions_enabled`) and on GCR[B8h] SCRATCHPAD_SIZE
+  (Table 4-1) which is mutable storage with reset default 0x0D — if
+  the guest ever clears bits[3:2] the helpers will start raising #UD
+  exactly as a real MediaGX would. Stock i386 binaries unaffected.
 - [!] `32e7300` early IRQ0 handoff bridge.
   Keep only with self-retire proof.
 - [~] `3a07ad8` SuperIO W83977EF + CS5530 EEPROM I/O stubs.
@@ -755,23 +770,37 @@ io-handled-rejects-BAR4 era; both modes now route through BAR4.
        Instructions, shipped as the upstream-style patch
        `qemu/upstream-patches/0001-i386-tcg-cyrix-mediagx-shim.patch`,
        applied idempotently by `scripts/build-qemu.sh` against the
-       extracted upstream QEMU 10.0.8 source tree. As of `80559a6`
-       this is **real MediaGX semantics** per databook §4.1.5/§4.1.6
-       (Table 4-6/4-7/4-8): 0F3C CPU_WRITE updates the modeled
-       internal register selected by EBX (BB0/BB1 BASE/POINTER,
-       PM_BASE, PM_MASK, plus an overflow table for unnamed
-       addresses) with EAX, AND emits the on-silicon scratchpad
-       pipeline (`[DS:EDX] := EAX; [DS:EDX+4] := EBX; EDX += 8`)
-       observed in the Pinball 2000 ROM via direct EIP/code-byte
-       trace; 0F3D CPU_READ returns the modeled register value;
-       0F3B BB1_RESET resets L1_BB1_POINTER to L1_BB1_BASE;
-       0F36/37/39/3F log+#UD (never observed in SWE1 boot);
-       0F3A untouched (collides with SSE4 escape prefix). All
-       gated to the pinball2000 machine via
-       `p2k_mediagx_extensions_enabled` and to GCR[B8h] bits[3:2]
-       SCRATCHPAD_SIZE per the databook (commit `bfabb38`). Matrix
-       (default / `--update none` / `--update none --no-savedata`)
-       reaches XINU V7 with zero Fatals.
+       extracted upstream QEMU 10.0.8 source tree. As of `80559a6`/
+       `bfabb38` the implementation status is:
+         - 0F3C CPU_WRITE: implemented per databook Table 4-8
+           (internal-register model: BB0/BB1 BASE/POINTER, PM_BASE,
+           PM_MASK, plus an overflow table for unnamed addresses).
+           Also emits the EDX scratchpad pipeline
+           (`[DS:EDX] := EAX; [DS:EDX+4] := EBX; EDX += 8`) which is
+           **not documented in §4.1.5/4.1.6** but is observed in the
+           SWE1 ROM (two back-to-back 0F3Cs separated only by MOV
+           reg,[abs32], and the second 0F3C's post-EDX is reused as
+           a write pointer). Documented in the patch as observed
+           silicon/ROM contract, kept because the ROM clearly needs
+           it.
+         - 0F3D CPU_READ: implemented (returns modeled register
+           value). Never observed in SWE1 boot.
+         - 0F3B BB1_RESET: implemented (POINTER := BASE). Never
+           observed in SWE1 boot.
+         - 0F3A BB0_RESET: **deferred / unobserved.** Collides with
+           the SSE4 0F3A escape prefix in the existing i386 decoder.
+           Wiring it up will need a separate decoder hook that does
+           not break SSE4 dispatch.
+         - 0F36/37/39/3F: log+#UD only (observation entries; never
+           observed in SWE1 boot).
+       All gated to the pinball2000 machine via
+       `p2k_mediagx_extensions_enabled` AND to GCR[B8h] bits[3:2]
+       SCRATCHPAD_SIZE per the databook (commit `bfabb38`). The
+       GCR[B8h] storage is mutable with reset default 0x0D — if the
+       guest writes a value with bits[3:2]=00 the helpers see it and
+       raise #UD on the Display-Driver instructions, exactly as a
+       real MediaGX would. Matrix (default / `--update none` /
+       `--update none --no-savedata`) reaches XINU V7 with zero Fatals.
        Side-effect of this deletion: the same commit had to **move
        `P2K_GDT_BASE` from `0x1000` to `0x88000`** because swe1-default
        cold boot wild-jumps to `0x1008` (inside our flat-mode GDT

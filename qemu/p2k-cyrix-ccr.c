@@ -57,16 +57,19 @@
  *   bits[3:2] : SCRATCHPAD_SIZE — non-zero enables the Display-Driver
  *               Instructions (0F 3A BB0_RESET, 0F 3B BB1_RESET,
  *               0F 3C CPU_WRITE, 0F 3D CPU_READ); zero means they
- *               must #UD. We report 11 (4 KiB scratchpad), which both
- *               matches the on-silicon configuration the SWE1 ROM
- *               assumes (it issues 0F3C without ever programming
- *               GCR[B8h] itself) and lets the TCG helpers honour the
- *               documented scratchpad-size gate at runtime.
+ *               must #UD. The storage default is 11 (4 KiB scratchpad),
+ *               which matches the on-silicon configuration the SWE1
+ *               ROM assumes (it issues 0F3C without ever programming
+ *               GCR[B8h] itself, so something below us must have
+ *               pre-programmed it). The byte is mutable: if the guest
+ *               writes a value with bits[3:2]=00 the helpers WILL see
+ *               it and start raising #UD on the Display-Driver
+ *               instructions, exactly as a real MediaGX would.
  *
- * Final byte: 0x0D = (SCRATCHPAD_SIZE=11)<<2 | (GX_BASE=01).
+ * Reset byte: 0x0D = (SCRATCHPAD_SIZE=11)<<2 | (GX_BASE=01).
  */
 #define P2K_CCR_GCR_INDEX     0xb8u
-#define P2K_CCR_GCR_VALUE     0x0Du   /* SP=4KB, GX_BASE=0x40000000 */
+#define P2K_CCR_GCR_RESET     0x0Du   /* SP=4KB, GX_BASE=0x40000000 */
 
 /* CCR3 (index 0xc3) is also written by the guest with bit 4 ("MAPEN")
  * set to enable access to the extended CCRs (0xb0+).  Read-back must
@@ -76,26 +79,37 @@
 
 static uint8_t  p2k_ccr_index;       /* last write to port 0x22 */
 static uint8_t  p2k_ccr_storage[256];/* per-index value cache (writes) */
+static bool     p2k_ccr_storage_inited;
+
+static void p2k_ccr_storage_init_once(void)
+{
+    if (p2k_ccr_storage_inited) {
+        return;
+    }
+    /* Most CCRs reset to 0 on the real Cyrix; the only non-zero default
+     * we model is GCR[B8h] which on the real pinball2000 board comes up
+     * already programmed (the SWE1 ROM issues 0F3C without ever
+     * touching it, so something below us must have configured it). */
+    p2k_ccr_storage[P2K_CCR_GCR_INDEX] = P2K_CCR_GCR_RESET;
+    p2k_ccr_storage_inited = true;
+}
 
 static uint64_t p2k_ccr_read(void *opaque, hwaddr addr, unsigned size)
 {
+    p2k_ccr_storage_init_once();
     /* addr is 0 (port 0x22) or 1 (port 0x23) relative to base 0x22. */
     if (addr == 0) {
         /* Reads of 0x22 are unusual; return last index. */
         return p2k_ccr_index;
     }
     /* addr == 1: port 0x23 — return register selected by last 0x22 write. */
-    switch (p2k_ccr_index) {
-    case P2K_CCR_GCR_INDEX:
-        return P2K_CCR_GCR_VALUE;
-    default:
-        return p2k_ccr_storage[p2k_ccr_index];
-    }
+    return p2k_ccr_storage[p2k_ccr_index];
 }
 
 static void p2k_ccr_write(void *opaque, hwaddr addr, uint64_t val,
                           unsigned size)
 {
+    p2k_ccr_storage_init_once();
     if (addr == 0) {
         /* port 0x22: select index */
         p2k_ccr_index = (uint8_t)val;
@@ -119,15 +133,15 @@ void p2k_install_cyrix_ccr(void)
     memory_region_init_io(&mr, NULL, &p2k_ccr_ops, NULL,
                           "p2k.cyrix.ccr", 2);
     memory_region_add_subregion(get_system_io(), 0x22, &mr);
+    p2k_ccr_storage_init_once();
     info_report("pinball2000: installed Cyrix CCR at I/O 0x22/0x23 "
-                "(GCR[0xb8]=0x%02x -> GX_base_p=0x%08x, scratchpad=4KB)",
-                P2K_CCR_GCR_VALUE, (unsigned)(P2K_CCR_GCR_VALUE & 0x3) << 30);
+                "(GCR[0xb8] reset=0x%02x -> GX_base_p=0x%08x, "
+                "scratchpad=4KB; storage is mutable)",
+                P2K_CCR_GCR_RESET, (unsigned)(P2K_CCR_GCR_RESET & 0x3) << 30);
 }
 
 uint8_t p2k_cyrix_ccr_get(uint8_t index)
 {
-    if (index == P2K_CCR_GCR_INDEX) {
-        return P2K_CCR_GCR_VALUE;
-    }
+    p2k_ccr_storage_init_once();
     return p2k_ccr_storage[index];
 }
