@@ -493,8 +493,15 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
 
                 /* Special read behaviors (from i386/x64 POC) */
                 if (off == 0x4C) {
-                    /* INTCSR: force bit 2 clear, bit 5 set (PLX ready) */
-                    val = (val & ~0x04u) | 0x20u;
+                    /* INTCSR: force bit 2 SET, bit 5 set (PLX ready).
+                     * pci_watchdog_bone() returns "expired" iff
+                     * (dcs_probe==1 AND INTCSR bit2==0). Forcing bit2
+                     * to 1 short-circuits the check via the natural
+                     * device path, so the watchdog Fatal never fires.
+                     * Validated end-to-end on the QEMU branch
+                     * (commit 256cea1 / "pci_watchdog_bone RETIRED via
+                     * PLX INTCSR"). bit 5 (PLX-ready) preserved. */
+                    val = (val | 0x04u) | 0x20u;
                 }
                 else if (off == 0x50) {
                     /* CNTRL: clear bits 24-27, force EE_Present(28) */

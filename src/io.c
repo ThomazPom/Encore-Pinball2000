@@ -241,10 +241,12 @@ static void pit_write(uint16_t port, uint8_t val)
  * loads the symbol table from flash, and feeds the watchdog via the timer interrupt.
  * We only need correct timer injection timing (see cpu.c phase-2 logic).
  *
- * Exception: ROM-agnostic watchdog flag scan — this is NOT a code patch.
- * We locate the pci_watchdog_bone() "expired" flag address so cpu.c can
- * keep it =0 each iteration, suppressing a false-alarm Fatal caused by
- * emulation running slower than real 200MHz hardware. */
+ * Exceptions that remain intentionally small:
+ *   - BT-130 mem_detect text patch (required until MediaGX memory sizing is
+ *     modeled).
+ *   - museum-only probe-cell bridge for --update none / P2K_NO_AUTO_UPDATE.
+ * Default update boots use the PLX INTCSR bit-2 device answer instead of
+ * periodic watchdog/probe-cell scribbling. */
 static void apply_sgc_patches(void)
 {
     LOG("sgc", "applying minimal post-start fixes for watchdog/mem_detect/display bring-up\n");
@@ -371,16 +373,10 @@ static void apply_sgc_patches(void)
      *
      * So the CMP [<probe_cell>],0xFFFF the scanner latches onto is inside
      * the nested dcs_probe() call — it IS the DCS/PLX PCI-detect probe, not
-     * a dedicated health register.  But that works in our favour: writing
-     * 0xFFFF to that cell every tick makes the probe return 1 ("device
-     * present") → the watchdog callee returns 1 → game proceeds.  Same cell
-     * serves double duty (DCS presence + watchdog alive) in both dcs-modes:
-     *   bar4-patch : cpu.c patches the probe's CMP/JNE to force dcs_mode=1
-     *                regardless; the scribble keeps the watchdog alive.
-     *   io-handled : the scribble makes the unmodified probe report
-     *                "device present" → game initializes DCS naturally
-     *                (writes dcs_mode=1 from its own code) AND watchdog
-     *                stays alive.
+     * a dedicated health register.  Default update boots no longer write this
+     * cell at all; they rely on PLX INTCSR bit-2 reads.  Museum boot may still
+     * arm it as a tightly gated compatibility bridge.
+     *
      * Follows one nested CALL to reach the CMP inside dcs_probe. */
     uint32_t health_addr = 0;
     /* Try direct callee first, then follow first E8 CALL within it */
@@ -428,34 +424,37 @@ static void apply_sgc_patches(void)
         return;
     }
 
-    /* Store health_addr; cpu.c writes to it each exec iteration.  The
-     * value depends on --dcs-mode (see cpu.c for the rationale):
-     *   bar4-patch : 0xFFFF (legacy; CMP at 0x1931e6 byte-patched anyway)
-     *   io-handled : 0      (probe@0x1A2ABC returns 1 ↔ cell != 0xFFFF;
-     *                        scribbling 0xFFFF would INVERT the natural
-     *                        DCS detection and silence audio)
-     *
-     * One-shot prime mirrors the per-tick value so the cell is correct
-     * BEFORE the first cpu.c maintenance pass fires (matters because the
-     * DCS-mode decision function at e.g. SWE1 v1.5 @ 0x00193100 calls the
-     * probe ONCE during init).  In io-handled, prime=0; in bar4-patch,
-     * prime=0xFFFF (the byte-patch makes the probe result moot). */
+    /* Store health_addr; cpu.c writes to it each exec iteration, but only
+     * when we explicitly keep watchdog_flag_addr armed below. Default update
+     * boots rely on the natural PLX INTCSR bit-2 answer instead of this
+     * guest-data scribble. */
     g_emu.watchdog_flag_addr = health_addr;
-    /* Cabinet-purist: when the user explicitly opted in via --cabinet-purist
-     * AND a real LPT board is open, we leave the watchdog cell completely
-     * alone. Rationale: on real hardware the driver-board responses drive
-     * the natural pci_watchdog_bone() path; our suppression scribble only
-     * makes sense when no board is present. This is experimental — it
-     * lets us A/B compare boot behaviour with vs. without the shim while
-     * a real board is wired in. */
+    /* MUSEUM-ONLY GATE (parity with QEMU p2k-probe-cell-shim).
+     * The scribble mutates guest data every iteration. We tolerate it
+     * ONLY when the user explicitly opts into museum boot via
+     * --update none / P2K_NO_AUTO_UPDATE=1, where the early base-chip
+     * boot path reads this cell as a sentinel before XINU comes up.
+     * In normal (--update auto/latest/<bundle>) boot, the natural
+     * device path answers the watchdog: bar.c forces PLX INTCSR bit-2
+     * SET in BAR0 reads, which short-circuits pci_watchdog_bone() -
+     * no per-tick guest-data scribble is needed. Cabinet-purist with
+     * a real LPT board still disables the scribble (real driver-board
+     * drives the watchdog). */
+    bool no_auto_upd_env = (getenv("P2K_NO_AUTO_UPDATE") != NULL);
+    bool museum_mode = g_emu.update_explicit_none || no_auto_upd_env;
     if (g_emu.cabinet_purist && lpt_passthrough_active()) {
         g_emu.watchdog_flag_addr = 0;
         LOG("sgc", "watchdog suppression DISABLED (cabinet-purist + LPT passthrough): "
                    "letting natural pci_watchdog_bone path run\n");
+    } else if (!museum_mode) {
+        g_emu.watchdog_flag_addr = 0;
+        LOG("sgc", "watchdog suppression DISABLED (default mode): natural "
+                   "PLX INTCSR bit-2 short-circuits pci_watchdog_bone(). "
+                   "Pass --update none for museum mode (re-enables scribble).\n");
     } else {
         uint32_t prime_val = 0x0000FFFFu;
         RAM_WR32(health_addr, prime_val);
-        LOG("sgc", "watchdog suppression active: [0x%08x] primed =0x%08x (BT-107, dcs-mode=%s, scribble flips post-xinu_ready)\n",
+        LOG("sgc", "watchdog suppression active (museum mode): [0x%08x] primed =0x%08x (BT-107, dcs-mode=%s, scribble flips post-xinu_ready)\n",
             health_addr, prime_val,
             (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) ? "io-handled" : "bar4-patch");
     }

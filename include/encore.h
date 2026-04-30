@@ -362,15 +362,12 @@ typedef struct {
 
     /* User-visible toggles (CLI / yaml config). */
     bool          no_savedata;          /* --no-savedata: skip load and save */
-    bool          cabinet_purist;       /* --cabinet-purist: experimental — when LPT
-                                         * passthrough is open, skip the optional
-                                         * sgc fixups (watchdog suppression /
-                                         * dcs-probe scribble). Only the
-                                         * structurally required mem_detect patch
-                                         * stays on. Lets a real driver board
-                                         * drive the natural code path so we can
-                                         * compare boot/timing behaviour with and
-                                         * without the shims. */
+    bool          cabinet_purist;       /* --cabinet-purist: experimental - when LPT
+                                         * passthrough is open, keep museum-only
+                                         * watchdog/probe-cell scribble disabled.
+                                         * The structural mem_detect patch stays
+                                         * on until MediaGX memory sizing is
+                                         * modeled. */
     bool          start_fullscreen;     /* --fullscreen: open SDL window in FS */
     bool          start_flipscreen;     /* --flipscreen: initial Y-flip ON */
     int           bpp;                  /* --bpp: 16 or 32 (24 falls back to 32) */
@@ -405,11 +402,9 @@ typedef struct {
     /* A20 gate */
     bool          a20_enabled;
 
-    /* ROM-agnostic watchdog health register address (found by scan, 0 if not
-     * yet found). cpu.c writes 0xFFFF here each exec iteration so
-     * pci_read_watchdog() always returns 0 (healthy), suppressing the
-     * pci_watchdog_bone() False Alarm Fatal. Real 200MHz hardware completes
-     * game init before the watchdog can expire; Unicorn emulation is slower. */
+    /* ROM-agnostic museum-mode watchdog/probe-cell address (0 when disabled).
+     * Default update boots leave this at 0 and rely on the PLX INTCSR bit-2
+     * device answer. --update none may arm it as a compatibility bridge. */
     uint32_t      watchdog_flag_addr;
 
     /* Host-driven C++ constructor calling phase (POC BT-64/BT-89).
