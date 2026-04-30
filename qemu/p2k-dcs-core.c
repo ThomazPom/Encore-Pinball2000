@@ -345,26 +345,19 @@ void p2k_dcs_core_write_cmd(uint16_t cmd)
 
     /* --- Legacy raw-pair diagnostic + experimental knob ---
      *
-     * Background: the SWE1 base 0.40 ROM in --update none emits the
-     * mixer-ctrl pair 0x55aa + 0x609f via UART byte-pair WITHOUT a
-     * preceding 0xACE1 wrapper. The default (auto-update) ROM emits
-     * the SAME semantic pair via BAR4 INSIDE an ACE1 wrapper; both
-     * decode to set_global_volume(0x9F). 0x003a (boot dong) is not
-     * emitted at all in base 0.40 — that protocol point is structurally
-     * absent in base, not blocked by missing DCS state.
+     * Before the probe-cell shim landed, SWE1 base 0.40 in --update none
+     * fell back to UART byte-pair where it emitted unwrapped 0x55AA +
+     * 0x609F mixer-ctrl pairs. We auto-enabled this raw-pair routing as
+     * a museum-mode compatibility bridge.
      *
-     * This block is read-only by default: it just captures the word
-     * after each unwrapped 0x55XX and logs it as a "raw-pair candidate"
-     * with running counters for ACE1 / 0x003a / 0x00aa. The optional
-     * env knob P2K_DCS_RAW_55_PAIR=1 routes the captured pair into
-     * execute_mixer the same way the ACE1 path does. It is OFF by
-     * default because:
-     *   - default boot never emits unwrapped 0x55XX (the path is dead
-     *     code there), so enabling it cannot affect the canonical
-     *     update-bundle audio path
-     *   - but we still want a single audited switch for any change
-     *     in DCS protocol semantics, separate from the 0x13c byte-pair
-     *     transport switch (P2K_DCS_NO_BYTE_PAIR)
+     * With the probe-cell shim now correctly returning DCS PRESENT,
+     * --update none uses the real BAR4 path with proper ACE1-wrapped
+     * mixer commands. The unwrapped raw 0x55XX path is therefore dead
+     * in BOTH default and museum boots.
+     *
+     * We keep the diagnostic counters and the explicit P2K_DCS_RAW_55_PAIR
+     * env knob (off by default in both modes) for forensic A/B work
+     * against historical bundles that might still emit unwrapped pairs.
      */
     if (s_core.raw55_armed) {
         info_report("dcs-core: raw-pair candidate hdr=0x%04x data1=0x%04x "
@@ -376,28 +369,13 @@ void p2k_dcs_core_write_cmd(uint16_t cmd)
         static int s_raw55_enable = -1;
         if (s_raw55_enable < 0) {
             const char *e = getenv("P2K_DCS_RAW_55_PAIR");
-            const bool museum = (getenv("P2K_NO_AUTO_UPDATE") != NULL);
-            if (e && *e) {
-                /* Explicit user override takes precedence in either mode. */
-                s_raw55_enable = (*e != '0') ? 1 : 0;
-            } else if (museum) {
-                /* Museum-mode auto-enable: SWE1 base 0.40 with savedata
-                 * sends GLOBAL_VOL / per-ch vol/pan as raw 0x55XX+data1
-                 * via UART byte-pair (no ACE1 wrapper). Tagged as a
-                 * compatibility bridge in the source attribution. */
-                s_raw55_enable = 1;
-                p2k_dcs_core_note_source("compat:raw55-museum");
-            } else {
-                s_raw55_enable = 0;
-            }
+            s_raw55_enable = (e && *e && *e != '0') ? 1 : 0;
             info_report("dcs-core: P2K_DCS_RAW_55_PAIR=%d "
-                        "(experimental raw 0x55XX+data1 → execute_mixer)%s",
-                        s_raw55_enable,
-                        (s_raw55_enable && museum && !(e && *e))
-                            ? " [museum-shim auto-enabled by P2K_NO_AUTO_UPDATE]"
-                            : "");
+                        "(experimental raw 0x55XX+data1 → execute_mixer)",
+                        s_raw55_enable);
         }
         if (s_raw55_enable && p2k_dcs_core_audio_execute_mixer) {
+            p2k_dcs_core_note_source("compat:raw55-forensic");
             p2k_dcs_core_audio_execute_mixer(s_core.raw55_header, cmd, 0);
         }
         s_core.raw55_armed = 0;

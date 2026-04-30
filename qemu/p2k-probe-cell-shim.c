@@ -25,13 +25,17 @@
  *      0x0000FFFF (encoded as `81 3D <addr32> FF FF 00 00`).
  *      Same algorithm as unicorn.old/src/io.c:248-422.
  *
- *   2. Once the cell address is known, write 0xFFFF to it on a slow
- *      virtual-time tick (~50 ms — same order of magnitude as
- *      Unicorn's per-emu-slice RAM_WR32). This makes dcs_probe()
- *      return "DCS PRESENT" so pci_watchdog_bone() does NOT declare
- *      the cabinet's watchdog expired before XINU has a chance to
- *      install its own clkint and start servicing the real PCI/DCS
- *      health register.
+ *   2. Until XINU installs its clkint handler at IDT[0x20], scribble
+ *      0x0000FFFF every ~50 ms (matches Unicorn's pre-xinu_ready
+ *      sentinel value — early sentinel checks expect 0xFFFF and break
+ *      if they read 0x00000000).
+ *
+ *   3. The instant IDT[0x20] differs from the BIOS panic-stub value
+ *      (i.e. xinu_ready), flip the scribble to 0x00000000 forever.
+ *      dcs_probe() then returns 1 (cell != 0xFFFF) and the game
+ *      commits to the BAR4 DCS path instead of the legacy UART
+ *      byte-pair fallback. Boot dong + ACE1 mixer stream + per-channel
+ *      sounds all flow through the real BAR4 path from there.
  *
  * Why this is a guest-data patch (and acknowledged as such):
  *
@@ -90,30 +94,14 @@
 #define SCRIBBLE_PRE_XINU   0x0000FFFFu
 #define SCRIBBLE_POST_XINU  0x00000000u
 
-/* Delay between probe-cell first-located and the polarity flip.
- * Unicorn waits for the UART "XINU: V7" substring + 50 batches
- * (~10M insns). We don't have a UART line collector here, so use a
- * conservative virtual-time delay long enough for XINU sysinit() to
- * finish — measured at ~2-3 s of vtime on this host. 5 s gives margin
- * without making the audio start visibly late. */
-/* Original Unicorn flips IMMEDIATELY when xinu_ready fires.
- * "xinu_ready" in our env = the moment XINU has installed its real
- * clock-interrupt handler at IDT[0x20], replacing the BIOS panic-stub.
- * Before that, sysinit() hasn't completed, and writing 0x00000000 to
- * the probe cell can race against pre-XINU sentinel checks (we have
- * empirically observed boot stalling). After clkint is installed,
- * dcs_probe() will run very soon — flip immediately so the very first
- * read sees PRESENT. */
-#define POST_XINU_DELAY_NS  (0ull)        /* gated by clkint, not vtime */
+/* Polarity flip is gated on XINU readiness — see p2k_probe_cell_tick(). */
 
 static QEMUTimer *s_timer;
 static uint32_t   s_probe_cell;       /* guest phys addr; 0 = not found yet */
 static int        s_scan_attempts;    /* bound the work we do */
 static bool       s_logged_hit;
-static int64_t    s_located_at_ns;    /* vtime when probe cell was found */
 static bool       s_post_xinu;        /* polarity flipped */
 static int        s_post_xinu_writes; /* count after flip, for audit */
-static int64_t    s_post_xinu_at_ns;  /* vtime when polarity flipped */
 static uint32_t   s_initial_idt20;    /* BIOS panic-stub seen pre-XINU */
 
 /* Read IDT[0x20] handler offset from the live CPU. Returns 0 if IDT is
@@ -258,7 +246,6 @@ static void p2k_probe_cell_tick(void *opaque)
             s_scan_attempts++;
             if (s_probe_cell && !s_logged_hit) {
                 s_logged_hit = true;
-                s_located_at_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
                 info_report("p2k-probe-cell-shim: located probe cell at "
                             "0x%08x — phase=pre-XINU scribble=0x%08x "
                             "every 50 ms; will flip to 0x%08x once XINU "
@@ -287,7 +274,6 @@ static void p2k_probe_cell_tick(void *opaque)
                                && h != s_initial_idt20);
             if (xinu_ready) {
                 s_post_xinu = true;
-                s_post_xinu_at_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
                 info_report("p2k-probe-cell-shim: phase=post-XINU "
                             "(IDT[0x20]: panic-stub 0x%08x → clkint "
                             "0x%08x) — switching scribble to 0x%08x at "

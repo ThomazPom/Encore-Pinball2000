@@ -157,17 +157,18 @@ static void p2k_dcs_uart_write(void *opaque, hwaddr addr,
      *     observed; all DCS traffic goes via word writes / BAR4. The
      *     byte-pair branch is dead code on this path, so leaving it
      *     unconditional is harmless for normal update boots.
-     *   - --update none / --update none --no-savedata: 9 byte-pair
-     *     commands fire (0x0000, 0x55aa, 0x609f, 0x00ec, then 0x03ce
-     *     repeatedly). The 0x03ce one decodes to a real pb2kslib
-     *     entry (S03CE) and produces audible audio output.
-     *   - With P2K_DCS_NO_BYTE_PAIR=1 the same --update none boot
-     *     emits 16+ byte writes to 0x13c that go nowhere, no DCS
-     *     commands are produced, and S03CE never plays.
-     * Conclusion: the byte-pair path is real silicon ROM behavior used
-     * by the base/no-update path of SWE1, not late-Unicorn pollution.
-     * Keep it on by default; the env knob exists for future A-B work
-     * if a different ROM ever needs disagrees. */
+     *   - --update none / --update none --no-savedata WITHOUT the
+     *     probe-cell shim: 9+ byte-pair commands fire (the legacy
+     *     UART fallback) — historical observation pre-shim.
+     *   - With the probe-cell shim active (which it is by default
+     *     under P2K_NO_AUTO_UPDATE), --update none also goes through
+     *     BAR4 with 0 byte-pair commands. The byte-pair path is
+     *     therefore dead code on BOTH supported boots today, but is
+     *     kept available because real silicon supports it.
+     *   - With P2K_DCS_NO_BYTE_PAIR=1 the byte-pair path is disabled
+     *     entirely (forensic A/B knob).
+     * Conclusion: the byte-pair path is real silicon ROM behavior; we
+     * keep it on by default and only disable via env knob for A/B. */
     if (off == 4 && size == 1) {
         if (p2k_dcs_no_byte_pair()) {
             s_dcs_byte_pair_skipped++;
