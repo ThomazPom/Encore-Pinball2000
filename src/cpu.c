@@ -296,8 +296,9 @@ int cpu_setup_protected_mode(void)
  *   2. Push EFLAGS, CS, EIP onto guest stack
  *   3. Clear IF
  *   4. Set EIP to handler address
+ * Returns: 1 = injected, 0 = blocked (IF=0), -1 = handler stub/invalid
  */
-void cpu_inject_interrupt(uint8_t vector)
+int cpu_inject_interrupt(uint8_t vector)
 {
     uc_engine *uc = g_emu.uc;
     static int inject_ok = 0, inject_blocked = 0, inject_stub = 0;
@@ -313,7 +314,7 @@ void cpu_inject_interrupt(uint8_t vector)
 
     if (!(eflags & 0x200)) {
         inject_blocked++;
-        return;
+        return 0;
     }
 
     /* Read IDT entry directly from RAM (IDT is always in RAM) */
@@ -325,7 +326,7 @@ void cpu_inject_interrupt(uint8_t vector)
         idt_entry = g_emu.ram + idt_addr;
     } else {
         uc_err err = uc_mem_read(uc, idt_addr, idt_buf, 8);
-        if (err != UC_ERR_OK) return;
+        if (err != UC_ERR_OK) return -1;
         idt_entry = idt_buf;
     }
 
@@ -337,7 +338,7 @@ void cpu_inject_interrupt(uint8_t vector)
 
     if (handler == 0 || handler == 0x20000u || handler == 0x20000000u) {
         inject_stub++;
-        return;
+        return -1;
     }
 
     inject_ok++;
@@ -380,6 +381,7 @@ void cpu_inject_interrupt(uint8_t vector)
         LOGV3("irq", "  frame: [ESP+0]=0x%08x [+4]=0x%08x [+8]=0x%08x ESP=0x%08x→handler=0x%08x\n",
             v_eip, v_cs, v_ef, act_esp, act_eip);
     }
+    return 1;
 }
 
 /* Check PIC for pending interrupts and inject highest priority.
@@ -601,8 +603,25 @@ void cpu_run(void)
             hb_period_ns = 0;
     }
     const bool hb_enabled = (hb_period_ns > 0);
+    /* H7 frame-injection mode: bypass PIC IRR entirely.
+     * When the wall deadline is reached, call cpu_inject_interrupt(0x20)
+     * directly — pushes EFLAGS/CS/EIP, clears IF, jumps to IDT[0x20] handler.
+     * No watcher thread, no IRR mutation. Erikie's #21 hint:
+     * "mimic irq handler your self ... save all cpu states and switch to
+     *  irq address to handle that part afterwards go back to the state". */
+    bool hb_frame_mode = false;
+    {
+        const char *fr = getenv("P2K_HB_FRAME");
+        if (fr && fr[0] && fr[0] != '0' && hb_enabled)
+            hb_frame_mode = true;
+    }
     bool     hb_armed = false;
     uint64_t hb_next_deadline_ns = 0;
+    /* H7 metrics (frame mode only) */
+    unsigned long hb_frame_inject_ok      = 0;
+    unsigned long hb_frame_if_block       = 0;
+    unsigned long hb_frame_handler_invalid = 0;
+    unsigned long hb_frame_advance_skip   = 0;
     /* Anti-storm: if more than this many periods have elapsed since the
      * last service, latch one IRQ0, count the rest as missed (lost), and
      * reset the deadline phase to "now + period". */
@@ -654,21 +673,26 @@ void cpu_run(void)
                 if (!hb_armed) {
                     hb_next_deadline_ns = now_ns + hb_period_ns;
                     hb_armed = true;
-                    atomic_store_explicit(&hb_watcher_deadline_ns,
-                                          hb_next_deadline_ns,
-                                          memory_order_release);
-                    atomic_store_explicit(&hb_watcher_running, 1,
-                                          memory_order_release);
-                    if (pthread_create(&hb_watcher_tid, NULL,
-                                       hb_watcher_thread, NULL) != 0) {
-                        LOG("hb", "watcher pthread_create failed; "
-                            "heartbeat will use main-loop IRR-latch only\n");
-                        atomic_store_explicit(&hb_watcher_running, 0,
-                                              memory_order_release);
+                    if (hb_frame_mode) {
+                        LOG("hb", "H7 frame-injection mode ENABLED — direct "
+                            "cpu_inject_interrupt(0x20), no PIC IRR, no watcher\n");
                     } else {
-                        LOG("hb", "watcher pthread spawned (atomic IRR0 "
-                            "latch every %llu ns, no uc_emu_stop)\n",
-                            (unsigned long long)hb_period_ns);
+                        atomic_store_explicit(&hb_watcher_deadline_ns,
+                                              hb_next_deadline_ns,
+                                              memory_order_release);
+                        atomic_store_explicit(&hb_watcher_running, 1,
+                                              memory_order_release);
+                        if (pthread_create(&hb_watcher_tid, NULL,
+                                           hb_watcher_thread, NULL) != 0) {
+                            LOG("hb", "watcher pthread_create failed; "
+                                "heartbeat will use main-loop IRR-latch only\n");
+                            atomic_store_explicit(&hb_watcher_running, 0,
+                                                  memory_order_release);
+                        } else {
+                            LOG("hb", "watcher pthread spawned (atomic IRR0 "
+                                "latch every %llu ns, no uc_emu_stop)\n",
+                                (unsigned long long)hb_period_ns);
+                        }
                     }
                 }
                 if (now_ns >= hb_next_deadline_ns) {
@@ -684,30 +708,60 @@ void cpu_run(void)
                     uint64_t elapsed = (late_ns / hb_period_ns) + 1;
                     hb_scheduled += elapsed;
 
-                    /* H3: watcher already latched IRR0 each period.  Main
-                     * loop only updates bookkeeping + advances the deadline. */
-                    if (g_emu.pic[0].irr & 0x01) {
-                        /* Either watcher's latch is still pending delivery,
-                         * or guest hasn't run check_and_inject_irq yet. */
-                        hb_collapsed += elapsed - 1;
-                        hb_latched   += 1;
+                    if (hb_frame_mode) {
+                        /* H7: directly fake the interrupt frame.
+                         * cpu_inject_interrupt: 1=injected, 0=IF blocked, -1=stub */
+                        int rc = cpu_inject_interrupt(0x20);
+                        if (rc == 1) {
+                            hb_frame_inject_ok += 1;
+                            hb_latched += 1;
+                            /* IRQ injection modifies EIP — refresh local copy */
+                            uc_reg_read(uc, UC_X86_REG_EIP, &eip);
+                            /* Advance deadline; collapse extras silently */
+                            if (elapsed > 1) hb_collapsed += elapsed - 1;
+                            if (elapsed > HB_CATCHUP_CAP) {
+                                hb_missed += elapsed - 1;
+                                hb_next_deadline_ns = now_ns + hb_period_ns;
+                            } else {
+                                hb_next_deadline_ns += elapsed * hb_period_ns;
+                            }
+                        } else if (rc == 0) {
+                            /* IF=0: don't advance deadline — retry next iter
+                             * once guest re-enables interrupts (sti or iret) */
+                            hb_frame_if_block += 1;
+                            hb_if_block += 1;
+                            hb_frame_advance_skip += 1;
+                            /* But cap retries: if we've been blocked for >cap
+                             * periods, advance to avoid infinite stall. */
+                            if (elapsed > HB_CATCHUP_CAP) {
+                                hb_missed += elapsed - 1;
+                                hb_next_deadline_ns = now_ns + hb_period_ns;
+                            }
+                        } else {
+                            /* Handler stub/invalid — advance to skip */
+                            hb_frame_handler_invalid += 1;
+                            hb_next_deadline_ns += hb_period_ns;
+                        }
                     } else {
-                        /* IRR cleared — guest already EOIed (or hasn't been
-                         * latched yet by watcher in a tight race).  Either
-                         * way, count as latched for delivered% accounting. */
-                        hb_latched += 1;
+                        /* H3: watcher already latched IRR0 each period.  Main
+                         * loop only updates bookkeeping + advances the deadline. */
+                        if (g_emu.pic[0].irr & 0x01) {
+                            hb_collapsed += elapsed - 1;
+                            hb_latched   += 1;
+                        } else {
+                            hb_latched += 1;
+                        }
+                        if (elapsed > HB_CATCHUP_CAP) {
+                            hb_missed += elapsed - 1;
+                            hb_next_deadline_ns = now_ns + hb_period_ns;
+                        } else {
+                            hb_next_deadline_ns += elapsed * hb_period_ns;
+                        }
+                        /* Publish new deadline to the watcher thread. */
+                        atomic_store_explicit(&hb_watcher_deadline_ns,
+                                              hb_next_deadline_ns,
+                                              memory_order_release);
                     }
-
-                    if (elapsed > HB_CATCHUP_CAP) {
-                        hb_missed += elapsed - 1;
-                        hb_next_deadline_ns = now_ns + hb_period_ns;
-                    } else {
-                        hb_next_deadline_ns += elapsed * hb_period_ns;
-                    }
-                    /* Publish new deadline to the watcher thread. */
-                    atomic_store_explicit(&hb_watcher_deadline_ns,
-                                          hb_next_deadline_ns,
-                                          memory_order_release);
                     prof_ticks_fired += 1;
                 }
             } else {
@@ -986,7 +1040,9 @@ void cpu_run(void)
          * Watcher pthread atomically asserts IRR0 every 250 µs; injection
          * happens at natural batch-end / HLT / hook returns.  No uc_emu_stop
          * tear-down (H2 showed that starves cli/sti windows). */
-        size_t batch = hb_enabled ? 20000 : 200000;
+        /* H7 frame mode uses tiny 5k batch (~30 µs) so we poll the wall
+         * deadline ~30 kHz, far above the 4 kHz target.  H3 keeps 20k. */
+        size_t batch = hb_frame_mode ? 5000 : (hb_enabled ? 20000 : 200000);
         uint64_t timeout_us = 0;
         (void)hb_armed;
 
@@ -1313,15 +1369,17 @@ handle_display:
                     /* Wall-clock heartbeat experiment telemetry. */
                     double target_hz = 1e9 / (double)hb_period_ns;
                     double actual_hz = (double)hb_scheduled / (elapsed > 0 ? elapsed : 1.0);
-                    double inj_hz    = (double)hb_injected  / (elapsed > 0 ? elapsed : 1.0);
+                    /* In frame mode, real injects come from H7 path, not PIC. */
+                    unsigned long delivered = hb_frame_mode ? hb_frame_inject_ok : hb_injected;
+                    double inj_hz    = (double)delivered / (elapsed > 0 ? elapsed : 1.0);
                     double deliver_pct = hb_scheduled
-                        ? 100.0 * (double)hb_injected / (double)hb_scheduled
+                        ? 100.0 * (double)delivered / (double)hb_scheduled
                         : 0.0;
                     LOG("hb-pace",
                         "target=%.1fHz wall=%.1fHz inj=%.1fHz deliver=%.1f%% "
                         "sched=%lu latched=%lu collapsed=%lu missed=%lu inj=%lu\n",
                         target_hz, actual_hz, inj_hz, deliver_pct,
-                        hb_scheduled, hb_latched, hb_collapsed, hb_missed, hb_injected);
+                        hb_scheduled, hb_latched, hb_collapsed, hb_missed, delivered);
                     LOG("hb-pace",
                         "  blocks: IF=%lu IMR=%lu ISR=%lu  hlt_sleep=%lu forced_if=%lu  emu_calls=%lu\n",
                         hb_if_block, hb_imr_block, hb_isr_block,
@@ -1329,6 +1387,12 @@ handle_display:
                     LOG("hb-pace",
                         "  late_us histogram: <1=%lu <10=%lu <100=%lu <1000=%lu >=1000=%lu\n",
                         hb_late_us[0], hb_late_us[1], hb_late_us[2], hb_late_us[3], hb_late_us[4]);
+                    if (hb_frame_mode) {
+                        LOG("hb-pace",
+                            "  H7 frame: inject_ok=%lu if_block=%lu invalid=%lu adv_skip=%lu\n",
+                            hb_frame_inject_ok, hb_frame_if_block,
+                            hb_frame_handler_invalid, hb_frame_advance_skip);
+                    }
                 }
                 /* DM / DCS state — SWE1-V1.19 BSS layout. Gated on game_id
                  * so RFM heartbeats don't print garbage for these slots. */
@@ -1403,6 +1467,10 @@ handle_display:
                     hb_if_block = hb_imr_block = hb_isr_block = 0;
                     hb_hlt_sleeps = hb_forced_if = hb_emu_calls = 0;
                     for (int i = 0; i < 5; i++) hb_late_us[i] = 0;
+                    hb_frame_inject_ok = 0;
+                    hb_frame_if_block = 0;
+                    hb_frame_handler_invalid = 0;
+                    hb_frame_advance_skip = 0;
                 }
             }
         }

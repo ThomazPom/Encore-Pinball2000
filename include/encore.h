@@ -423,7 +423,7 @@ extern EncoreState g_emu;
 int  cpu_init(void);
 int  cpu_setup_protected_mode(void);
 void cpu_run(void);
-void cpu_inject_interrupt(uint8_t vector);
+int cpu_inject_interrupt(uint8_t vector);
 void cpu_timer_handler(int sig);
 
 /* memory.c */
