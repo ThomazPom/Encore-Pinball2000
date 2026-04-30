@@ -117,7 +117,10 @@ AUDIO
                             <roms_dir>/<game>_sound.bin. No directory walks.
   --sound-loading lazy|preload
                             lazy   (default) decode samples on-demand.
-                            preload  NOT IMPLEMENTED — errors out.
+                            preload  walk every pb2k entry at install
+                            time and decode now (P2K_DCS_PRELOAD=1).
+                            Adds ~1 s startup cost; eliminates first-
+                            trigger decode hitch.
 
 CONSOLE / DIAGNOSTICS
   --uart-quiet              Silence the COM1/UART mirror on stderr
@@ -151,8 +154,13 @@ CONSOLE / DIAGNOSTICS
                             qemu/NOTES.next.md "DCS Mode Switch").
 
 CABINET / FUTURE
-  --cabinet                 NOT IMPLEMENTED — errors out. Real-cabinet
-                            mode is on the Unicorn-parity backlog.
+  --cabinet | --cabinet-purist
+                            Unicorn-parity flag. Records intent to trust
+                            the real driver-board protocol (no host
+                            switch-matrix injection). Only meaningful
+                            paired with --lpt-device <hostdev>; without
+                            it, the emulated board still answers
+                            (P2K_CABINET_PURIST=1).
   --lpt-device emu|none|/dev/parportN|0xNNN
                             Pinball driver-board wiring. `emu` (default,
                             also `emulated`) keeps the desktop-input
@@ -168,7 +176,8 @@ CABINET / FUTURE
   --lpt-trace <file>        Append every LPT read/write to <file>
                             (P2K_LPT_TRACE_FILE). Format:
                             "<ts> R|W <off>=<val>" with µs timestamps.
-  --parport <device>        NOT IMPLEMENTED — use --lpt-device <device>.
+  --parport <device>        Unicorn-compatible alias for
+                            `--lpt-device <device>`.
 
 ESCAPE HATCHES
   --tcg-only                Smoke-test the host QEMU binary alone (no
@@ -205,7 +214,7 @@ ENV PASSTHROUGH (advanced; see qemu/README.md for the full table)
   P2K_DCS_RAW_55_PAIR P2K_DIAG P2K_NO_AUTO_UPDATE
   P2K_PB2KSLIB P2K_DCS_MODE P2K_SCREENSHOT_DIR
   P2K_DISPLAY_BPP P2K_LPT_DISABLE P2K_LPT_PARPORT
-  P2K_LPT_IOPORT P2K_LPT_TRACE_FILE
+  P2K_LPT_IOPORT P2K_LPT_TRACE_FILE P2K_DCS_PRELOAD P2K_CABINET_PURIST
 EOF
 }
 
@@ -226,7 +235,8 @@ while [[ $# -gt 0 ]]; do
       case "$2" in
         32) ;;  # default ARGB8888 path
         16) export P2K_DISPLAY_BPP=16 ;;  # native x1r5g5b5 surface
-        *)  echo "[run-qemu] --bpp $2 invalid; expected 16 or 32" >&2; exit 2 ;;
+        24) echo "[run-qemu] --bpp 24 not supported, falling back to 32 (Unicorn parity)" >&2 ;;
+        *)  echo "[run-qemu] --bpp $2 invalid; using 32 (Unicorn parity)" >&2 ;;
       esac
       shift 2 ;;
     --splash | --splash-screen)
@@ -271,7 +281,7 @@ while [[ $# -gt 0 ]]; do
     --sound-loading)
       case "$2" in
         lazy)    SOUND_LOADING="lazy" ;;
-        preload) echo "[run-qemu] --sound-loading preload not implemented yet" >&2; exit 2 ;;
+        preload) SOUND_LOADING="preload"; export P2K_DCS_PRELOAD=1 ;;
         *) echo "[run-qemu] --sound-loading: expected lazy|preload, got '$2'" >&2; exit 2 ;;
       esac
       shift 2 ;;
@@ -283,12 +293,15 @@ while [[ $# -gt 0 ]]; do
     -v)                VERBOSITY=1; shift ;;
     -vv)               VERBOSITY=2; shift ;;
     -vvv)              VERBOSITY=3; shift ;;
-    --cabinet)
-      echo "[run-qemu] --cabinet not implemented yet (use Unicorn Encore for real-cabinet mode)" >&2
-      exit 2 ;;
+    --cabinet|--cabinet-purist)
+      # Unicorn flag is --cabinet-purist (experimental, opt-in to "trust
+      # the real board" semantics). With our wrapper there's no real
+      # cabinet bus to trust unless --lpt-device <hostdev> is also set,
+      # so we just record the intent for downstream forensics.
+      export P2K_CABINET_PURIST=1; shift ;;
     --lpt-device|--lpt)
       # Unicorn-shape: --lpt-device <none|emu|/dev/parportN|0xNNN>.
-      # All four modes now wire to existing P2K_LPT_* env vars consumed by
+      # All four modes wire to existing P2K_LPT_* env vars consumed by
       # qemu/p2k-lpt-board.c. Real hardware passthrough is Linux-only and
       # requires the host user to be in the `lp` group with ppdev loaded.
       LPT_MODE="$2"
@@ -298,7 +311,7 @@ while [[ $# -gt 0 ]]; do
         /dev/*)            [[ -e "$LPT_MODE" ]] || { echo "[run-qemu] $1: '$LPT_MODE' does not exist" >&2; exit 2; }
                            export P2K_LPT_PARPORT="$LPT_MODE" ;;
         0x[0-9a-fA-F]*|[0-9]*) export P2K_LPT_IOPORT="$LPT_MODE" ;;
-        parport)           echo "[run-qemu] $1 parport: please pass an explicit /dev/parportN device" >&2; exit 2 ;;
+        parport)           export P2K_LPT_PARPORT="/dev/parport0" ;;  # Unicorn default probe target
         *) echo "[run-qemu] $1: expected emu|none|/dev/parportN|0xNNN, got '$LPT_MODE'" >&2; exit 2 ;;
       esac
       shift 2 ;;
@@ -308,8 +321,10 @@ while [[ $# -gt 0 ]]; do
       export P2K_LPT_TRACE_FILE="$LPT_TRACE_DIR/$(basename "$2")"
       shift 2 ;;
     --parport)
-      echo "[run-qemu] --parport not implemented yet" >&2
-      exit 2 ;;
+      # Unicorn-compatible alias: --parport <dev> ⇒ --lpt-device <dev>
+      [[ -n "${2:-}" ]] || { echo "[run-qemu] --parport: expected <device>" >&2; exit 2; }
+      [[ -e "$2" ]] || { echo "[run-qemu] --parport: '$2' does not exist" >&2; exit 2; }
+      export P2K_LPT_PARPORT="$2"; shift 2 ;;
     --tcg-only)        TCG_ONLY=1; shift ;;
     --)                shift; EXTRA+=("$@"); break ;;
     -h|--help)         print_help; exit 0 ;;

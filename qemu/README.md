@@ -132,7 +132,10 @@ Wrapper flag → behavior summary (see `--help` for full list):
 | `--splash-screen <path>` | Best-effort host viewer (`feh`/`eog`/`display`/`xdg-open`) shown while QEMU runs; killed on exit. `default`/`none` show no splash. |
 | `--lpt-device none\|/dev/parportN\|0xNNN` | `none` → skip LPT install (P2K_LPT_DISABLE; game won't boot — diagnostic). `/dev/parportN` → host parport passthrough via Linux ppdev (P2K_LPT_PARPORT; needs `lp` group + `modprobe ppdev`). `0xNNN` → relocate emulated board to a custom I/O port (P2K_LPT_IOPORT). `emu`/`emulated` is the default. |
 | `--lpt-trace <file>` | Append every LPT read/write event to `<file>` (`P2K_LPT_TRACE_FILE`) with µs timestamps. |
-| `--cabinet`, `--parport`, `--sound-loading preload`, `--splash` (legacy) | Still rejected with "not implemented yet" — not in the filtered NOTES surface. |
+| `--cabinet` / `--cabinet-purist` | Records intent to trust the real driver-board protocol (`P2K_CABINET_PURIST=1`). Effective only when paired with `--lpt-device <hostdev>`; the emulated board still answers otherwise. |
+| `--parport <device>` | Unicorn-compatible alias for `--lpt-device <device>`. |
+| `--sound-loading preload` | Decode every pb2k sample at install time (`P2K_DCS_PRELOAD=1`); eliminates first-trigger decode hitch. `lazy` (default) decodes on demand. |
+| `--bpp 24` / `--splash` (legacy alone) | Accepted for Unicorn parity: `--bpp 24` warns and falls back to 32; `--splash` keeps the silent default (no host splash). |
 | `--` / passthrough      | Everything after `--` is forwarded verbatim to QEMU.                    |
 
 Useful env vars (defaults reflect the post-bring-up state, see

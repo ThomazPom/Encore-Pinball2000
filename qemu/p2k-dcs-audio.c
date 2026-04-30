@@ -897,6 +897,21 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
     p2k_dcs_core_audio_process_cmd   = dcs_audio_on_process_cmd;
     p2k_dcs_core_audio_execute_mixer = dcs_audio_on_execute_mixer;
 
+    /* --sound-loading preload: walk every pb2k entry up front so that
+     * the first DCS trigger of any sample never pays the OGG decode
+     * cost. Idempotent — get_sample_for_cmd populates the cache. */
+    if (getenv("P2K_DCS_PRELOAD")) {
+        int decoded = 0;
+        for (int i = 0; i < a->entry_cnt; i++) {
+            uint16_t c = a->entries[i].track_cmd;
+            if (c >= SAMPLE_CACHE_SIZE) continue;
+            const char *nm = NULL;
+            if (get_sample_for_cmd(a, c, &nm)) decoded++;
+        }
+        info_report("dcs-audio: preload decoded %d / %d pb2k samples "
+                    "(--sound-loading preload)", decoded, a->entry_cnt);
+    }
+
     /* Per-second status timer when trace is on (render/output proof). */
     if (a->trace) {
         a->status_timer = timer_new_ms(QEMU_CLOCK_VIRTUAL,

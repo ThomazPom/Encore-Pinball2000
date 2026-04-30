@@ -598,16 +598,22 @@ not the new source of truth.
 - [x] Polished UX shipped: `--fullscreen` → `-full-screen`, host-side
   F3 screenshot to JPG (PPM fallback), SDL `Ctrl+Alt+F` toggle for
   fullscreen, `--screenshot-dir` controls F3 output dir.
-  `--bpp 16`, `--splash`/`--splash-screen <path>`, `--sound-loading preload`
-  are intentionally rejected to keep the surface honest.
+  `--bpp 16` decodes pixels through the native PIXMAN x1r5g5b5 path,
+  `--bpp 24` warns and falls back to 32 (Unicorn parity),
+  `--splash-screen <path>` launches a host viewer that is killed on
+  QEMU exit, and `--sound-loading preload` walks all 689 pb2k entries
+  at install time.
 - [x] Wrapper shape filtered (no toy resurrection): kept `--game`, `--roms`,
   `--savedata`, `--no-savedata`, `--update`, verbosity, `--headless`,
-  `--fullscreen`, `--bpp` (16 native PIXMAN x1r5g5b5 / 32 ARGB),
+  `--fullscreen`, `--bpp` (16 native PIXMAN x1r5g5b5 / 32 ARGB / 24 → 32),
   `--splash-screen` (host viewer), `--dcs-mode`, `--lpt-device`
   (emu / none / /dev/parportN ppdev / 0xNNN), `--lpt-trace <file>`
-  (µs timestamps). Explicitly NOT re-added: old Unicorn CPU/PIT pacing
-  knobs, keyboard TCP, HTTP endpoint, record/replay, xina-script,
-  net-bridge, `--cabinet`, `--parport`, `--sound-loading preload`.
+  (µs timestamps), `--sound-loading lazy|preload`,
+  `--cabinet`/`--cabinet-purist` (records `P2K_CABINET_PURIST=1`,
+  effective only with a real `--lpt-device <hostdev>`),
+  `--parport <device>` (alias for `--lpt-device <device>`).
+  Explicitly NOT re-added: old Unicorn CPU/PIT pacing knobs,
+  keyboard TCP, HTTP endpoint, record/replay, xina-script, net-bridge.
 - [ ] Keep PIT semantics honest: default is guest-programmed QEMU i8254.
   SWE1 has been observed around divisor 298, about 4003.97 Hz. Any 4004/4096
   override is a diagnostic/compat option, not the default truth.
