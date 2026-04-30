@@ -136,7 +136,6 @@ typedef struct DcsAudio {
     uint64_t      cmd_by_uart_bp;
     uint64_t      cmd_by_compat;       /* "compat:*" museum-mode bridges */
     uint64_t      cmd_by_other;
-    uint64_t      dong_played_count;   /* 0x003A on ch0 successful starts */
 
     /* "played-but-never-rendered" detector.  We snapshot the played
      * counter + the last play info on each successful start, and on
@@ -481,9 +480,13 @@ static void stop_all_voices(DcsAudio *a)
 
 static void render(DcsAudio *a, int16_t *out, int frames)
 {
-    /* Per-channel mix:
-     *   amp_q15 = (vol * global_vol * 28000) / (255 * 255)
-     * leaves headroom for summing 8 voices. */
+    /* Per-voice unity-gain mix matching Unicorn's SDL2_mixer:
+     *   contrib = sample * vol / 255      (vol=255 → pass-through)
+     * The per-frame sum is then saturating-clipped, exactly like
+     * SDL_mixer combines its 8 mixer channels. The 0x55AA broadcast
+     * of GLOBAL_VOL into each voice's vc->vol mirrors the
+     * Mix_Volume(-1, ...) semantic; subsequent plays overwrite the
+     * channel's vc->vol, also per Unicorn (sound.c:302,346). */
     int32_t local_peak = 0;
     for (int i = 0; i < frames; i++) {
         int32_t mix = 0;
@@ -581,14 +584,6 @@ static const char *evt_source(DcsAudio *a)
     return src;
 }
 
-/* Public accessor: has the boot dong (0x003A on ch0) been heard yet?
- * Used by the museum-mode shim to suppress its synthetic dong injection
- * if the guest's DCS path already produced one naturally. */
-bool p2k_dcs_audio_dong_observed(void)
-{
-    return s_dcs_audio.dong_played_count > 0;
-}
-
 /* Process-cmd hook: receives semantic direct-trigger events from
  * p2k-dcs-core (matches Unicorn sound.c sound_process_cmd contract). */
 static void dcs_audio_on_process_cmd(uint16_t cmd)
@@ -637,9 +632,6 @@ static void dcs_audio_on_process_cmd(uint16_t cmd)
         start_voice_on_channel(a, channel, s, /*vol*/255, /*pan*/0x7F,
                                lookup_cmd, name);
         a->played_count++;
-        if (lookup_cmd == 0x003A) {
-            a->dong_played_count++;
-        }
         TRACE_EVT(a,
                   "[%s] process_cmd 0x%04x → key=0x%04x name=%s frames=%zu "
                   "ch=%d vol=255 pan=127 (played #%llu)",

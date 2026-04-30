@@ -106,40 +106,6 @@ static int64_t    s_located_at_ns;    /* vtime when probe cell was found */
 static bool       s_post_xinu;        /* polarity flipped */
 static int        s_post_xinu_writes; /* count after flip, for audit */
 static int64_t    s_post_xinu_at_ns;  /* vtime when polarity flipped */
-static bool       s_dong_bridged;     /* museum-mode dong helper one-shot */
-
-/* Museum-mode dong-parity bridge delay after the post-XINU flip.
- *
- * Why this is parity, not synthesis:
- *   Unicorn explicitly calls sound_play_boot_dong() at host level when
- *   the guest emits 0x003A — once from io.c:1540 (UART path) and once
- *   from bar.c:973 (BAR4 path). The dong sample played is the real
- *   ROM-backed pb2k entry 0 (sound.c:419-422 loads it as s_boot_dong).
- *   In Unicorn --update none (with OR without savedata) the guest takes
- *   the BAR4 path and emits 0x003A naturally; the host-side
- *   sound_play_boot_dong() then runs.
- *
- *   In QEMU --update none WITH stale savedata, the guest currently
- *   takes the UART byte-pair path instead of BAR4 (a real divergence
- *   we still need to root-cause: probably a CCR/PCI/CMOS state read
- *   from savedata steers it that way). On that fallback path, base
- *   0.40 never emits 0x003A, so the natural Unicorn dong trigger is
- *   silent.
- *
- *   The cleanest long-term fix is to make the guest take the BAR4
- *   path in museum mode the same way Unicorn does. Until then, this
- *   one-shot host-side play of the same real ROM sample preserves
- *   audio parity behind the museum gate. It is exactly the
- *   "host-side dong/audio-init helper if Unicorn effectively did
- *   that" bridge the user pre-approved for museum mode.
- *
- * Removal condition:
- *   When the BAR4 vs UART divergence with stale savedata is fixed,
- *   the guest will emit 0x003A naturally and p2k-dcs-audio will play
- *   the same sample without any host-side trigger. At that point the
- *   p2k_dcs_audio_dong_observed() check below will SUPPRESS this
- *   bridge (no log spam), and the file can be cleaned up. */
-#define DONG_DELAY_NS  (3ull * 1000ull * 1000ull * 1000ull)
 
 /* Read IDT[0x20] handler offset from the live CPU. Returns 0 if IDT is
  * not yet set up or vector 0x20 is missing. Used as our "XINU is up"
@@ -324,38 +290,6 @@ static void p2k_probe_cell_tick(void *opaque)
                 info_report("p2k-probe-cell-shim: first post-XINU "
                             "scribble committed; awaiting first DCS "
                             "command from guest");
-            }
-
-            /* Museum-mode dong-parity bridge. Mirrors Unicorn's
-             * sound_play_boot_dong() (io.c:1540 / bar.c:973), which
-             * always fires for 0x003A regardless of source path.
-             * One-shot, suppressed if the guest already emitted a
-             * 0x003A naturally (no double-dong, no log spam).
-             * Strictly gated to P2K_NO_AUTO_UPDATE; never reachable
-             * on normal update boots. Real ROM sample (pb2k entry 0
-             * via process_cmd 0x003A), tagged source
-             * "compat:dong-museum-parity". */
-            if (!s_dong_bridged &&
-                qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - s_post_xinu_at_ns
-                    >= (int64_t)DONG_DELAY_NS) {
-                s_dong_bridged = true;
-                if (p2k_dcs_audio_dong_observed()) {
-                    info_report("p2k-probe-cell-shim: museum dong-parity "
-                                "bridge SUPPRESSED — guest already emitted "
-                                "0x003A naturally, no bridge needed");
-                } else if (p2k_dcs_core_audio_process_cmd) {
-                    info_report("p2k-probe-cell-shim: museum dong-parity "
-                                "bridge → process_cmd(0x003A) via "
-                                "compat:dong-museum-parity (mirrors "
-                                "Unicorn sound_play_boot_dong at "
-                                "io.c:1540 / bar.c:973; real ROM "
-                                "pb2k entry 0). Removal condition: "
-                                "fix BAR4-vs-UART path divergence in "
-                                "--update none w/ stale savedata so "
-                                "the guest emits 0x003A naturally.");
-                    p2k_dcs_core_note_source("compat:dong-museum-parity");
-                    p2k_dcs_core_audio_process_cmd(0x003A);
-                }
             }
         }
     }

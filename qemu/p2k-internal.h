@@ -87,15 +87,10 @@ void p2k_install_dcs_uart(void);
  * playback (8-voice software mixer). The wrapper enables it when it
  * auto-detects a host backend; P2K_NO_DCS_AUDIO forces it off. */
 void p2k_install_dcs_audio(Pinball2000MachineState *s);
-/* True iff the boot dong (0x003A on ch0) has been started by audio
- * since boot. Used by museum-mode shim to suppress its synthetic
- * dong injection when the guest produced one naturally. */
-bool p2k_dcs_audio_dong_observed(void);
 
 /* Audio dispatch hooks owned by p2k-dcs-core.c, populated by
  * p2k-dcs-audio.c at install time. NULL when the audio backend is
- * disabled. The probe-cell museum shim calls process_cmd directly
- * (after note_source) to inject a synthetic boot dong. */
+ * disabled. */
 extern void (*p2k_dcs_core_audio_process_cmd)(uint16_t cmd);
 extern void (*p2k_dcs_core_audio_execute_mixer)(uint16_t cmd,
                                                 uint16_t data1,
