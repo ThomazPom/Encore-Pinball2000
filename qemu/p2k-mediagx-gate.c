@@ -46,13 +46,93 @@ bool p2k_mediagx_extensions_enabled = false;
 /* Per-opcode counters. Indexed by the second opcode byte (0x36..0x3F). */
 static atomic_uint s_p2k_mediagx_seen[16];
 
+/* MediaGX CPU-internal register model (databook §4.1.6, Table 4-8).
+ *
+ * The documented address space is sparse — only six addresses are
+ * named (BB0/BB1 BASE/POINTER, PM_BASE, PM_MASK) — but a CPU_WRITE may
+ * carry any 32-bit EBX. We back this with a fixed-slot table keyed by
+ * the full EBX value plus a small overflow buffer for un-named addrs
+ * we encounter, so the model logs and records every write/read instead
+ * of silently dropping bits. */
+#define P2K_MGX_NUM_NAMED  6u
+#define P2K_MGX_OVERFLOW   16u
+
+typedef struct {
+    uint32_t addr;     /* EBX value; 0 means slot empty (no real reg uses 0) */
+    uint32_t value;
+} p2k_mgx_slot_t;
+
+static p2k_mgx_slot_t s_p2k_mgx_named[P2K_MGX_NUM_NAMED] = {
+    { 0xFFFFFF0Cu, 0u }, /* L1_BB0_BASE    */
+    { 0xFFFFFF1Cu, 0u }, /* L1_BB1_BASE    */
+    { 0xFFFFFF2Cu, 0u }, /* L1_BB0_POINTER */
+    { 0xFFFFFF3Cu, 0u }, /* L1_BB1_POINTER */
+    { 0xFFFFFF6Cu, 0u }, /* PM_BASE        */
+    { 0xFFFFFF7Cu, 0u }, /* PM_MASK        */
+};
+static p2k_mgx_slot_t s_p2k_mgx_overflow[P2K_MGX_OVERFLOW];
+static unsigned       s_p2k_mgx_overflow_used;
+
+static p2k_mgx_slot_t *p2k_mgx_find(uint32_t addr, bool create)
+{
+    for (unsigned i = 0; i < P2K_MGX_NUM_NAMED; i++) {
+        if (s_p2k_mgx_named[i].addr == addr) {
+            return &s_p2k_mgx_named[i];
+        }
+    }
+    for (unsigned i = 0; i < s_p2k_mgx_overflow_used; i++) {
+        if (s_p2k_mgx_overflow[i].addr == addr) {
+            return &s_p2k_mgx_overflow[i];
+        }
+    }
+    if (!create) {
+        return NULL;
+    }
+    if (s_p2k_mgx_overflow_used >= P2K_MGX_OVERFLOW) {
+        warn_report_once("pinball2000: MediaGX internal-reg overflow "
+                         "table full; writes to addr=0x%08x dropped", addr);
+        return NULL;
+    }
+    p2k_mgx_slot_t *s = &s_p2k_mgx_overflow[s_p2k_mgx_overflow_used++];
+    s->addr  = addr;
+    s->value = 0;
+    qemu_log_mask(LOG_GUEST_ERROR,
+        "p2k-mediagx: new internal-reg observed: addr=0x%08x "
+        "(not in databook Table 4-8)\n", addr);
+    return s;
+}
+
+void p2k_mediagx_internal_reg_write(uint32_t ebx_addr, uint32_t value)
+{
+    p2k_mgx_slot_t *s = p2k_mgx_find(ebx_addr, true);
+    if (s) {
+        s->value = value;
+    }
+}
+
+uint32_t p2k_mediagx_internal_reg_read(uint32_t ebx_addr)
+{
+    p2k_mgx_slot_t *s = p2k_mgx_find(ebx_addr, false);
+    return s ? s->value : 0u;
+}
+
+/* 0F 3B BB1_RESET — reset L1_BB1_POINTER to L1_BB1_BASE
+ * (databook §4.1.5). */
+void p2k_mediagx_bb1_reset_internal(void)
+{
+    uint32_t base = p2k_mediagx_internal_reg_read(0xFFFFFF1Cu);
+    p2k_mediagx_internal_reg_write(0xFFFFFF3Cu, base);
+}
+
 /* Called by pinball2000 machine init. */
 void p2k_mediagx_enable_extensions(void)
 {
     p2k_mediagx_extensions_enabled = true;
     info_report("pinball2000: Cyrix MediaGX TCG extensions ENABLED "
-                "(0F 3C CPU_WRITE shim active; 0F 36/37/39/3B/3D/3F "
-                "logged then #UD; 0F 3A reserved for SSE4 dispatch). "
+                "(0F 3B BB1_RESET, 0F 3C CPU_WRITE, 0F 3D CPU_READ "
+                "implemented per databook §4.1.5/§4.1.6 + on-silicon "
+                "scratchpad pipeline; 0F 36/37/39/3F log+UD; "
+                "0F 3A reserved for SSE4 dispatch). "
                 "Stock i386 binaries are unaffected.");
 }
 
