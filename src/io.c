@@ -454,9 +454,8 @@ static void apply_sgc_patches(void)
     } else {
         uint32_t prime_val = 0x0000FFFFu;
         RAM_WR32(health_addr, prime_val);
-        LOG("sgc", "watchdog suppression active (museum mode): [0x%08x] primed =0x%08x (BT-107, dcs-mode=%s, scribble flips post-xinu_ready)\n",
-            health_addr, prime_val,
-            (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) ? "io-handled" : "bar4-patch");
+        LOG("sgc", "watchdog suppression active (museum mode): [0x%08x] primed =0x%08x (BT-107, io-handled, scribble flips post-xinu_ready)\n",
+            health_addr, prime_val);
     }
 
     /* === BT-130: mem_detect() patch ===

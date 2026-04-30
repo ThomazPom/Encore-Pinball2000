@@ -322,22 +322,8 @@ typedef struct {
     uint64_t      clkint_ready_exec;   /* exec_count when clkint first detected in IDT[0x20] */
     bool          game_started;
     bool          is_v19_update;       /* running with update flash (V1.19) */
-    bool          dcs_mode_patch_attempted; /* one-shot DCS-mode BAR4 force */
-    /* Sound subsystem mode selector (--dcs-mode):
-     *   ENCORE_DCS_IO_HANDLED (default) — patch is skipped; the game runs
-     *     the unmodified PCI-detect probe and our io.c UART handlers
-     *     (ports 0x138-0x13F) answer.  Combined with the staged BT-107
-     *     scribble (0xFFFF until xinu_ready, then 0x0000), this path
-     *     boots every bundle we ship and delivers audio on all of them.
-     *   ENCORE_DCS_BAR4_PATCH — legacy path: scan for the DCS-probe
-     *     CMP/JNE prologue and byte-patch it so dcs_mode latches to 1,
-     *     forcing the PCI BAR4 path.  Kept for regression / A-B work;
-     *     fails on bundles where the 5-byte prologue is absent
-     *     (notably SWE1 v1.3 and the --update none trim set).  */
-    enum {
-        ENCORE_DCS_IO_HANDLED = 0,
-        ENCORE_DCS_BAR4_PATCH = 1,
-    } dcs_mode_choice;
+    /* DCS sound uses the guest's native I/O/UART path. The old BAR4-force
+     * guest-code patch is intentionally absent from this clean branch. */
     volatile int timer_pending;       /* count of unprocessed SIGALRM ticks */
     volatile int timer_tick_queue;    /* queued IRQ0 ticks waiting for EOI */
     uint32_t      idt_base;            /* cached IDT base address */

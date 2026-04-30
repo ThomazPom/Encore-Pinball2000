@@ -11,20 +11,11 @@
  *  game/version-agnostic, or be clearly gated with a sanity check.
  * ==========================================================================
  *
- *  A) ALWAYS-ON, self-validating or pattern-scanned (safe for any build):
+ *  A) INTENDED SURVIVORS:
  *  ---------------------------------------------------------------------
- *  [cpu.c] DCS-mode override @ 0x1931E6 (SWE1 v1.5/v1.19 only)
- *      Byte-validated (CMP EAX,1 ; JNE 0x21 → MOV EAX,1).  Forces BAR4
- *      path so DCS sound engine receives commands.  Without it the game
- *      sits in I/O-port mode (ports 0x13C-0x13F) which we stub as 0xFF
- *      → DCS detection fails → no boot dong, no audio init.
- *      TODO: replace with pattern scan for v2.1 compatibility.
- *
  *  [io.c::apply_sgc_patches]  — game-agnostic pattern scans:
- *      • pci_watchdog_bone health register — UART string-anchored scan
  *      • mem_detect 4MB → 14MB — function-prologue scan (BT-130)
- *      • prnull idle code @ 0xFF0000 — low-mem stub (STI+HLT+JMP)
- *      • BT-74 nulluser JMP$ → HLT;JMP-3 — 17-byte pattern scan
+ *      • museum-only probe-cell bridge — armed only for --update none
  *
  *  [cpu.c::cpu_init] IRET+EOI stub @ 0x20000 — low-mem stub, game-agnostic.
  *
@@ -39,7 +30,7 @@
  *
  *  C) RFM/SWE1 both, read-only maintenance @ 64-cycle tick:
  *      RAM_WR32(0, 0)           — NULL page zeroing, harmless
- *      watchdog_flag_addr=FFFF  — uses scanned address (safe)
+ *      watchdog_flag_addr       — museum-only; 0 in default update boots
  *
  *  D) Dropped in prior pass — kept only as commented markers:
  *      apply_xinu_boot_patches() (V1.12 BSS pokes) — orphaned, deleted.
@@ -635,100 +626,6 @@ void cpu_run(void)
             }
         }
 
-        /* ============================================================
-         * DCS-mode override — pattern-driven, game-agnostic, generic.
-         *
-         * The Williams DCS-detect probe in the boot/init code does
-         *     CMP EAX, 1                  (83 F8 01)
-         *     JNE  +0x21                  (75 21)
-         *     MOV  [<bss_slot>], EAX      (A3 ?? ?? ?? ??)
-         * after reading the DCS reset response. EAX==1 means "BAR4
-         * (MMIO) DCS interface present" → fall-through stores 1 into
-         * the dcs_mode slot, downstream sound init uses BAR4.
-         * Anything else → JNE → "I/O-port DCS interface" path, which
-         * io.c only partially implements (RESETs are answered, but
-         * the post-reset cmd stream — dong/init/mixer — never sent).
-         *
-         * The unique `JNE +0x21` distance (0x21 = 33 bytes) is the
-         * discriminator: this exact CMP/JNE/MOV idiom appears in
-         * other places in every bundle but always with a different
-         * jne offset (0x05, 0x0F, 0x1E, 0x24, 0x26 …). Static scan
-         * across all 7 dearchived bundles confirms exactly one
-         * `83 F8 01 75 21 A3 ?? ?? ?? ??` per bundle, and the target
-         * is always in the per-build BSS range 0x310000-0x390000.
-         *
-         * Each bundle stores dcs_mode at its own per-build address
-         * (SWE1 v1.5 → 0x3444B0, SWE1 v2.1 → 0x34A714, RFM v1.2 →
-         * 0x313EBC, …). The MOV-store keeps that bundle's address;
-         * we only replace the 5-byte CMP+JNE prologue with
-         * `MOV EAX, 1` so the store fires unconditionally.
-         *
-         * Range 0x80000-0x400000 covers all known relocation targets
-         * of the option-ROM copy. One-shot at the XINU-ready
-         * transition. NO per-game gate — pure pattern match.
-         *
-         * NOTE — I/O DCS handshake is DEFERRED per user directive:
-         * "you tried multiple times to get the io handshake but never
-         * got it. start by getting it work with bar4, we will take a
-         * look again on io handshake later. note it somewhere to not
-         * forget".  Until io.c implements the full UART command-stream
-         * answer pump, BAR4 is the only viable sound path and this
-         * patch is required to reach it on every bundle that has the
-         * probe (i.e. every bundle observed so far).
-         * ============================================================ */
-        if (g_emu.xinu_booted && g_emu.xinu_ready &&
-            !g_emu.dcs_mode_patch_attempted) {
-            g_emu.dcs_mode_patch_attempted = true;
-            if (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) {
-                LOG("init",
-                    "DCS-mode patch SKIPPED (--dcs-mode io-handled): "
-                    "game uses unmodified PCI probe; UART handlers in io.c "
-                    "answer the I/O path.\n");
-            } else {
-            const uint32_t scan_lo = 0x80000u;
-            const uint32_t scan_hi = 0x400000u;
-            int hits = 0;
-            uint8_t *r = g_emu.ram;
-            for (uint32_t a = scan_lo; a + 10 <= scan_hi; a++) {
-                if (r[a]   == 0x83 && r[a+1] == 0xF8 && r[a+2] == 0x01 &&
-                    r[a+3] == 0x75 && r[a+4] == 0x21 &&
-                    r[a+5] == 0xA3) {
-                    uint32_t slot =  (uint32_t)r[a+6]
-                                  | ((uint32_t)r[a+7] << 8)
-                                  | ((uint32_t)r[a+8] << 16)
-                                  | ((uint32_t)r[a+9] << 24);
-                    /* Sanity: target must look like a per-build BSS slot.
-                     * Observed slots: SWE1 v1.5 0x3444B0, SWE1 v2.1
-                     * 0x34A714, RFM v1.6 0x36D39C, RFM v1.8 0x36D030,
-                     * RFM v2.5 0x382600, RFM v2.6 0x383330. */
-                    if (slot < 0x300000u || slot >= 0x400000u) continue;
-
-                    /* Replace ONLY the 5-byte CMP+JNE prologue with
-                     * `MOV EAX, 1`. The trailing `A3 ?? ?? ?? ??`
-                     * (MOV [<slot>], EAX) MUST remain intact so the
-                     * forced value actually lands in this bundle's
-                     * dcs_mode slot — without the store, the game's
-                     * later sound-init checks see dcs_mode==0 and skip
-                     * the BAR4 command stream. */
-                    uint8_t patch[5] = { 0xB8, 0x01, 0x00, 0x00, 0x00 };
-                    uc_mem_write(uc, a, patch, 5);
-                    /* Also keep the RAM mirror in sync so any reader
-                     * that bypasses Unicorn's TLB sees the patched code. */
-                    memcpy(r + a, patch, 5);
-                    LOG("init",
-                        "DCS-mode pattern hit @0x%08x slot=0x%08x"
-                        " — patched (force BAR4)\n",
-                        a, slot);
-                    hits++;
-                    if (hits >= 4) break;  /* bail-out, shouldn't happen */
-                }
-            }
-            if (hits == 0)
-                LOG("init",
-                    "DCS-mode pattern absent — no patch applied\n");
-            }
-        }
-
         /* Inject all pending PIC interrupts (timer IRQ0 + others like IRQ4 UART).
          * check_and_inject_irq() respects both PIC IMR (hw mask) and CPU IF flag,
          * and properly tracks ISR (in-service) for correct priority resolution.
@@ -771,12 +668,8 @@ void cpu_run(void)
                  *     cmp dword [<cell>], 0xFFFF ; je RET-0
                  *     mov eax, 1                  ; (cell != 0xFFFF) RET-1
                  * Probe returns 1 (DCS PRESENT) when cell != 0xFFFF.
-                 * In bar4-patch mode the CMP is byte-patched to mov eax,1
-                 * so the cell value is irrelevant; writing 0xFFFF (legacy
-                 * empirical value) is fine.  In io-handled mode we depend
-                 * on the *natural* probe → must keep cell != 0xFFFF, so
-                 * we scribble 0 instead, which yields probe → 1 → DCS
-                 * detected → game writes dcs_mode=1 → audio init runs. */
+                 * This path is armed only for --update none / museum mode;
+                 * default update boots use the PLX INTCSR bit-2 answer. */
                 /* Staged scribble: keep 0xFFFF until XINU is ready.
                  * Pre-XINU boot code on some bundles (RFM v1.2, SWE1 v1.3,
                  * and base-chips-only --update none) reads this cell as a
@@ -784,16 +677,12 @@ void cpu_run(void)
                  * before xinu_ready ever fires.  After xinu_ready the game
                  * stack is up and the only consumer of this cell is the
                  * DCS probe inside dcs_probe(), which returns 1 when
-                 * cell != 0xFFFF.  So flip to 0 only after xinu_ready for
-                 * io-handled; keep 0xFFFF for bar4-patch (patched CMP
-                 * makes the value moot but the watchdog callee is happy). */
+                 * cell != 0xFFFF. So flip to 0 only after xinu_ready. */
                 uint32_t scribble_val;
                 if (!g_emu.xinu_ready) {
                     scribble_val = 0x0000FFFFu;
                 } else {
-                    scribble_val =
-                        (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) ? 0u
-                                                                         : 0x0000FFFFu;
+                    scribble_val = 0;
                 }
                 RAM_WR32(g_emu.watchdog_flag_addr, scribble_val);
             }

@@ -182,15 +182,10 @@ static int apply_option(const char *key, const char *value)
         return 0;
     }
     if (strcmp(key, "dcs-mode") == 0 && value) {
-        if (strcmp(value, "bar4-patch") == 0) {
-            g_emu.dcs_mode_choice = ENCORE_DCS_BAR4_PATCH;
-        } else if (strcmp(value, "io-handled") == 0) {
-            g_emu.dcs_mode_choice = ENCORE_DCS_IO_HANDLED;
-        } else {
+        if (strcmp(value, "io-handled") != 0) {
             fprintf(stderr,
-                "[main] --dcs-mode '%s' invalid; expected bar4-patch|io-handled "
+                "[main] --dcs-mode '%s' invalid on this clean branch; expected io-handled "
                 "(falling back to io-handled)\n", value);
-            g_emu.dcs_mode_choice = ENCORE_DCS_IO_HANDLED;
         }
         return 1;
     }
@@ -714,23 +709,11 @@ print_help:
 "                                      letterboxed to the window's aspect.\n"
 "                                      Falls back to the embedded JPEG if\n"
 "                                      the file can't be read.\n"
-"  --dcs-mode MODE        How the DCS-2 sound subsystem is reached.\n"
-"                           io-handled  (default) — no CPU patch; the game\n"
-"                              runs its native PCI-detect probe. Default\n"
-"                              update boots use the PLX INTCSR bit-2 device\n"
-"                              answer; only --update none arms the museum\n"
-"                              probe-cell scribble. Encore answers\n"
-"                              the DCS2 UART ports (0x138-0x13F) in io.c.\n"
-"                              Boots + plays audio on every shipped bundle\n"
-"                              (SWE1 v1.3/1.5/2.1 + RFM v1.2/1.4/1.6/1.8/\n"
-"                              2.5/2.6, plus --update none).\n"
-"                           bar4-patch — legacy: pattern-scan for the DCS\n"
-"                              probe's 5-byte CMP/JNE prologue at xinu_ready\n"
-"                              and byte-patch it to force dcs_mode=1 so audio\n"
-"                              runs through PCI BAR4 + sound.c. Fails on\n"
-"                              bundles where the prologue is absent\n"
-"                              (SWE1 v1.3, RFM --update none, SWE1 --update\n"
-"                              none). Kept for A/B regression work.\n"
+"  --dcs-mode MODE        Compatibility no-op; only io-handled is supported\n"
+"                         on this clean branch. The old BAR4-force guest-code\n"
+"                         patch was removed. Default update boots use the PLX\n"
+"                         INTCSR bit-2 device answer; only --update none arms\n"
+"                         the museum probe-cell bridge.\n"
 "  --config FILE.yaml     Load options from a yaml-ish file (one key:value\n"
 "                         per line; '#' starts a comment). CLI args override\n"
 "                         config; auto-loads ./encore.yaml when no CLI args.\n"
