@@ -265,14 +265,27 @@ not the new source of truth.
   the LPT switch matrix; cabinet passthrough and a few UX extras remain.
   Commits: `dc97214`, `283dda8`, `b3c4994`, `3096f03`.
 - [x] M10 Product wrapper: `scripts/run-qemu.sh` is now Unicorn-CLI parity
-  (`--game`, `--roms`, `--update auto|latest|none|0210|2.10|<dir>`, `--savedata`/`--no-savedata`,
-  `--display sdl|gtk|none`, `--headless`, `--fullscreen`, `--audio auto|pa|alsa|sdl|none`,
-  `--no-audio`, `--pb2kslib`, `--monitor`, `--uart-quiet`, `--uart-tcp`,
-  `--diag`, `--trace-dcs`, `--trace-audio`, `--trace-timing`, `-v/-vv/-vvv`,
-  `--dcs-mode` doc-label, `--` passthrough). Cabinet/`--lpt parport`/`--parport`/
-  `--bpp 16`/`--splash`/`--sound-loading preload` recognized but rejected with a
-  clear "not implemented yet" instead of silently accepted. `--update` resolver
-  matches Unicorn's 4-digit normalization (`unicorn.old/src/main.c:34-120`).
+  on the filtered NOTES list (no resurrected toys: no keyboard-TCP, no HTTP
+  endpoint, no record/replay, no xina-script, no net-bridge, no old CPU/PIT
+  pacing knobs). Implemented args:
+  `--game`, `--roms`, `--savedata`/`--no-savedata`,
+  `--update auto|latest|none|0210|2.10|<dir>`,
+  `--display sdl|gtk|none`, `--headless`, `--fullscreen`,
+  `--audio auto|pa|alsa|sdl|none` (`auto` = wrapper host-detect, NOT
+  QEMU `driver=auto`), `--no-audio`, `--pb2kslib`, `--monitor`,
+  `--uart-quiet`, `--uart-tcp host:port`, `--serial-tcp <port>`
+  (alias for `--uart-tcp 127.0.0.1:<port>`), `--screenshot-dir <dir>`
+  (drives F3 output dir via `P2K_SCREENSHOT_DIR`),
+  `--diag`, `--trace-dcs`, `--trace-audio`, `--trace-timing`,
+  `-v/-vv/-vvv`, `--dcs-mode` doc-label, `--` passthrough.
+  Recognized but rejected with explicit "not implemented yet":
+  `--cabinet`, `--lpt-device none|/dev/parportN|0xNNN`, `--lpt-trace`,
+  `--parport`, `--bpp 16`, `--splash`, `--splash-screen <path>`,
+  `--sound-loading preload`. Silent no-ops kept for parity:
+  `--lpt-device emu` (also accepts legacy `emulated`),
+  `--splash-screen default|none`, `--no-splash`, `--bpp 32`.
+  `--update` resolver matches Unicorn's 4-digit normalization
+  (`unicorn.old/src/main.c:34-120`).
   `./scripts/run-qemu.sh --help` is the authoritative arg list.
 - [ ] M11 Validation matrix: SWE1/RFM base/update, long-run, no default
   symptom patches, DCS sound, controls, UART, watchdog.
@@ -584,13 +597,16 @@ not the new source of truth.
   0 Fatals over 60 s.
 - [x] Polished UX shipped: `--fullscreen` → `-full-screen`, host-side
   F3 screenshot to JPG (PPM fallback), SDL `Ctrl+Alt+F` toggle for
-  fullscreen. `--bpp 16`, `--splash`, `--sound-loading preload` are
-  intentionally rejected to keep the surface honest.
-- [ ] Preserve useful wrapper shape without cloning baggage: likely keep
-  `--game`, `--roms`, `--savedata`, `--no-savedata`, `--update`, verbosity,
-  `--headless`, fullscreen, `--bpp`, `--splash-screen`, `--dcs-mode`,
-  `--lpt-device`, `--lpt-trace`; likely drop old Unicorn CPU/PIT pacing,
-  keyboard TCP, HTTP, record/replay, xina-script, and net-bridge for baseline.
+  fullscreen, `--screenshot-dir` controls F3 output dir.
+  `--bpp 16`, `--splash`/`--splash-screen <path>`, `--sound-loading preload`
+  are intentionally rejected to keep the surface honest.
+- [x] Wrapper shape filtered (no toy resurrection): kept `--game`, `--roms`,
+  `--savedata`, `--no-savedata`, `--update`, verbosity, `--headless`,
+  `--fullscreen`, `--bpp`, `--splash-screen`, `--dcs-mode`,
+  `--lpt-device`, `--lpt-trace` (the last three are recognized-but-rejected
+  apart from `--lpt-device emu`/`emulated`, which are silent no-ops).
+  Explicitly NOT re-added: old Unicorn CPU/PIT pacing knobs, keyboard TCP,
+  HTTP endpoint, record/replay, xina-script, net-bridge.
 - [ ] Keep PIT semantics honest: default is guest-programmed QEMU i8254.
   SWE1 has been observed around divisor 298, about 4003.97 Hz. Any 4004/4096
   override is a diagnostic/compat option, not the default truth.

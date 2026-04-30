@@ -126,7 +126,9 @@ Wrapper flag → behavior summary (see `--help` for full list):
 | `--diag` / `--trace-dcs` / `--trace-audio` / `--trace-timing` | Individual trace toggles. |
 | `-v` / `-vv` / `-vvv`   | Tiered: `-v`=`P2K_DIAG`, `-vv`=+`P2K_DCS_AUDIO_TRACE`, `-vvv`=+`P2K_DCS_BYTE_TRACE`. |
 | `--dcs-mode io-handled\|bar4-patch` | Documentation-only label (both modes route through BAR4 today). |
-| `--cabinet`, `--lpt parport`, `--parport`, `--bpp 16`, `--splash`, `--sound-loading preload` | Recognized but rejected with "not implemented yet". |
+| `--serial-tcp <port>`   | Unicorn-compatible alias for `--uart-tcp 127.0.0.1:<port>`.            |
+| `--screenshot-dir <dir>`| Where F3 writes screenshots (default `/tmp`); exported as `P2K_SCREENSHOT_DIR`. |
+| `--cabinet`, `--lpt-device none\|/dev/parportN\|0xNNN`, `--lpt-trace`, `--parport`, `--bpp 16`, `--splash`, `--splash-screen <path>`, `--sound-loading preload` | Recognized but rejected with "not implemented yet". `--splash-screen default\|none` and `--lpt-device emu` (also `emulated`) are silent no-ops for parity. |
 | `--` / passthrough      | Everything after `--` is forwarded verbatim to QEMU.                    |
 
 Useful env vars (defaults reflect the post-bring-up state, see

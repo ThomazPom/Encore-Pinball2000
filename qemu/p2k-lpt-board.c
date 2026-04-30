@@ -237,7 +237,10 @@ static void p2k_lpt_screenshot(void)
     time_t now = time(NULL);
     struct tm tm;
     localtime_r(&now, &tm);
-    snprintf(stem, sizeof(stem), "/tmp/p2k_screen_%04d%02d%02d_%02d%02d%02d",
+    const char *dir = getenv("P2K_SCREENSHOT_DIR");
+    if (!dir || !*dir) dir = "/tmp";
+    snprintf(stem, sizeof(stem), "%s/p2k_screen_%04d%02d%02d_%02d%02d%02d",
+             dir,
              tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
              tm.tm_hour, tm.tm_min, tm.tm_sec);
 
