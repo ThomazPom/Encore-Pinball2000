@@ -183,21 +183,25 @@ not the new source of truth.
 - [x] Late DCS byte-write clue: `0001de2` claimed io-handled commands could be
   written high-byte then low-byte to `0x13c`.
   Re-proven on the current QEMU trace 2026-04-30: byte-pair is **real
-  silicon ROM behavior** for the SWE1 base/no-update path, not late-Unicorn
-  pollution. A-B with `P2K_DCS_NO_BYTE_PAIR=1`:
-    * default boot (auto-update): 0 byte-pair commands, 0 bytes skipped
-      → byte-pair branch is dead code on this path, so leaving it
-      unconditionally on is harmless for normal update boots.
-    * `--update none` (with or without savedata): 9 distinct byte-pair
-      commands fire — `0x0000 0x55aa 0x609f 0x00ec 0x03ce ×5` — and
-      the `0x03ce` one decodes via pb2kslib to S03CE and produces
-      audible audio (channel 6, 25136 frames, played multiple times).
-    * Same `--update none` boot with `P2K_DCS_NO_BYTE_PAIR=1`: 16+
-      byte writes to 0x13c go nowhere, no DCS commands are produced,
-      S03CE never plays.
-  Boot health is identical across all 6 cells (XINU reached, no
-  Fatals, no exec hang). The byte-pair path is therefore proven
-  necessary for base-ROM audio and proven harmless elsewhere.
+  silicon ROM behavior** decoded by `qemu/p2k-dcs-uart.c`, not
+  late-Unicorn pollution. Status today (post probe-cell shim):
+    * default boot (auto-update): 0 byte-pair commands. BAR4 path
+      carries everything.
+    * `--update none` (probe-cell shim active): 0 byte-pair commands
+      either — the shim flips `dcs_probe()` to PRESENT, the game
+      writes `dcs_mode=1`, and BAR4 carries the same ACE1-wrapped
+      triples as the update boot (incl. dcs-bong, S03CE).
+    * `--update none` with the shim disabled (forensic only): the
+      game falls back and emits 9 distinct byte-pair commands —
+      `0x0000 0x55aa 0x609f 0x00ec 0x03ce ×5` — and the byte-pair
+      decoder still routes `0x03ce` to S03CE for audio. Disabling
+      the decoder via `P2K_DCS_NO_BYTE_PAIR=1` in that regime
+      kills the audio entirely, proving the decoder is the right
+      home for the legacy fallback path.
+  Boot health is identical across both healthy cells (XINU reached,
+  no Fatals, no exec hang). Byte-pair stays in the DCS core as a
+  real silicon decode for forensic regimes; healthy boots in both
+  modes simply never exercise it.
 - [!] DCS default flip false-good: `cc630fb` made BAR4 default because sound
   worked, then `958b190` reverted/helped document the gap. Lesson: BAR4 and
   I/O UART frontends should be tested honestly against the shared core.
@@ -253,9 +257,10 @@ not the new source of truth.
   discovery. Commits: `989a546`, `9e400d3`, `80c9cbb`, `f44066e`.
 - [x] M8 DCS protocol/audio: BAR4 and I/O UART share one DCS core; real
   pb2kslib sample dispatch via libvorbisfile is decoded into an 8-voice
-  QEMU SWVoiceOut mixer; proof-of-path blip remains as fallback for
-  protocol bytes not in the sample table. Commits: `bd1a858`, `6d70e52`,
-  `8bac2af`, `447dad4`, `09f300f`, plus this one.
+  in-process mixer with unity-gain Mix_Volume/MIX_MAX_VOLUME parity to
+  Unicorn's SDL_mixer. Cache miss is logged and counted, never
+  synthesised. Commits: `bd1a858`, `6d70e52`, `8bac2af`, `447dad4`,
+  `09f300f`, plus this one.
 - [~] M9 Cabinet/LPT controls: desktop key parity is mostly implemented through
   the LPT switch matrix; cabinet passthrough and a few UX extras remain.
   Commits: `dc97214`, `283dda8`, `b3c4994`, `3096f03`.
@@ -455,8 +460,12 @@ not the new source of truth.
   execute_mixer: ch=(data2&0x380)>>7), 0x0000=halt-all,
   per-channel vol, global volume from 0x55AA, per-channel vol/pan
   from 0x55AB/AE/AC. Re-trigger on a channel halts the previous
-  voice (Unicorn semantics). Renderer scales per-voice via
-  `vol * global_vol * 28000 / (255*255)`. Pan is stored but the
+  voice (Unicorn semantics). Renderer applies unity-gain
+  `contrib = sample * vol / 255` per voice (vol=255 → pass-through),
+  matching Unicorn's `Mix_Volume(ch, dcs_vol_to_sdl(255))=128 /
+  MIX_MAX_VOLUME=128` exactly. Global volume is broadcast into each
+  voice's `vc->vol` on 0x55AA, mirroring SDL_mixer's
+  `Mix_Volume(-1, dcs_vol_to_sdl(global))`. Pan is stored but the
   current `SWVoiceOut` is mono, so true L/R panning is deferred.
 
   Trace upgrade in same commit: one `info_report` per audio event
@@ -494,26 +503,33 @@ not the new source of truth.
   for unwrapped 0x55XX, in-ACE1 0x55XX, ACE1 wrappers, 0x003a, 0x00aa)
   plus an experimental `P2K_DCS_RAW_55_PAIR=1` knob that, when set,
   routes the captured pair into `execute_mixer` the same way ACE1
-  does. A-B over 25-s SWE1 runs:
+  does. Initial A-B over 25-s SWE1 runs (pre-probe-cell-shim):
   * default (auto-update): 0 unwrapped 0x55XX, 2× 0x003a, 1× 0x00aa,
     BAR4 emits the canonical ACE1-wrapped `0x55aa d1=0x609f →
     GLOBAL_VOL=159` triple. Unaffected by the new knob.
-  * `--update none`: 0 ACE1, 0 0x003a, 0 0x00aa; ROM emits the
-    SAME `0x55aa+0x609f` pair UNWRAPPED via UART byte-pair. With
-    the knob ON we observe the matching `[UART:0x13c.bp]
-    execute_mixer 0x55aa d1=0x609f → GLOBAL_VOL=159` line.
-  Conclusions:
-    1. SWE1 base 0.40 uses a raw pre-ACE1 mixer-pair encoding for at
-       least the 0x55aa global-volume command. The newer (update)
-       ROM upgraded the same logical command to ACE1-wrapped BAR4.
-    2. 0x003a (boot dong) is structurally absent in base 0.40 — not
-       blocked by missing QEMU device state. Adding a boot dong to
-       --update none would be a guest-data graft, not a fidelity fix.
-    3. The new knob is OFF by default. Enabling it is provably a
-       no-op for default boot (0 unwrapped 0x55XX events) and only
-       reaches the audio mixer in the `--update none` path. Decide
-       whether to flip the default once we confirm whether the ROM
-       expects more multi-word triples beyond the first 0x55aa pair.
+  * `--update none` (pre-shim): the game fell back to the legacy
+    UART byte-pair path and emitted the SAME `0x55aa+0x609f` pair
+    UNWRAPPED. With the knob ON we observed the matching
+    `[UART:0x13c.bp] execute_mixer 0x55aa d1=0x609f → GLOBAL_VOL=159`
+    line.
+
+  **Superseded 2026-04-30 by the probe-cell shim.** With the shim
+  flipping the dcs-probe sentinel at xinu-ready, `--update none` now
+  takes the natural BAR4 path and emits the SAME ACE1-wrapped triples
+  as the default boot. The unwrapped raw 0x55XX pair is therefore
+  dead in both healthy boots. Conclusions:
+    1. SWE1 base 0.40 **could** decode raw 0x55XX pairs as a legacy
+       fallback when the BAR4 DCS path is silent — useful for
+       forensic A/B against historical bundles, not product behaviour.
+    2. The earlier "0x003a structurally absent in base 0.40" reading
+       was an artefact of the same UART-fallback regime. Once the
+       probe cell returns PRESENT, base 0.40 emits 0x003a (boot dong)
+       via BAR4 just like the update bundle does — no guest-data
+       graft involved, the dong is real ROM behaviour.
+    3. `P2K_DCS_RAW_55_PAIR` is therefore demoted to a forensic-only
+       env knob (off by default in both modes; tagged
+       `compat:raw55-forensic` in source attribution when enabled).
+       Not product behaviour.
 - [x] Make UART/XINA output visible by default, Unicorn-style, or ensure the
   wrapper always enables it for bring-up.
   Done: `p2k-isa-stubs.c` defaults `s_uart_to_stderr = true`; opt-out via
@@ -583,7 +599,7 @@ not the new source of truth.
   Removal condition: important devices become real `PCIDevice` models.
 - [~] nulluser HLT patch: introduced `d7b99d8`.
   Removal/keep condition: measured idle benefit, no scheduler masking.
-- [!] `--update none` probe-cell scribble (`p2k-probe-cell-shim.c`).
+- [!] `--update none` probe-cell shim (`p2k-probe-cell-shim.c`).
   Strictly gated on `P2K_NO_AUTO_UPDATE` (set by `--update none`); zero
   effect on normal/auto-update boots. Mirrors Unicorn `apply_sgc_patches`
   + per-tick `RAM_WR32` (unicorn.old/src/io.c:248-422 +
@@ -591,16 +607,23 @@ not the new source of truth.
   walks back to the `81 3D <addr32> FF FF 00 00` inside `dcs_probe()`,
   then writes the probe cell on a 50 ms vtime tick. STAGED polarity
   matching Unicorn's pre/post `xinu_ready` flip:
-  pre-XINU `0x0000FFFF` (boot sentinel), post-XINU `0x00000000`
-  (so dcs_probe returns "DCS PRESENT" → game writes dcs_mode=1 →
-  audio init runs). Phase flip is virtual-time gated (5 s after first
-  cell located) because we don't watch UART for the "XINU: V7"
-  substring. Locked cell on SWE1 v0.40 base = `0x002797c4`.
+  pre-XINU `0x0000FFFF` (boot sentinel keeps early init happy),
+  post-XINU `0x00000000` (so `dcs_probe` returns "DCS PRESENT" → the
+  game writes dcs_mode=1 → audio init runs and BAR4 takes over).
+  Phase flip is **deterministic**: the shim caches the BIOS panic-stub
+  value of IDT[0x20] (e.g. SWE1 v0.40 = `0x001d859f`) on first
+  observation, then flips the cell the instant the live IDT[0x20]
+  handler differs — that change is the install of XINU's clkint at
+  `0x001cc4be`, exactly the "xinu_ready" signal Unicorn used. No
+  vtime delay, no UART substring scan. Locked cell on SWE1 v0.40
+  base = `0x002797c4`.
   Without the staged flip, the cell stays `0xFFFF` forever and DCS
-  audio never initialises (no sound). With it, S03CE etc. play.
+  audio never initialises (no sound). With it, dcs-bong + S03CE etc.
+  play through the natural BAR4 path.
   Removal condition: when QEMU's DCS/PLX9054 model returns the right
-  value at the probe address natively, delete the file and stop
-  calling `p2k_install_probe_cell_shim()` from `pinball2000.c`.
+  value at the probe address natively (i.e. `dcs_probe()` succeeds
+  without RAM patching), delete the file and stop calling
+  `p2k_install_probe_cell_shim()` from `pinball2000.c`.
 
 ## Historical Clues, Not Proof
 
@@ -634,8 +657,11 @@ not the new source of truth.
 - [x] PIC boot bridge OFF by default: pass.
   SWE1 + RFM 180s default boots show 0 PIC-related Fatals.
 - [ ] Early IRQ0 bridge removal experiment: pending until handoff is understood.
-- [ ] DCS mode A/B: I/O UART frontend and BAR4 frontend share core; neither
-  masks a bug in the other.
+- [~] DCS mode A/B: BAR4 and byte-pair UART decoders share one DCS core,
+  so neither masks a bug in the other. Healthy boots in both `--update`
+  and `--update none` ride the BAR4 path (probe-cell shim flips the
+  sentinel for the latter). Byte-pair is exercised only in forensic
+  regimes (`P2K_NO_AUTO_UPDATE=1` with the shim disabled).
 
 ## Acceptance Bar
 
@@ -705,39 +731,77 @@ New diagnostic surface (`P2K_DCS_AUDIO_TRACE=1`):
   the same channel.
 - `chN STOP-ALL was(...)` when 0x0000 halts active voices.
 
-## DCS Mode Switch — `P2K_DCS_MODE=bar4|io-handled` (Phase 1)
+## DCS2 Serial Bit-Bang — A/B Findings (2026-04-30)
 
-Unicorn parity for `--dcs-mode io-handled`. Selectable via env or
-`scripts/run-qemu.sh --dcs-mode io-handled`. Default remains `bar4`
-so existing behaviour is unchanged.
+`qemu/p2k-plx-regs.c` carries a port of Unicorn's DCS2 serial state
+machine (PLX 0x50 bits 24..27 — clk/en/data + response, see
+`unicorn.old/src/bar.c:191-317`). It was added speculatively while
+investigating the SWE1 base/0.40 silence, on the theory that this
+bit-bang protocol was global-silicon behaviour the game might rely
+on for DCS sub=01 (audio_active=0) / sub=03 (audio_ready=1)
+handshakes.
 
-In `io-handled`:
-- `qemu/p2k-dcs.c` BAR4 frontend REJECTS DCS command words at off=0
-  (echo bytes + reads still respond so the game's PCI-side liveness
-  probes don't see a dead device). Each rejected cmd gets a
-  `dcs-bar4: REJECTED cmd=0x.... (mode=io-handled, total rejected=N)`
-  warn (first 32 logged, rest counted).
-- `dcs-audio status` line gains `mode=...` and `BAR4_rej=N` so we can
-  see at a glance whether the BAR4 path is silenced and the UART path
-  is exercising.
-- Acceptance for io-handled: the status `src{}` must show
-  `UART.w>0` or `UART.bp>0`, sound must work, boot remains stable.
+A/B sweep (45 s headless, `--no-savedata`, audio trace ON):
 
-**Phase 2 (NOT YET IMPLEMENTED).** Empirically, simply rejecting BAR4
-does not cause the game to fall back to the UART path on its own — it
-keeps writing the same BAR4 cmds. To match Unicorn's working
-io-handled flow we still need:
-1. The CMP/JNE `83 F8 01 75 21 A3 ?? ?? ?? ??` prologue patch to
-   `MOV EAX, 0` (Unicorn does the inverse for bar4-patch). Pure
-   one-shot guest RAM scan once XINU is up; no per-bundle table.
-2. OR make BAR4 visibly unresponsive at probe-time so the game's
-   natural CMP EAX,1 falls into the JNE I/O-port branch. Needs
-   investigation of which read/write the probe inspects.
+  | cell         | dcs-serial events | DCS src histogram          |
+  |--------------|-------------------|----------------------------|
+  | SWE1 update  | 0                 | BAR4=5  UART.w=0 UART.bp=0 |
+  | SWE1 base    | 0                 | BAR4=11 UART.w=0 UART.bp=0 |
+  | RFM  update  | 0                 | BAR4=5  UART.w=0 UART.bp=0 |
+  | RFM  base    | 0                 | BAR4=0  UART.w=0 UART.bp=0 |
 
-Until Phase 2 lands, `--dcs-mode io-handled` produces a clean negative
-result (silence + REJECTED stream + UART.w/UART.bp=0) which is exactly
-the proof-of-bucket the user requested: "BAR4 audio is not proof that
-io-handled is fixed".
+Conclusion: in every healthy boot we have today (both games × both
+update modes), zero traffic touches the DCS2 serial bit-bang. The
+probe-cell shim makes the BAR4 path succeed naturally for SWE1, and
+neither RFM nor SWE1 ever programs the PLX serial registers in the
+sequences the state machine watches for. The state machine is
+therefore dormant. Notes:
+
+- The RFM base row shows `BAR4=0`. The probe-cell shim is currently
+  scoped to the SWE1 v0.40 cell address (`0x002797c4`); RFM base will
+  need its own scan/cache before its BAR4 audio comes alive. That
+  is unrelated to the DCS2 serial state machine — fixing the probe
+  cell for RFM will not exercise the serial path either, because the
+  guest never bit-bangs cls=0 sub=01/03 in any recorded sequence.
+- The serial code is not on any audio hot path. Keep it as a passive
+  PLX register model so guest reads/writes don't fault, but treat the
+  state machine as forensic-only until a real boot is observed
+  exercising it.
+- Removal condition: if a 5-min run on any of {SWE1, RFM} × {update,
+  base} still produces zero `dcs-serial` events, simplify the file
+  to just register echo (no state machine) and document the deletion
+  here. Re-add only if a future ROM revision needs it.
+
+## DCS Mode Switch — `P2K_DCS_MODE` (historical)
+
+The historical `P2K_DCS_MODE=bar4|io-handled` env knob and matching
+`scripts/run-qemu.sh --dcs-mode io-handled` flag came from the era
+where we believed `--update none` had to "reject BAR4 and require
+the UART byte-pair path" to play audio. That model was wrong.
+
+Clean model (current):
+
+- The game **always** prefers BAR4 when `dcs_probe()` reports DCS
+  PRESENT at the probe cell.
+- For auto-update boots the probe naturally succeeds because the
+  update bundle initialises the cell.
+- For `--update none` the probe cell stays at the boot sentinel
+  forever unless something flips it. The probe-cell shim
+  (`p2k-probe-cell-shim.c`) provides exactly that flip,
+  deterministically gated on XINU's clkint install.
+- After the flip the game writes `dcs_mode=1`, BAR4 takes over, and
+  the canonical ACE1-wrapped commands (incl. dcs-bong, mixer triples)
+  flow through the same code path as the update boot.
+
+There is no longer any need to reject BAR4 or to force an
+io-handled fallback. The byte-pair UART path remains live in the DCS
+core as a real silicon decode (see "Late DCS byte-write clue" above)
+but with the probe-cell shim active, healthy boots in both modes
+emit `src{BAR4>0 UART.bp=0 compat=0}`.
+
+The dirtiness-audit note about `BAR4_rej` accounting / the
+`io-handled-rejects-BAR4` era applies here too: removed in
+`8577c0a`, do not reintroduce.
 
 ## Dirtiness Audit (post `8577c0a`, io-handled default)
 
