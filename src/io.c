@@ -441,21 +441,32 @@ static void apply_sgc_patches(void)
      * probe ONCE during init).  In io-handled, prime=0; in bar4-patch,
      * prime=0xFFFF (the byte-patch makes the probe result moot). */
     g_emu.watchdog_flag_addr = health_addr;
-    /* Cabinet-purist: when the user explicitly opted in via --cabinet-purist
-     * AND a real LPT board is open, we leave the watchdog cell completely
-     * alone. Rationale: on real hardware the driver-board responses drive
-     * the natural pci_watchdog_bone() path; our suppression scribble only
-     * makes sense when no board is present. This is experimental — it
-     * lets us A/B compare boot behaviour with vs. without the shim while
-     * a real board is wired in. */
+    /* MUSEUM-ONLY GATE (parity with QEMU p2k-probe-cell-shim).
+     * The scribble mutates guest data every iteration. We tolerate it
+     * ONLY when the user explicitly opts into museum boot via
+     * --update none / P2K_NO_AUTO_UPDATE=1, where the early base-chip
+     * boot path reads this cell as a sentinel before XINU comes up.
+     * In normal (--update auto/latest/<bundle>) boot, the natural
+     * device path answers the watchdog: bar.c forces PLX INTCSR bit-2
+     * SET in BAR0 reads, which short-circuits pci_watchdog_bone() —
+     * no per-tick guest-data scribble is needed. Cabinet-purist with
+     * a real LPT board still disables the scribble (real driver-board
+     * drives the watchdog). */
+    bool no_auto_upd_env = (getenv("P2K_NO_AUTO_UPDATE") != NULL);
+    bool museum_mode = g_emu.update_explicit_none || no_auto_upd_env;
     if (g_emu.cabinet_purist && lpt_passthrough_active()) {
         g_emu.watchdog_flag_addr = 0;
         LOG("sgc", "watchdog suppression DISABLED (cabinet-purist + LPT passthrough): "
                    "letting natural pci_watchdog_bone path run\n");
+    } else if (!museum_mode) {
+        g_emu.watchdog_flag_addr = 0;
+        LOG("sgc", "watchdog suppression DISABLED (default mode): natural "
+                   "PLX INTCSR bit-2 short-circuits pci_watchdog_bone(). "
+                   "Pass --update none for museum mode (re-enables scribble).\n");
     } else {
         uint32_t prime_val = 0x0000FFFFu;
         RAM_WR32(health_addr, prime_val);
-        LOG("sgc", "watchdog suppression active: [0x%08x] primed =0x%08x (BT-107, dcs-mode=%s, scribble flips post-xinu_ready)\n",
+        LOG("sgc", "watchdog suppression active (museum mode): [0x%08x] primed =0x%08x (BT-107, dcs-mode=%s, scribble flips post-xinu_ready)\n",
             health_addr, prime_val,
             (g_emu.dcs_mode_choice == ENCORE_DCS_IO_HANDLED) ? "io-handled" : "bar4-patch");
     }
