@@ -36,6 +36,7 @@ VERBOSITY=0
 AUDIO=""
 SOUND_LOADING="lazy"
 UART_TCP=""
+SPLASH_PATH=""
 EXTRA=()
 
 # --- help -------------------------------------------------------------------
@@ -85,17 +86,20 @@ DISPLAY / UX
                             -display sdl,window-close=on,gl=off and
                             QEMU's window-scale where supported). No-op
                             on -display none.
-  --bpp 16|32               NOT IMPLEMENTED in QEMU build. The display
-                            path is fixed at ARGB8888 (32 bpp). The flag
-                            is accepted for parity with Unicorn but
-                            32 is the only value that does not error.
+  --bpp 16|32               Display surface depth. 32 (default) keeps the
+                            ARGB8888 path with RGB555→ARGB conversion. 16
+                            switches the QEMU surface to native PIXMAN
+                            x1r5g5b5 — the source format the GX framebuffer
+                            already uses, so pixels are copied without
+                            conversion (P2K_DISPLAY_BPP=16).
   --splash-screen default|none|<path>
-                            NOT IMPLEMENTED — the QEMU build has no
-                            splash screen. `default` and `none` are
-                            silent no-ops for parity; any other value
-                            (path, image name, …) errors out.
-  --splash | --no-splash    Legacy aliases. `--splash` errors out;
-                            `--no-splash` is a silent no-op.
+                            Boot splash. `default`/`none` show no splash
+                            (no asset is shipped). A <path> launches an
+                            image viewer (feh / eog / display / xdg-open)
+                            in the background for the boot duration; the
+                            viewer is killed when QEMU exits.
+  --splash | --no-splash    Legacy aliases. `--splash` enables the default
+                            (no-op); `--no-splash` disables.
 
 AUDIO
   --audio auto|pa|alsa|sdl|none
@@ -146,19 +150,25 @@ CONSOLE / DIAGNOSTICS
                             shared BAR4 + UART core today (see
                             qemu/NOTES.next.md "DCS Mode Switch").
 
-CABINET / FUTURE (not yet implemented)
+CABINET / FUTURE
   --cabinet                 NOT IMPLEMENTED — errors out. Real-cabinet
                             mode is on the Unicorn-parity backlog.
   --lpt-device emu|none|/dev/parportN|0xNNN
-                            Only `emu` is accepted (current default;
-                            `emulated` is also accepted as a legacy
-                            alias). `none`, host parport passthrough,
-                            and raw I/O port numbers all error out
-                            with "not implemented yet".
-  --lpt-trace <file>        NOT IMPLEMENTED — no LPT trace facility
-                            in qemu/p2k-lpt-board.c today.
-  --parport <device>        NOT IMPLEMENTED — errors out (use
-                            --lpt-device once parport passthrough lands).
+                            Pinball driver-board wiring. `emu` (default,
+                            also `emulated`) keeps the desktop-input
+                            emulated board on I/O 0x378. `none` skips
+                            installation entirely (P2K_LPT_DISABLE=1;
+                            game will not boot — diagnostic only).
+                            `/dev/parportN` switches the board to host
+                            parport passthrough via Linux ppdev
+                            (P2K_LPT_PARPORT) — needs the `lp` group
+                            and `modprobe ppdev`. `0xNNN` relocates the
+                            emulated board to a custom I/O port
+                            (P2K_LPT_IOPORT).
+  --lpt-trace <file>        Append every LPT read/write to <file>
+                            (P2K_LPT_TRACE_FILE). Format:
+                            "<ts> R|W <off>=<val>" with µs timestamps.
+  --parport <device>        NOT IMPLEMENTED — use --lpt-device <device>.
 
 ESCAPE HATCHES
   --tcg-only                Smoke-test the host QEMU binary alone (no
@@ -194,6 +204,8 @@ ENV PASSTHROUGH (advanced; see qemu/README.md for the full table)
   P2K_DCS_AUDIO_TRACE P2K_DCS_BYTE_TRACE P2K_DCS_NO_BYTE_PAIR
   P2K_DCS_RAW_55_PAIR P2K_DIAG P2K_NO_AUTO_UPDATE
   P2K_PB2KSLIB P2K_DCS_MODE P2K_SCREENSHOT_DIR
+  P2K_DISPLAY_BPP P2K_LPT_DISABLE P2K_LPT_PARPORT
+  P2K_LPT_IOPORT P2K_LPT_TRACE_FILE
 EOF
 }
 
@@ -212,24 +224,26 @@ while [[ $# -gt 0 ]]; do
     --window-scale)    WINDOW_SCALE="$2"; shift 2 ;;
     --bpp)
       case "$2" in
-        32) ;;  # only supported value
-        16) echo "[run-qemu] --bpp 16 not implemented (display path is ARGB8888); use 32" >&2; exit 2 ;;
-        *)  echo "[run-qemu] --bpp $2 invalid; only 32 is supported" >&2; exit 2 ;;
+        32) ;;  # default ARGB8888 path
+        16) export P2K_DISPLAY_BPP=16 ;;  # native x1r5g5b5 surface
+        *)  echo "[run-qemu] --bpp $2 invalid; expected 16 or 32" >&2; exit 2 ;;
       esac
       shift 2 ;;
     --splash | --splash-screen)
-      # Accept Unicorn-shape: --splash-screen <default|none|path>.
-      # `default` and `none` are silent no-ops because the QEMU build has no
-      # splash screen at all. Any path / unknown value errors out clearly.
+      # Unicorn-shape: --splash-screen <default|none|path>. `default`/`none`
+      # disable the splash; a path launches an image viewer in the background
+      # for the boot duration (best-effort: xdg-open / feh / eog / display).
       if [[ "$1" == "--splash" ]]; then
-        echo "[run-qemu] --splash not implemented yet in QEMU build (use --splash-screen none)" >&2
-        exit 2
-      fi
-      case "$2" in
-        default|none) shift 2 ;;
-        *) echo "[run-qemu] --splash-screen '$2' not implemented yet (only 'default'/'none' accepted as no-ops)" >&2; exit 2 ;;
-      esac ;;
-    --no-splash)       shift ;;  # silent no-op
+        SPLASH_PATH=""; shift  # legacy: enable default (= no-op, no asset shipped)
+      else
+        case "$2" in
+          default|none) SPLASH_PATH=""; shift 2 ;;
+          *) [[ -f "$2" ]] || { echo "[run-qemu] --splash-screen: '$2' is not a readable file" >&2; exit 2; }
+             SPLASH_PATH="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
+             shift 2 ;;
+        esac
+      fi ;;
+    --no-splash)       SPLASH_PATH=""; shift ;;
     --monitor)         MONITOR="$2"; shift 2 ;;
     --debug)           DEBUG="$2"; shift 2 ;;
     --uart-quiet)      export P2K_NO_UART_STDERR=1; shift ;;
@@ -273,23 +287,26 @@ while [[ $# -gt 0 ]]; do
       echo "[run-qemu] --cabinet not implemented yet (use Unicorn Encore for real-cabinet mode)" >&2
       exit 2 ;;
     --lpt-device|--lpt)
-      # Unicorn-shape: --lpt-device <none|emu|/dev/parport0|0x378>.
-      # The QEMU LPT board is always wired to the desktop input today;
-      # `emu` (and the legacy `emulated` from the first iteration of this
-      # wrapper) are silent no-ops. Everything else errors out cleanly.
+      # Unicorn-shape: --lpt-device <none|emu|/dev/parportN|0xNNN>.
+      # All four modes now wire to existing P2K_LPT_* env vars consumed by
+      # qemu/p2k-lpt-board.c. Real hardware passthrough is Linux-only and
+      # requires the host user to be in the `lp` group with ppdev loaded.
       LPT_MODE="$2"
       case "$LPT_MODE" in
         emu|emulated) ;;
-        none)              echo "[run-qemu] $1 none not implemented yet (LPT board is always present)" >&2; exit 2 ;;
-        parport)           echo "[run-qemu] $1 parport not implemented yet" >&2; exit 2 ;;
-        /dev/*)            echo "[run-qemu] $1 '$LPT_MODE' (host parport passthrough) not implemented yet" >&2; exit 2 ;;
-        0x[0-9a-fA-F]*|[0-9]*) echo "[run-qemu] $1 '$LPT_MODE' (raw I/O port) not implemented yet" >&2; exit 2 ;;
+        none)              export P2K_LPT_DISABLE=1 ;;
+        /dev/*)            [[ -e "$LPT_MODE" ]] || { echo "[run-qemu] $1: '$LPT_MODE' does not exist" >&2; exit 2; }
+                           export P2K_LPT_PARPORT="$LPT_MODE" ;;
+        0x[0-9a-fA-F]*|[0-9]*) export P2K_LPT_IOPORT="$LPT_MODE" ;;
+        parport)           echo "[run-qemu] $1 parport: please pass an explicit /dev/parportN device" >&2; exit 2 ;;
         *) echo "[run-qemu] $1: expected emu|none|/dev/parportN|0xNNN, got '$LPT_MODE'" >&2; exit 2 ;;
       esac
       shift 2 ;;
     --lpt-trace)
-      echo "[run-qemu] --lpt-trace not implemented yet (no LPT trace facility in qemu/p2k-lpt-board.c)" >&2
-      exit 2 ;;
+      [[ -n "${2:-}" ]] || { echo "[run-qemu] --lpt-trace: expected <file>" >&2; exit 2; }
+      LPT_TRACE_DIR="$(cd "$(dirname "$2")" 2>/dev/null && pwd)" || { echo "[run-qemu] --lpt-trace: parent dir of '$2' missing" >&2; exit 2; }
+      export P2K_LPT_TRACE_FILE="$LPT_TRACE_DIR/$(basename "$2")"
+      shift 2 ;;
     --parport)
       echo "[run-qemu] --parport not implemented yet" >&2
       exit 2 ;;
@@ -506,4 +523,27 @@ ARGS=( -M "$MACHINE_OPTS" "${ARGS[@]}" )
 echo "[run-qemu] cwd=$RUN_CWD"
 echo "[run-qemu] $QEMU_BIN ${ARGS[*]} ${EXTRA[*]:-}"
 cd "$RUN_CWD"
+
+# --- splash screen (best-effort host viewer) -------------------------------
+SPLASH_PID=""
+if [[ -n "$SPLASH_PATH" ]]; then
+  for viewer in feh eog display xdg-open; do
+    if command -v "$viewer" >/dev/null 2>&1; then
+      ( "$viewer" "$SPLASH_PATH" >/dev/null 2>&1 ) &
+      SPLASH_PID=$!
+      echo "[run-qemu] splash: $viewer $SPLASH_PATH (pid=$SPLASH_PID)"
+      break
+    fi
+  done
+  if [[ -z "$SPLASH_PID" ]]; then
+    echo "[run-qemu] --splash-screen: no host viewer found (feh/eog/display/xdg-open); ignoring" >&2
+  fi
+fi
+
+if [[ -n "$SPLASH_PID" ]]; then
+  "$QEMU_BIN" "${ARGS[@]}" "${EXTRA[@]}"
+  rc=$?
+  kill "$SPLASH_PID" 2>/dev/null || true
+  exit $rc
+fi
 exec "$QEMU_BIN" "${ARGS[@]}" "${EXTRA[@]}"

@@ -128,7 +128,11 @@ Wrapper flag → behavior summary (see `--help` for full list):
 | `--dcs-mode io-handled\|bar4-patch` | Documentation-only label (both modes route through BAR4 today). |
 | `--serial-tcp <port>`   | Unicorn-compatible alias for `--uart-tcp 127.0.0.1:<port>`.            |
 | `--screenshot-dir <dir>`| Where F3 writes screenshots (default `/tmp`); exported as `P2K_SCREENSHOT_DIR`. |
-| `--cabinet`, `--lpt-device none\|/dev/parportN\|0xNNN`, `--lpt-trace`, `--parport`, `--bpp 16`, `--splash`, `--splash-screen <path>`, `--sound-loading preload` | Recognized but rejected with "not implemented yet". `--splash-screen default\|none` and `--lpt-device emu` (also `emulated`) are silent no-ops for parity. |
+| `--bpp 16` | Native PIXMAN x1r5g5b5 display surface — pixels copied directly from the GX framebuffer with no ARGB conversion (`P2K_DISPLAY_BPP=16`). |
+| `--splash-screen <path>` | Best-effort host viewer (`feh`/`eog`/`display`/`xdg-open`) shown while QEMU runs; killed on exit. `default`/`none` show no splash. |
+| `--lpt-device none\|/dev/parportN\|0xNNN` | `none` → skip LPT install (P2K_LPT_DISABLE; game won't boot — diagnostic). `/dev/parportN` → host parport passthrough via Linux ppdev (P2K_LPT_PARPORT; needs `lp` group + `modprobe ppdev`). `0xNNN` → relocate emulated board to a custom I/O port (P2K_LPT_IOPORT). `emu`/`emulated` is the default. |
+| `--lpt-trace <file>` | Append every LPT read/write event to `<file>` (`P2K_LPT_TRACE_FILE`) with µs timestamps. |
+| `--cabinet`, `--parport`, `--sound-loading preload`, `--splash` (legacy) | Still rejected with "not implemented yet" — not in the filtered NOTES surface. |
 | `--` / passthrough      | Everything after `--` is forwarded verbatim to QEMU.                    |
 
 Useful env vars (defaults reflect the post-bring-up state, see

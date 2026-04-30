@@ -20,6 +20,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/units.h"
+#include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "exec/address-spaces.h"
 #include "hw/boards.h"
@@ -85,15 +86,17 @@ static void p2k_display_update(void *opaque)
 {
     P2KDisplayState *s = opaque;
     DisplaySurface  *surf = qemu_console_surface(s->con);
-    uint32_t        *dst;
+    void            *dst_raw;
     uint32_t         fb_off;
     int              src_pitch;
     uint16_t         row_buf[FB_W];
+    bool             bpp16;
 
     if (!surf) {
         return;
     }
-    dst = surface_data(surf);
+    dst_raw = surface_data(surf);
+    bpp16   = (surface_format(surf) == PIXMAN_x1r5g5b5);
 
     /* Latest DC_FB_ST_OFFSET — the game writes it to switch buffers. */
     fb_off = p2k_phys_ldl(GX_BASE + GX_DC_FB_ST_OFFSET);
@@ -117,12 +120,23 @@ static void p2k_display_update(void *opaque)
 
         p2k_phys_read(row_pa, row_buf, FB_W * sizeof(uint16_t));
 
-        uint32_t *r1 = &dst[dst_y       * SCREEN_W];
-        uint32_t *r2 = &dst[(dst_y + 1) * SCREEN_W];
-        for (int x = 0; x < FB_W; x++) {
-            uint32_t argb = rgb555_to_argb(row_buf[x] & 0x7FFFu);
-            r1[x] = argb;
-            r2[x] = argb;
+        if (bpp16) {
+            uint16_t *r1 = &((uint16_t *)dst_raw)[dst_y       * SCREEN_W];
+            uint16_t *r2 = &((uint16_t *)dst_raw)[(dst_y + 1) * SCREEN_W];
+            for (int x = 0; x < FB_W; x++) {
+                uint16_t px = row_buf[x] & 0x7FFFu;
+                r1[x] = px;
+                r2[x] = px;
+            }
+        } else {
+            uint32_t *dst = (uint32_t *)dst_raw;
+            uint32_t *r1 = &dst[dst_y       * SCREEN_W];
+            uint32_t *r2 = &dst[(dst_y + 1) * SCREEN_W];
+            for (int x = 0; x < FB_W; x++) {
+                uint32_t argb = rgb555_to_argb(row_buf[x] & 0x7FFFu);
+                r1[x] = argb;
+                r2[x] = argb;
+            }
         }
     }
 
@@ -137,12 +151,24 @@ static const GraphicHwOps p2k_display_ops = {
 void p2k_install_display(void)
 {
     DisplaySurface *surf;
+    const char     *bpp_env = getenv("P2K_DISPLAY_BPP");
+    bool            bpp16   = bpp_env && !strcmp(bpp_env, "16");
 
     s_disp.con = graphic_console_init(NULL, 0, &p2k_display_ops, &s_disp);
     qemu_console_resize(s_disp.con, SCREEN_W, SCREEN_H);
 
     /* Replace the placeholder surface with one we own so the gfx_update
      * pixel writes have a stable backing buffer. */
-    surf = qemu_create_displaysurface(SCREEN_W, SCREEN_H);
+    if (bpp16) {
+        size_t   stride = SCREEN_W * sizeof(uint16_t);
+        uint8_t *buf    = g_malloc0(stride * SCREEN_H);
+        surf = qemu_create_displaysurface_from(SCREEN_W, SCREEN_H,
+                                               PIXMAN_x1r5g5b5,
+                                               stride, buf);
+        info_report("pinball2000: display surface = 16 bpp (x1r5g5b5, "
+                    "native source format, no ARGB conversion)");
+    } else {
+        surf = qemu_create_displaysurface(SCREEN_W, SCREEN_H);
+    }
     dpy_gfx_replace_surface(s_disp.con, surf);
 }

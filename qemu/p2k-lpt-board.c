@@ -38,7 +38,78 @@
 #include "ui/surface.h"
 #include "system/runstate.h"
 
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <sys/time.h>
+#ifdef __linux__
+#include <linux/ppdev.h>
+#include <linux/parport.h>
+#endif
+
 #include "p2k-internal.h"
+
+/* Optional host parport passthrough (--lpt-device /dev/parportN). */
+static int     s_pp_fd = -1;
+static char    s_pp_path[256];
+
+/* Optional per-event trace file (--lpt-trace <file>). */
+static FILE   *s_trace_fp;
+
+static void p2k_lpt_trace(const char *kind, hwaddr addr, uint64_t val)
+{
+    if (!s_trace_fp) {
+        return;
+    }
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    fprintf(s_trace_fp, "%lld.%06ld %s %02x=%02x\n",
+            (long long)tv.tv_sec, (long)tv.tv_usec,
+            kind, (unsigned)(addr & 0xff), (unsigned)(val & 0xff));
+    fflush(s_trace_fp);
+}
+
+#ifdef __linux__
+static int p2k_lpt_pp_open(const char *dev)
+{
+    int fd = open(dev, O_RDWR);
+    if (fd < 0) {
+        return -1;
+    }
+    if (ioctl(fd, PPCLAIM) < 0) {
+        close(fd);
+        return -1;
+    }
+    return fd;
+}
+
+static uint8_t p2k_lpt_pp_read(int fd, hwaddr addr)
+{
+    unsigned char v = 0;
+    int req;
+    switch (addr) {
+    case 0:  req = PPRDATA;    break;
+    case 1:  req = PPRSTATUS;  break;
+    case 2:  req = PPRCONTROL; break;
+    default: return 0xFF;
+    }
+    if (ioctl(fd, req, &v) < 0) {
+        return 0xFF;
+    }
+    return v;
+}
+
+static void p2k_lpt_pp_write(int fd, hwaddr addr, uint8_t v)
+{
+    int req;
+    switch (addr) {
+    case 0:  req = PPWDATA;    break;
+    case 2:  req = PPWCONTROL; break;
+    default: return;
+    }
+    (void)ioctl(fd, req, &v);
+}
+#endif
 
 /* P2K rendering/switch state machine (mirrors io.c:720-742). */
 static uint8_t s_lpt_data;
@@ -119,21 +190,39 @@ static void process_data_command(uint8_t opcode, uint8_t data)
 
 static uint64_t p2k_lpt_read(void *opaque, hwaddr addr, unsigned size)
 {
+    uint64_t v;
+#ifdef __linux__
+    if (s_pp_fd >= 0) {
+        v = p2k_lpt_pp_read(s_pp_fd, addr);
+        p2k_lpt_trace("R", addr, v);
+        return v;
+    }
+#endif
     switch (addr) {
     case 0: { /* DATA */
         int gated = (s_rendering_flags & 0x01) && (s_rendering_flags & 0x08);
-        return gated ? retrieve_rendering_status(s_data_for_rendering)
-                     : s_lpt_data;
+        v = gated ? retrieve_rendering_status(s_data_for_rendering)
+                  : s_lpt_data;
+        break;
     }
-    case 1:  return 0x87;                          /* STATUS = signature */
-    case 2:  return s_rendering_flags;             /* CTRL echo */
-    default: return 0xFF;
+    case 1:  v = 0x87;                          break;
+    case 2:  v = s_rendering_flags;             break;
+    default: v = 0xFF;                          break;
     }
+    p2k_lpt_trace("R", addr, v);
+    return v;
 }
 
 static void p2k_lpt_write(void *opaque, hwaddr addr,
                           uint64_t val, unsigned size)
 {
+    p2k_lpt_trace("W", addr, val);
+#ifdef __linux__
+    if (s_pp_fd >= 0) {
+        p2k_lpt_pp_write(s_pp_fd, addr, val & 0xFF);
+        return;
+    }
+#endif
     switch (addr) {
     case 0:
         s_lpt_data = val & 0xFF;
@@ -384,17 +473,73 @@ static const QemuInputHandler p2k_lpt_input_handler = {
 
 void p2k_install_lpt_board(void)
 {
+    const char *disable  = getenv("P2K_LPT_DISABLE");
+    const char *ioport_s = getenv("P2K_LPT_IOPORT");
+    const char *parport  = getenv("P2K_LPT_PARPORT");
+    const char *trace_fn = getenv("P2K_LPT_TRACE_FILE");
+    unsigned    ioport   = 0x378;
+
+    if (disable && *disable && strcmp(disable, "0") != 0) {
+        info_report("pinball2000: LPT driver-board disabled "
+                    "(P2K_LPT_DISABLE set) — game will not boot, "
+                    "the switch matrix is unreachable. Diagnostic only.");
+        return;
+    }
+
+    if (ioport_s && *ioport_s) {
+        char *end = NULL;
+        unsigned v = (unsigned)strtoul(ioport_s, &end, 0);
+        if (end && *end == '\0' && v > 0 && v < 0xfffd) {
+            ioport = v;
+        } else {
+            warn_report("pinball2000: P2K_LPT_IOPORT='%s' invalid, "
+                        "keeping 0x378", ioport_s);
+        }
+    }
+
+    if (trace_fn && *trace_fn) {
+        s_trace_fp = fopen(trace_fn, "ae");
+        if (!s_trace_fp) {
+            warn_report("pinball2000: cannot open LPT trace '%s' (%s)",
+                        trace_fn, strerror(errno));
+        } else {
+            info_report("pinball2000: LPT event trace → %s", trace_fn);
+        }
+    }
+
+    if (parport && *parport) {
+#ifdef __linux__
+        int fd = p2k_lpt_pp_open(parport);
+        if (fd < 0) {
+            error_report("pinball2000: cannot open/claim host parport '%s' "
+                         "(%s) — is the device present and are you in the "
+                         "'lp' group with ppdev loaded?",
+                         parport, strerror(errno));
+        } else {
+            s_pp_fd = fd;
+            snprintf(s_pp_path, sizeof(s_pp_path), "%s", parport);
+            info_report("pinball2000: LPT board PASSTHROUGH to host %s "
+                        "(real-cabinet wiring, all reads/writes hit hardware)",
+                        s_pp_path);
+        }
+#else
+        error_report("pinball2000: --lpt-device <hostdev> only supported on "
+                     "Linux (ppdev). Ignoring '%s'.", parport);
+#endif
+    }
+
     MemoryRegion *io = get_system_io();
     MemoryRegion *mr = g_new(MemoryRegion, 1);
     memory_region_init_io(mr, NULL, &p2k_lpt_ops, NULL,
                           "p2k.lpt-board", 3);
-    memory_region_add_subregion(io, 0x378, mr);
+    memory_region_add_subregion(io, ioport, mr);
 
     qemu_input_handler_register(NULL, &p2k_lpt_input_handler);
 
-    info_report("pinball2000: LPT driver-board installed at I/O 0x378-0x37a "
+    info_report("pinball2000: LPT driver-board installed at I/O 0x%x-0x%x "
                 "(STATUS=0x87, edge-detect dispatch, "
                 "keys: F1 quit | F4 door | F5/Enter pulse | F6/F9 actions | "
                 "F7/F8 flippers | Space/S start | F10/C coin | F12 dump | "
-                "Esc/Left service | Up/Down volume | Right enter)");
+                "Esc/Left service | Up/Down volume | Right enter)",
+                ioport, ioport + 2);
 }

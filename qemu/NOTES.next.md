@@ -602,11 +602,12 @@ not the new source of truth.
   are intentionally rejected to keep the surface honest.
 - [x] Wrapper shape filtered (no toy resurrection): kept `--game`, `--roms`,
   `--savedata`, `--no-savedata`, `--update`, verbosity, `--headless`,
-  `--fullscreen`, `--bpp`, `--splash-screen`, `--dcs-mode`,
-  `--lpt-device`, `--lpt-trace` (the last three are recognized-but-rejected
-  apart from `--lpt-device emu`/`emulated`, which are silent no-ops).
-  Explicitly NOT re-added: old Unicorn CPU/PIT pacing knobs, keyboard TCP,
-  HTTP endpoint, record/replay, xina-script, net-bridge.
+  `--fullscreen`, `--bpp` (16 native PIXMAN x1r5g5b5 / 32 ARGB),
+  `--splash-screen` (host viewer), `--dcs-mode`, `--lpt-device`
+  (emu / none / /dev/parportN ppdev / 0xNNN), `--lpt-trace <file>`
+  (µs timestamps). Explicitly NOT re-added: old Unicorn CPU/PIT pacing
+  knobs, keyboard TCP, HTTP endpoint, record/replay, xina-script,
+  net-bridge, `--cabinet`, `--parport`, `--sound-loading preload`.
 - [ ] Keep PIT semantics honest: default is guest-programmed QEMU i8254.
   SWE1 has been observed around divisor 298, about 4003.97 Hz. Any 4004/4096
   override is a diagnostic/compat option, not the default truth.
