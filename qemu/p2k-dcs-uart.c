@@ -59,6 +59,30 @@ static bool p2k_dcs_byte_trace_enabled(void)
     return s_dcs_byte_trace == 1;
 }
 
+/* Diagnostic / A-B knob: P2K_DCS_NO_BYTE_PAIR=1 disables the byte-pair
+ * assembly entirely (byte writes to 0x13C are still counted but become
+ * no-ops as far as DCS commands go — they still fall through to the
+ * 16550 MCR register at off=4 below). The point is to be able to A/B
+ * the late-Unicorn `0001de2` byte-pair claim against current ROMs:
+ *
+ *   1. P2K_DCS_NO_BYTE_PAIR unset (default)  : byte-pair active
+ *   2. P2K_DCS_NO_BYTE_PAIR=1                : byte-pair disabled
+ *
+ * Compare cmd_by_uart_w / cmd_by_uart_bp / boot health between the two
+ * to see whether any guest actually emits byte-pair traffic and whether
+ * removing it regresses anything. */
+static int s_dcs_no_byte_pair = -1;
+static bool p2k_dcs_no_byte_pair(void)
+{
+    if (s_dcs_no_byte_pair < 0) {
+        const char *e = getenv("P2K_DCS_NO_BYTE_PAIR");
+        s_dcs_no_byte_pair = (e && *e && e[0] != '0') ? 1 : 0;
+    }
+    return s_dcs_no_byte_pair == 1;
+}
+static unsigned s_dcs_byte_pair_skipped;
+static unsigned s_dcs_byte_solo_skipped;
+
 static uint64_t p2k_dcs_uart_read(void *opaque, hwaddr addr, unsigned size)
 {
     int off = (int)addr;
@@ -126,25 +150,54 @@ static void p2k_dcs_uart_write(void *opaque, hwaddr addr,
      * at 0x194efc emits 16-bit DCS commands as TWO outb to 0x13c (HIGH
      * then LOW). Unicorn assembles the pair unconditionally; we do the
      * same. The pair handler does NOT conflict with legacy 16550 use
-     * because byte writes to the data register are otherwise ignored. */
+     * because byte writes to the data register are otherwise ignored.
+     *
+     * A-B verified 2026-04-30 (commit-time) on the SWE1 ROM:
+     *   - default boot (auto-update path) : 0 byte-pair commands ever
+     *     observed; all DCS traffic goes via word writes / BAR4. The
+     *     byte-pair branch is dead code on this path, so leaving it
+     *     unconditional is harmless for normal update boots.
+     *   - --update none / --update none --no-savedata: 9 byte-pair
+     *     commands fire (0x0000, 0x55aa, 0x609f, 0x00ec, then 0x03ce
+     *     repeatedly). The 0x03ce one decodes to a real pb2kslib
+     *     entry (S03CE) and produces audible audio output.
+     *   - With P2K_DCS_NO_BYTE_PAIR=1 the same --update none boot
+     *     emits 16+ byte writes to 0x13c that go nowhere, no DCS
+     *     commands are produced, and S03CE never plays.
+     * Conclusion: the byte-pair path is real silicon ROM behavior used
+     * by the base/no-update path of SWE1, not late-Unicorn pollution.
+     * Keep it on by default; the env knob exists for future A-B work
+     * if a different ROM ever needs disagrees. */
     if (off == 4 && size == 1) {
-        if (!s_dcs_high_seen) {
+        if (p2k_dcs_no_byte_pair()) {
+            s_dcs_byte_pair_skipped++;
+            if (s_dcs_byte_pair_skipped <= 16
+                || (s_dcs_byte_pair_skipped & 0xFFu) == 0) {
+                info_report("dcs-uart: byte write 0x%02x at 0x13c "
+                            "skipped (P2K_DCS_NO_BYTE_PAIR=1) #%u",
+                            (unsigned)(val & 0xFFu),
+                            s_dcs_byte_pair_skipped);
+            }
+            /* Fall through to the 16550 register switch below: case 4
+             * is MCR, harmless for DCS protocol. */
+        } else if (!s_dcs_high_seen) {
             s_dcs_high_latch = (uint8_t)(val & 0xFFu);
             s_dcs_high_seen  = 1;
             return;
+        } else {
+            uint16_t cmd = (uint16_t)((s_dcs_high_latch << 8) | (val & 0xFFu));
+            s_dcs_high_seen = 0;
+            s_dcs_last_byte_pair = cmd;
+            s_dcs_byte_pair_count++;
+            if (p2k_dcs_byte_trace_enabled() || s_dcs_byte_pair_count <= 16) {
+                info_report("dcs-uart: byte-pair cmd=0x%04x (#%u) "
+                            "[0x13c byte HIGH/LOW]",
+                            cmd, s_dcs_byte_pair_count);
+            }
+            p2k_dcs_core_note_source("UART:0x13c.bp");
+            p2k_dcs_core_write_cmd(cmd);
+            return;
         }
-        uint16_t cmd = (uint16_t)((s_dcs_high_latch << 8) | (val & 0xFFu));
-        s_dcs_high_seen = 0;
-        s_dcs_last_byte_pair = cmd;
-        s_dcs_byte_pair_count++;
-        if (p2k_dcs_byte_trace_enabled() || s_dcs_byte_pair_count <= 16) {
-            info_report("dcs-uart: byte-pair cmd=0x%04x (#%u) "
-                        "[0x13c byte HIGH/LOW]",
-                        cmd, s_dcs_byte_pair_count);
-        }
-        p2k_dcs_core_note_source("UART:0x13c.bp");
-        p2k_dcs_core_write_cmd(cmd);
-        return;
     }
 
     /* Byte: 16550 registers. */

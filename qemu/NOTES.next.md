@@ -180,10 +180,24 @@ not the new source of truth.
   `d9bf97b`, `ed354f5`, `d58b88f`, `412e1bf`, `233e1da`, `5b68c40`,
   `e472565`, `709f582` produced excellent forensics but too many Unicorn-side
   guards. Lesson: QEMU migration exists to delete this timing layer.
-- [~] Late DCS byte-write clue: `0001de2` claimed io-handled commands could be
+- [x] Late DCS byte-write clue: `0001de2` claimed io-handled commands could be
   written high-byte then low-byte to `0x13c`.
-  Lesson: post-LPT-pace clue only. Current QEMU trace did not reproduce it, so
-  keep instrumentation as a diagnostic clue only.
+  Re-proven on the current QEMU trace 2026-04-30: byte-pair is **real
+  silicon ROM behavior** for the SWE1 base/no-update path, not late-Unicorn
+  pollution. A-B with `P2K_DCS_NO_BYTE_PAIR=1`:
+    * default boot (auto-update): 0 byte-pair commands, 0 bytes skipped
+      → byte-pair branch is dead code on this path, so leaving it
+      unconditionally on is harmless for normal update boots.
+    * `--update none` (with or without savedata): 9 distinct byte-pair
+      commands fire — `0x0000 0x55aa 0x609f 0x00ec 0x03ce ×5` — and
+      the `0x03ce` one decodes via pb2kslib to S03CE and produces
+      audible audio (channel 6, 25136 frames, played multiple times).
+    * Same `--update none` boot with `P2K_DCS_NO_BYTE_PAIR=1`: 16+
+      byte writes to 0x13c go nowhere, no DCS commands are produced,
+      S03CE never plays.
+  Boot health is identical across all 6 cells (XINU reached, no
+  Fatals, no exec hang). The byte-pair path is therefore proven
+  necessary for base-ROM audio and proven harmless elsewhere.
 - [!] DCS default flip false-good: `cc630fb` made BAR4 default because sound
   worked, then `958b190` reverted/helped document the gap. Lesson: BAR4 and
   I/O UART frontends should be tested honestly against the shared core.
@@ -466,10 +480,14 @@ not the new source of truth.
     outside the ACE1 wrapper. Audit `p2k-dcs-core.c` ACE1 detection.
 - [x] Re-prove late-Unicorn DCS byte-write clue: `0001de2` says io-handled
   writes `0x13c` high byte then low byte. It is concrete, but post-LPT-pace.
-  Status: instrumented in `p2k-dcs-uart.c` behind `P2K_DCS_BYTE_TRACE=1`.
-  60s SWE1 trace at HEAD shows ZERO byte writes to 0x13C; only word
-  writes are used. The clue does not reproduce at the current milestone;
-  re-evaluate if/when the post-LPT-pace path is reached.
+  **Re-proven 2026-04-30** with the new `P2K_DCS_NO_BYTE_PAIR=1` A-B
+  knob in `p2k-dcs-uart.c`: the byte-pair path is real silicon ROM
+  behavior on the SWE1 base/no-update path. Default boot never hits
+  it; `--update none` emits 9 byte-pair commands and the `0x03ce`
+  one (S03CE) plays audio; disabling the path kills that audio. See
+  the per-file comment block at the byte-pair branch and the lessons
+  section above. The earlier "did not reproduce at HEAD" finding was
+  stale — it pre-dated our `--update none` support.
 - [x] Make UART/XINA output visible by default, Unicorn-style, or ensure the
   wrapper always enables it for bring-up.
   Done: `p2k-isa-stubs.c` defaults `s_uart_to_stderr = true`; opt-out via
@@ -561,8 +579,11 @@ not the new source of truth.
 ## Historical Clues, Not Proof
 
 - [~] `817afac`: LPT opcode `0x00 -> 0xF0`. Verify before porting.
-- [~] `0001de2`: io-handled DCS byte writes to `0x13c`, high then low.
-  Strong clue, but post-LPT-pace; QEMU must re-prove it.
+- [x] `0001de2`: io-handled DCS byte writes to `0x13c`, high then low.
+  **Re-proven 2026-04-30.** Real silicon ROM behavior on the SWE1
+  base/no-update path; QEMU runs it unconditionally (cold path on
+  normal update boots, required path for `--update none` audio).
+  Full A-B in `qemu/p2k-dcs-uart.c` and in the lessons section above.
 - [x] `516210d`: Unicorn `#UD`/`0F3C` interrupt-frame issue. Resolved
   by upstream-style TCG patch implementing real MediaGX semantics
   (commits `80559a6`/`bfabb38`); no QEMU-side custom interrupt frame
