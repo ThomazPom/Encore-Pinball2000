@@ -64,6 +64,8 @@ typedef struct {
 typedef struct {
     int16_t *pcm;            /* mono S16 at DCS_OUT_RATE, malloc'd */
     size_t   frames;
+    int32_t  peak;           /* max |pcm[]| (decoded loudness) */
+    int32_t  rms;            /* RMS of pcm[] */
 } Sample;
 
 typedef struct {
@@ -115,7 +117,16 @@ typedef struct DcsAudio {
     uint64_t      aud_write_bytes;    /* total bytes accepted by AUD_write */
     uint64_t      aud_write_zero;     /* AUD_write returning 0 */
     int32_t       peak_mix_abs;       /* max |sample| since last status log */
+    int32_t       voice_peak[DCS_VOICES]; /* per-voice contribution peak (since last status) */
+    uint64_t      voice_frames[DCS_VOICES]; /* frames mixed in since last status */
     uint64_t      frames_rendered;    /* total frames produced */
+
+    /* Optional raw-PCM dump for diagnosis. Set P2K_DCS_AUDIO_DUMP=path.
+     * Writes whatever we hand to AUD_write(), so a wav header
+     * (44.1k mono S16) over the saved file lets you hear exactly
+     * what the host backend received. */
+    FILE         *wav_dump;
+    uint64_t      wav_dump_bytes;
 
     /* Per-second status timer + source-tag attribution (raw cmd
      * histogram by source) — diagnostic only. */
@@ -282,6 +293,18 @@ static const ov_callbacks ov_mem_cb = {
     ov_mem_read, ov_mem_seek, ov_mem_close, ov_mem_tell,
 };
 
+static uint32_t isqrt64(uint64_t v)
+{
+    uint64_t r = 0, b = 1ULL << 32;
+    while (b > v) b >>= 2;
+    while (b) {
+        if (v >= r + b) { v -= r + b; r = (r >> 1) + b; }
+        else            { r >>= 1; }
+        b >>= 2;
+    }
+    return (uint32_t)r;
+}
+
 /* Decode an Ogg Vorbis blob to mono S16 at DCS_OUT_RATE.
  * Returns NULL on failure. Caller frees ->pcm and the Sample. */
 static Sample *decode_ogg_to_s16(const uint8_t *data, size_t size)
@@ -348,6 +371,16 @@ static Sample *decode_ogg_to_s16(const uint8_t *data, size_t size)
     Sample *s = g_new0(Sample, 1);
     s->pcm    = out;
     s->frames = dst_frames;
+    int32_t pk = 0;
+    int64_t sq = 0;
+    for (size_t i = 0; i < dst_frames; i++) {
+        int32_t v = out[i];
+        int32_t a = v < 0 ? -v : v;
+        if (a > pk) pk = a;
+        sq += (int64_t)v * v;
+    }
+    s->peak = pk;
+    s->rms  = dst_frames ? (int32_t)isqrt64((uint64_t)(sq / (int64_t)dst_frames)) : 0;
     return s;
 }
 
@@ -379,6 +412,8 @@ static Sample *get_sample_for_cmd(DcsAudio *a, uint16_t cmd,
     Sample *s = decode_ogg_to_s16(blob, e->size);
     g_free(blob);
     if (!s) return NULL;
+    info_report("dcs-audio: decoded cmd=0x%04x name=%s frames=%zu peak=%d rms=%d",
+                cmd, e->name, s->frames, s->peak, s->rms);
     a->cache[cmd] = s;
     return s;
 }
@@ -465,20 +500,12 @@ static void render(DcsAudio *a, int16_t *out, int frames)
                 continue;
             }
             int32_t s = vc->s->pcm[vc->pos++];
-            /* Unicorn parity (sound.c:302-308 + sound.c:346):
-             *   Mix_Volume(track_idx, dcs_vol_to_sdl(volume)) is called
-             *   on EVERY sound_play_track, so the per-channel SDL
-             *   volume is reset to the play's own `volume` parameter
-             *   (always 255 for sound_process_cmd). The earlier
-             *   sound_set_global_volume() does Mix_Volume(-1,...) which
-             *   sets ALL channels at once but is overwritten the next
-             *   time any track plays on that channel. So the global
-             *   volume value does NOT keep scaling subsequent plays.
-             *   Mirror that here: only the per-voice vol matters; the
-             *   global value is broadcast to all idle voices when
-             *   0x55AA arrives (see dcs_audio_on_execute_mixer). */
             int32_t amp = (int32_t)vc->vol * 28000 / 255;
-            mix += (s * amp) >> 15;
+            int32_t contrib = (s * amp) >> 15;
+            mix += contrib;
+            int32_t ac = contrib < 0 ? -contrib : contrib;
+            if (ac > a->voice_peak[v]) a->voice_peak[v] = ac;
+            a->voice_frames[v]++;
         }
         if (mix >  32767) mix =  32767;
         if (mix < -32768) mix = -32768;
@@ -502,6 +529,10 @@ static void dcs_audio_callback(void *opaque, int avail_bytes)
         size_t w = AUD_write(a->voice, buf, sizeof(buf));
         a->aud_write_calls++;
         a->aud_write_bytes += (uint64_t)w;
+        if (a->wav_dump) {
+            fwrite(buf, 1, sizeof(buf), a->wav_dump);
+            a->wav_dump_bytes += sizeof(buf);
+        }
         if (w == 0) { a->aud_write_zero++; break; }
         avail_bytes -= (int)w;
     }
@@ -514,6 +545,10 @@ static void dcs_audio_callback(void *opaque, int avail_bytes)
         size_t w = AUD_write(a->voice, buf, frames * sizeof(buf[0]));
         a->aud_write_calls++;
         a->aud_write_bytes += (uint64_t)w;
+        if (a->wav_dump) {
+            fwrite(buf, 1, frames * sizeof(buf[0]), a->wav_dump);
+            a->wav_dump_bytes += frames * sizeof(buf[0]);
+        }
         if (w == 0) a->aud_write_zero++;
     }
 }
@@ -738,6 +773,20 @@ static void dcs_audio_status_tick(void *opaque)
                     (unsigned long long)a->cmd_by_compat,
                     (unsigned long long)a->cmd_by_other);
         for (int i = 0; i < DCS_VOICES; i++) {
+            if (a->voice_peak[i] || a->voice_frames[i]) {
+                Voice *vc = &a->voices[i];
+                info_report("dcs-audio   ch%d window: peak=%d frames=%llu "
+                            "(now: active=%d cmd=0x%04x name=%s vol=%u pan=%u)",
+                            i, (int)a->voice_peak[i],
+                            (unsigned long long)a->voice_frames[i],
+                            vc->active ? 1 : 0,
+                            vc->cmd, vc->name ? vc->name : "?",
+                            vc->vol, vc->pan);
+            }
+            a->voice_peak[i] = 0;
+            a->voice_frames[i] = 0;
+        }
+        for (int i = 0; i < DCS_VOICES; i++) {
             Voice *vc = &a->voices[i];
             if (!vc->active || !vc->s) continue;
             info_report("dcs-audio   ch%d cmd=0x%04x name=%s pos=%zu/%zu "
@@ -808,6 +857,18 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
         return;
     }
     AUD_set_active_out(a->voice, 1);
+
+    const char *dump = getenv("P2K_DCS_AUDIO_DUMP");
+    if (dump && *dump) {
+        a->wav_dump = fopen(dump, "wb");
+        if (a->wav_dump) {
+            info_report("dcs-audio: dumping raw PCM (mono S16 LE @ %d Hz, "
+                        "no wav header) to %s", DCS_OUT_RATE, dump);
+        } else {
+            warn_report("dcs-audio: could not open P2K_DCS_AUDIO_DUMP=%s",
+                        dump);
+        }
+    }
     a->enabled = true;
     a->opened  = true;
     a->bong_idx = -1;
