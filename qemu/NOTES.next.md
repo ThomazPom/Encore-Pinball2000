@@ -424,8 +424,9 @@ not the new source of truth.
 - [x] QEMU display is functional enough to play/test visually.
 - [~] DCS protocol initializes and proof-of-path audio is audible by default;
   authentic DCS-2 sample playback remains missing.
-- [~] LPT board and most Unicorn-style desktop controls exist; cabinet
-  passthrough and F2/F3/F11-style polish remain.
+- [~] LPT board and most Unicorn-style desktop controls exist; F3
+  screenshot ships JPG (with PPM fallback); cabinet passthrough and
+  F2 flip-Y / dedicated F11 fullscreen rebind remain.
 - [~] Some bridge patches remain: early IRQ0 bridge, mem_detect patch, PCI stub,
   optional watchdog/PIC workarounds.
 
@@ -551,21 +552,29 @@ not the new source of truth.
   opcode 0x04), F10/C coin slot 1 (Phys[8] b0), F12 state dump,
   Esc/Left service (Phys[9] b0), Down/KP- volume- (b1), Up/=/KP+
   volume+ (b2), Right begin-test (Phys[9] b3). Verified via QEMU
-  monitor `sendkey`. Remaining (lower priority): F2 flip-Y,
-  F3 screenshot (needs `coroutine_fn` bridge for `qmp_screendump`),
-  F11/Alt+Enter fullscreen, optional 0..7 / `[` `]` probe keys.
+  monitor `sendkey`. F3 screenshot is implemented host-side
+  (`p2k-lpt-board.c:p2k_lpt_screenshot`): writes
+  `/tmp/p2k_screen_<ts>.jpg` by piping PPM through
+  `cjpeg`/`magick`/`convert` if available, else falls back to
+  `<ts>.ppm`. No `qmp_screendump` coroutine bridge needed.
+  Remaining (lower priority): F2 flip-Y, F11/Alt+Enter dedicated
+  fullscreen rebind (SDL Ctrl+Alt+F already toggles fullscreen),
+  optional 0..7 / `[` `]` probe keys.
 
 - [x] DCS audio audible by default. `447dad4` added proof-of-path audio;
   `09f300f` made the wrapper auto-enable it when PulseAudio/ALSA is available
   and added an install-time hello tone. This checkpoint replaces the
   cmd-hash blip with real pb2kslib sample playback through libvorbisfile.
-- [x] Wrapper parity: `--game`, `--roms`, `--savedata`, `--no-savedata`,
-  `--update`, `-v/-vv/-vvv`, fullscreen/headless.
-  scripts/run-qemu.sh now handles `--game`, `--roms`, `--savedata`,
-  `--no-savedata`, `--display`, `--headless`, `--monitor`, `--debug`,
-  `--uart-quiet`, `--audio <driver>`, `--no-audio`, `-v/-vv/-vvv`,
-  `--`, and `--update <dir>`. `d7cf24e` made `--update` actually load
-  the bundle: machine string property `update=<path>` →
+- [x] Wrapper parity (M10 — see milestone above): full Unicorn-CLI
+  surface in `scripts/run-qemu.sh` — `--game`, `--roms`, `--savedata`,
+  `--no-savedata`, `--update auto|latest|none|0210|2.10|<dir>`,
+  `--display`, `--headless`, `--fullscreen`, `--audio`, `--no-audio`,
+  `--pb2kslib`, `--monitor`, `--debug`, `--uart-quiet`, `--uart-tcp`,
+  `--diag`, `--trace-dcs`, `--trace-audio`, `--trace-timing`,
+  `-v/-vv/-vvv`, `--dcs-mode` doc-label, `--`. Cabinet/parport/
+  preload/bpp16/splash recognized but rejected with explicit
+  "not implemented yet". `d7cf24e` made `--update` actually load the
+  bundle: machine string property `update=<path>` →
   `p2k-bar3-flash.c` scans for `*_bootdata/im_flsh0/game/symbols.rom`
   and assembles them into BAR3 per `unicorn.old/src/rom.c:526-576`
   layout, applied after the savedata seed. Verified end-to-end with
@@ -573,8 +582,10 @@ not the new source of truth.
   UPDATE GAME CODE reached, `XINA: V1.38` and 15482-symbol table
   load, `Trough` + `swd Debug` events fire, exec_pass advances,
   0 Fatals over 60 s.
-- [ ] Preserve polished UX if cheap: `--bpp`, `--splash-screen`, screenshot,
-  display flip.
+- [x] Polished UX shipped: `--fullscreen` → `-full-screen`, host-side
+  F3 screenshot to JPG (PPM fallback), SDL `Ctrl+Alt+F` toggle for
+  fullscreen. `--bpp 16`, `--splash`, `--sound-loading preload` are
+  intentionally rejected to keep the surface honest.
 - [ ] Preserve useful wrapper shape without cloning baggage: likely keep
   `--game`, `--roms`, `--savedata`, `--no-savedata`, `--update`, verbosity,
   `--headless`, fullscreen, `--bpp`, `--splash-screen`, `--dcs-mode`,

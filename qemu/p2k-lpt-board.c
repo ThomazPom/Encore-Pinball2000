@@ -175,6 +175,47 @@ static void p2k_lpt_dump_state(void)
         s_rendering_status[1]);
 }
 
+/* Pipe RGB to a JPEG-producing helper (cjpeg / magick / convert).
+ * Returns true on success. PPM data is fed on stdin via "ppm:-".  */
+static bool p2k_lpt_try_jpeg_pipe(const char *jpg_path, int w, int h,
+                                  const uint8_t *data, int stride, int bpp)
+{
+    static const char *const candidates[] = {
+        "cjpeg -quality 90 -outfile",   /* libjpeg-turbo-progs */
+        "magick ppm:- -quality 90",     /* ImageMagick 7 */
+        "convert ppm:- -quality 90",    /* ImageMagick 6 / GraphicsMagick */
+        NULL,
+    };
+    for (int i = 0; candidates[i]; i++) {
+        char tool[64];
+        sscanf(candidates[i], "%63s", tool);
+        char which[128];
+        snprintf(which, sizeof(which), "command -v %s >/dev/null 2>&1", tool);
+        if (system(which) != 0) continue;
+
+        char cmd[512];
+        if (i == 0) {
+            snprintf(cmd, sizeof(cmd), "%s '%s'", candidates[i], jpg_path);
+        } else {
+            snprintf(cmd, sizeof(cmd), "%s 'jpg:%s'", candidates[i], jpg_path);
+        }
+        FILE *p = popen(cmd, "w");
+        if (!p) continue;
+        fprintf(p, "P6\n%d %d\n255\n", w, h);
+        for (int y = 0; y < h; y++) {
+            const uint8_t *row = data + y * stride;
+            for (int x = 0; x < w; x++) {
+                const uint8_t *px = row + x * bpp;
+                uint8_t rgb[3] = { px[2], px[1], px[0] };
+                fwrite(rgb, 1, 3, p);
+            }
+        }
+        int rc = pclose(p);
+        if (rc == 0) return true;
+    }
+    return false;
+}
+
 static void p2k_lpt_screenshot(void)
 {
     QemuConsole *con = qemu_console_lookup_by_index(0);
@@ -192,16 +233,29 @@ static void p2k_lpt_screenshot(void)
                 w, h, bpp);
         return;
     }
-    char path[256];
+    char stem[256];
     time_t now = time(NULL);
     struct tm tm;
     localtime_r(&now, &tm);
-    snprintf(path, sizeof(path), "/tmp/p2k_screen_%04d%02d%02d_%02d%02d%02d.ppm",
+    snprintf(stem, sizeof(stem), "/tmp/p2k_screen_%04d%02d%02d_%02d%02d%02d",
              tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
              tm.tm_hour, tm.tm_min, tm.tm_sec);
-    FILE *f = fopen(path, "wb");
+
+    /* Prefer JPEG via host helper. Fall back to PPM if no jpeg tool found. */
+    char jpg_path[300];
+    snprintf(jpg_path, sizeof(jpg_path), "%s.jpg", stem);
+    if (p2k_lpt_try_jpeg_pipe(jpg_path, w, h, data, stride, bpp)) {
+        fprintf(stderr, "[lpt] F3 screenshot: wrote %s (%dx%d)\n",
+                jpg_path, w, h);
+        return;
+    }
+
+    char ppm_path[300];
+    snprintf(ppm_path, sizeof(ppm_path), "%s.ppm", stem);
+    FILE *f = fopen(ppm_path, "wb");
     if (!f) {
-        fprintf(stderr, "[lpt] F3 screenshot: open(%s): %s\n", path, strerror(errno));
+        fprintf(stderr, "[lpt] F3 screenshot: open(%s): %s\n",
+                ppm_path, strerror(errno));
         return;
     }
     fprintf(f, "P6\n%d %d\n255\n", w, h);
@@ -215,7 +269,9 @@ static void p2k_lpt_screenshot(void)
         }
     }
     fclose(f);
-    fprintf(stderr, "[lpt] F3 screenshot: wrote %s (%dx%d)\n", path, w, h);
+    fprintf(stderr, "[lpt] F3 screenshot: wrote %s (%dx%d) "
+            "(install libjpeg-turbo-progs or imagemagick for .jpg)\n",
+            ppm_path, w, h);
 }
 
 static void p2k_lpt_key_event(DeviceState *dev, QemuConsole *src,
