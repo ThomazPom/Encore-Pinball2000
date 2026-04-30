@@ -119,10 +119,8 @@ static void pic_write(int idx, uint16_t port, uint8_t val)
                 LOGV3("pic", "PIC%d IMR=0x%02x (cnt=%d, prev=0x%02x)\n",
                     idx, val, s_imr_log_cnt, pic->imr);
             /* x64 POC BT-71 / i386 POC BT-130 compatibility:
-             * After XINU boots, XINU's restore() does OUT 0x21, saved|base_mask.
-             * Because we NOP'd device_init, base_mask has bit 0 set, so
-             * every restore() re-masks IRQ0.  Fix: always keep IRQ0 + cascade
-             * unmasked once XINU is ready. */
+             * After XINU boots, restore() may re-apply a saved mask that blocks
+             * IRQ0/cascade. Keep IRQ0 + cascade unmasked once XINU is ready. */
             if (idx == 0 && g_emu.xinu_ready)
                 val &= ~0x05;  /* clear bits 0 (IRQ0) + 2 (cascade) */
             pic->imr = val;
@@ -520,25 +518,6 @@ static void apply_sgc_patches(void)
      * current RFM state via A/B test (identical exec_count + EIP
      * with/without). Game-agnostic minimization. */
 
-    /* === IVT null-pointer guard (POC: bar2_patch_ivt) ===
-     * In protected mode, the real-mode IVT at address 0 is unused for interrupts
-     * (IDT is used instead). However, the game's interval_0_25ms() checks
-     * [0x00000000] == 0 as a corruption sentinel. Do NOT fill IVT — it corrupts
-     * the sentinel. Instead, install a safe HLT at address 0 so null pointer
-     * execution stops cleanly without destroying the sentinel check.
-     * NOTE: Address 0 must stay 0x00000000 for the game's corruption check! */
-    {
-        /* Install IRET+EOI stub at physical 0x20000 (safe landing zone) */
-        uint8_t stub[] = {
-            0x50,                   /* PUSH AX */
-            0xB0, 0x20,             /* MOV AL, 0x20 (EOI) */
-            0xE6, 0x20,             /* OUT 0x20, AL (PIC master EOI) */
-            0x58,                   /* POP AX */
-            0xCF,                   /* IRET */
-        };
-        uc_mem_write(g_emu.uc, 0x00020000u, stub, sizeof(stub));
-        LOGV("sgc", "IRET+EOI stub at phys 0x20000 (address 0 left as zero sentinel)\n");
-    }
 }
 
 /* DROPPED 2026-04-21: apply_xinu_boot_patches() — orphaned and removed.
@@ -1848,29 +1827,14 @@ uint32_t io_port_read(uint16_t port, int size)
     case PORT_DCS2_STATUS:
         return 0x00;
 
-    /* DCS2 UART ports (0x138-0x13F) — game-agnostic "no UART present".
-     *
-     * Sound on every bundle flows through the pattern-scanned BAR4-mode
-     * override patch in cpu.c (CMP/JNE byte-signature validated, no
-     * hardcoded game_id gate — it self-skips on builds that don't have
-     * the pattern). We tried wiring the 16550 I/O path here as an
-     * additional route; on RFM v1.8 and v2.5 it triggered early
-     * Resource-retrieval NonFatals because DCS state machine replies
-     * arrive in an order the pre-XINU init doesn't expect. Returning
-     * 0xFF keeps the guest on the BAR4 path for every game and update,
-     * which is the behaviour the i386 POC also shipped with. */
     /* DCS2 UART window at 0x138-0x13F.
      *
      * Narrowed route: the guest sends audio *commands* via word writes
      * to off=4 (0x13C) and polls *flags* via reads of off=6 (0x13E).
      * Routing ONLY those two offsets through dcs2_port_read/write gives
-     * games that ignore the BAR4 path (notably RFM builds) a working
-     * DCS pipe without fooling the pre-XINU init into believing a full
-     * 16550 UART is sitting here — that misdetection was what made
-     * RFM v1.8 and v2.5 spin on Resource-retrieval NonFatals when we
-     * previously routed the entire window. Other offsets stay at 0xFF
-     * so the UART probe fails and the game falls back to BAR4 (which
-     * the SWE1 builds take and which we pattern-patch separately). */
+     * the native I/O DCS path a working pipe without pretending a full
+     * 16550 UART exists. Other offsets stay at 0xFF to avoid the old
+     * pre-XINU UART misdetection/resource-retrieval failure mode. */
     case DCS2_UART_BASE ... (DCS2_UART_BASE + 7): {
         int off = (int)port - DCS2_UART_BASE;
         if ((off == 4 && size >= 2) || off == 6)

@@ -17,8 +17,6 @@
  *      • mem_detect 4MB → 14MB — function-prologue scan (BT-130)
  *      • museum-only probe-cell bridge — armed only for --update none
  *
- *  [cpu.c::cpu_init] IRET+EOI stub @ 0x20000 — low-mem stub, game-agnostic.
- *
  *  B) Dropped 2026-04-21 — previously gated behind ENCORE_KEEP_V19_PATCHES
  *     (OFF by default).  Regression-tested all 7 update bundles (SWE1 base,
  *     SWE1 v1.5/v2.1, RFM v1.2/1.6/1.8/2.5/2.6) with killswitch OFF and
@@ -29,7 +27,6 @@
  *     pid2 crash guard [0x2FCAAC]=0; BT-118 IStack magic-word repair.
  *
  *  C) RFM/SWE1 both, read-only maintenance @ 64-cycle tick:
- *      RAM_WR32(0, 0)           — NULL page zeroing, harmless
  *      watchdog_flag_addr       — museum-only; 0 in default update boots
  *
  *  D) Dropped in prior pass — kept only as commented markers:
@@ -126,7 +123,7 @@ int cpu_init(void)
     uc_hook_add(uc, &h_trace5, UC_HOOK_CODE, (void*)hook_code_trace,
                 NULL, (uint64_t)0x88000, (uint64_t)0x8B000);
 
-    /* NonFatal hook — log string argument before XOR EAX,EAX;RET patch runs */
+    /* NonFatal hook — log string argument for diagnostics only. */
     uc_hook h_nonfatal;
     uc_hook_add(uc, &h_nonfatal, UC_HOOK_CODE, (void*)hook_code_trace,
                 NULL, (uint64_t)0x24780C, (uint64_t)0x247810);
@@ -644,7 +641,6 @@ void cpu_run(void)
                 }
                 RAM_WR32(g_emu.watchdog_flag_addr, scribble_val);
             }
-            RAM_WR32(0, 0);
         }
 
         /* Read EIP after execution stopped */

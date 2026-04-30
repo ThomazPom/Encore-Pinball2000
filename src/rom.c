@@ -295,10 +295,8 @@ static int load_raw_rom_banks(void)
         if (loaded == 2) {
             g_emu.rom_banks[b] = bank_mem;
             g_emu.rom_sizes[b] = BANK_SIZE;
-            /* DCS presence table at bank0+0x10000 left INTACT.
-             * Game needs it to detect DCS2 hardware and create the
-             * DCS2 driver task. NonFatal from missing DCS board is
-             * caught by the NonFatal patch in cpu.c. */
+            /* DCS presence table at bank0+0x10000 left intact. The game
+             * needs it to detect DCS2 hardware and create the DCS2 task. */
             LOG("rom", "Bank %d: raw interleaved load complete (%lu MB)\n",
                 b, (unsigned long)(g_emu.rom_sizes[b] >> 20));
         } else {

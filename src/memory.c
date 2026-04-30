@@ -136,18 +136,14 @@ int memory_init(void)
             "GX FB", GX_FB, 8 >> 1);
     }
 
-    /* 9. Panic/safety regions */
-    /* 0x20000000 area — map for IVT stub targets */
-    map_region(uc, 0x20000000, 0x1000, UC_PROT_ALL, "IVT stub page");
-
-    /* 10. Option ROM character display buffer region.
+    /* 9. Option ROM character display buffer region.
      *     The PRISM option ROM computes a text display buffer address from
      *     hardware state and stores it at [0x871E0]. The computed address
      *     often lands in the 0x28000000-0x2A000000 range. Map a catch-all
      *     region so character display writes don't crash. */
     map_region(uc, 0x28000000, 0x02000000, UC_PROT_ALL, "OptROM display buf");
 
-    /* 11. ROM bank0 alias at 0xFF000000 — 4MB read-only mirror (BT-108).
+    /* 10. ROM bank0 alias at 0xFF000000 — 4MB read-only mirror (BT-108).
      *     Some code paths reference high-address ROM aliases. Map bank0 there. */
     if (g_emu.rom_banks[0]) {
         size_t alias_sz = 0x00400000; /* 4MB alias window */

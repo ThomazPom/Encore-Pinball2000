@@ -745,92 +745,6 @@ static uint32_t scan_ram_u32(uint32_t start, uint32_t end, uint32_t target)
     return 0;
 }
 
-/*
- * Minimal boot assistance — applied only when correct emulation alone
- * doesn't suffice. ROM-agnostic: uses pattern scanning, not hardcoded addresses.
- */
-static void apply_boot_assist(void)
-{
-    uint8_t *ram = g_emu.ram;
-    if (!ram) return;
-
-    /* 1. IVT safety — fill IVT[0..255] with IRET+EOI stub at 0x20000.
-     *    Required because Unicorn doesn't have default interrupt handlers. */
-    {
-        uint8_t *stub = ram + 0x20000u;
-        stub[0] = 0x50;                     /* PUSH AX */
-        stub[1] = 0xB0; stub[2] = 0x20;     /* MOV AL, 0x20 */
-        stub[3] = 0xE6; stub[4] = 0x20;     /* OUT 0x20, AL (EOI) */
-        stub[5] = 0x58;                     /* POP AX */
-        stub[6] = 0xCF;                     /* IRET */
-        uint32_t *ivt = (uint32_t *)ram;
-        for (int i = 0; i < 256; i++) ivt[i] = 0x20000000u;
-        LOG("boot", "IVT[0..255] → IRET+EOI stub at 0x20000\n");
-    }
-
-    /* 2. Safety stub at 0x400000: MOV EAX,1; RET — catches null vtable calls.
-     *    This is emulator infrastructure, not a guest patch. */
-    {
-        uint8_t *stub = ram + 0x400000u;
-        stub[0] = 0xB8; stub[1] = 0x01; stub[2] = 0x00;
-        stub[3] = 0x00; stub[4] = 0x00; stub[5] = 0xC3;
-    }
-
-    fflush(stdout);
-}
-
-/*
- * Apply post-ROM-copy patches. Called AFTER option ROM is copied to 0x80000
- * (by cpu_setup_protected_mode). These patches are in-RAM, not in ROM files.
- */
-static void apply_ram_patches(void)
-{
-    /* Safety halt at option ROM offset 0x1F7 (0x801F7):
-     * This is garbled 16-bit PM switch code that shouldn't execute.
-     * If Init2 returns instead of jumping to game code, we catch it cleanly. */
-    uint8_t halt_loop[] = { 0xF4, 0xEB, 0xFD };  /* HLT; JMP $-3 */
-    uc_mem_write(g_emu.uc, 0x801F7, halt_loop, sizeof(halt_loop));
-    LOG("boot", "Safety halt at 0x801F7 (post-Init2 fallthrough catcher)\n");
-}
-
-/* DCS presence table — no longer zeroed. Game needs it to detect DCS2
- * hardware and create the DCS2 driver task. NonFatal from missing DCS
- * board is caught by the NonFatal→XOR EAX,EAX;RET patch in cpu.c. */
-
-/* PRISM option ROM framebuffer write NOP + checksum fix.
- * ROM-agnostic: scan for the MOV [EDI+...], EAX pattern. */
-static void patch_prism_rom(void)
-{
-    if (!g_emu.rom_banks[0] || g_emu.rom_sizes[0] < PRISM_ROM_SIZE) return;
-    uint8_t *rom = g_emu.rom_banks[0];
-
-    if (rom[0] != 0x55 || rom[1] != 0xAA) return;
-
-    uint32_t rom_len = rom[2] * 512u;
-    if (rom_len > PRISM_ROM_SIZE) rom_len = PRISM_ROM_SIZE;
-
-    /* Scan for framebuffer write pattern: 89 87 xx xx xx xx (MOV [EDI+disp32], EAX)
-     * where disp32 is a high address (framebuffer). Look for writes to 0x40xxxxxx. */
-    for (uint32_t off = 0x100; off < rom_len - 6; off++) {
-        if (rom[off] == 0x89 && rom[off+1] == 0x87) {
-            uint32_t disp = *(uint32_t *)&rom[off+2];
-            if ((disp & 0xFF000000u) == 0x40000000u) {
-                for (int i = 0; i < 6; i++) rom[off + i] = 0x90; /* NOP */
-                LOG("boot", "PRISM ROM: NOP'd framebuf write at 0x%x (disp=0x%08x)\n", off, disp);
-                break;
-            }
-        }
-    }
-
-    /* Fix checksum */
-    uint8_t sum = 0;
-    for (uint32_t i = 0; i < rom_len; i++) sum += rom[i];
-    if (sum != 0) {
-        rom[rom_len - 1] -= sum;
-        LOG("boot", "PRISM ROM: checksum fixed\n");
-    }
-}
-
 static void setup_timer(void)
 {
     struct sigaction sa;
@@ -934,11 +848,6 @@ int main(int argc, char **argv)
     /* Populate NIC LAN ROM data in D-segment guest RAM (BT-131) */
     nic_dseg_init();
 
-    /* Boot assistance (IVT stubs, PRISM ROM fix).
-     * DCS presence table left intact so game detects DCS2 hardware. */
-    apply_boot_assist();
-    patch_prism_rom();
-
     /* Load NVRAM/SEEPROM into guest memory after mapping */
     if (g_emu.bar2_sram[0] || g_emu.bar2_sram[1]) {
         uc_mem_write(g_emu.uc, WMS_BAR2, g_emu.bar2_sram, BAR2_SIZE);
@@ -966,9 +875,6 @@ int main(int argc, char **argv)
         fprintf(stderr, "Failed to setup protected mode\n");
         return 1;
     }
-
-    /* Apply RAM patches after ROM is in guest memory */
-    apply_ram_patches();
 
     /* Display and sound (non-fatal if they fail) — both skipped under --headless */
     if (g_emu.headless) {
