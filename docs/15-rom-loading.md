@@ -29,7 +29,7 @@ banks read as `ff`.
 
 Bank 0 is mapped into the PLX ROM window and its first 32 KiB appears at
 `000c0000`. The reset hook also copies those 32 KiB to RAM at `00080000`, where
-execution begins. See [13-memory-map.md](13-memory-map.md).
+execution begins. Details: [memory map](13-memory-map.md).
 
 ## Update bundles
 
@@ -76,10 +76,11 @@ from saved flash.
 |---|---|
 | `savedata/<game>.flash` | 4 MiB BAR3 update flash |
 | `savedata/<game>.nvram2` | 128 KiB BAR2 SRAM |
+| `savedata/<game>.see` | 128-byte PLX serial EEPROM |
 
 Both are loaded independently. The machine saves changes on a clean exit;
-`--no-savedata` skips loading and discards writes. See
-[09-savedata.md](09-savedata.md).
+`--no-savedata` skips loading and discards writes.
+Details: [savedata](09-savedata.md).
 
 ## Sound assets
 
@@ -93,11 +94,4 @@ The audio engine determines which additional asset it needs:
 For a native ADSP engine, the launcher resolves sound flash from the selected
 update and ROM locations. Override it with `--dcs-sound-flash PATH`.
 
-See [25-dcs-sound.md](25-dcs-sound.md) for engine behavior and limitations.
-
-## See also
-
-- [02-quickstart.md](02-quickstart.md)
-- [03-cli-reference.md](03-cli-reference.md)
-- [13-memory-map.md](13-memory-map.md)
-- [14-boot-recipe.md](14-boot-recipe.md)
+Details: [DCS sound](25-dcs-sound.md).

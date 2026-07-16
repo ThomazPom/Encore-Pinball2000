@@ -15,9 +15,8 @@ default because it keeps game time close to real time on modern hosts.
 | `scripts/run-qemu.sh --strict` | Natural i8254 PIT only | Diagnostic comparison without HOTLOOP assistance. |
 | `scripts/run-qemu.sh --with-pit` | Adaptive HOTLOOP plus natural PIT | Controlled timing comparison. |
 
-All three modes use QEMU's real i8259 interrupt controller and the guest's real
-IDT handler. Encore does not push an interrupt frame, rewrite XINU timer
-variables, patch the scheduler, or modify EOI/IRET behavior.
+All three modes feed QEMU's i8259 interrupt controller and enter the guest's IDT
+handler. The guest acknowledges IRQ0 and returns through its normal path.
 
 ## Why HOTLOOP exists
 
@@ -28,8 +27,8 @@ timer interrupts than intended and commands such as `sleep 10` take too long in
 wall time.
 
 HOTLOOP avoids that slowdown by checking delivery at TCG block boundaries and
-re-raising QEMU's IRQ0 input when the CPU can accept another interrupt. It does
-not call the guest handler directly. QEMU's i8259 still arbitrates the request,
+re-raising QEMU's IRQ0 input when the CPU can accept another interrupt. QEMU's
+i8259 arbitrates the request,
 the x86 CPU enters the guest's IDT vector, and XINU performs its normal EOI and
 IRET.
 
@@ -49,8 +48,7 @@ Implementation:
 
 The target at normal speed is approximately 4,003.97 guest `clkint` entries per
 second. HOTLOOP measures the achieved rate and adjusts its minimum re-raise gap.
-This compensates for host scheduling, display and DCS workload without using a
-fixed machine-specific delay.
+This compensates for host scheduling, display and DCS workload.
 
 The current gap and measured rate appear with `-v`:
 
@@ -58,8 +56,8 @@ The current gap and measured rate appear with `-v`:
 p2k-clkint-hotloop ... adaptive=on gap_ns=... measured_hz=...
 ```
 
-The gap is an internal controller value, not the guest PIT divisor and not a
-recommended manual tuning knob.
+The gap is the controller's minimum interval between IRQ0 raises; it is
+separate from the guest PIT divisor.
 
 ## Speed target
 
@@ -75,9 +73,8 @@ In HOTLOOP modes, the percentage scales the adaptive `clkint` target. In
 `--strict`, the wrapper scales the PIT input clock presented to the guest.
 `100` is the default.
 
-This is a deliberate user-facing speed control. It is separate from host CPU
-frequency and does not attempt to emulate the MediaGX instruction throughput
-cycle by cycle.
+This control scales the game clock, not audio pitch or MediaGX instruction
+throughput.
 
 ## Measuring correctness
 
@@ -123,15 +120,8 @@ IRQ0 jitter describes variation between guest timer-handler entries. PDB05
 gaps describe the LPT driver-board frame stream and are more directly relevant
 to cabinet communication.
 
-Encore currently has no evidence that CPU throttling or per-access LPT pacing
-is required. Do not add sleeps, busy-waits or `-icount` merely because TCG can
-execute instructions faster than the original MediaGX. Open pacing work only
-if a physical-board trace demonstrates a timing failure.
-
-Likewise, do not choose `--strict` for a cabinet merely because it uses the
-natural PIT path. The practical cabinet mode is the one that produces correct
-game time and works reliably with the physical board; that must be established
-by measurement.
+Use `--bench` on the target host to compare clock delivery and LPT gaps. A
+physical trace is required to establish cabinet timing limits.
 
 ## CPU and MediaGX instructions
 
@@ -139,16 +129,10 @@ The QEMU machine selects a `486` CPU model. Pinball 2000-specific MediaGX
 instructions are implemented in TCG and enabled only for the `pinball2000`
 machine. This is CPU emulation, not guest-code patching.
 
-The reset recipe deliberately begins at the known PRISM protected-mode entry.
-It is documented separately in [14-boot-recipe.md](14-boot-recipe.md) and is
-not part of timer delivery.
+The CPU begins at the PRISM protected-mode entry.
 
-## See also
-
-- [03-cli-reference.md](03-cli-reference.md)
-- [14-boot-recipe.md](14-boot-recipe.md)
-- [26-lpt-board.md](26-lpt-board.md)
-- [35-known-limitations.md](35-known-limitations.md)
+Details: [CLI reference](03-cli-reference.md), [boot path](14-boot-recipe.md),
+and [LPT board](26-lpt-board.md).
 
 ---
 

@@ -43,8 +43,8 @@ Encore's QEMU patch implements the gated MediaGX `BB1_RESET`, `CPU_WRITE` and
 for the `pinball2000` machine so other QEMU i386 machines retain normal x86/SSE
 decoding.
 
-See [12 — CPU and timing](12-cpu-and-timers.md) and
-[13 — Memory map](13-memory-map.md).
+Details: [CPU and timing](12-cpu-and-timers.md) and
+[memory map](13-memory-map.md).
 
 ---
 

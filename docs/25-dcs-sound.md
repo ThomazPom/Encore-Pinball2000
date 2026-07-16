@@ -10,8 +10,8 @@ frontends feed it:
 - `qemu/p2k-dcs.c`: PRISM BAR4 MMIO at `0x13000000`;
 - `qemu/p2k-dcs-uart.c`: the DCS I/O-port view at `0x138–0x13f`.
 
-They do not maintain separate DCS state. `--dcs-mode` retains frontend labels
-for diagnostics, but both labels use the shared core.
+Both frontends use the same response queue, echo byte, mixer state and command
+dispatcher. The two `--dcs-mode` labels select that shared implementation.
 
 ## Audio engines
 
@@ -54,10 +54,10 @@ Open the coin door with `F4`, exercise volume up/down, then insert a credit with
 `F10`. Credit music provides a repeatable manual trigger. Use `-vv` or
 `--trace-audio` to record DCS commands, voices and PCM progress.
 
-Automated validation proves boot and engine progress across installed updates;
-it does not prove that every song, loop, stop and volume interaction sounds
-correct. See [26 — Validation matrix](26-testing-validation-matrix.md) and
-[35 — Known limitations](35-known-limitations.md).
+Automated validation checks boot and engine progress. Song selection, loops,
+stops and volume behavior require listening tests.
+
+Details: [validation matrix](26-testing-validation-matrix.md).
 
 ---
 

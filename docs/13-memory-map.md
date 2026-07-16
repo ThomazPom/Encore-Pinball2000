@@ -29,13 +29,12 @@ machine. All addresses below are guest physical addresses.
 | `ff000000–ff3fffff` | High alias of game-ROM bank 0 |
 | `ffff0000–ffffffff` | BIOS reset-vector mirror |
 
-The normal boot path does not execute from the BIOS reset vector. Encore
-starts the CPU at the protected-mode entry described in
-[14-boot-recipe.md](14-boot-recipe.md).
+Encore starts the CPU at the protected-mode entry rather than the BIOS reset
+vector.
 
 > [!NOTE]
-> The direct protected-mode entry is intentional; the BIOS mirror is present
-> for guest compatibility, not as Encore's normal boot source.
+> The BIOS mirror remains visible to guest software. CPU execution begins from
+> the bank-0 copy at `00080000`.
 
 ## I/O ports
 
@@ -74,9 +73,5 @@ and the Cyrix ISA bridge at `0:18.0`.
 Source: `qemu/pinball2000.c`, `qemu/p2k-*.c` and
 `qemu/pinball2000.h`.
 
-## See also
-
-- [10-architecture.md](10-architecture.md)
-- [15-rom-loading.md](15-rom-loading.md)
-- [23-mediagx-and-display.md](23-mediagx-and-display.md)
-- [26-lpt-board.md](26-lpt-board.md)
+Details: [architecture](10-architecture.md),
+[ROM loading](15-rom-loading.md), and [display](23-mediagx-and-display.md).
