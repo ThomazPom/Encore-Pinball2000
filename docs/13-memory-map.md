@@ -29,12 +29,9 @@ machine. All addresses below are guest physical addresses.
 | `ff000000–ff3fffff` | High alias of game-ROM bank 0 |
 | `ffff0000–ffffffff` | BIOS reset-vector mirror |
 
-Encore starts the CPU at the protected-mode entry rather than the BIOS reset
-vector.
-
 > [!NOTE]
-> The BIOS mirror remains visible to guest software. CPU execution begins from
-> the bank-0 copy at `00080000`.
+> The BIOS mirror is guest-visible, while CPU execution begins from the bank-0
+> copy at `00080000`.
 
 ## I/O ports
 
@@ -64,8 +61,7 @@ and the Cyrix ISA bridge at `0:18.0`.
 - Optional game banks are filled with `ff` when their chip files are absent.
 - Small device regions overlay the larger RAM or sentinel regions using QEMU
   `MemoryRegion` priority.
-- BAR2 contains 128 KiB of SRAM even though an unused header constant still
-  names a 256 KiB size. `qemu/p2k-bars.c` is authoritative.
+- BAR2 contains 128 KiB of SRAM followed by the all-ones sentinel window.
 - BAR3 implements array, status, ID, CFI and program operations rather than
   exposing its backing bytes as plain RAM.
 - BAR4 and ports `0138–013f` are two frontends to the same DCS core.

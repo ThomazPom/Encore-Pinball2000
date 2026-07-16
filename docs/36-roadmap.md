@@ -1,13 +1,12 @@
 # 36 — Roadmap
 
 Encore boots SWE1 and RFM, renders graphics, plays DCS audio, provides desktop
-controls, persists machine state, loads genuine updates, and exposes Linux LPT
-passthrough. The remaining goal is to prove that it safely operates a physical
-Pinball 2000 cabinet.
+controls, persists machine state, loads updates, and exposes Linux LPT
+passthrough. The remaining goal is physical Pinball 2000 cabinet validation.
 
 ## Before cabinet power-on
 
-1. Run the complete update and DCS-engine validation matrix.
+1. Run the locally installed update and DCS-engine validation matrix.
 2. Run `scripts/run-qemu.sh --bench` on the cabinet host and record steady-state
    guest clock, IRQ0, LPT rate and PDB05 gaps.
 3. Exercise coins, start, flippers, service buttons, volume and door state with

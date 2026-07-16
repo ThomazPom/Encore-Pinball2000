@@ -20,18 +20,6 @@ They pass the automated boot/progress matrix, but manual sound behavior still
 needs broader gameplay and service-menu testing. `pb2kslib` remains the default
 sample engine.
 
-## Base-ROM mode uses explicit compatibility support
-
-`--update none` enables the DCS probe-cell mechanism used by the base software.
-Selected and automatically discovered updates do not activate it.
-
-## Timing modes have different purposes
-
-Default adaptive HOTLOOP targets real-time XINU progress. `--strict` is a
-diagnostic natural-PIT path and can run substantially slower on TCG.
-`--with-pit` combines the natural PIT with HOTLOOP. Use `--bench` on the actual
-host to measure the selected mode.
-
 ## No project-level license file
 
 The repository currently has no project-level license file. QEMU and bundled

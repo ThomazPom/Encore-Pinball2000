@@ -63,7 +63,7 @@
  */
 
 /* --- BAR2 SRAM offsets ---------------------------------------------------- */
-#define P2K_BAR2_SIZE              0x00040000   /* 256 KiB */
+#define P2K_BAR2_SIZE              0x00020000   /* 128 KiB */
 #define P2K_BAR2_WATCHDOG_HEALTH   0x00000420   /* must read 0xFFFF on BT-107 */
 #define P2K_BAR2_DC_TIMING2        0x000003F4   /* VSYNC counter, ~57 Hz */
 
