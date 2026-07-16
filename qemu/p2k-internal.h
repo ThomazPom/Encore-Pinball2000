@@ -252,6 +252,10 @@ uint64_t p2k_audit_clkint_entered_count(void);
 /* HOTLOOP IRQ0 delivery API. */
 bool     p2k_clkint_hotloop_enabled(void);
 bool     p2k_clkint_hotloop_no_pit(void);
+bool     p2k_clkint_hotloop_uses_host_timer(void);
+void     p2k_clkint_hotloop_connect_irq(qemu_irq irq0);
+bool     p2k_clkint_hotloop_uses_pit_stub(void);
+void     p2k_clkint_hotloop_pit_write(hwaddr addr, uint64_t value);
 void     p2k_clkint_hotloop_maybe_raise(CPUState *cs);
 uint64_t p2k_clkint_hotloop_count_reraises(void);
 uint64_t p2k_clkint_hotloop_count_skipped_pending(void);

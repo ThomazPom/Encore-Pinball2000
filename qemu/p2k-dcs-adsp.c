@@ -23,6 +23,8 @@
 #define P2K_DCS_REGION_WORDS     0x600000
 #define P2K_DCS_U109_WORD_OFFSET 0x200000
 #define P2K_DCS_U110_WORD_OFFSET 0x400000
+#define ADSP_PCM_RING_FRAMES 8192
+#define ADSP_PCM_BLOCK_FRAMES 512
 
 static uint8_t *s_sound_flash;
 static char s_sound_flash_path[1024];
@@ -77,6 +79,10 @@ typedef struct {
     bool worker_started;
     bool worker_run;
     bool threaded_engine;
+    int16_t pcm_ring[ADSP_PCM_RING_FRAMES * 2];
+    unsigned pcm_ring_head;
+    unsigned pcm_ring_count;
+    int pcm_output_rate;
 } P2KDcsAdsp;
 
 static P2KDcsAdsp s_adsp;
@@ -84,6 +90,7 @@ static P2KDcsAdsp s_adsp;
 static void *adsp_mailbox_worker(void *opaque);
 static void adsp_worker_shutdown(Notifier *notifier, void *data);
 static void adsp_worker_start(void);
+static void adsp_render_direct(int16_t *samples, int frames, int output_rate);
 
 static Notifier adsp_exit_notifier = {
     .notify = adsp_worker_shutdown,
@@ -546,6 +553,9 @@ bool p2k_dcs_adsp_prepare(Pinball2000MachineState *s)
     s_adsp.pcm_frames = 0;
     s_adsp.pcm_nonzero = 0;
     s_adsp.pcm_peak = 0;
+    s_adsp.pcm_ring_head = 0;
+    s_adsp.pcm_ring_count = 0;
+    s_adsp.pcm_output_rate = 0;
     memset(s_adsp.last_sample, 0, sizeof(s_adsp.last_sample));
     s_adsp.selftest_sent = false;
     s_adsp.selftest_ready = false;
@@ -619,6 +629,11 @@ void p2k_dcs_adsp_write_cmd(uint16_t command)
         s_adsp.command_head = 0;
         s_adsp.command_count = 0;
         s_adsp.output_full = false;
+        qemu_mutex_lock(&s_adsp.lock);
+        s_adsp.pcm_ring_head = 0;
+        s_adsp.pcm_ring_count = 0;
+        qemu_cond_signal(&s_adsp.worker_cond);
+        qemu_mutex_unlock(&s_adsp.lock);
         p2k_adsp2105_reset();
         for (unsigned cycles = 0; cycles < 200000; cycles += 100) {
             qemu_mutex_lock(&s_adsp.lock);
@@ -711,36 +726,61 @@ void p2k_dcs_adsp_write_cmd(uint16_t command)
     }
 }
 
-/* The condition-driven worker advances the DSP mailbox independently instead
- * of blocking the guest's MMIO
- * write or waiting for the next host-audio callback.  SPORT production stays
- * on the established audio clock until a lossless PCM handoff is proven. */
+/* The condition-driven worker advances both the command mailbox and SPORT
+ * PCM production.  The audio callback only consumes the bounded ring, so a
+ * large backend refill cannot turn DSP execution into a vCPU timing stall. */
 static void *adsp_mailbox_worker(void *opaque)
 {
     (void)opaque;
     for (;;) {
         qemu_mutex_lock(&s_adsp.lock);
-        while (s_adsp.worker_run && !adsp_worker_has_command()) {
+        bool pcm_work = s_adsp.pcm_output_rate > 0 && !s_adsp.host_boot &&
+                        s_adsp.pcm_ring_count <=
+                        ADSP_PCM_RING_FRAMES - ADSP_PCM_BLOCK_FRAMES;
+        while (s_adsp.worker_run && !adsp_worker_has_command() && !pcm_work) {
             qemu_cond_wait(&s_adsp.worker_cond, &s_adsp.lock);
+            pcm_work = s_adsp.pcm_output_rate > 0 && !s_adsp.host_boot &&
+                       s_adsp.pcm_ring_count <=
+                       ADSP_PCM_RING_FRAMES - ADSP_PCM_BLOCK_FRAMES;
         }
         bool run = s_adsp.worker_run;
+        bool command_work = adsp_worker_has_command();
+        int output_rate = s_adsp.pcm_output_rate;
         qemu_mutex_unlock(&s_adsp.lock);
         if (!run) {
             break;
         }
 
-        qemu_mutex_lock(&s_adsp.core_lock);
-        for (unsigned cycles = 0; cycles < 20000; cycles += 100) {
-            qemu_mutex_lock(&s_adsp.lock);
-            bool empty = s_adsp.command_count == 0;
-            qemu_mutex_unlock(&s_adsp.lock);
-            if (empty) {
-                break;
+        if (command_work) {
+            qemu_mutex_lock(&s_adsp.core_lock);
+            for (unsigned cycles = 0; cycles < 20000; cycles += 100) {
+                qemu_mutex_lock(&s_adsp.lock);
+                bool empty = s_adsp.command_count == 0;
+                qemu_mutex_unlock(&s_adsp.lock);
+                if (empty) {
+                    break;
+                }
+                p2k_adsp2105_execute(100);
+                s_adsp.cycles += 100;
             }
-            p2k_adsp2105_execute(100);
-            s_adsp.cycles += 100;
+            qemu_mutex_unlock(&s_adsp.core_lock);
+        } else if (pcm_work && output_rate > 0) {
+            int16_t block[ADSP_PCM_BLOCK_FRAMES * 2];
+            adsp_render_direct(block, ADSP_PCM_BLOCK_FRAMES, output_rate);
+            qemu_mutex_lock(&s_adsp.lock);
+            if (!s_adsp.host_boot && s_adsp.pcm_ring_count <=
+                ADSP_PCM_RING_FRAMES - ADSP_PCM_BLOCK_FRAMES) {
+                unsigned tail = (s_adsp.pcm_ring_head +
+                                 s_adsp.pcm_ring_count) % ADSP_PCM_RING_FRAMES;
+                for (unsigned i = 0; i < ADSP_PCM_BLOCK_FRAMES; i++) {
+                    unsigned dst = (tail + i) % ADSP_PCM_RING_FRAMES;
+                    s_adsp.pcm_ring[dst * 2] = block[i * 2];
+                    s_adsp.pcm_ring[dst * 2 + 1] = block[i * 2 + 1];
+                }
+                s_adsp.pcm_ring_count += ADSP_PCM_BLOCK_FRAMES;
+            }
+            qemu_mutex_unlock(&s_adsp.lock);
         }
-        qemu_mutex_unlock(&s_adsp.core_lock);
     }
     return NULL;
 }
@@ -808,6 +848,8 @@ void p2k_dcs_adsp_host_reset(void)
     s_adsp.command_head = 0;
     s_adsp.command_count = 0;
     s_adsp.output_full = false;
+    s_adsp.pcm_ring_head = 0;
+    s_adsp.pcm_ring_count = 0;
     qemu_mutex_unlock(&s_adsp.lock);
     qemu_mutex_unlock(&s_adsp.core_lock);
 }
@@ -854,7 +896,7 @@ uint16_t p2k_dcs_adsp_read_response(void)
     return value;
 }
 
-void p2k_dcs_adsp_render(int16_t *samples, int frames, int output_rate)
+static void adsp_render_direct(int16_t *samples, int frames, int output_rate)
 {
     if (!s_adsp.initialized || output_rate <= 0) {
         memset(samples, 0, frames * 2 * sizeof(*samples));
@@ -965,6 +1007,33 @@ void p2k_dcs_adsp_render(int16_t *samples, int frames, int output_rate)
     qemu_mutex_unlock(&s_adsp.core_lock);
 }
 
+void p2k_dcs_adsp_render(int16_t *samples, int frames, int output_rate)
+{
+    if (!s_adsp.threaded_engine || !s_adsp.worker_started) {
+        adsp_render_direct(samples, frames, output_rate);
+        return;
+    }
+
+    qemu_mutex_lock(&s_adsp.lock);
+    s_adsp.pcm_output_rate = output_rate;
+    int copied = 0;
+    while (copied < frames && s_adsp.pcm_ring_count) {
+        unsigned src = s_adsp.pcm_ring_head;
+        samples[copied * 2] = s_adsp.pcm_ring[src * 2];
+        samples[copied * 2 + 1] = s_adsp.pcm_ring[src * 2 + 1];
+        s_adsp.pcm_ring_head = (src + 1) % ADSP_PCM_RING_FRAMES;
+        s_adsp.pcm_ring_count--;
+        copied++;
+    }
+    qemu_cond_signal(&s_adsp.worker_cond);
+    qemu_mutex_unlock(&s_adsp.lock);
+
+    if (copied < frames) {
+        memset(samples + copied * 2, 0,
+               (frames - copied) * 2 * sizeof(*samples));
+    }
+}
+
 bool p2k_dcs_adsp_generate_track(uint16_t command, size_t hint_frames_44100,
                                  int16_t **pcm_44100, size_t *frames_44100,
                                  bool *loop)
@@ -1006,7 +1075,7 @@ bool p2k_dcs_adsp_generate_track(uint16_t command, size_t hint_frames_44100,
             cap = MIN(target_native, MAX(cap * 2, native_frames + count));
             native = g_renew(int16_t, native, cap * 2);
         }
-        p2k_dcs_adsp_render(native + native_frames * 2, count, NATIVE_RATE);
+        adsp_render_direct(native + native_frames * 2, count, NATIVE_RATE);
         for (size_t i = 0; i < count; i++) {
             int a = abs(native[(native_frames + i) * 2]);
             int b = abs(native[(native_frames + i) * 2 + 1]);
@@ -1068,7 +1137,7 @@ bool p2k_dcs_adsp_generate_track(uint16_t command, size_t hint_frames_44100,
     p2k_dcs_adsp_write_cmd(0x8180);
     int16_t settle[1024 * 2];
     for (int i = 0; i < 8; i++) {
-        p2k_dcs_adsp_render(settle, 1024, NATIVE_RATE);
+        adsp_render_direct(settle, 1024, NATIVE_RATE);
     }
 
     if (!heard) return false;

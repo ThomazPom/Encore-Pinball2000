@@ -56,6 +56,28 @@ typedef struct P2KIrq0Tap {
  * See docs/12-cpu-and-timers.md. */
 static P2KIrq0Tap *p2k_irq0_tap_state;
 
+static uint64_t p2k_hotloop_pit_read(void *opaque, hwaddr addr,
+                                     unsigned size)
+{
+    return 0;
+}
+
+static void p2k_hotloop_pit_write(void *opaque, hwaddr addr, uint64_t value,
+                                  unsigned size)
+{
+    p2k_clkint_hotloop_pit_write(addr, value);
+}
+
+static const MemoryRegionOps p2k_hotloop_pit_ops = {
+    .read = p2k_hotloop_pit_read,
+    .write = p2k_hotloop_pit_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
+    .valid.min_access_size = 1,
+    .valid.max_access_size = 1,
+    .impl.min_access_size = 1,
+    .impl.max_access_size = 1,
+};
+
 double p2k_speed_target_percent(void)
 {
     static double percent;
@@ -133,7 +155,8 @@ static void p2k_irq0_tap_set(void *opaque, int n, int level)
         tap->last_level = 0;
         /* Kick vCPU so TCG yields and HOTLOOP's TB-boundary check runs
          * at PIT cadence even without natural raise. */
-        if (rising && first_cpu) {
+        if (rising && first_cpu &&
+            !p2k_clkint_hotloop_uses_host_timer()) {
             cpu_exit(first_cpu);
         }
         return;
@@ -159,6 +182,7 @@ static qemu_irq p2k_irq0_tap(qemu_irq downstream)
 
     tap->downstream = downstream;
     p2k_irq0_tap_state = tap;
+    p2k_clkint_hotloop_connect_irq(downstream);
     return qemu_allocate_irq(p2k_irq0_tap_set, tap, 0);
 }
 
@@ -168,6 +192,7 @@ static void pinball2000_init(MachineState *machine)
     X86MachineState *x86ms = X86_MACHINE(machine);
     MemoryRegion *system_memory = get_system_memory();
     MemoryRegion *ram_alias;
+    MemoryRegion *pit_stub;
     ISABus *isa_bus;
     qemu_irq *i8259;
 
@@ -201,7 +226,16 @@ static void pinball2000_init(MachineState *machine)
     i8259[0] = p2k_irq0_tap(i8259[0]);
     isa_bus_register_input_irqs(isa_bus, i8259);
 
-    s->pit = i8254_pit_init(isa_bus, 0x40, 0, NULL);
+    if (p2k_clkint_hotloop_uses_pit_stub()) {
+        pit_stub = g_new0(MemoryRegion, 1);
+        memory_region_init_io(pit_stub, OBJECT(machine),
+                              &p2k_hotloop_pit_ops, NULL,
+                              "p2k.clock-ports", 4);
+        memory_region_add_subregion(get_system_io(), 0x40, pit_stub);
+        s->pit = NULL;
+    } else {
+        s->pit = i8254_pit_init(isa_bus, 0x40, 0, NULL);
+    }
 
     /* Load game ROM bank0 (chips u100 + u101 interleaved). */
     if (p2k_load_bank0(s) < 0) {
