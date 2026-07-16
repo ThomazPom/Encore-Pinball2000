@@ -1,0 +1,1413 @@
+[run-qemu] read-only savedata: P2K_NO_SAVEDATA=1; running in /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/.run-qemu.fnpkH8 (no savedata/ subdir)
+[run-qemu] cwd=/mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/.run-qemu.fnpkH8
+[run-qemu] /home/encore/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386 -M pinball2000,game=swe1,roms-dir=/mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms -no-reboot -m 16 -display sdl,show-cursor=on -audio driver=pa 
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/swe1_u100.rom (8388608 bytes -> chip0 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/swe1_u101.rom (8388608 bytes -> chip1 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/swe1_u102.rom (8388608 bytes -> chip0 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/swe1_u103.rom (8388608 bytes -> chip1 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/swe1_u104.rom (8388608 bytes -> chip0 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/swe1_u105.rom (8388608 bytes -> chip1 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/swe1_u106.rom (8388608 bytes -> chip0 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/swe1_u107.rom (8388608 bytes -> chip1 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/swe1_u109.rom (4194304 bytes -> chip0 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/swe1_u110.rom (4194304 bytes -> chip1 16-bit lane)
+qemu-system-i386: info: pinball2000: mapped p2k.optrom           @ 0x000c0000 (32 KiB)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/bios.bin (65536 bytes -> BIOS)
+qemu-system-i386: info: pinball2000: mapped p2k.bios-shadow      @ 0x000f0000 (64 KiB, RW)
+qemu-system-i386: info: pinball2000: mapped p2k.bios-reset       @ 0xffff0000 (64 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.plx-bank0        @ 0x08000000 (16384 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.plx-bank1        @ 0x08800000 (16384 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.plx-bank2        @ 0x09800000 (16384 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.plx-bank3        @ 0x0a800000 (16384 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.dcs-cs3          @ 0x0b800000 (8192 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.dcs-rombar       @ 0x18000000 (8192 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.bar5-bank0       @ 0x14000000 (16384 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.bar5-bank1       @ 0x15000000 (16384 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.bar5-bank2       @ 0x16000000 (16384 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.bar5-bank3       @ 0x17000000 (16384 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.bank0-alias      @ 0xff000000 (4096 KiB)
+qemu-system-i386: info: pinball2000: Cyrix MediaGX TCG extensions ENABLED (0F 3B BB1_RESET, 0F 3C CPU_WRITE, 0F 3D CPU_READ implemented per databook Â§4.1.5/Â§4.1.6 + on-silicon scratchpad pipeline; 0F 36/37/39/3F log+UD; 0F 3A reserved for SSE4 dispatch). Stock i386 binaries are unaffected.
+qemu-system-i386: info: pinball2000: installed ISA stubs (kbd/0x61/cmos/post/com1) [UART->stderr] [UART<->chardev bidir]
+qemu-system-i386: info: pinball2000: SuperIO W83977EF (0x2E/0x2F), CC5530 (0xEA/0xEB) and port 0x61 toggler installed
+qemu-system-i386: info: pinball2000: installed Cyrix CCR at I/O 0x22/0x23 (GCR[0xb8] reset=0x0d -> GX_base_p=0x40000000, scratchpad=4KB; storage is mutable)
+qemu-system-i386: info: pinball2000: installed PCI cf8/cfc stub (MediaGX dev0, PRISM dev8, Cx5520 dev18)
+qemu-system-i386: info: pinball2000: P2K_NO_SAVEDATA set â€” running in read-only savedata mode (no seed, no save)
+qemu-system-i386: info: pinball2000: mapped p2k.bar2-sram        @ 0x11000000 (128 KiB SRAM + 16 MiB sentinel)
+qemu-system-i386: info: pinball2000: PLX BAR0 regs+SEEPROM @ 0x10000000 (256 bytes)
+qemu-system-i386: info: pinball2000: applying auto-discovered update /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/updates/pin2000_50069_0210_10312025_B_10000000/50069 (no savedata flash, no --update)
+qemu-system-i386: info: pinball2000: update bundle assembled into BAR3 (boot=32768 im=340424 game=2376704 syms=625664, total=0x3381c8)
+qemu-system-i386: info: pinball2000: DCS BAR4 MMIO @ 0x13000000 (16 MiB) [shared core, mode=io-handled]
+qemu-system-i386: info: pinball2000: DCS-2 UART installed at I/O 0x138-0x13f [shared core]
+qemu-system-i386: info: dcs-audio: pb2kslib loaded 689 entries from /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/swe1_sound.bin
+qemu-system-i386: info: pinball2000: DCS audio installed (44100 Hz S16 mono, 8-voice mixer, 689 pb2k entries; P2K_NO_DCS_AUDIO=1 to disable)
+qemu-system-i386: info: pinball2000: LPT driver-board installed at I/O 0x378-0x37a (STATUS=0x87, edge-detect dispatch; keys: F1 quit | F2 flip-Y | F3 screenshot | F4 door | F5/Enter pulse | F6/F9 actions | F7/F8 flippers | Space/S start | F10/C coin | F12 dump | Esc/Left service | Up/Down volume | Right enter)
+qemu-system-i386: info: pinball2000: GP BLT engine MMIO at 0x40008100 size 0x110
+qemu-system-i386: info: pinball2000: VSYNC ticker armed (~57 Hz frame, 30 sub-tick updates @ DC_TIMING2)
+qemu-system-i386: info: pinball2000: BT-130 mem_detect patcher armed
+qemu-system-i386: info: pinball2000: diag sampler ON (PIT/PIC/IDT/XINU-sched, every 100 ms; unset P2K_DIAG to silence)
+qemu-system-i386: info: pinball2000: timing-audit armed (initial @3s, every 5s with P2K_DIAG=1; disable with P2K_NO_TIMING_AUDIT=1)
+qemu-system-i386: info: pinball2000: BT-131 NIC LAN ROM shadow installed at 0xd0008 (8B read-only MMIO; MAC 00:00:c0:01:02:03 board_id=0x2a checksum=0x0f)
+qemu-system-i386: info: pinball2000: machine ready (game=swe1, ram=16 MiB)
+qemu-system-i386: info: pinball2000: PM entry CS:EIP=0008:000801d9 ESP=0008b000
+qemu-system-i386: info: p2k-diag: PIT ch0 mode=3 gate=1 count=0 (18.21 Hz)
+qemu-system-i386: info: p2k-diag: PIT ch1 mode=3 gate=1 count=0 (18.21 Hz)
+qemu-system-i386: info: p2k-diag: PIT ch2 mode=3 gate=0 count=0 (18.21 Hz)
+qemu-system-i386: info: p2k-diag: PIC master imr=00 irr=01 isr=00 base=00
+qemu-system-i386: info: p2k-diag: IDT base=0x00000000 limit=0x0000
+qemu-system-i386: info: p2k-diag: IDT[0x20] sel=0x0000 off=0x00000000 type=0x00 (IRQ0/PIT)
+qemu-system-i386: info: p2k-diag: IDT[0x28] sel=0x0000 off=0x00000000 type=0x00 (IRQ8/RTC)
+qemu-system-i386: info: p2k-diag: cpu eip=0x000801d9 cs=0x0008 esp=0x0008b000 eflags=0x00000002 cr0=0x60000011
+[ VALIDATING UPDATE BOOT DATA ]
+Boot data structure:
+  boot_data_timestamp: "Fri Oct 31 07:16:34 2025"
+  boot_data_checksum:  0x8aa54af5
+  boot_data_version:   1.1
+  boot_data_size:      8192
+  im_sys0_size:        85106
+  im_sys0_checksum:    0x8d06150f
+  system_version:      1.38
+  game_id:             50069
+  game_version:        2.10
+  game_reloc:          0x100000
+  game_code_size:      594176
+  game_code_checksum:  0xadd5b871
+  symbols_size:        156416
+  symbols_checksum:    0xd84fdf0f
+  im_mask0_size:       0
+  im_mask0_checksum:   0x0
+  im_mask1_size:       0
+  im_mask1_checksum:   0x0
+  im_mask2_size:       0
+  im_mask2_checksum:   0x0
+  im_mask3_size:       0
+  im_mask3_checksum:   0x0
+  magic_cookie:        "13Dec96"
+  boot_state:          1
+[ VALIDATING UPDATE SYS IMAGE ]
+[ VALIDATING UPDATE GAME CODE ]
+qemu-system-i386: info: pinball2000: BT-130 mem_detect patch applied at 0x00233425: 0x04 -> 0x0E (4 MiB -> 14 MiB pages)
+[ VALIDATING UPDATE SYMBOLS ]
+[ STARTING UPDATE GAME CODE ]
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: IDT base=0x002fe684 limit=0x017f
+qemu-system-i386: info: p2k-diag: IDT[0x20] sel=0x0008 off=0x00232004 type=0x8f (IRQ0/PIT)
+qemu-system-i386: info: p2k-diag: IDT[0x28] sel=0x0008 off=0x0023205c type=0x8f (IRQ8/RTC)
+qemu-system-i386: info: p2k-diag: exec_xpid=4294967295 state=0xff (1=CURR 2=skip 3=READY 5=PR_SLEEP 6=SUSP 9=FREE)
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x0 ms_since_exec=0x0
+pci_probe(): PLX EEPROM data was stale - updated OK
+
+XINA: V1.38 - Fri Sep 27 08:01:00 2024
+(C) Copyright 1997-1999 Williams Electronics Games, Inc.
+XINU: V7
+qemu-system-i386: info: p2k-diag: PIT ch0 mode=2 gate=1 count=298 (4003.97 Hz)
+qemu-system-i386: info: p2k-diag: IDT[0x20] sel=0x0008 off=0x0022c4c6 type=0x8f (IRQ0/PIT)
+qemu-system-i386: info: p2k-diag: cpu eip=0x00247f4e cs=0x0008 esp=0x00dffe34 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x0022b0d8 cs=0x0008 esp=0x00dffe58 eflags=0x00000202 cr0=0x60000011
+Symbol Table Information: update 15482 symbols @ 0x1229f5c8
+qemu-system-i386: info: p2k-timing #0 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=12014 observed: irq0_raised=6478 irq0_replayed=0 clkint_entered=0 eoi_seen=0 delivery=0.0% replay=0.0% imr=ff irr=01 isr=00 base=20 idt20=0x0022c4c6 handler=clkint clkint_hook=0x0022c4c6 shim=0 wall=3.008s vtime=3.001s scale=0.998x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=0us p95=0us p99=0us max=0us max_total=0us n=0 | pdb05 count=0
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=3007.9ms vtime=3000.5ms xinu=0.0ms drift=0.000 | delta: wall=0.0ms vtime=0.0ms xinu=0.0ms drift=0.000
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=0 iret_seen=0 (vs clkint_entered=0)
+qemu-system-i386: info: p2k-diag: cpu eip=0x0022b40b cs=0x0008 esp=0x00dffe8c eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x0022b40b cs=0x0008 esp=0x00dffe8c eflags=0x00000202 cr0=0x60000011
+*** CMOS Prologue Checksum Invalid
+*** NonFatal: 1 Jan 1999 12:00:00
+*** NonFatal: Last[XPid -1 APid -1 (none)] Current[XPid 0 APid -1 (prnull)]
+*** NonFatal: CMOS Manager: mem test failed. Using temporary RAM.
+
+*** CMOS Manager Flash restore failed. All reset.
+Trough::Trough(6, 0x2e2c0c)
+*** NonFatal: 1 Jan 1999 12:00:00
+*** NonFatal: Last[XPid -1 APid -1 (none)] Current[XPid 0 APid -1 (prnull)]
+*** NonFatal: get_player_up(): Game_ptr is not set
+
+*** NonFatal: 1 Jan 1999 12:00:00
+*** NonFatal: Last[XPid -1 APid -1 (none)] Current[XPid 0 APid -1 (prnull)]
+*** NonFatal: get_player_up(): Game_ptr is not set
+
+qemu-system-i386: info: p2k-diag: cpu eip=0x0022b40b cs=0x0008 esp=0x00dffe8c eflags=0x00000202 cr0=0x60000011
+*** NonFatal: 1 Jan 1999 12:00:00
+*** NonFatal: Last[XPid -1 APid -1 (none)] Current[XPid 0 APid -1 (prnull)]
+*** NonFatal: Could not create resource ADshkrpw.  Duplicate ID?
+
+*** NonFatal: 1 Jan 1999 12:00:00
+*** NonFatal: Last[XPid -1 APid -1 (none)] Current[XPid 0 APid -1 (prnull)]
+*** NonFatal: Could not create resource AEshkrpw.  Duplicate ID?
+
+qemu-system-i386: info: p2k-timing #1 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=24085 observed: irq0_raised=18551 irq0_replayed=0 clkint_entered=0 eoi_seen=0 delivery=0.0% replay=0.0% imr=ff irr=01 isr=00 base=20 idt20=0x0022c4c6 handler=clkint clkint_hook=0x0022c4c6 shim=0 wall=6.023s vtime=6.015s scale=0.999x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=0us p95=0us p99=0us max=0us max_total=0us n=0 | pdb05 count=0
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=6022.8ms vtime=6015.4ms xinu=0.0ms drift=0.000 | delta: wall=3014.9ms vtime=3014.9ms xinu=0.0ms drift=0.000
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=0us p95=0us p99=0us max=0us max_total=0us n=0
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=0 iret_seen=0 (vs clkint_entered=0)
+qemu-system-i386: info: p2k-diag: cpu eip=0x0022b40b cs=0x0008 esp=0x00dffe8c eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x0022b40b cs=0x0008 esp=0x00dffe8c eflags=0x00000202 cr0=0x60000011
+ tty0: probe test 2 failed
+tty1: probe test 0 failed
+tty1: probe test 1 failed
+tty1: probe test 2 failed
+tty1: probe test 7 failed
+tty1: probe test 9 failed
+Allegro Graphics Library: V3.0 1997
+qemu-system-i386: info: pinball2000: irq0 missed-edge replay disabled (set P2K_IRQ_REPLAY=1 to enable legacy safety net)
+qemu-system-i386: info: pinball2000: irq0-iret tb-exit ENABLED (Strategy-1) (set P2K_NO_IRQ0_IRET_TB_EXIT=1 to disable)
+Trough 1::m_test_report_start(False)
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: exec_xpid=129 state=0x01 (1=CURR 2=skip 3=READY 5=PR_SLEEP 6=SUSP 9=FREE)
+qemu-system-i386: info: p2k-diag: currpid=129 state=0x01 exec_pass=0x1 ms_since_exec=0xc
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5c8 qhead_key=0x52 intr_depth=0
+Game(Williams - Episode I - 50069 - 2.10): Fri Oct 31 07:16:00 2025
+Type(PRODUCTION_BUILD, ALLOW_SCORE_CREDIT)
+Trough 1::hook_initialize() default handler
+Still Alive0
+Still Alive1: 10
+Table Entry: ZROCOOACDBRNCRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: COOACDBRNCRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: ACDBRNCRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: BRNCRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=11 isr=00 base=20
+qemu-system-i386: info: p2k-diag: cpu eip=0x00231e4a cs=0x0008 esp=0x00dffe64 eflags=0x00000002 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: exec_xpid=129 state=0x05 (1=CURR 2=skip 3=READY 5=PR_SLEEP 6=SUSP 9=FREE)
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x3 ms_since_exec=0xd
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x2 intr_depth=0
+Table Entry: CRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: OVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: SRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: KLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: JOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: YYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Still Alive2
+Initial Data Stored: YODOBILUKANIQUIWINTANKITSAWVEN : 0
+Initial Data Stored: OBILUKANIQUIWINTANKITSAWVEN : 1
+Initial Data Stored: LUKANIQUIWINTANKITSAWVEN : 2
+Initial Data Stored: ANIQUIWINTANKITSAWVEN : 3
+Initial Data Stored: QUIWINTANKITSAWVEN : 4
+Initial Data Stored: WINTANKITSAWVEN : 5
+Initial Data Stored: TANKITSAWVEN : 6
+Initial Data Stored: KITSAWVEN : 7
+Initial Data Stored: SAWVEN : 8
+Initial Data Stored: VEN : 9
+Table Entry: ZROCOOACDBRNCRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: ZROOBILUKANIQUIWINTANKITSAWVEN
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: exec_xpid=129 state=0x03 (1=CURR 2=skip 3=READY 5=PR_SLEEP 6=SUSP 9=FREE)
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5c8 qhead_key=0x15 intr_depth=0
+Table Entry: COOACDBRNCRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: COOLUKANIQUIWINTANKITSAWVEN
+Table Entry: ACDBRNCRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: ACDANIQUIWINTANKITSAWVEN
+Table Entry: BRNCRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: BRNQUIWINTANKITSAWVEN
+Table Entry: CRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: CRSWINTANKITSAWVEN
+Table Entry: OVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: OVRTANKITSAWVEN
+Table Entry: SRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: SRLKITSAWVEN
+Table Entry: KLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: KLRSAWVEN
+Table Entry: JOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: JOEVEN
+Table Entry: YYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: YYY
+Still Alive3
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d580 qhead_key=0xb intr_depth=0
+Still Alive4:10
+Still Alive5
+Data Stored: ZROCOOACDBRNCRSOVRSRLKLRJOEYYY : 0
+Data Stored: COOACDBRNCRSOVRSRLKLRJOEYYY : 1
+Data Stored: ACDBRNCRSOVRSRLKLRJOEYYY : 2
+Data Stored: BRNCRSOVRSRLKLRJOEYYY : 3
+Data Stored: CRSOVRSRLKLRJOEYYY : 4
+Data Stored: OVRSRLKLRJOEYYY : 5
+Data Stored: SRLKLRJOEYYY : 6
+Data Stored: KLRJOEYYY : 7
+Data Stored: JOEYYY : 8
+Data Stored: YYY : 9
+Still Alive6
+Data Stored: ZROCOOACDBRNCRSOVRSRLKLRJOEYYY : 0
+Data Stored: COOACDBRNCRSOVRSRLKLRJOEYYY : 1
+Data Stored: ACDBRNCRSOVRSRLKLRJOEYYY : 2
+Data Stored: BRNCRSOVRSRLKLRJOEYYY : 3
+Data Stored: CRSOVRSRLKLRJOEYYY : 4
+Data Stored: OVRSRLKLRJOEYYY : 5
+Data Stored: SRLKLRJOEYYY : 6
+Data Stored: KLRJOEYYY : 7
+Data Stored: JOEYYY : 8
+Data Stored: YYY : 9
+Still Alive0
+Still Alive1: 10
+Table Entry: TWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: XAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: TEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: LFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d58c qhead_key=0x169 intr_depth=0
+Table Entry: KEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: KOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: AIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: GAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: LEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: PMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Still Alive2
+Initial Data Stored: YODOBILUKANIQUIWINTANKITSAWVEN : 0
+Initial Data Stored: OBILUKANIQUIWINTANKITSAWVEN : 1
+Initial Data Stored: LUKANIQUIWINTANKITSAWVEN : 2
+Initial Data Stored: ANIQUIWINTANKITSAWVEN : 3
+Initial Data Stored: QUIWINTANKITSAWVEN : 4
+Initial Data Stored: WINTANKITSAWVEN : 5
+Initial Data Stored: TANKITSAWVEN : 6
+Initial Data Stored: KITSAWVEN : 7
+Initial Data Stored: SAWVEN : 8
+Initial Data Stored: VEN : 9
+Table Entry: TWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: TWUOBILUKANIQUIWINTANKITSAWVEN
+Table Entry: XAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: XAQLUKANIQUIWINTANKITSAWVEN
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d58c qhead_key=0x149 intr_depth=1
+Table Entry: TEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: TEXANIQUIWINTANKITSAWVEN
+Table Entry: LFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: LFSQUIWINTANKITSAWVEN
+Table Entry: KEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: KEFWINTANKITSAWVEN
+Table Entry: KOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: KOZTANKITSAWVEN
+Table Entry: AIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: AIGKITSAWVEN
+Table Entry: GAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: GAGSAWVEN
+Table Entry: LEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: LEDVEN
+Table Entry: PMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: PML
+Still Alive3
+Still Alive4:10
+Still Alive5
+Data Stored: TWUXAQTEXLFSKEFKOZAIGGAGLEDPML : 0
+Data Stored: XAQTEXLFSKEFKOZAIGGAGLEDPML : 1
+Data Stored: TEXLFSKEFKOZAIGGAGLEDPML : 2
+Data Stored: LFSKEFKOZAIGGAGLEDPML : 3
+qemu-system-i386: info: p2k-timing #2 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=36197 observed: irq0_raised=30659 irq0_replayed=0 clkint_entered=829 eoi_seen=829 delivery=2.7% replay=0.0% imr=ff irr=11 isr=00 base=20 idt20=0x0022c4c6 handler=clkint clkint_hook=0x0022c4c6 shim=0 wall=9.048s vtime=9.040s scale=0.999x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=71us p95=163us p99=410us max=963us max_total=963us n=829 | pdb05 count=724
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=667us p95=2254us p99=5711us max=14643us max_total=14643us n=723
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=667us p95=2254us p99=5711us max=14643us max_total=14643us n=723
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=667us p95=2254us p99=5711us max=14643us max_total=14643us n=723
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=667us p95=2254us p99=5711us max=14643us max_total=14643us n=723
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=9047.6ms vtime=9040.2ms xinu=207.0ms drift=0.023 | delta: wall=3024.8ms vtime=3024.8ms xinu=207.0ms drift=0.068
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=68us p95=159us p99=407us max=960us max_total=960us n=829
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=2us p95=7us p99=34us max=91us max_total=91us n=829
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=6us max=71us max_total=71us n=829
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=54us p95=123us p99=270us max=654us max_total=654us n=774
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=530us p95=1921us p99=3418us max=8110us max_total=8110us n=774
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=829 iret_seen=774 (vs clkint_entered=829)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x0022c4c6:829 
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d58c qhead_key=0x12d intr_depth=0
+Data Stored: KEFKOZAIGGAGLEDPML : 4
+Data Stored: KOZAIGGAGLEDPML : 5
+Data Stored: AIGGAGLEDPML : 6
+Data Stored: GAGLEDPML : 7
+Data Stored: LEDPML : 8
+Data Stored: PML : 9
+Still Alive6
+Data Stored: TWUXAQTEXLFSKEFKOZAIGGAGLEDPML : 0
+Data Stored: XAQTEXLFSKEFKOZAIGGAGLEDPML : 1
+Data Stored: TEXLFSKEFKOZAIGGAGLEDPML : 2
+Data Stored: LFSKEFKOZAIGGAGLEDPML : 3
+Data Stored: KEFKOZAIGGAGLEDPML : 4
+Data Stored: KOZAIGGAGLEDPML : 5
+Data Stored: AIGGAGLEDPML : 6
+Data Stored: GAGLEDPML : 7
+Data Stored: LEDPML : 8
+Data Stored: PML : 9
+Still Alive0
+Still Alive1: 10
+Table Entry: CP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: RPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: MTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: GNIWC BLSCMRBLUCLUxö-
+Table Entry: WC BLSCMRBLUCLUxö-
+Table Entry: BLSCMRBLUCLUxö-
+Table Entry: CMRBLUCLUxö-
+Table Entry: BLUCLUxö-
+Table Entry: CLUxö-
+Still Alive2
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=01 isr=00 base=20
+Initial Data Stored: YODOBILUKANIQUIWINTANKITSAWVEN : 0
+Initial Data Stored: OBILUKANIQUIWINTANKITSAWVEN : 1
+Initial Data Stored: LUKANIQUIWINTANKITSAWVEN : 2
+Initial Data Stored: ANIQUIWINTANKITSAWVEN : 3
+Initial Data Stored: QUIWINTANKITSAWVEN : 4
+Initial Data Stored: WINTANKITSAWVEN : 5
+Initial Data Stored: TANKITSAWVEN : 6
+Initial Data Stored: KITSAWVEN : 7
+Initial Data Stored: SAWVEN : 8
+Initial Data Stored: VEN : 9
+Table Entry: CP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: CP OBILUKANIQUIWINTANKITSAWVEN
+Table Entry: MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: MGMLUKANIQUIWINTANKITSAWVEN
+Table Entry: RPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: RPTANIQUIWINTANKITSAWVEN
+Table Entry: MTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: MTSQUIWINTANKITSAWVEN
+Table Entry: GNIWC BLSCMRBLUCLUxö-
+Data Entry: GNIWINTANKITSAWVEN
+Table Entry: WC BLSCMRBLUCLUxö-
+Data Entry: WC TANKITSAWVEN
+Table Entry: BLSCMRBLUCLUxö-
+Data Entry: BLSKITSAWVEN
+Table Entry: CMRBLUCLUxö-
+Data Entry: CMRSAWVEN
+Table Entry: BLUCLUxö-
+Data Entry: BLUVEN
+Table Entry: CLUxö-
+Data Entry: CLU
+Still Alive3
+Still Alive4:10
+Still Alive5
+Data Stored: CP MGMRPTMTSGNIWC BLSCMRBLUCLU : 0
+Data Stored: MGMRPTMTSGNIWC BLSCMRBLUCLU : 1
+Data Stored: RPTMTSGNIWC BLSCMRBLUCLU : 2
+Data Stored: MTSGNIWC BLSCMRBLUCLU : 3
+Data Stored: GNIWC BLSCMRBLUCLU : 4
+Data Stored: WC BLSCMRBLUCLU : 5
+Data Stored: BLSCMRBLUCLU : 6
+Data Stored: CMRBLUCLU : 7
+Data Stored: BLUCLU : 8
+Data Stored: CLU : 9
+Still Alive6
+Data Stored: CP MGMRPTMTSGNIWC BLSCMRBLUCLU : 0
+Data Stored: MGMRPTMTSGNIWC BLSCMRBLUCLU : 1
+Data Stored: RPTMTSGNIWC BLSCMRBLUCLU : 2
+Data Stored: MTSGNIWC BLSCMRBLUCLU : 3
+Data Stored: GNIWC BLSCMRBLUCLU : 4
+Data Stored: WC BLSCMRBLUCLU : 5
+Data Stored: BLSCMRBLUCLU : 6
+Data Stored: CMRBLUCLU : 7
+Data Stored: BLUCLU : 8
+Data Stored: CLU : 9
+Still Alive0
+Still Alive1: 10
+Table Entry: DFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: AFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: JABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d58c qhead_key=0xe0 intr_depth=1
+Table Entry: PABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: DR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: VPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: IW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: DMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Still Alive2
+Initial Data Stored: YODOBILUKANIQUIWINTANKITSAWVEN : 0
+Initial Data Stored: OBILUKANIQUIWINTANKITSAWVEN : 1
+Initial Data Stored: LUKANIQUIWINTANKITSAWVEN : 2
+Initial Data Stored: ANIQUIWINTANKITSAWVEN : 3
+Initial Data Stored: QUIWINTANKITSAWVEN : 4
+Initial Data Stored: WINTANKITSAWVEN : 5
+Initial Data Stored: TANKITSAWVEN : 6
+Initial Data Stored: KITSAWVEN : 7
+Initial Data Stored: SAWVEN : 8
+Initial Data Stored: VEN : 9
+Table Entry: DFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: DFBOBILUKANIQUIWINTANKITSAWVEN
+Table Entry: AFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: AFBLUKANIQUIWINTANKITSAWVEN
+Table Entry: JABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: JABANIQUIWINTANKITSAWVEN
+Table Entry: PABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d58c qhead_key=0xc2 intr_depth=0
+Data Entry: PABQUIWINTANKITSAWVEN
+Table Entry: DR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: DR WINTANKITSAWVEN
+Table Entry: PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: PENTANKITSAWVEN
+Table Entry: VPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: VPRKITSAWVEN
+Table Entry: IW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: IW SAWVEN
+Table Entry: BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: BTRVEN
+Table Entry: DMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: DMN
+Still Alive3
+Still Alive4:10
+Still Alive5
+Data Stored: DFBAFBJABPABDR PENVPRIW BTRDMN : 0
+Data Stored: AFBJABPABDR PENVPRIW BTRDMN : 1
+Data Stored: JABPABDR PENVPRIW BTRDMN : 2
+Data Stored: PABDR PENVPRIW BTRDMN : 3
+Data Stored: DR PENVPRIW BTRDMN : 4
+Data Stored: PENVPRIW BTRDMN : 5
+Data Stored: VPRIW BTRDMN : 6
+Data Stored: IW BTRDMN : 7
+Data Stored: BTRDMN : 8
+Data Stored: DMN : 9
+Still Alive6
+Data Stored: DFBAFBJABPABDR PENVPRIW BTRDMN : 0
+Data Stored: AFBJABPABDR PENVPRIW BTRDMN : 1
+Data Stored: JABPABDR PENVPRIW BTRDMN : 2
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: cpu eip=0x00231e4a cs=0x0008 esp=0x00dffe54 eflags=0x00000002 cr0=0x60000011
+Data Stored: PABDR PENVPRIW BTRDMN : 3
+Data Stored: DR PENVPRIW BTRDMN : 4
+Data Stored: PENVPRIW BTRDMN : 5
+Data Stored: VPRIW BTRDMN : 6
+Data Stored: IW BTRDMN : 7
+Data Stored: BTRDMN : 8
+Data Stored: DMN : 9
+Trough 1::m_kick_start()
+Trough 1::m_test_report_start(False)
+qemu-system-i386: info: dcs-audio: ogg src_chans=1 src_rate=22050
+qemu-system-i386: info: dcs-audio: decoded cmd=0x003a name=dcs-bong frames=30024 peak=27816 rms=4870
+qemu-system-i386: info: dcs-audio: [BAR4] process_cmd 0x003a â†’ key=0x003a name=dcs-bong frames=30024 ch=0 vol=255 pan=127 (played #1)
+qemu-system-i386: info: dcs-audio: [BAR4] process_cmd 0x00aa â†’ key=0x0fff no-pb2k-entry (missed #1)
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: exec_xpid=129 state=0x05 (1=CURR 2=skip 3=READY 5=PR_SLEEP 6=SUSP 9=FREE)
+qemu-system-i386: info: p2k-diag: currpid=103 state=0x01 exec_pass=0x5 ms_since_exec=0x8
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x7 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=76 state=0x01 exec_pass=0x7 ms_since_exec=0xd
+qemu-system-i386: info: pinball2000: GP first-write off=0x8110 val=0xffffffff size=4
+qemu-system-i386: info: pinball2000: GP first-write off=0x8114 val=0xffffffff size=4
+qemu-system-i386: info: pinball2000: GP first-write off=0x8120 val=0xffffffff size=4
+qemu-system-i386: info: pinball2000: GP first-write off=0x8124 val=0xffffffff size=4
+qemu-system-i386: info: pinball2000: GP first-write off=0x8128 val=0xffffffff size=4
+qemu-system-i386: info: pinball2000: GP first-write off=0x812c val=0xffffffff size=4
+qemu-system-i386: info: pinball2000: GP first-write off=0x8108 val=0x02dd036e size=4
+qemu-system-i386: info: pinball2000: GP first-write off=0x8100 val=0x010d0014 size=4
+qemu-system-i386: info: pinball2000: GP first-write off=0x8104 val=0x00010092 size=4
+qemu-system-i386: info: pinball2000: GP BLT #0: src(878,733) dst(20,269) w=146 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #1: src(0,734) dst(166,269) w=454 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #2: src(454,734) dst(20,268) w=570 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #3: src(0,735) dst(590,268) w=30 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #4: src(30,735) dst(20,267) w=600 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #5: src(630,735) dst(20,266) w=394 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #6: src(0,736) dst(414,266) w=206 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #7: src(206,736) dst(20,265) w=600 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #8: src(806,736) dst(20,264) w=218 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #9: src(0,737) dst(238,264) w=382 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #10: src(382,737) dst(20,263) w=600 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #11: src(982,737) dst(20,262) w=42 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #12: src(0,738) dst(62,262) w=558 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #13: src(558,738) dst(20,261) w=466 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #14: src(0,739) dst(486,261) w=134 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #15: src(134,739) dst(20,260) w=600 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #16: src(734,739) dst(20,259) w=290 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #17: src(0,740) dst(310,259) w=310 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #18: src(310,740) dst(20,258) w=600 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #19: src(910,740) dst(20,257) w=114 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x9 ms_since_exec=0x0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5bc qhead_key=0x3 intr_depth=1
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0xb ms_since_exec=0x9
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d4b4 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d358 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x10 ms_since_exec=0x6
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d328 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: dcs-audio: ch0 END  (cmd=0x003a name=dcs-bong frames=30024 cb_elapsed=32)
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x12 ms_since_exec=0x7
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x6 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x00232e2e cs=0x0008 esp=0x00dffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: dcs-audio: [BAR4] execute_mixer 0x55aa d1=0x609f â†’ GLOBAL_VOL=159 (broadcast to all 8 voices, per Unicorn Mix_Volume(-1))
+qemu-system-i386: info: dcs-audio: [BAR4] execute_mixer 0x55ab d1=0x3fff â†’ ch7 VOL=255
+qemu-system-i386: info: dcs-audio: [BAR4] execute_mixer 0x55ac d1=0x3f7f â†’ ch7 PAN=127
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=69 state=0x01 exec_pass=0x1e ms_since_exec=0xa
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x21 ms_since_exec=0x2
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x9 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x23 ms_since_exec=0x9
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d3b8 qhead_key=0x7 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x28 ms_since_exec=0x8
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x4 intr_depth=0
+*** Automatic Factory Reset underway
+Still Alive0
+Still Alive1: 10
+qemu-system-i386: info: p2k-diag: currpid=120 state=0x01 exec_pass=0x2a ms_since_exec=0xe
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x2 intr_depth=0
+Table Entry: ZROCOOACDBRNCRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: COOACDBRNCRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: ACDBRNCRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: BRNCRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: CRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: OVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: SRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: KLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: JOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: YYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Still Alive2
+Initial Data Stored: ZROCOOACDBRNCRSOVRSRLKLRJOEYYY : 0
+Initial Data Stored: COOACDBRNCRSOVRSRLKLRJOEYYY : 1
+Initial Data Stored: ACDBRNCRSOVRSRLKLRJOEYYY : 2
+Initial Data Stored: BRNCRSOVRSRLKLRJOEYYY : 3
+Initial Data Stored: CRSOVRSRLKLRJOEYYY : 4
+Initial Data Stored: OVRSRLKLRJOEYYY : 5
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: exec_xpid=129 state=0x03 (1=CURR 2=skip 3=READY 5=PR_SLEEP 6=SUSP 9=FREE)
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5d4 qhead_key=0x2 intr_depth=1
+Initial Data Stored: SRLKLRJOEYYY : 6
+Initial Data Stored: KLRJOEYYY : 7
+Initial Data Stored: JOEYYY : 8
+Initial Data Stored: YYY : 9
+Table Entry: ZROCOOACDBRNCRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: ZROCOOACDBRNCRSOVRSRLKLRJOEYYY
+Table Entry: COOACDBRNCRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: COOACDBRNCRSOVRSRLKLRJOEYYY
+Table Entry: ACDBRNCRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: ACDBRNCRSOVRSRLKLRJOEYYY
+Table Entry: BRNCRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: BRNCRSOVRSRLKLRJOEYYY
+Table Entry: CRSOVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: CRSOVRSRLKLRJOEYYY
+Table Entry: OVRSRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: OVRSRLKLRJOEYYY
+Table Entry: SRLKLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: SRLKLRJOEYYY
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=11 isr=00 base=20
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d2bc qhead_key=0x3 intr_depth=0
+Table Entry: KLRJOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: KLRJOEYYY
+Table Entry: JOEYYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: JOEYYY
+Table Entry: YYYTWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: YYY
+Still Alive3
+Still Alive4:10
+Still Alive5
+Data Stored: ZROCOOACDBRNCRSOVRSRLKLRJOEYYY : 0
+Data Stored: COOACDBRNCRSOVRSRLKLRJOEYYY : 1
+Data Stored: ACDBRNCRSOVRSRLKLRJOEYYY : 2
+Data Stored: BRNCRSOVRSRLKLRJOEYYY : 3
+Data Stored: CRSOVRSRLKLRJOEYYY : 4
+Data Stored: OVRSRLKLRJOEYYY : 5
+Data Stored: SRLKLRJOEYYY : 6
+Data Stored: KLRJOEYYY : 7
+Data Stored: JOEYYY : 8
+Data Stored: YYY : 9
+Still Alive6
+Data Stored: ZROCOOACDBRNCRSOVRSRLKLRJOEYYY : 0
+Data Stored: COOACDBRNCRSOVRSRLKLRJOEYYY : 1
+Data Stored: ACDBRNCRSOVRSRLKLRJOEYYY : 2
+Data Stored: BRNCRSOVRSRLKLRJOEYYY : 3
+Data Stored: CRSOVRSRLKLRJOEYYY : 4
+Data Stored: OVRSRLKLRJOEYYY : 5
+Data Stored: SRLKLRJOEYYY : 6
+Data Stored: KLRJOEYYY : 7
+Data Stored: JOEYYY : 8
+qemu-system-i386: info: p2k-diag: cpu eip=0x001a6fbc cs=0x0008 esp=0x00de9e60 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d37c qhead_key=0x92 intr_depth=0
+Data Stored: YYY : 9
+Still Alive0
+Still Alive1: 10
+Table Entry: TWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: XAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: TEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: LFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: KEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: KOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: AIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: GAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: LEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: PMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Still Alive2
+Initial Data Stored: TWUXAQTEXLFSKEFKOZAIGGAGLEDPML : 0
+Initial Data Stored: XAQTEXLFSKEFKOZAIGGAGLEDPML : 1
+Initial Data Stored: TEXLFSKEFKOZAIGGAGLEDPML : 2
+Initial Data Stored: LFSKEFKOZAIGGAGLEDPML : 3
+Initial Data Stored: KEFKOZAIGGAGLEDPML : 4
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d37c qhead_key=0x72 intr_depth=1
+Initial Data Stored: KOZAIGGAGLEDPML : 5
+Initial Data Stored: AIGGAGLEDPML : 6
+Initial Data Stored: GAGLEDPML : 7
+Initial Data Stored: LEDPML : 8
+Initial Data Stored: PML : 9
+Table Entry: TWUXAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: TWUXAQTEXLFSKEFKOZAIGGAGLEDPML
+Table Entry: XAQTEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: XAQTEXLFSKEFKOZAIGGAGLEDPML
+Table Entry: TEXLFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: TEXLFSKEFKOZAIGGAGLEDPML
+Table Entry: LFSKEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: LFSKEFKOZAIGGAGLEDPML
+Table Entry: KEFKOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: KEFKOZAIGGAGLEDPML
+Table Entry: KOZAIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: KOZAIGGAGLEDPML
+Table Entry: AIGGAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: AIGGAGLEDPML
+Table Entry: GAGLEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: GAGLEDPML
+Table Entry: LEDPMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: LEDPML
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d37c qhead_key=0x50 intr_depth=0
+Table Entry: PMLDFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: PML
+Still Alive3
+Still Alive4:10
+Still Alive5
+Data Stored: TWUXAQTEXLFSKEFKOZAIGGAGLEDPML : 0
+Data Stored: XAQTEXLFSKEFKOZAIGGAGLEDPML : 1
+Data Stored: TEXLFSKEFKOZAIGGAGLEDPML : 2
+Data Stored: LFSKEFKOZAIGGAGLEDPML : 3
+Data Stored: KEFKOZAIGGAGLEDPML : 4
+Data Stored: KOZAIGGAGLEDPML : 5
+Data Stored: AIGGAGLEDPML : 6
+Data Stored: GAGLEDPML : 7
+Data Stored: LEDPML : 8
+Data Stored: PML : 9
+Still Alive6
+Data Stored: TWUXAQTEXLFSKEFKOZAIGGAGLEDPML : 0
+Data Stored: XAQTEXLFSKEFKOZAIGGAGLEDPML : 1
+Data Stored: TEXLFSKEFKOZAIGGAGLEDPML : 2
+Data Stored: LFSKEFKOZAIGGAGLEDPML : 3
+Data Stored: KEFKOZAIGGAGLEDPML : 4
+Data Stored: KOZAIGGAGLEDPML : 5
+Data Stored: AIGGAGLEDPML : 6
+Data Stored: GAGLEDPML : 7
+Data Stored: LEDPML : 8
+Data Stored: PML : 9
+Still Alive0
+Still Alive1: 10
+Table Entry: CP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: RPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: MTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: GNIWC BLSCMRBLUCLUxö-
+Table Entry: WC BLSCMRBLUCLUxö-
+Table Entry: BLSCMRBLUCLUxö-
+Table Entry: CMRBLUCLUxö-
+Table Entry: BLUCLUxö-
+Table Entry: CLUxö-
+Still Alive2
+Initial Data Stored: CP MGMRPTMTSGNIWC BLSCMRBLUCLU : 0
+Initial Data Stored: MGMRPTMTSGNIWC BLSCMRBLUCLU : 1
+Initial Data Stored: RPTMTSGNIWC BLSCMRBLUCLU : 2
+Initial Data Stored: MTSGNIWC BLSCMRBLUCLU : 3
+Initial Data Stored: GNIWC BLSCMRBLUCLU : 4
+Initial Data Stored: WC BLSCMRBLUCLU : 5
+Initial Data Stored: BLSCMRBLUCLU : 6
+Initial Data Stored: CMRBLUCLU : 7
+Initial Data Stored: BLUCLU : 8
+Initial Data Stored: CLU : 9
+Table Entry: CP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: CP MGMRPTMTSGNIWC BLSCMRBLUCLU
+qemu-system-i386: info: p2k-timing #3 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=48317 observed: irq0_raised=42780 irq0_replayed=0 clkint_entered=4721 eoi_seen=4721 delivery=11.0% replay=0.0% imr=60 irr=00 isr=00 base=20 idt20=0x0022c4c6 handler=clkint clkint_hook=0x0022c4c6 shim=0 wall=12.075s vtime=12.067s scale=0.999x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=71us p95=175us p99=243us max=2552us max_total=2552us n=4096 | pdb05 count=4616
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=657us p95=2016us p99=4050us max=33262us max_total=33262us n=3892
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=657us p95=2016us p99=4050us max=33262us max_total=33262us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=657us p95=2016us p99=4050us max=33262us max_total=33262us n=3892
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=657us p95=2016us p99=4050us max=33262us max_total=33262us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=12074.7ms vtime=12067.3ms xinu=1179.1ms drift=0.098 | delta: wall=3027.1ms vtime=3027.1ms xinu=972.0ms drift=0.321
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=68us p95=169us p99=239us max=2546us max_total=2546us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=4us p95=7us p99=21us max=120us max_total=120us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=4us max=191us max_total=191us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=56us p95=127us p99=246us max=2673us max_total=2673us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=513us p95=1747us p99=3240us max=22489us max_total=22489us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=4721 iret_seen=4379 (vs clkint_entered=4721)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x0022c4c6:4721 
+Table Entry: MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: MGMRPTMTSGNIWC BLSCMRBLUCLU
+Table Entry: RPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: RPTMTSGNIWC BLSCMRBLUCLU
+Table Entry: MTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: MTSGNIWC BLSCMRBLUCLU
+Table Entry: GNIWC BLSCMRBLUCLUxö-
+Data Entry: GNIWC BLSCMRBLUCLU
+Table Entry: WC BLSCMRBLUCLUxö-
+Data Entry: WC BLSCMRBLUCLU
+Table Entry: BLSCMRBLUCLUxö-
+Data Entry: BLSCMRBLUCLU
+Table Entry: CMRBLUCLUxö-
+Data Entry: CMRBLUCLU
+Table Entry: BLUCLUxö-
+Data Entry: BLUCLU
+Table Entry: CLUxö-
+Data Entry: CLU
+Still Alive3
+Still Alive4:10
+Still Alive5
+Data Stored: CP MGMRPTMTSGNIWC BLSCMRBLUCLU : 0
+Data Stored: MGMRPTMTSGNIWC BLSCMRBLUCLU : 1
+Data Stored: RPTMTSGNIWC BLSCMRBLUCLU : 2
+Data Stored: MTSGNIWC BLSCMRBLUCLU : 3
+Data Stored: GNIWC BLSCMRBLUCLU : 4
+Data Stored: WC BLSCMRBLUCLU : 5
+Data Stored: BLSCMRBLUCLU : 6
+Data Stored: CMRBLUCLU : 7
+Data Stored: BLUCLU : 8
+Data Stored: CLU : 9
+Still Alive6
+Data Stored: CP MGMRPTMTSGNIWC BLSCMRBLUCLU : 0
+Data Stored: MGMRPTMTSGNIWC BLSCMRBLUCLU : 1
+Data Stored: RPTMTSGNIWC BLSCMRBLUCLU : 2
+Data Stored: MTSGNIWC BLSCMRBLUCLU : 3
+Data Stored: GNIWC BLSCMRBLUCLU : 4
+Data Stored: WC BLSCMRBLUCLU : 5
+Data Stored: BLSCMRBLUCLU : 6
+Data Stored: CMRBLUCLU : 7
+Data Stored: BLUCLU : 8
+Data Stored: CLU : 9
+Still Alive0
+Still Alive1: 10
+Table Entry: DFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: AFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: JABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: PABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: DR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: VPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: IW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Table Entry: DMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Still Alive2
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=11 isr=00 base=20
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d4e4 qhead_key=0x7e intr_depth=0
+Initial Data Stored: DFBAFBJABPABDR PENVPRIW BTRDMN : 0
+Initial Data Stored: AFBJABPABDR PENVPRIW BTRDMN : 1
+Initial Data Stored: JABPABDR PENVPRIW BTRDMN : 2
+Initial Data Stored: PABDR PENVPRIW BTRDMN : 3
+Initial Data Stored: DR PENVPRIW BTRDMN : 4
+Initial Data Stored: PENVPRIW BTRDMN : 5
+Initial Data Stored: VPRIW BTRDMN : 6
+Initial Data Stored: IW BTRDMN : 7
+Initial Data Stored: BTRDMN : 8
+Initial Data Stored: DMN : 9
+Table Entry: DFBAFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: DFBAFBJABPABDR PENVPRIW BTRDMN
+Table Entry: AFBJABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: AFBJABPABDR PENVPRIW BTRDMN
+Table Entry: JABPABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: JABPABDR PENVPRIW BTRDMN
+Table Entry: PABDR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: PABDR PENVPRIW BTRDMN
+Table Entry: DR PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: DR PENVPRIW BTRDMN
+Table Entry: PENVPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: PENVPRIW BTRDMN
+Table Entry: VPRIW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: VPRIW BTRDMN
+Table Entry: IW BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: IW BTRDMN
+Table Entry: BTRDMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: BTRDMN
+Table Entry: DMNCP MGMRPTMTSGNIWC BLSCMRBLUCLUxö-
+Data Entry: DMN
+Still Alive3
+Still Alive4:10
+Still Alive5
+Data Stored: DFBAFBJABPABDR PENVPRIW BTRDMN : 0
+Data Stored: AFBJABPABDR PENVPRIW BTRDMN : 1
+Data Stored: JABPABDR PENVPRIW BTRDMN : 2
+Data Stored: PABDR PENVPRIW BTRDMN : 3
+Data Stored: DR PENVPRIW BTRDMN : 4
+Data Stored: PENVPRIW BTRDMN : 5
+Data Stored: VPRIW BTRDMN : 6
+Data Stored: IW BTRDMN : 7
+Data Stored: BTRDMN : 8
+Data Stored: DMN : 9
+Still Alive6
+Data Stored: DFBAFBJABPABDR PENVPRIW BTRDMN : 0
+Data Stored: AFBJABPABDR PENVPRIW BTRDMN : 1
+Data Stored: JABPABDR PENVPRIW BTRDMN : 2
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=01 isr=00 base=20
+Data Stored: PABDR PENVPRIW BTRDMN : 3
+Data Stored: DR PENVPRIW BTRDMN : 4
+Data Stored: PENVPRIW BTRDMN : 5
+Data Stored: VPRIW BTRDMN : 6
+Data Stored: IW BTRDMN : 7
+Data Stored: BTRDMN : 8
+Data Stored: DMN : 9
+*** NonFatal: 6 May 2051 01:49:11
+*** NonFatal: Last[XPid 85 APid -1 (alp lhd)] Current[XPid 120 APid -1 (price_init)]
+*** NonFatal: flash_write(): data (0x00) != (0x00) at offset (0x3e0000)
+
+
+[Saturday,  6 May 2051,  1:49:11 am]
+qemu-system-i386: info: p2k-diag: exec_xpid=129 state=0x05 (1=CURR 2=skip 3=READY 5=PR_SLEEP 6=SUSP 9=FREE)
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x2b ms_since_exec=0xa
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x002a6cc6 cs=0x0008 esp=0x00df7ee0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x30 ms_since_exec=0xb
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x32 ms_since_exec=0xd
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x37 ms_since_exec=0xb
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x002a6cb4 cs=0x0008 esp=0x00df7ee0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x46 ms_since_exec=0xf
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=69 state=0x01 exec_pass=0x49 ms_since_exec=0x7
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x4c ms_since_exec=0x0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d394 qhead_key=0x6 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d3d0 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x55 ms_since_exec=0xf
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x58 ms_since_exec=0x6
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x00232e2e cs=0x0008 esp=0x00dffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d358 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x64 ms_since_exec=0xd
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x67 ms_since_exec=0x8
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d1cc qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-timing #4 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=60431 observed: irq0_raised=54895 irq0_replayed=0 clkint_entered=9134 eoi_seen=9134 delivery=16.6% replay=0.0% imr=60 irr=01 isr=00 base=20 idt20=0x0022c4c6 handler=clkint clkint_hook=0x0022c4c6 shim=0 wall=15.100s vtime=15.093s scale=1.000x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=82us p95=167us p99=219us max=3552us max_total=3552us n=4096 | pdb05 count=9029
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=641us p95=1112us p99=3092us max=6763us max_total=26231us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=641us p95=1112us p99=3092us max=6763us max_total=33262us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=641us p95=1112us p99=3092us max=6763us max_total=26231us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=641us p95=1112us p99=3092us max=6763us max_total=33262us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=15100.1ms vtime=15092.7ms xinu=2281.2ms drift=0.151 | delta: wall=3025.4ms vtime=3025.4ms xinu=1102.2ms drift=0.364
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=77us p95=160us p99=213us max=3542us max_total=3542us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=7us p99=21us max=81us max_total=120us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=3us max=58us max_total=191us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=45us p95=119us p99=250us max=581us max_total=2673us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=504us p95=1070us p99=2684us max=25459us max_total=25459us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=9134 iret_seen=8465 (vs clkint_entered=9134)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x0022c4c6:9134 
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d1f0 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x6 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x00232e2e cs=0x0008 esp=0x00dffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x84 ms_since_exec=0xb
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x87 ms_since_exec=0x6
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=69 state=0x01 exec_pass=0x89 ms_since_exec=0xd
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: dcs-audio: ogg src_chans=1 src_rate=22050
+qemu-system-i386: info: dcs-audio: decoded cmd=0x00ec name=S00EC frames=181272 peak=18391 rms=4261
+qemu-system-i386: info: dcs-audio: [BAR4] execute_mixer 0x00ec d1=0xff7f d2=0x8200 â†’ name=S00EC frames=181272 ch=4 vol=255 pan=127 (played #2)
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x8b ms_since_exec=0xd
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x6 intr_depth=0
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: cpu eip=0x002a6cf6 cs=0x0008 esp=0x00df7ee0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x90 ms_since_exec=0xe
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x93 ms_since_exec=0x5
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d1fc qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x9a ms_since_exec=0x7
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0xa1 ms_since_exec=0x2
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0f4 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x00231d7c cs=0x0008 esp=0x00df5f94 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: exec_xpid=129 state=0x03 (1=CURR 2=skip 3=READY 5=PR_SLEEP 6=SUSP 9=FREE)
+qemu-system-i386: info: p2k-diag: currpid=127 state=0x01 exec_pass=0xa7 ms_since_exec=0x18
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: exec_xpid=129 state=0x05 (1=CURR 2=skip 3=READY 5=PR_SLEEP 6=SUSP 9=FREE)
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0xa9 ms_since_exec=0x3
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x7 intr_depth=1
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-timing #5 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=72543 observed: irq0_raised=67007 irq0_replayed=0 clkint_entered=13665 eoi_seen=13665 delivery=20.4% replay=0.0% imr=60 irr=01 isr=00 base=20 idt20=0x0022c4c6 handler=clkint clkint_hook=0x0022c4c6 shim=0 wall=18.125s vtime=18.118s scale=1.000x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=70us p95=160us p99=208us max=1392us max_total=3552us n=4096 | pdb05 count=13560
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=649us p95=1083us p99=3239us max=12753us max_total=28130us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=649us p95=1083us p99=3239us max=12753us max_total=33262us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=649us p95=1083us p99=3239us max=12753us max_total=28130us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=649us p95=1083us p99=3239us max=12753us max_total=33262us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=18125.1ms vtime=18117.7ms xinu=3412.9ms drift=0.188 | delta: wall=3025.0ms vtime=3025.0ms xinu=1131.6ms drift=0.374
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=66us p95=154us p99=203us max=1379us max_total=3542us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=7us p99=24us max=106us max_total=120us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=3us max=63us max_total=191us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=46us p95=115us p99=244us max=10377us max_total=10377us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=511us p95=928us p99=2656us max=5971us max_total=25459us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=13665 iret_seen=12647 (vs clkint_entered=13665)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x0022c4c6:13665 
+qemu-system-i386: info: p2k-diag: currpid=84 state=0x01 exec_pass=0xad ms_since_exec=0x8
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d328 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0xb0 ms_since_exec=0x1
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d328 qhead_key=0x8 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0f4 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x002a8cda cs=0x0008 esp=0x00d97c90 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: currpid=69 state=0x01 exec_pass=0xbe ms_since_exec=0x8
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d454 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0xc0 ms_since_exec=0xc
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0e8 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0xc3 ms_since_exec=0x4
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0xc5 ms_since_exec=0xb
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=119 state=0x01 exec_pass=0xca ms_since_exec=0x9
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0e8 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0xcd ms_since_exec=0x0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d328 qhead_key=0x7 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0xd2 ms_since_exec=0xf
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0xd4 ms_since_exec=0x9
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0e8 qhead_key=0x6 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x00232e2e cs=0x0008 esp=0x00dffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0xd9 ms_since_exec=0x7
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d3a0 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0xdc ms_since_exec=0x1
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: currpid=23 state=0x01 exec_pass=0xe1 ms_since_exec=0xe
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d394 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0xe3 ms_since_exec=0x8
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d100 qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: dcs-audio: ch4 END  (cmd=0x00ec name=S00EC frames=181272 cb_elapsed=192)
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d394 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0xeb ms_since_exec=0x3
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d3dc qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0xed ms_since_exec=0xc
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d100 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: dcs-audio: ogg src_chans=1 src_rate=22050
+qemu-system-i386: info: dcs-audio: decoded cmd=0x03ce name=S03CE frames=25136 peak=25475 rms=5891
+qemu-system-i386: info: dcs-audio: [BAR4] execute_mixer 0x03ce d1=0xff7f d2=0x8180 â†’ name=S03CE frames=25136 ch=3 vol=255 pan=127 (played #3)
+qemu-system-i386: info: p2k-diag: cpu eip=0x00232e2e cs=0x0008 esp=0x00dffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0xf2 ms_since_exec=0x8
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-timing #6 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=84651 observed: irq0_raised=79117 irq0_replayed=0 clkint_entered=18256 eoi_seen=18256 delivery=23.1% replay=0.0% imr=60 irr=01 isr=00 base=20 idt20=0x0022c4c6 handler=clkint clkint_hook=0x0022c4c6 shim=0 wall=21.149s vtime=21.142s scale=1.000x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=92us p95=176us p99=213us max=623us max_total=3552us n=4096 | pdb05 count=18151
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=645us p95=1044us p99=3132us max=12031us max_total=31145us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=645us p95=1044us p99=3132us max=12031us max_total=33262us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=646us p95=1044us p99=3132us max=12031us max_total=31145us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=646us p95=1044us p99=3132us max=12031us max_total=33262us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=21149.3ms vtime=21141.9ms xinu=4559.5ms drift=0.216 | delta: wall=3024.2ms vtime=3024.2ms xinu=1146.6ms drift=0.379
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=87us p95=168us p99=205us max=615us max_total=3542us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=7us p99=25us max=155us max_total=155us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=4us max=182us max_total=191us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=51us p95=127us p99=306us max=7294us max_total=10377us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=492us p95=884us p99=2582us max=5611us max_total=25459us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=18256 iret_seen=16825 (vs clkint_entered=18256)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x0022c4c6:18256 
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0xf4 ms_since_exec=0x7
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0e8 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0xf9 ms_since_exec=0x6
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: dcs-audio: ch3 END  (cmd=0x03ce name=S03CE frames=25136 cb_elapsed=27)
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0xfb ms_since_exec=0xd
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x100 ms_since_exec=0xf
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: dcs-audio: [BAR4] execute_mixer 0x03ce d1=0xff7f d2=0x8180 â†’ name=S03CE frames=25136 ch=3 vol=255 pan=127 (played #4)
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x103 ms_since_exec=0x4
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x002a6cf0 cs=0x0008 esp=0x00df7ee0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x108 ms_since_exec=0x4
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x10a ms_since_exec=0xc
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: dcs-audio: ch3 END  (cmd=0x03ce name=S03CE frames=25136 cb_elapsed=27)
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x10f ms_since_exec=0xd
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x112 ms_since_exec=0x6
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: dcs-audio: [BAR4] execute_mixer 0x03ce d1=0xff7f d2=0x8180 â†’ name=S03CE frames=25136 ch=3 vol=255 pan=127 (played #5)
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x117 ms_since_exec=0x7
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x119 ms_since_exec=0xe
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x11c ms_since_exec=0x5
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x00232e2e cs=0x0008 esp=0x00dffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x121 ms_since_exec=0x3
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: dcs-audio: ch3 END  (cmd=0x03ce name=S03CE frames=25136 cb_elapsed=27)
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: dcs-audio: [BAR4] execute_mixer 0x03ce d1=0xff7f d2=0x8180 â†’ name=S03CE frames=25136 ch=3 vol=255 pan=127 (played #6)
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x12b ms_since_exec=0x0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x12d ms_since_exec=0x6
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: exec_xpid=129 state=0x01 (1=CURR 2=skip 3=READY 5=PR_SLEEP 6=SUSP 9=FREE)
+qemu-system-i386: info: p2k-diag: currpid=129 state=0x01 exec_pass=0x12f ms_since_exec=0xf
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: exec_xpid=129 state=0x05 (1=CURR 2=skip 3=READY 5=PR_SLEEP 6=SUSP 9=FREE)
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x132 ms_since_exec=0x3
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x134 ms_since_exec=0xc
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d238 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: dcs-audio: ch3 END  (cmd=0x03ce name=S03CE frames=25136 cb_elapsed=27)
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d394 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x00232e2e cs=0x0008 esp=0x00dffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0e8 qhead_key=0x8 intr_depth=0
+qemu-system-i386: info: p2k-timing #7 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=96778 observed: irq0_raised=91244 irq0_replayed=0 clkint_entered=22833 eoi_seen=22833 delivery=25.0% replay=0.0% imr=60 irr=01 isr=00 base=20 idt20=0x0022c4c6 handler=clkint clkint_hook=0x0022c4c6 shim=0 wall=24.178s vtime=24.171s scale=1.000x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=77us p95=167us p99=208us max=409us max_total=3552us n=4096 | pdb05 count=22728
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=644us p95=1041us p99=3043us max=9977us max_total=35657us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=644us p95=1041us p99=3043us max=9977us max_total=35657us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=644us p95=1041us p99=3043us max=9977us max_total=35657us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=644us p95=1041us p99=3043us max=9977us max_total=35657us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=24178.0ms vtime=24170.6ms xinu=5702.6ms drift=0.236 | delta: wall=3028.7ms vtime=3028.7ms xinu=1143.1ms drift=0.377
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=72us p95=160us p99=200us max=403us max_total=3542us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=7us p99=22us max=98us max_total=155us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=3us max=64us max_total=191us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=51us p95=132us p99=265us max=2349us max_total=10377us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=498us p95=884us p99=2499us max=6913us max_total=25459us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=22833 iret_seen=20987 (vs clkint_entered=22833)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x0022c4c6:22833 
+qemu-system-i386: info: dcs-audio: [BAR4] execute_mixer 0x03ce d1=0xff7f d2=0x8180 â†’ name=S03CE frames=25136 ch=3 vol=255 pan=127 (played #7)
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x6 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=69 state=0x01 exec_pass=0x140 ms_since_exec=0x8
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0f4 qhead_key=0x6 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x142 ms_since_exec=0xf
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x148 ms_since_exec=0x2
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x14a ms_since_exec=0x8
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: dcs-audio: ch3 END  (cmd=0x03ce name=S03CE frames=25136 cb_elapsed=27)
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x14f ms_since_exec=0x6
+qemu-system-i386: info: p2k-diag: cpu eip=0x00232e2e cs=0x0008 esp=0x00dffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x152 ms_since_exec=0x0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0e8 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x7 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0f4 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x159 ms_since_exec=0xa
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x15c ms_since_exec=0x0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0e8 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d55c qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x7 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d1fc qhead_key=0x6 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x00232e2e cs=0x0008 esp=0x00dffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d328 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x174 ms_since_exec=0x9
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x179 ms_since_exec=0xf
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x17e ms_since_exec=0xb
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x181 ms_since_exec=0x0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0f4 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x00232e2e cs=0x0008 esp=0x00dffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x8 intr_depth=0
+qemu-system-i386: info: p2k-timing #8 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=108917 observed: irq0_raised=103380 irq0_replayed=0 clkint_entered=27437 eoi_seen=27437 delivery=26.5% replay=0.0% imr=60 irr=00 isr=00 base=20 idt20=0x0022c4c6 handler=clkint clkint_hook=0x0022c4c6 shim=0 wall=27.210s vtime=27.202s scale=1.000x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=80us p95=167us p99=219us max=421us max_total=3552us n=4096 | pdb05 count=27332
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=645us p95=1047us p99=2915us max=8547us max_total=34112us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=645us p95=1047us p99=2915us max=8547us max_total=35657us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=645us p95=1047us p99=2915us max=8547us max_total=34112us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=645us p95=1047us p99=2915us max=8547us max_total=35657us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=27209.8ms vtime=27202.3ms xinu=6852.5ms drift=0.252 | delta: wall=3031.8ms vtime=3031.8ms xinu=1149.9ms drift=0.379
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=75us p95=159us p99=211us max=416us max_total=3542us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=7us p99=24us max=234us max_total=234us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=3us max=204us max_total=204us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=51us p95=129us p99=276us max=2363us max_total=10377us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=499us p95=886us p99=2456us max=6756us max_total=25459us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=27437 iret_seen=25180 (vs clkint_entered=27437)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x0022c4c6:27437 
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x187 ms_since_exec=0x0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x189 ms_since_exec=0x5
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x6 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0e8 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x18e ms_since_exec=0x3
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030cff8 qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x190 ms_since_exec=0x8
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0f4 qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x6 intr_depth=0
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0f4 qhead_key=0x4 intr_depth=1
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=1
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: cpu eip=0x00232e2e cs=0x0008 esp=0x00dffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d184 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x8 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0e8 qhead_key=0x6 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=69 state=0x01 exec_pass=0x1a6 ms_since_exec=0xd
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x1a9 ms_since_exec=0x0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0f4 qhead_key=0x9 intr_depth=0
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x1ab ms_since_exec=0xa
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d1d8 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0e8 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x00232e2e cs=0x0008 esp=0x00dffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=11 isr=00 base=20
+qemu-system-i386: info: p2k-diag: currpid=102 state=0x01 exec_pass=0x1b5 ms_since_exec=0x11
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0f4 qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x1b7 ms_since_exec=0x4
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d454 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x1b9 ms_since_exec=0x8
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=69 state=0x01 exec_pass=0x1bc ms_since_exec=0x2
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0e8 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x1be ms_since_exec=0x9
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x6 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x1c0 ms_since_exec=0xd
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x1c3 ms_since_exec=0x6
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-timing #9 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=121029 observed: irq0_raised=115493 irq0_replayed=0 clkint_entered=31949 eoi_seen=31949 delivery=27.7% replay=0.0% imr=60 irr=01 isr=00 base=20 idt20=0x0022c4c6 handler=clkint clkint_hook=0x0022c4c6 shim=0 wall=30.235s vtime=30.227s scale=1.000x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=80us p95=148us p99=220us max=351us max_total=3552us n=4096 | pdb05 count=31844
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=656us p95=1050us p99=2995us max=7444us max_total=29064us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=656us p95=1050us p99=2995us max=7444us max_total=35657us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=656us p95=1050us p99=2995us max=7444us max_total=29064us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=656us p95=1050us p99=2995us max=7444us max_total=35657us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=30234.6ms vtime=30227.2ms xinu=7979.3ms drift=0.264 | delta: wall=3024.8ms vtime=3024.8ms xinu=1126.9ms drift=0.373
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=75us p95=141us p99=213us max=342us max_total=3542us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=7us p99=18us max=192us max_total=234us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=4us max=233us max_total=233us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=52us p95=129us p99=245us max=665us max_total=10377us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=513us p95=897us p99=2634us max=6755us max_total=25459us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=31949 iret_seen=29333 (vs clkint_entered=31949)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x0022c4c6:31949 
+qemu-system-i386: info: p2k-diag: cpu eip=0x00232e2e cs=0x0008 esp=0x00dffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d184 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=69 state=0x01 exec_pass=0x1cc ms_since_exec=0x6
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x1cf ms_since_exec=0xf
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0f4 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x1d1 ms_since_exec=0x4
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x1d6 ms_since_exec=0x5
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d358 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x1d8 ms_since_exec=0xd
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x1dd ms_since_exec=0x7
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x1df ms_since_exec=0xe
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x00232e2e cs=0x0008 esp=0x00dffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d358 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x1e7 ms_since_exec=0x6
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d280 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x1e9 ms_since_exec=0xd
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=81 state=0x01 exec_pass=0x1ef ms_since_exec=0x0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x1f1 ms_since_exec=0x7
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d394 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0f4 qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x00232e2e cs=0x0008 esp=0x00dffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d358 qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x202 ms_since_exec=0xd
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d1cc qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=69 state=0x01 exec_pass=0x207 ms_since_exec=0xc
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x20a ms_since_exec=0x6
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0f4 qhead_key=0x6 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x20c ms_since_exec=0xc
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x20f ms_since_exec=0x4
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d328 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-timing #10 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=133174 observed: irq0_raised=127638 irq0_replayed=0 clkint_entered=36578 eoi_seen=36578 delivery=28.7% replay=0.0% imr=60 irr=01 isr=00 base=20 idt20=0x0022c4c6 handler=clkint clkint_hook=0x0022c4c6 shim=0 wall=33.268s vtime=33.260s scale=1.000x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=77us p95=144us p99=205us max=366us max_total=3552us n=4096 | pdb05 count=36473
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=650us p95=1056us p99=2994us max=8835us max_total=36878us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=650us p95=1056us p99=2994us max=8835us max_total=36878us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=650us p95=1056us p99=2994us max=8835us max_total=36878us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=650us p95=1056us p99=2994us max=8835us max_total=36878us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=33267.9ms vtime=33260.5ms xinu=9135.4ms drift=0.275 | delta: wall=3033.3ms vtime=3033.3ms xinu=1156.1ms drift=0.381
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=72us p95=137us p99=200us max=359us max_total=3542us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=7us p99=26us max=138us max_total=234us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=3us max=195us max_total=233us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=52us p95=133us p99=254us max=626us max_total=10377us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=509us p95=893us p99=2495us max=6730us max_total=25459us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=36578 iret_seen=33620 (vs clkint_entered=36578)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x0022c4c6:36578 
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: cpu eip=0x00231e4a cs=0x0008 esp=0x00dfff5c eflags=0x00000002 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0e8 qhead_key=0x4 intr_depth=1
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x6 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x222 ms_since_exec=0xa
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d1d8 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x224 ms_since_exec=0xe
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x227 ms_since_exec=0x3
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0e8 qhead_key=0x6 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: cpu eip=0x00231dbe cs=0x0008 esp=0x00dfff50 eflags=0x00000002 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x22c ms_since_exec=0x3
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0f4 qhead_key=0x7 intr_depth=1
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x22e ms_since_exec=0xc
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x233 ms_since_exec=0xb
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d454 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0f4 qhead_key=0x7 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d3dc qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d130 qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d2bc qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x240 ms_since_exec=0x3
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x242 ms_since_exec=0x9
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x00232e2e cs=0x0008 esp=0x00dffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d3dc qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x250 ms_since_exec=0xb
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x253 ms_since_exec=0x2
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0e8 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x258 ms_since_exec=0x1
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0f4 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-timing #11 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=145285 observed: irq0_raised=139750 irq0_replayed=0 clkint_entered=41172 eoi_seen=41172 delivery=29.5% replay=0.0% imr=60 irr=01 isr=00 base=20 idt20=0x0022c4c6 handler=clkint clkint_hook=0x0022c4c6 shim=0 wall=36.293s vtime=36.285s scale=1.000x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=77us p95=151us p99=210us max=438us max_total=3552us n=4096 | pdb05 count=41067
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=654us p95=1069us p99=3071us max=8810us max_total=25700us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=654us p95=1069us p99=3071us max=8810us max_total=36878us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=654us p95=1069us p99=3071us max=8810us max_total=25700us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=654us p95=1069us p99=3071us max=8810us max_total=36878us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=36292.8ms vtime=36285.4ms xinu=10282.8ms drift=0.283 | delta: wall=3024.9ms vtime=3024.9ms xinu=1147.4ms drift=0.379
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=71us p95=144us p99=204us max=434us max_total=3542us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=7us p99=16us max=97us max_total=234us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=3us max=129us max_total=233us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=53us p95=142us p99=259us max=657us max_total=10377us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=509us p95=899us p99=2654us max=6624us max_total=25459us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=41172 iret_seen=37840 (vs clkint_entered=41172)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x0022c4c6:41172 
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x259 ms_since_exec=0xe
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x002a6a64 cs=0x0008 esp=0x00df7ee4 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x25c ms_since_exec=0x1
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0f4 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x25e ms_since_exec=0x9
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x260 ms_since_exec=0xd
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x263 ms_since_exec=0x4
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x7 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x26d ms_since_exec=0x3
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x26f ms_since_exec=0xc
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x3 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: cpu eip=0x002a6d22 cs=0x0008 esp=0x00df7ee0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x274 ms_since_exec=0x9
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x277 ms_since_exec=0x2
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d0e8 qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x6 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x27c ms_since_exec=0x5
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x27e ms_since_exec=0xd
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d460 qhead_key=0x2 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x283 ms_since_exec=0xb
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d5ec qhead_key=0x5 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x286 ms_since_exec=0x1
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x4 intr_depth=0
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x1 intr_depth=0
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d28c qhead_key=0x1 intr_depth=1
+qemu-system-i386: info: p2k-diag: PIC master imr=60 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: cpu eip=0x002a6d62 cs=0x0008 esp=0x00df7ee0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: currpid=128 state=0x01 exec_pass=0x28d ms_since_exec=0x6
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d31c qhead_key=0x7 intr_depth=0
+qemu-system-i386: info: p2k-diag: currpid=0 state=0xff exec_pass=0x290 ms_since_exec=0x1
+qemu-system-i386: info: p2k-diag: clkrun=1 slnonempty=1 qhead_ptr=0x0030d574 qhead_key=0x3 intr_depth=0
+qemu-system-i386: terminating on signal 15 from pid 94331 (timeout)
+qemu-system-i386: info: p2k-timing #12 exit | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=155103 observed: irq0_raised=149562 irq0_replayed=0 clkint_entered=44891 eoi_seen=44891 delivery=30.0% replay=0.0% imr=60 irr=00 isr=01 base=20 idt20=0x0022c4c6 handler=clkint clkint_hook=0x0022c4c6 shim=0 wall=38.783s vtime=38.737s scale=0.999x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency exit | raise->clkint p50=65us p95=161us p99=362us max=1039us max_total=3552us n=4096 | pdb05 count=44786
+qemu-system-i386: info: p2k-pdb05 exit | pdb05_wall_delta   p50=642us p95=1100us p99=3293us max=27826us max_total=27826us n=3719
+qemu-system-i386: info: p2k-pdb05 exit | pdb05_wall_total   p50=644us p95=1099us p99=3309us max=27826us max_total=36878us n=4096
+qemu-system-i386: info: p2k-pdb05 exit | pdb05_vtime_delta  p50=642us p95=1100us p99=3293us max=27825us max_total=27825us n=3719
+qemu-system-i386: info: p2k-pdb05 exit | pdb05_vtime_total  p50=644us p95=1099us p99=3309us max=27825us max_total=36878us n=4096
+qemu-system-i386: info: p2k-xinu-drift exit | period_ms=0.250 | total: wall=38783.3ms vtime=38737.3ms xinu=11211.6ms drift=0.289 | delta: wall=2490.5ms vtime=2452.0ms xinu=928.8ms drift=0.373
+qemu-system-i386: info: p2k-segment exit | raise_intack  p50=60us p95=153us p99=358us max=1743us max_total=3542us n=4096
+qemu-system-i386: info: p2k-segment exit | intack_entry  p50=5us p95=7us p99=26us max=430us max_total=430us n=4096
+qemu-system-i386: info: p2k-segment exit | entry_eoi     p50=1us p95=2us p99=3us max=75us max_total=233us n=4096
+qemu-system-i386: info: p2k-segment exit | eoi_iret      p50=52us p95=141us p99=239us max=609us max_total=10377us n=4096
+qemu-system-i386: info: p2k-segment exit | iret_raise    p50=505us p95=907us p99=2670us max=9770us max_total=25459us n=4096
+qemu-system-i386: info: p2k-segment exit | coverage intack_seen=44892 iret_seen=41224 (vs clkint_entered=44891)
+qemu-system-i386: info: p2k-eoi-eip exit | 0x0022c4c6:44891 
+qemu-system-i386: info: pinball2000: P2K_NO_SAVEDATA set â€” discarding BAR3 flash changes
+qemu-system-i386: info: pinball2000: P2K_NO_SAVEDATA set â€” discarding SEEPROM changes
+qemu-system-i386: info: pinball2000: P2K_NO_SAVEDATA set â€” discarding BAR2 NVRAM changes

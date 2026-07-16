@@ -1,0 +1,331 @@
+/*
+ * p2k-probe-cell-shim.c — accepted, strictly gated base-ROM compatibility.
+ *
+ * Goal of this file: keep --update none (BASE-image / no-update-flash)
+ * boot of SWE1 reaching its v0.40 attract path, matching what the legacy
+ * emulator does: apply per-tick sentinel maintenance for the DCS probe
+ * cell.
+ *
+ * Strict gating — by design:
+ *
+ *   - Activates ONLY when env P2K_NO_AUTO_UPDATE is set
+ *     (which scripts/run-qemu.sh exports for `--update none`).
+ *   - Silent / inert on normal update boots: no RAM scribble, no scan,
+ *     not even a timer armed. The caller checks the gate first.
+ *   - One-line install banner explicitly says "compatibility shim"
+ *     so it cannot be confused with clean device behavior.
+ *
+ * no-update case):
+ *
+ *   1. After XINU has loaded its game image into low RAM, scan
+ *      [0x100000 .. 0x400000) once for the literal string
+ *           "pci_watchdog_bone(): the watchdog has expired"
+ *      Then walk the surrounding code to locate the dword cell that
+ *      the dcs_probe() inside the watchdog callee compares against
+ *      0x0000FFFF (encoded as `81 3D <addr32> FF FF 00 00`).
+ *      Same algorithm as the prior reference.
+ *
+ *   2. Until XINU installs its clkint handler at IDT[0x20], scribble
+ *      0x0000FFFF every ~50 ms (matches the prior reference's pre-xinu_ready
+ *      sentinel value — early sentinel checks expect 0xFFFF and break
+ *      if they read 0x00000000).
+ *
+ *   3. The instant IDT[0x20] differs from the BIOS panic-stub value
+ *      (i.e. xinu_ready), flip the scribble to 0x00000000 forever.
+ *      dcs_probe() then returns 1 (cell != 0xFFFF) and the game
+ *      commits to the BAR4 DCS path instead of the legacy UART
+ *      byte-pair fallback. Boot dong + ACE1 mixer stream + per-channel
+ *      sounds all flow through the real BAR4 path from there.
+ *
+ * Why this is a guest-data patch (and acknowledged as such):
+ *
+ *   The cell we scribble is a piece of the game's BSS that the real
+ *   PCI watchdog/DCS device (which we do not yet model with full
+ *   fidelity) would update on its own. Until we replace this with
+ *   correct DCS-probe / PLX BAR4 device behavior, the scribble is
+ *   the cheapest way to keep the no-update boot from declaring a
+ *   false-alarm Fatal in the first hundreds of ms.
+ *
+ * Why we keep it anyway (benign-cost / high-replacement-cost trade-off):
+ *
+ *   - It is doubly gated: only `--update none` boots even arm the timer,
+ *     and the timer flips to a constant 0 the instant XINU is ready.
+ *     For a normal update boot this file is completely inert.
+ *   - The scribble target is one dword in game BSS, found by an exact
+ *     surrounding-instruction match — so accidental hits on a different
+ *     ROM are essentially impossible (the scanner refuses to install).
+ *   - The "right" replacement is faithful DCS / PLX9054 device behavior
+ *     so the cell updates itself. That work is on the roadmap but
+ *     unrelated to this file's job (keep the no-update boot path alive).
+ *     Until the device-side fix lands, ripping out this shim would
+ *     re-break `--update none` for SWE1 — a regression with no
+ *     compensating engineering benefit.
+ *
+ * Maintenance contract:
+ *
+ *   Keep this behavior for `--update none` sound. Do not broaden its gate,
+ *   reuse its scanner for unrelated patches, or make genuine-update boots
+ *   depend on it.
+ *
+ * Cross-references:
+ *
+ *     includes mem_detect, prnull, BT-74; we already own those via
+ *     p2k-mem-detect.c and the deleted shims).
+ *   - Per-tick scribble loop from the prior reference.
+ *   - qemu/p2k-bar3-flash.c          where P2K_NO_AUTO_UPDATE is honored
+ *     for the BAR3 init half of the same parity story.
+ */
+
+#include "qemu/osdep.h"
+#include "qemu/error-report.h"
+#include "qemu/timer.h"
+#include "qemu/main-loop.h"
+#include "exec/cpu-common.h"
+#include "hw/core/cpu.h"
+#include "target/i386/cpu.h"
+
+#include "p2k-internal.h"
+
+#define SCAN_BASE        0x00100000u
+#define SCAN_SIZE        0x00300000u   /* 3 MiB — wide enough for SWE1/RFM */
+#define POLL_NS          (50ull * 1000ull * 1000ull) /* 50 ms */
+
+/* Two staged scribble values, mirroring Unicorn's polarity flip:
+ *
+ *   Pre-XINU  : 0x0000FFFF — early boot code reads this cell as a
+ *               boot-sentinel; writing 0 there derails the path
+ *               before clkint/scheduling is up.
+ *   Post-XINU : 0x00000000 — once XINU is up, the only consumer is
+ *               dcs_probe() which returns 1 ↔ cell != 0xFFFF.
+ *               Writing 0 (cell != 0xFFFF) → probe → 1 → DCS detected
+ *               → game writes dcs_mode=1 → audio init runs.
+ *
+ * If the cell stays at 0xFFFF forever, the natural DCS probe returns 0
+ * ("no DCS") even after XINU is alive, and audio never starts.
+ *
+ * See the prior reference for the original staging. */
+#define SCRIBBLE_PRE_XINU   0x0000FFFFu
+#define SCRIBBLE_POST_XINU  0x00000000u
+
+/* Polarity flip is gated on XINU readiness — see p2k_probe_cell_tick(). */
+
+static QEMUTimer *s_timer;
+static uint32_t   s_probe_cell;       /* guest phys addr; 0 = not found yet */
+static int        s_scan_attempts;    /* bound the work we do */
+static bool       s_logged_hit;
+static bool       s_post_xinu;        /* polarity flipped */
+static int        s_post_xinu_writes; /* count after flip, for audit */
+static uint32_t   s_initial_idt20;    /* BIOS panic-stub seen pre-XINU */
+
+/* Read IDT[0x20] handler offset from the live CPU. Returns 0 if IDT is
+ * not yet set up or vector 0x20 is missing. Used as our "XINU is up"
+ * heuristic, mirroring the legacy reference's threshold). */
+static uint32_t current_idt20_handler(void)
+{
+    CPUState *cs;
+    CPU_FOREACH(cs) {
+        CPUX86State *env = &X86_CPU(cs)->env;
+        if (!env->idt.base || env->idt.limit < 0x20 * 8 + 7) {
+            return 0;
+        }
+        uint8_t g[8];
+        cpu_physical_memory_read(env->idt.base + 0x20 * 8, g, sizeof(g));
+        return g[0] | (g[1] << 8) | (g[6] << 16) | (g[7] << 24);
+    }
+    return 0;
+}
+
+/* Scan a contiguous live RAM window for the watchdog string and walk
+ * back to the CMP [<probe_cell>], 0xFFFF inside dcs_probe().
+ *
+ * Returns the guest phys address of the probe cell, or 0 if not found
+ * yet (caller will retry on the next tick — game code is copied to
+ * low RAM somewhat after STARTING GAME CODE prints).
+ *
+ * Algorithm mirrors the legacy reference step-for-step. */
+static uint32_t scan_for_probe_cell(void)
+{
+    uint8_t *buf = g_malloc(SCAN_SIZE);
+    cpu_physical_memory_read(SCAN_BASE, buf, SCAN_SIZE);
+
+    static const char needle[] =
+        "pci_watchdog_bone(): the watchdog has expired";
+    const size_t nlen = sizeof(needle) - 1;
+
+    /* 1. find the error string in live RAM */
+    uint32_t str_off = 0;
+    bool found = false;
+    for (uint32_t off = 0; off + nlen < SCAN_SIZE; off++) {
+        if (memcmp(buf + off, needle, nlen) == 0) {
+            str_off = off;
+            found = true;
+            break;
+        }
+    }
+    if (!found) { g_free(buf); return 0; }
+    uint32_t str_addr = SCAN_BASE + str_off;
+
+    /* 2. find PUSH imm32 == str_addr (opcode 0x68) within ±4 KiB */
+    uint32_t push_off = 0;
+    found = false;
+    uint32_t ps = (str_off > 0x1000) ? str_off - 0x1000 : 0;
+    uint32_t pe = str_off + 0x1000;
+    if (pe > SCAN_SIZE - 5) pe = SCAN_SIZE - 5;
+    for (uint32_t off = ps; off + 5 <= pe; off++) {
+        if (buf[off] == 0x68) {
+            uint32_t imm;
+            memcpy(&imm, buf + off + 1, 4);
+            if (imm == str_addr) {
+                push_off = off;
+                found = true;
+                break;
+            }
+        }
+    }
+    if (!found) { g_free(buf); return 0; }
+
+    /* 3. find the LAST CALL rel32 (E8 ..) within 200 bytes before the PUSH */
+    uint32_t call_off = 0;
+    bool call_found = false;
+    uint32_t cb = (push_off > 200) ? push_off - 200 : 0;
+    for (uint32_t off = cb; off + 5 <= push_off; off++) {
+        if (buf[off] == 0xE8) {
+            int32_t rel;
+            memcpy(&rel, buf + off + 1, 4);
+            int64_t target = (int64_t)(SCAN_BASE + off + 5) + rel;
+            if (target >= SCAN_BASE &&
+                target < (int64_t)(SCAN_BASE + SCAN_SIZE)) {
+                call_off = off;
+                call_found = true;
+            }
+        }
+    }
+    if (!call_found) { g_free(buf); return 0; }
+
+    int32_t call_rel;
+    memcpy(&call_rel, buf + call_off + 1, 4);
+    uint32_t callee_guest =
+        (uint32_t)((int64_t)(SCAN_BASE + call_off + 5) + call_rel);
+    uint32_t callee_off = callee_guest - SCAN_BASE;
+
+    /* 4. in the callee body, follow the first nested CALL up to 32 B in,
+     *    then look in either the direct callee or the nested callee for
+     *    `81 3D <addr32> FF FF 00 00` — CMP dword [addr32], 0x0000FFFF */
+    uint32_t starts[2] = { callee_off, 0 };
+    int n_starts = 1;
+    uint32_t ce0 = callee_off + 32;
+    if (ce0 > SCAN_SIZE - 5) ce0 = SCAN_SIZE - 5;
+    for (uint32_t off = callee_off; off + 5 <= ce0; off++) {
+        if (buf[off] == 0xE8) {
+            int32_t rel2;
+            memcpy(&rel2, buf + off + 1, 4);
+            int64_t t2 = (int64_t)(SCAN_BASE + off + 5) + rel2;
+            if (t2 >= SCAN_BASE && t2 < (int64_t)(SCAN_BASE + SCAN_SIZE)) {
+                starts[1] = (uint32_t)(t2 - SCAN_BASE);
+                n_starts = 2;
+                break;
+            }
+        }
+    }
+
+    uint32_t hit = 0;
+    for (int si = 0; si < n_starts && !hit; si++) {
+        uint32_t ce = starts[si] + 64;
+        if (ce > SCAN_SIZE - 4) ce = SCAN_SIZE - 4;
+        for (uint32_t off = starts[si]; off + 10 <= ce; off++) {
+            uint8_t *p = buf + off;
+            if (p[0] == 0x81 && p[1] == 0x3D &&
+                p[6] == 0xFF && p[7] == 0xFF &&
+                p[8] == 0x00 && p[9] == 0x00) {
+                uint32_t cand;
+                memcpy(&cand, p + 2, 4);
+                if (cand >= 0x100000u && cand < 0x01000000u) {
+                    hit = cand;
+                    break;
+                }
+            }
+        }
+    }
+    g_free(buf);
+    return hit;
+}
+
+static void p2k_probe_cell_tick(void *opaque)
+{
+    if (s_probe_cell == 0) {
+        if (s_scan_attempts < 200 /* ~10 s */) {
+            s_probe_cell = scan_for_probe_cell();
+            s_scan_attempts++;
+            if (s_probe_cell && !s_logged_hit) {
+                s_logged_hit = true;
+                info_report("p2k-probe-cell-shim: located probe cell at "
+                            "0x%08x — phase=pre-XINU scribble=0x%08x "
+                            "every 50 ms; will flip to 0x%08x once XINU "
+                            "installs clkint at IDT[0x20] "
+                            "(--update none compatibility bridge)",
+                            s_probe_cell, SCRIBBLE_PRE_XINU,
+                            SCRIBBLE_POST_XINU);
+            }
+            if (s_probe_cell == 0) goto reschedule;
+        } else {
+            goto reschedule;
+        }
+    }
+    {
+        /* Cache the BIOS panic-stub IDT[0x20] value the first time we
+         * read a non-zero handler. Once the live handler differs, XINU
+         * has installed clkint and sysinit() is up — flip immediately.
+         * This matches Unicorn's "xinu_ready" gate (cpu.c:566-579)
+         * without needing a UART line collector. */
+        uint32_t h = current_idt20_handler();
+        if (s_initial_idt20 == 0 && h != 0) {
+            s_initial_idt20 = h;
+        }
+        if (!s_post_xinu) {
+            bool xinu_ready = (s_initial_idt20 != 0 && h != 0
+                               && h != s_initial_idt20);
+            if (xinu_ready) {
+                s_post_xinu = true;
+                info_report("p2k-probe-cell-shim: phase=post-XINU "
+                            "(IDT[0x20]: panic-stub 0x%08x → clkint "
+                            "0x%08x) — switching scribble to 0x%08x at "
+                            "[0x%08x] so DCS probe returns PRESENT",
+                            s_initial_idt20, h,
+                            SCRIBBLE_POST_XINU, s_probe_cell);
+            }
+        }
+
+        uint32_t v = s_post_xinu ? SCRIBBLE_POST_XINU : SCRIBBLE_PRE_XINU;
+        cpu_physical_memory_write(s_probe_cell, &v, sizeof(v));
+        if (s_post_xinu) {
+            s_post_xinu_writes++;
+            if (s_post_xinu_writes == 1) {
+                info_report("p2k-probe-cell-shim: first post-XINU "
+                            "scribble committed; awaiting first DCS "
+                            "command from guest");
+            }
+        }
+    }
+
+    timer_mod(s_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + POLL_NS);
+    return;
+
+reschedule:
+    timer_mod(s_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + POLL_NS);
+}
+
+void p2k_install_probe_cell_shim(void)
+{
+    /* Hard gate: only active for the no-update parity path. Normal
+     * update / savedata-flash boots get NO scribble whatsoever. */
+    if (getenv("P2K_NO_AUTO_UPDATE") == NULL) {
+        return;
+    }
+
+    info_report("p2k-probe-cell-shim: ACTIVE (P2K_NO_AUTO_UPDATE) — "
+                "accepted base-ROM probe-cell maintenance scheduled for "
+                "--update none sound; genuine-update boots are unaffected.");
+
+    s_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, p2k_probe_cell_tick, NULL);
+    timer_mod(s_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + POLL_NS);
+}
