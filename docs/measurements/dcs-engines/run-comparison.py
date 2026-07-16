@@ -257,6 +257,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup", type=float, default=30.0, help="ignore snap windows before this wall time")
     parser.add_argument("--game", default="swe1")
     parser.add_argument("--update", default="0210")
+    parser.add_argument("--engine", action="append", choices=ENGINES,
+                        help="engine to run (repeatable; default: all engines)")
     parser.add_argument("--strict", action="store_true",
                         help="run every selected engine with natural PIT timing")
     parser.add_argument("--with-pit", action="store_true",
@@ -268,6 +270,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    engines = tuple(dict.fromkeys(args.engine or ENGINES))
     if args.strict and args.with_pit:
         raise SystemExit("--strict and --with-pit are mutually exclusive")
     if args.duration <= args.input_delay:
@@ -277,15 +280,15 @@ def main() -> int:
 
     if args.parse_only:
         output = args.parse_only.resolve()
-        logs = [find_log(output, engine) for engine in ENGINES]
+        logs = [find_log(output, engine) for engine in engines]
     else:
         stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         output = (args.output or Path(f"/tmp/p2k-dcs-comparison-{stamp}")).resolve()
         output.mkdir(parents=True, exist_ok=True)
-        logs = [run_engine(engine, args, output) for engine in ENGINES]
+        logs = [run_engine(engine, args, output) for engine in engines]
 
     rows = []
-    for engine, log in zip(ENGINES, logs):
+    for engine, log in zip(engines, logs):
         row = summarize(log, args.warmup)
         row["engine"] = engine
         rows.append(row)

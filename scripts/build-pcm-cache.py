@@ -45,8 +45,22 @@ def merge(parts, output: Path):
     entries.sort(key=lambda item: item[0])
     if not entries:
         raise RuntimeError("workers produced no PCM tracks")
-    if len({item[0] for item in entries}) != len(entries):
-        raise RuntimeError("worker ranges produced duplicate track IDs")
+    unique = []
+    by_command = {}
+    for entry in entries:
+        command, decoded, payload = entry
+        previous = by_command.get(command)
+        if previous is None:
+            by_command[command] = entry
+            unique.append(entry)
+            continue
+        previous_name = previous[1][:32].split(b"\0", 1)[0]
+        name = decoded[:32].split(b"\0", 1)[0]
+        if (command == 0x003A and name == previous_name == b"dcs-bong" and
+                payload == previous[2]):
+            continue
+        raise RuntimeError(f"worker ranges produced duplicate track ID {command:#06x}")
+    entries = unique
 
     table_size = len(entries) * 72
     payload_offset = 16 + table_size
