@@ -29,7 +29,10 @@ def read_part(path: Path):
         if offset + size > len(data):
             raise ValueError(f"bad PCM bounds in {path}")
         name = decoded[:32].split(b"\0", 1)[0].decode("ascii")
-        command = int(name[1:5], 16)
+        if name == "dcs-bong":
+            command = 0x003A
+        else:
+            command = int(name[1:5], 16)
         result.append((command, decoded, data[offset:offset + size]))
     return result
 

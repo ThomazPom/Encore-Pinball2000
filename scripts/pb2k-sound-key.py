@@ -57,8 +57,8 @@ def main() -> None:
     parser.add_argument("--roms", required=True, type=Path)
     parser.add_argument("--update", type=Path)
     args = parser.parse_args()
-    print(sound_key(args.roms.resolve(), args.game,
-                    args.update.resolve() if args.update else None))
+    print("v2-" + sound_key(args.roms.resolve(), args.game,
+                            args.update.resolve() if args.update else None))
 
 
 if __name__ == "__main__":

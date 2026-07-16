@@ -587,7 +587,30 @@ static bool generate_pcm_container(DcsAudio *a)
     info_report("dcs-cache: generating ADSP PCM cache %s",
                 a->generated_cache_path);
 
+    /* The boot dong is a host-side pb2kslib compatibility sample, not a
+     * numbered DSP track. Preserve it while converting its payload to the
+     * same PCM representation as every generated entry. */
+    if (a->bong_idx >= 0) {
+        const char *name = NULL;
+        Sample *bong = get_sample_for_entry(a, a->bong_idx, &name);
+        if (bong && bong->frames <= UINT32_MAX / sizeof(int16_t)) {
+            GeneratedEntry *ge = &generated[count++];
+            snprintf(ge->name, sizeof(ge->name), "dcs-bong");
+            ge->command = 0x003a;
+            ge->payload_offset = payload_offset;
+            ge->payload_size = bong->frames * sizeof(int16_t);
+            write_xor(payload, bong->pcm, ge->payload_size);
+            payload_offset += ge->payload_size;
+        }
+    }
+
     for (unsigned command = first_command; command <= last_command; command++) {
+        if (command == 0x003a && a->bong_idx >= 0) {
+            info_report("dcs-cache-progress: %u/%u",
+                        command - first_command + 1,
+                        last_command - first_command + 1);
+            continue;
+        }
         bool report_progress = (((command - first_command) & 7) == 0 ||
                                 command == last_command);
         size_t hint_frames = 0;
@@ -1271,7 +1294,7 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
         if (p2k_dcs_adsp_source_key(st, source_key)) {
             snprintf(a->generated_cache_path,
                      sizeof(a->generated_cache_path),
-                     "%s/%s/%s.pcm.pb2k", root, st->game, source_key);
+                     "%s/%s/v2-%s.pcm.pb2k", root, st->game, source_key);
         } else {
             a->generated_cache_path[0] = '\0';
         }
