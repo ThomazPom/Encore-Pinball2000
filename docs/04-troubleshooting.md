@@ -44,7 +44,7 @@ scripts/run-qemu.sh --game swe1 --update latest -v
 - `--update none` intentionally selects base software and enables its isolated
   sound compatibility path.
 
-See [15 — ROM and update loading](15-rom-loading.md).
+Details: [ROM and update loading](15-rom-loading.md).
 
 ## No graphics window
 
@@ -54,7 +54,7 @@ See [15 — ROM and update loading](15-rom-loading.md).
   development packages.
 - If the image is upside down, press `F2`.
 
-See [23 — MediaGX display](23-mediagx-and-display.md).
+Details: [MediaGX display](23-mediagx-and-display.md).
 
 ## No sound
 
@@ -70,7 +70,7 @@ scripts/run-qemu.sh --dcs-engine adsp -vv
 U109/U110 and sound flash. `--no-audio` disables output deliberately.
 
 Open the coin door with `F4` before testing volume buttons. Insert a credit with
-`F10` to trigger a predictable game sound. See [25 — DCS sound](25-dcs-sound.md).
+`F10` to trigger a game sound. Details: [DCS sound](25-dcs-sound.md).
 
 ## Controls do not respond
 
@@ -79,8 +79,8 @@ Open the coin door with `F4` before testing volume buttons. Insert a credit with
 - `--cabinet-purist` disables desktop switch injection.
 - Service volume/menu buttons normally require the coin door to be open (`F4`).
 
-Press `F12` to print current LPT/switch state. See
-[41 — Desktop controls](41-cli-keyboard-guide.md).
+Press `F12` to print current LPT/switch state.
+Details: [desktop controls](41-cli-keyboard-guide.md).
 
 ## Serial console is unavailable
 
@@ -95,7 +95,7 @@ nc 127.0.0.1 4444
 ```
 
 If `%` appears only after the next command, that is guest prompt timing rather
-than a lost command. See [06 — XINA console](06-xina-os-deep-dive.md).
+than a lost command. Details: [XINA console](06-xina-os-deep-dive.md).
 
 ## Game appears too slow or fast
 
@@ -107,14 +107,14 @@ scripts/run-qemu.sh --bench
 
 Use steady-state `sleep 10`, delivery, jitter and PDB05 values. Boot totals are
 reported separately. `--strict` can be substantially slower by design;
-`--speed-target` deliberately changes guest speed. See
-[12 — CPU and timing](12-cpu-and-timers.md).
+`--speed-target` changes guest speed.
+Details: [CPU and timing](12-cpu-and-timers.md).
 
 ## Saved settings disappear
 
-Normal exit is required for atomic savedata flush. `--no-savedata` deliberately
-loads and saves nothing. A hard kill cannot run QEMU exit notifiers. See
-[09 — Savedata](09-savedata.md).
+Normal exit is required for atomic savedata flush. `--no-savedata` loads and
+saves nothing. A hard kill cannot run QEMU exit notifiers.
+Details: [savedata](09-savedata.md).
 
 ## Real LPT will not open
 
@@ -123,8 +123,8 @@ driver, and ensure the current login has `lp` group access. `EACCES` is a
 permission problem; `EBUSY` means another process or driver owns the port.
 
 Do not substitute `/dev/usb/lp0`; a printer-class USB adapter is not a
-bidirectional register-level parallel port. See
-[46 — Real LPT passthrough](46-real-lpt-passthrough.md).
+bidirectional register-level parallel port.
+Details: [real LPT passthrough](46-real-lpt-passthrough.md).
 
 ## Report a new failure
 

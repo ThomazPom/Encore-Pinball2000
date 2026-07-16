@@ -690,7 +690,7 @@ fi
 # --- update token resolution ------------------------------------------------
 # UPDATE_TOKEN ∈ {auto, latest, none, <short-code>, <dir>}
 # Output: UPDATE_DIR_ABS (empty → no -M update=...; or P2K_NO_AUTO_UPDATE=1
-# in the museum case).
+# in base-ROM mode).
 UPDATE_DIR_ABS=""
 
 resolve_update_token() {
@@ -752,10 +752,10 @@ resolve_update_token() {
 case "$UPDATE_TOKEN" in
   none)
     # Museum / base mode. The C code's auto-discover is suppressed; the
-    # probe-cell shim and any other museum compat gates only arm under
+    # Base-ROM compatibility helpers arm only under
     # this env (see qemu/p2k-probe-cell-shim.c, qemu/p2k-dcs-core.c).
     export P2K_NO_AUTO_UPDATE=1
-    echo "[run-qemu] --update none → museum mode (P2K_NO_AUTO_UPDATE=1)" >&2
+    echo "[run-qemu] --update none → base-ROM mode (P2K_NO_AUTO_UPDATE=1)" >&2
     ;;
   auto|"")
     # Default. Leave -M update= unset; the machine auto-discovers in

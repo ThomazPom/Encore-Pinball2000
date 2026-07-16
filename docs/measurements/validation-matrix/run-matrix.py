@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Reproduce the supported boot/audio validation matrix.
 
-Runs SWE1 and RFM in museum/base and latest-update modes through all three
+Runs SWE1 and RFM in base-ROM and latest-update modes through all three
 DCS engines.  The existing DCS comparison harness supplies identical cabinet
 input and timing measurement; this wrapper adds boot, display, DCS and fatal
 checks and writes one combined Markdown report.

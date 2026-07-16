@@ -5,8 +5,8 @@ copies these files into the pinned QEMU source tree and compiles a custom
 `qemu-system-i386`.
 
 > [!IMPORTANT]
-> These files define the guest-visible machine. Change a device only against a
-> reproduced software failure or a physical-cabinet trace.
+> These files define the guest-visible machine. Verify device claims here
+> before copying them into user documentation.
 
 ## Source map
 
@@ -25,8 +25,8 @@ copies these files into the pinned QEMU source tree and compiles a custom
 | `p2k-clkint-hotloop.c`, `p2k-timing-audit.c`, `p2k-diag.c` | Clock delivery and diagnostics |
 
 > [!NOTE]
-> The fixed PCI responder, memory-size correction and base-ROM DCS support are
-> accepted implementation choices. They are described in
+> The fixed PCI responder, memory-size correction and base-ROM DCS helper are
+> implemented in the modules listed above. Details:
 > [compatibility support](../docs/30-compatibility-support.md).
 
 ## Build

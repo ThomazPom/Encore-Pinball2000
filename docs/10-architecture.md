@@ -50,8 +50,8 @@ and real-mode option-ROM discovery.
 - BAR4 and I/O-port DCS frontends share one protocol core.
 - Audio engines consume the same DCS commands but render content differently.
 - Savedata files represent guest-visible hardware, not whole-machine snapshots.
-- Adaptive HOTLOOP raises IRQ0 through QEMU's PIC path; it does not patch XINU
-  scheduler state.
+- Adaptive HOTLOOP raises IRQ0 through QEMU's PIC path; the guest scheduler
+  advances from the delivered timer interrupts.
 
 ## Compatibility support
 
