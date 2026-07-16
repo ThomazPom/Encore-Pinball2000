@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/run-qemu.sh — product wrapper for QEMU Encore (Williams Pinball 2000).
 #
-# This wrapper aims for Unicorn-Encore CLI ergonomics on top of the custom
+# This wrapper provides the user-facing CLI for the custom
 # `pinball2000` QEMU machine. It does NOT modify guest behavior, DCS,
 # timing, display, or audio protocol. It only wires CLI args to the
 # existing QEMU machine options, env vars, and -display/-audio/-serial
@@ -168,8 +168,7 @@ CORE LAUNCH
   --update <spec>           Update bundle selection. Spec is one of:
                               auto      (default) machine auto-discovers
                                         the newest matching bundle in
-                                        ./updates/ — same spirit as
-                                        Unicorn. Falls back to base ROMs
+                                        ./updates/. Falls back to base ROMs
                                         if no bundle is found.
                               latest    explicitly resolve to the highest
                                         version bundle for this game.
@@ -453,7 +452,7 @@ while [[ $# -gt 0 ]]; do
     --uart-no-filter)  export P2K_UART_DROP=""; shift ;;
     --uart-tcp)        UART_TCP="$2"; shift 2 ;;
     --serial-tcp)
-      # Unicorn-compatible alias: --serial-tcp <port> ⇒ --uart-tcp 127.0.0.1:<port>
+      # Alias: --serial-tcp <port> ⇒ --uart-tcp 127.0.0.1:<port>
       if [[ -z "${2:-}" || "$2" =~ [^0-9] ]]; then
         echo "[run-qemu] --serial-tcp: expected numeric port, got '${2:-}'" >&2
         exit 2
@@ -514,13 +513,13 @@ while [[ $# -gt 0 ]]; do
     -vv)               VERBOSITY=2; shift ;;
     -vvv)              VERBOSITY=3; shift ;;
     --cabinet|--cabinet-purist)
-      # Unicorn flag is --cabinet-purist (experimental, opt-in to "trust
+      # --cabinet-purist is an explicit request to trust
       # the real board" semantics). With our wrapper there's no real
       # cabinet bus to trust unless --lpt-device <hostdev> is also set,
       # so we just record the intent for downstream forensics.
       export P2K_CABINET_PURIST=1; shift ;;
     --lpt-device|--lpt)
-      # Unicorn-shape: --lpt-device <none|emu|/dev/parportN|0xNNN>.
+      # --lpt-device accepts <none|emu|/dev/parportN|0xNNN>.
       # All four modes wire to existing P2K_LPT_* env vars consumed by
       # qemu/p2k-lpt-board.c. Real hardware passthrough is Linux-only and
       # requires the host user to be in the `lp` group with ppdev loaded.
@@ -531,7 +530,7 @@ while [[ $# -gt 0 ]]; do
         /dev/*)            [[ -e "$LPT_MODE" ]] || { echo "[run-qemu] $1: '$LPT_MODE' does not exist" >&2; exit 2; }
                            export P2K_LPT_PARPORT="$LPT_MODE" ;;
         0x[0-9a-fA-F]*|[0-9]*) export P2K_LPT_IOPORT="$LPT_MODE" ;;
-        parport)           # Unicorn default probe target — must exist.
+        parport)           # Default probe target — must exist.
                            [[ -e /dev/parport0 ]] || { echo "[run-qemu] $1: '/dev/parport0' does not exist (load ppdev?)" >&2; exit 2; }
                            export P2K_LPT_PARPORT="/dev/parport0" ;;
         *) echo "[run-qemu] $1: expected emu|none|/dev/parportN|0xNNN, got '$LPT_MODE'" >&2; exit 2 ;;
@@ -543,7 +542,7 @@ while [[ $# -gt 0 ]]; do
       export P2K_LPT_TRACE_FILE="$LPT_TRACE_DIR/$(basename "$2")"
       shift 2 ;;
     --parport)
-      # Unicorn-compatible alias: --parport <dev> ⇒ --lpt-device <dev>
+      # Alias: --parport <dev> ⇒ --lpt-device <dev>
       [[ -n "${2:-}" ]] || { echo "[run-qemu] --parport: expected <device>" >&2; exit 2; }
       [[ -e "$2" ]] || { echo "[run-qemu] --parport: '$2' does not exist" >&2; exit 2; }
       export P2K_LPT_PARPORT="$2"; shift 2 ;;
@@ -848,8 +847,7 @@ if [[ $SERIAL_STDIO -eq 1 ]]; then
   # open a second terminal. Solution: bind COM1 to a TCP server on
   # 127.0.0.1:<random free port>, launch QEMU in the background,
   # then exec `nc 127.0.0.1 <port>` in the foreground of THIS
-  # terminal. Same shell, same window, identical UX to the unicorn
-  # `nc localhost 4444` flow.
+  # terminal. This keeps the console in the invoking shell.
   if ! command -v nc >/dev/null 2>&1; then
     echo "[run-qemu] --serial needs 'nc' (apt install netcat-openbsd)" >&2
     exit 2

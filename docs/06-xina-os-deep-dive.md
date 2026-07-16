@@ -64,7 +64,7 @@ Adaptive HOTLOOP changes IRQ0 delivery at the emulated-machine boundary.
 compatibility mechanism. Normal update boots do not use it.
 
 For the boot sequence see [14 — Boot recipe](14-boot-recipe.md). For update
-files see [38 — Installing an update](38-official-update-manager.md).
+files see [38 — Installing an update](15-rom-loading.md).
 
 ---
 

@@ -39,7 +39,7 @@ static uint8_t p2k_dcs_lsr = 0x60u;   /* THRE | TEMT */
 static uint8_t p2k_dcs_msr = 0xB0u;   /* CTS | DSR | DCD */
 static uint8_t p2k_dcs_scr = 0x00u;
 
-/* Diagnostic: capture the late-Unicorn `0001de2` clue that DCS commands
+/* Diagnostic: capture the late-Encore `0001de2` clue that DCS commands
  * are sometimes issued as TWO byte writes to 0x13C — high then low —
  * instead of a single word write.  Enable with P2K_DCS_BYTE_TRACE=1 to
  * verify whether QEMU sees the same access shape from this guest.
@@ -65,7 +65,7 @@ static bool p2k_dcs_byte_trace_enabled(void)
  * assembly entirely (byte writes to 0x13C are still counted but become
  * no-ops as far as DCS commands go — they still fall through to the
  * 16550 MCR register at off=4 below). The point is to be able to A/B
- * the late-Unicorn `0001de2` byte-pair claim against current ROMs:
+ * the late-Encore `0001de2` byte-pair claim against current ROMs:
  *
  *   1. P2K_DCS_NO_BYTE_PAIR unset (default)  : byte-pair active
  *   2. P2K_DCS_NO_BYTE_PAIR=1                : byte-pair disabled

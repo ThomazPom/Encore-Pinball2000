@@ -14,7 +14,7 @@
  *                          bit0 falling → dispatch process_data_command
  *                  READ:  echo the last value written
  *
- * Cabinet input injection (column-gated, mirrors Unicorn behaviour):
+ * Cabinet input injection (column-gated, mirrors Encore behaviour):
  *
  *   F4              coin door interlock toggle (Physical[10] bit 1)
  *   F7              LEFT  flipper             (Physical[10] bit 5)

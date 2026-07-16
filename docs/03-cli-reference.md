@@ -64,7 +64,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 > [!CAUTION]
 > `--cabinet-purist` requires a real hardware driver board. Do not use with real cabinets until you have validated the emulator behavior.
 | `--lpt-trace` | file | off | Exports `P2K_LPT_TRACE_FILE`; appends LPT read/write trace lines. Parent directory must exist. | `scripts/run-qemu.sh --lpt-trace ./logs/lpt.txt` |
-| `--parport` | device | off | Historical alias for ppdev passthrough; device must exist. | `scripts/run-qemu.sh --parport /dev/parport0` |
+| `--parport` | device | off | Alias for ppdev passthrough; device must exist. | `scripts/run-qemu.sh --parport /dev/parport0` |
 
 > [!NOTE]
 > `--parport` is an alias. Use `--lpt-device` for clarity.
@@ -97,7 +97,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `<dir>` | Explicit path to inner bundle directory containing `*_bootdata.rom`, `*_im_flsh0.rom`, `*_game.rom`, and `*_symbols.rom`. | `scripts/run-qemu.sh --update /data/p2k/update/50069` |
 
 > [!TIP]
-> Use `--update latest` to auto-pick the newest update, or `--update none` for museum mode with base ROMs only.
+> Use `--update latest` to auto-pick the newest update, or `--update none` for base-ROM mode with base ROMs only.
 
 ## Display modes
 
@@ -178,7 +178,6 @@ The build script configures QEMU with `--target-list=i386-softmmu`, `--enable-sd
 * [02-quickstart.md](02-quickstart.md)
 * [04-troubleshooting.md](04-troubleshooting.md)
 * [10-architecture.md](10-architecture.md)
-* [11-machine-init.md](11-machine-init.md)
 * [12-cpu-and-timers.md](12-cpu-and-timers.md)
 * [15-rom-loading.md](15-rom-loading.md)
 * [23-mediagx-and-display.md](23-mediagx-and-display.md)

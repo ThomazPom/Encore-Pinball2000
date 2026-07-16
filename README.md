@@ -30,20 +30,13 @@ software itself is running.
 
 ## Read next
 
-- **[Quickstart](docs/02-quickstart.md)** — install dependencies, provide ROMs,
-  build Encore and launch a game.
-- **[Desktop controls](docs/41-cli-keyboard-guide.md)** — credits, Start,
-  flippers, coin door, volume and service buttons.
-- **[Command-line reference](docs/03-cli-reference.md)** — updates, sound
-  engines, serial console, benchmarks and every launcher option.
-- **[Troubleshooting](docs/04-troubleshooting.md)** — diagnose build, boot,
-  graphics, audio and input problems.
-- **[Known limitations](docs/35-known-limitations.md)** — what remains
-  unverified or incomplete.
-- **[Cabinet testing](docs/46-real-lpt-passthrough.md)** — read before
-  connecting physical hardware.
-- **[Documentation index](docs/README.md)** — architecture, devices, ROMs,
-  updates, testing and development references.
+- **[Quickstart](docs/02-quickstart.md)**
+- **[Desktop controls](docs/41-cli-keyboard-guide.md)**
+- **[Command-line reference](docs/03-cli-reference.md)**
+- **[Troubleshooting](docs/04-troubleshooting.md)**
+- **[Known limitations](docs/35-known-limitations.md)**
+- **[Cabinet testing](docs/46-real-lpt-passthrough.md)**
+- **[Documentation index](docs/README.md)**
 
 Game ROMs and community update payloads are not supplied by Encore. Users must
 provide material they are legally entitled to use.

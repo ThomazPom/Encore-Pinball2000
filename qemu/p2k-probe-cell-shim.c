@@ -90,7 +90,7 @@
 #define SCAN_SIZE        0x00300000u   /* 3 MiB — wide enough for SWE1/RFM */
 #define POLL_NS          (50ull * 1000ull * 1000ull) /* 50 ms */
 
-/* Two staged scribble values, mirroring Unicorn's polarity flip:
+/* Two staged scribble values, mirroring Encore's polarity flip:
  *
  *   Pre-XINU  : 0x0000FFFF — early boot code reads this cell as a
  *               boot-sentinel; writing 0 there derails the path
@@ -275,7 +275,7 @@ static void p2k_probe_cell_tick(void *opaque)
         /* Cache the BIOS panic-stub IDT[0x20] value the first time we
          * read a non-zero handler. Once the live handler differs, XINU
          * has installed clkint and sysinit() is up — flip immediately.
-         * This matches Unicorn's "xinu_ready" gate (cpu.c:566-579)
+         * This uses the XINU-ready gate
          * without needing a UART line collector. */
         uint32_t h = current_idt20_handler();
         if (s_initial_idt20 == 0 && h != 0) {

@@ -95,7 +95,7 @@ void p2k_display_toggle_flip_y(void)
 
 /* Per-frame submit counter. Snapshotted by the audit panel to emit
  * FPS (see p2k-timing-audit.c). Was missing from the QEMU port though
- * Encore/Unicorn had a `[disp] FPS:` line. */
+ * Encore/Encore had a `[disp] FPS:` line. */
 static uint64_t s_disp_frames;
 
 uint64_t p2k_display_get_frames(void) { return s_disp_frames; }

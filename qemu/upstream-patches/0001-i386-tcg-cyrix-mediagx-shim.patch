@@ -27,7 +27,7 @@ bits[3:2] — SCRATCHPAD_SIZE — and should #UD when that field is zero.
 ------------------------------------------------------------------------
 On-silicon behaviour observed in the Williams Pinball 2000 SWE1 v2.10
 ROM (which shipped on real MediaGX silicon and was the behavioural
-oracle for the Unicorn-era stub):
+oracle for the MediaGX shim):
 
 CPU_WRITE (0F 3C) does NOT only update the internal register selected
 by EBX. As executed by real silicon (and required by the ROM), it ALSO

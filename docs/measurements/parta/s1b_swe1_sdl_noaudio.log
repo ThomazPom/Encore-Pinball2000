@@ -1,4 +1,0 @@
-[run-qemu] read-only savedata: P2K_NO_SAVEDATA=1; running in /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/.run-qemu.09eMqg (no savedata/ subdir)
-[run-qemu] cwd=/mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/.run-qemu.09eMqg
-[run-qemu] /home/encore/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386 -M pinball2000,game=swe1,roms-dir=/mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms -no-reboot -m 16 -display sdl,show-cursor=on 
-[lpt] unhandled key qcode=21

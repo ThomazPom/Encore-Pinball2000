@@ -8,7 +8,7 @@
  * keep their own copies of the FIFO/handshake state.
  *
  * Removal of the parallel DcsState/p2k_dcs duplicates was the pending
- * 'dcs-shared-core' item in qemu/NOTES.next.md.
+ * 'dcs-shared-core' item in qemu/docs/README.md.
  *
  * Behavior is the union of the two pre-refactor implementations, which
  * already agreed on:
@@ -76,11 +76,11 @@ static DcsCore s_core;
 
 /* Optional audio sink registered by p2k-dcs-audio.c. NULL = silent. */
 /* Semantic audio hooks. Replaces the old single raw-cmd hook so the
- * audio backend sees the same shape Unicorn's sound.c saw:
- *   process_cmd(cmd)               -- direct sound triggers (Unicorn
+ * audio backend sees the semantic command shape expected by audio:
+ *   process_cmd(cmd)               -- direct sound triggers (Encore
  *                                     sound_process_cmd path)
  *   execute_mixer(cmd, d1, d2)     -- result of an ACE1 multi-word
- *                                     accumulator (Unicorn
+ *                                     accumulator (Encore
  *                                     sound_execute_mixer path)
  * NULL by default; p2k-dcs-audio.c installs sinks when audio is on. */
 void (*p2k_dcs_core_audio_process_cmd)(uint16_t cmd) = NULL;
@@ -110,10 +110,10 @@ static const char *s_dcs_source_tag = "?";
  *      handles any I/O-port DCS traffic the game emits (byte-pair outb
  *      sequences and word writes/reads).
  *
- *  - bar4-patch:  unicorn RAM-patches the probe's `CMP EAX,1 / JNE / MOV`
+ *  - bar4-patch:  Encore RAM-patches the probe's `CMP EAX,1 / JNE / MOV`
  *      prologue to `MOV EAX, 1` so the store fires unconditionally.  Used
  *      historically as a fallback "flex" demo.  We do NOT implement this
- *      patch in QEMU — the only reason unicorn needs it is that older
+ *      patch in QEMU — the only reason Encore needs it is that older
  *      builds had a flaky DCS device emulation that failed the natural
  *      probe.  Our BAR4 device responds correctly, so the io-handled
  *      path works without any CPU-side scribble.
@@ -140,7 +140,7 @@ P2KDcsMode p2k_dcs_core_mode(void)
                 s_dcs_mode = P2K_DCS_MODE_BAR4_PATCH;
             } else {
                 /* "io-handled", "io_handled", "io", or anything else
-                 * defaults to the unicorn default. */
+                 * defaults to the standard default. */
                 s_dcs_mode = P2K_DCS_MODE_IO_HANDLED;
             }
         }
@@ -206,7 +206,7 @@ bool p2k_dcs_core_has_resp(void)
 /* BAR4 off=2: flag byte register.
  *
  * On READ: returns bit6=ready (always) | bit7=output-available.
- * On WRITE: per Unicorn (bar.c:1006-1009), the game writes here to
+ * On WRITE: as required by the guest protocol, the game writes here to
  * stash a value the next read will OR with the device-internal
  * flags. Some boot DCS detect paths do a write-then-read sanity
  * check; dropping the write makes BAR4 look dead and steers the
@@ -295,7 +295,7 @@ void p2k_dcs_core_write_cmd(uint16_t cmd)
             uint16_t m2 = (uint16_t)(s_core.layer > 2 ? s_core.mixer[2] : 0);
             p2k_dcs_core_audio_execute_mixer(m0, m1, m2);
         }
-        /* IMPORTANT: keep s_core.pending = 1.  Unicorn bar.c:946-948
+        /* IMPORTANT: keep s_core.pending = 1.  The guest protocol requires
          * resets only layer/remaining/mixer after a triple — dcs_pending
          * stays true, so every subsequent triple is also routed through
          * execute_mixer (with channel = (data2 & 0x380) >> 7).  Resetting
@@ -346,7 +346,7 @@ void p2k_dcs_core_write_cmd(uint16_t cmd)
         core_push(0x0C);
         break;
     default:
-        /* Direct sound trigger (matches Unicorn sound_process_cmd default). */
+        /* Direct sound trigger (direct sound command). */
         if (p2k_dcs_core_audio_process_cmd) {
             p2k_dcs_core_audio_process_cmd(cmd);
         }

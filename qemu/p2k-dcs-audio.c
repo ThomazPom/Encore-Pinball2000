@@ -75,7 +75,7 @@ typedef struct {
 typedef struct {
     const Sample *s;
     size_t        pos;       /* frame index into s->pcm */
-    uint8_t       vol;       /* 0..255 per Unicorn */
+    uint8_t       vol;       /* 0..255 command volume */
     uint8_t       pan;       /* 0..255 (0x7F = center) */
     bool          active;
     uint16_t      cmd;       /* originating DCS cmd id (or lookup_cmd) */
@@ -461,7 +461,7 @@ static Sample *get_sample_for_cmd(DcsAudio *a, uint16_t cmd,
 /* Mixer + QEMU audio callback                                         */
 /* ------------------------------------------------------------------ */
 
-/* Start sample on a fixed channel (Unicorn semantics: re-trigger on
+/* Start sample on a fixed channel (Re-trigger on
  * the same channel halts the previous voice).  Logs replacement so we
  * can see if a sample is being immediately stomped by another. */
 static void start_voice_on_channel(DcsAudio *a, int ch, const Sample *s,
@@ -594,13 +594,13 @@ static void stop_voice_on_channel(DcsAudio *a, int ch, const char *reason)
 
 static void render(DcsAudio *a, int16_t *out, int frames)
 {
-    /* Per-voice unity-gain mix matching Unicorn's SDL2_mixer:
+    /* Per-voice unity-gain mix matching Encore's SDL2_mixer:
      *   contrib = sample * vol / 255      (vol=255 → pass-through)
      * The per-frame sum is then saturating-clipped, exactly like
      * SDL_mixer combines its 8 mixer channels. The 0x55AA broadcast
      * of GLOBAL_VOL into each voice's vc->vol mirrors the
      * Mix_Volume(-1, ...) semantic; subsequent plays overwrite the
-     * channel's vc->vol, also per Unicorn (sound.c:302,346). */
+     * channel's vc->vol, for each voice. */
     int32_t local_peak = 0;
     for (int i = 0; i < frames; i++) {
         int32_t mix = 0;
@@ -704,7 +704,7 @@ static const char *evt_source(DcsAudio *a)
 }
 
 /* Process-cmd hook: receives semantic direct-trigger events from
- * p2k-dcs-core (matches Unicorn sound.c sound_process_cmd contract). */
+ * p2k-dcs-core (implements the command contract). */
 static void dcs_audio_on_process_cmd(uint16_t cmd)
 {
     DcsAudio *a = &s_dcs_audio;
@@ -712,13 +712,13 @@ static void dcs_audio_on_process_cmd(uint16_t cmd)
     a->cmd_count++;
     const char *src = evt_source(a);
 
-    /* Mirrors Unicorn sound.c sound_process_cmd:
+    /* Direct command behavior:
      *   0x0000        -> halt all channels
      *   0x003A        -> boot dong on channel 0
      *   0x00AA        -> 0x0FFF special on channel 7
      *   cmd in [0x0100, 0x1000) -> normal track on channel (cmd & 7)
      *   else          -> ignore (protocol byte / out-of-range).
-     * Unicorn SAMPLE_CACHE_SIZE = 0x1000 (sound.c:14). Anything >= 0x1000
+     * The sample cache limit is 0x1000. Anything >= 0x1000
      * is silently ignored — that filters mixer-ctrl raw words like
      * 0x55AB/0x55AC and the 0xFF7F/0x80XX/0x82XX protocol noise out
      * of the "missed" trace bucket. */
@@ -767,7 +767,7 @@ static void dcs_audio_on_process_cmd(uint16_t cmd)
 }
 
 /* Execute-mixer hook: ACE1 multi-word accumulator finished.
- * Mirrors Unicorn sound.c sound_execute_mixer:
+ * Mixer command behavior:
  *   cmd >> 8 == 0x55  -> vol/pan/global control
  *   else              -> sound_play_track(cmd, ch=(d2 & 0x380)>>7,
  *                                         vol=(d1 >> 8) & 0xFF,
@@ -783,7 +783,7 @@ static void dcs_audio_on_execute_mixer(uint16_t cmd, uint16_t data1,
     if ((cmd & 0xFF00) == 0x5500) {
         switch (cmd) {
         case 0x55AA:
-            /* Unicorn sound_set_global_volume (sound.c:302-308):
+            /* Global volume:
              *   Mix_Volume(-1, dcs_vol_to_sdl(global)) — sets ALL
              *   channels' current volume in one shot. Subsequent
              *   plays will reset their channel's volume to the
@@ -801,7 +801,7 @@ static void dcs_audio_on_execute_mixer(uint16_t cmd, uint16_t data1,
             }
             TRACE_EVT(a,
                       "[%s] execute_mixer 0x%04x d1=0x%04x → GLOBAL_VOL=%u "
-                      "(broadcast to all 8 voices, per Unicorn Mix_Volume(-1))",
+                      "(broadcast to all 8 voices, global mixer behavior)",
                       src, cmd, data1, a->global_vol);
             break;
         case 0x55AB: {
@@ -853,7 +853,7 @@ static void dcs_audio_on_execute_mixer(uint16_t cmd, uint16_t data1,
     int channel = (data2 & 0x380) >> 7;
     int vol     = (data1 >> 8) & 0xFF;
     int pan     = data1 & 0xFF;
-    /* Unicorn does NOT default vol=0 to full; vol=0 → silent voice
+    /* Volume zero does NOT mean full volume; vol=0 → silent voice
      * (Mix_Volume(track_idx, 0)). Match that. */
 
     /* Every mixer request first stops the selected channel, including command
