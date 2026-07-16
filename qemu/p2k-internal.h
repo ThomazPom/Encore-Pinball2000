@@ -70,6 +70,8 @@ void p2k_install_gfxlist_watch(Pinball2000MachineState *s);
 void p2k_install_display(void);
 /* F2 Y-flip toggle. Default on (matches the default framebuffer orientation). */
 void p2k_display_toggle_flip_y(void);
+void p2k_display_set_status(const char *status);
+void p2k_display_refresh_status(void);
 
 /* p2k-dcs-core.c: single shared DCS-2 state machine.  Both p2k-dcs.c
  * (BAR4 MMIO) and p2k-dcs-uart.c (I/O 0x138-0x13F) MUST be thin views
@@ -106,6 +108,10 @@ bool p2k_dcs_adsp_prepare(Pinball2000MachineState *s);
 void p2k_dcs_adsp_write_cmd(uint16_t command);
 void p2k_dcs_adsp_host_reset(void);
 void p2k_dcs_adsp_render(int16_t *samples, int frames, int output_rate);
+bool p2k_dcs_adsp_generate_track(uint16_t command, size_t hint_frames_44100,
+                                 int16_t **pcm_44100, size_t *frames_44100,
+                                 bool *loop);
+void p2k_dcs_audio_adsp_runtime_ready(void);
 uint8_t p2k_dcs_adsp_flag_byte(void);
 uint16_t p2k_dcs_adsp_read_response(void);
 

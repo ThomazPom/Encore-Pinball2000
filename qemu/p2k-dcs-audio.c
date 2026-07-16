@@ -53,14 +53,17 @@
 #define DCS_OUT_CHANS      1
 #define DCS_ADSP_CHANS     2
 #define DCS_VOICES         8
-#define PB2K_MAX_ENTRIES   1024
+#define PB2K_MAX_ENTRIES   4096
 #define SAMPLE_CACHE_SIZE  0x1000
+#define PB2K_PCM_MAGIC     0x314d4350u /* "PCM1" */
 
 typedef struct {
     char     name[33];
     uint16_t track_cmd;
     uint32_t offset;
     uint32_t size;
+    uint32_t format;
+    uint32_t rate;
 } Pb2kEntry;
 
 typedef struct {
@@ -108,6 +111,9 @@ typedef struct DcsAudio {
     uint8_t       global_vol;     /* 0..255, applied to all channels */
     bool          trace;          /* P2K_DCS_AUDIO_TRACE=1 */
     bool          adsp_engine;    /* original ROM execution, no pb2kslib */
+    bool          adsp_cache_generator;
+    bool          generation_started;
+    char          generated_cache_path[1024];
     int           output_rate;    /* 31.25 kHz ADSP, 44.1 kHz pb2kslib */
     int           output_channels;
 
@@ -153,6 +159,7 @@ typedef struct DcsAudio {
 } DcsAudio;
 
 static DcsAudio s_dcs_audio;
+static void dcs_audio_callback(void *opaque, int avail_bytes);
 
 /* ------------------------------------------------------------------ */
 /* pb2kslib loader                                                     */
@@ -238,6 +245,8 @@ static void pb2k_load(DcsAudio *a, const char *path)
         e->name[32] = '\0';
         e->offset    = ldl_le_p(decoded + 32 + 8 * 4);
         e->size      = ldl_le_p(decoded + 32 + 9 * 4);
+        e->format    = ldl_le_p(decoded + 32 + 6 * 4);
+        e->rate      = ldl_le_p(decoded + 32 + 7 * 4);
         e->track_cmd = 0xFFFF;
         if (e->name[0] == 'S') {
             char hex_buf[5] = { e->name[1], e->name[2], e->name[3], e->name[4], '\0' };
@@ -386,6 +395,34 @@ static Sample *decode_ogg_to_s16(const uint8_t *data, size_t size)
     return s;
 }
 
+static Sample *decode_pcm_to_s16(const uint8_t *data, size_t size,
+                                 uint32_t rate)
+{
+    if (!rate || (size & 1)) return NULL;
+    size_t src_frames = size / 2;
+    if (!src_frames) return NULL;
+    int16_t *src = g_new(int16_t, src_frames);
+    for (size_t i = 0; i < src_frames; i++) {
+        uint8_t lo = data[i * 2] ^ 0x3a;
+        uint8_t hi = data[i * 2 + 1] ^ 0x3a;
+        src[i] = (int16_t)(lo | ((uint16_t)hi << 8));
+    }
+    size_t frames = (src_frames * DCS_OUT_RATE + rate - 1) / rate;
+    int16_t *pcm = g_new(int16_t, frames);
+    for (size_t i = 0; i < frames; i++) {
+        double pos = (double)i * rate / DCS_OUT_RATE;
+        size_t p0 = MIN((size_t)pos, src_frames - 1);
+        size_t p1 = MIN(p0 + 1, src_frames - 1);
+        double frac = pos - p0;
+        pcm[i] = (int16_t)((1.0 - frac) * src[p0] + frac * src[p1]);
+    }
+    g_free(src);
+    Sample *s = g_new0(Sample, 1);
+    s->pcm = pcm;
+    s->frames = frames;
+    return s;
+}
+
 static bool has_entry_suffix(const char *name, const char *suffix)
 {
     size_t n = strlen(name);
@@ -429,11 +466,16 @@ static Sample *get_sample_for_entry(DcsAudio *a, int idx, const char **out_name)
 
     if (e->size == 0 || e->offset + e->size > a->pb2k_size) return NULL;
 
-    uint8_t *blob = g_malloc(e->size);
     const uint8_t *src = a->pb2k_data + e->offset;
-    for (uint32_t i = 0; i < e->size; i++) blob[i] = src[i] ^ 0x3A;
-    Sample *s = decode_ogg_to_s16(blob, e->size);
-    g_free(blob);
+    Sample *s;
+    if (e->format == PB2K_PCM_MAGIC) {
+        s = decode_pcm_to_s16(src, e->size, e->rate);
+    } else {
+        uint8_t *blob = g_malloc(e->size);
+        for (uint32_t i = 0; i < e->size; i++) blob[i] = src[i] ^ 0x3A;
+        s = decode_ogg_to_s16(blob, e->size);
+        g_free(blob);
+    }
     if (!s) return NULL;
     classify_sample_name(s, e->name);
     info_report("dcs-audio: decoded cmd=0x%04x name=%s frames=%zu peak=%d rms=%d",
@@ -455,6 +497,205 @@ static Sample *get_sample_for_cmd(DcsAudio *a, uint16_t cmd,
     }
     if (idx < 0) return NULL;
     return get_sample_for_entry(a, idx, out_name);
+}
+
+typedef struct GeneratedEntry {
+    char name[33];
+    uint16_t command;
+    uint32_t payload_offset;
+    uint32_t payload_size;
+} GeneratedEntry;
+
+static size_t legacy_entry_frames(DcsAudio *a, const Pb2kEntry *e)
+{
+    if (e->format == PB2K_PCM_MAGIC || !e->size ||
+        e->offset + e->size > a->pb2k_size) return 0;
+    uint8_t *blob = g_malloc(e->size);
+    for (uint32_t i = 0; i < e->size; i++)
+        blob[i] = a->pb2k_data[e->offset + i] ^ 0x3a;
+    OvMem mem = { .data = blob, .size = e->size };
+    OggVorbis_File vf;
+    size_t frames = 0;
+    if (ov_open_callbacks(&mem, &vf, NULL, 0, ov_mem_cb) == 0) {
+        vorbis_info *vi = ov_info(&vf, -1);
+        ogg_int64_t total = ov_pcm_total(&vf, -1);
+        if (vi && total > 0 && vi->rate > 0)
+            frames = (size_t)((uint64_t)total * DCS_OUT_RATE / vi->rate);
+        ov_clear(&vf);
+    }
+    g_free(blob);
+    return frames;
+}
+
+static void write_xor(FILE *fp, const void *data, size_t size)
+{
+    const uint8_t *p = data;
+    uint8_t buf[4096];
+    while (size) {
+        size_t n = MIN(size, sizeof(buf));
+        for (size_t i = 0; i < n; i++) buf[i] = p[i] ^ 0x3a;
+        fwrite(buf, 1, n, fp);
+        p += n;
+        size -= n;
+    }
+}
+
+static bool generate_pcm_container(DcsAudio *a)
+{
+    unsigned first_command = 1;
+    unsigned last_command = SAMPLE_CACHE_SIZE - 1;
+    const char *first_env = getenv("P2K_PB2K_ADSP_FIRST_ID");
+    const char *last_env = getenv("P2K_PB2K_ADSP_LAST_ID");
+    if (first_env && *first_env)
+        first_command = MIN(strtoul(first_env, NULL, 0),
+                            SAMPLE_CACHE_SIZE - 1);
+    if (last_env && *last_env)
+        last_command = MIN(strtoul(last_env, NULL, 0),
+                           SAMPLE_CACHE_SIZE - 1);
+    if (first_command > last_command)
+        first_command = last_command;
+    char *dir = g_path_get_dirname(a->generated_cache_path);
+    if (g_mkdir_with_parents(dir, 0755) != 0) {
+        warn_report("dcs-cache: cannot create %s: %s", dir, strerror(errno));
+        g_free(dir);
+        return false;
+    }
+    g_free(dir);
+    char payload_path[1100], final_tmp[1100];
+    snprintf(payload_path, sizeof(payload_path), "%s.payload.tmp",
+             a->generated_cache_path);
+    snprintf(final_tmp, sizeof(final_tmp), "%s.tmp", a->generated_cache_path);
+    FILE *payload = fopen(payload_path, "wb");
+    if (!payload) return false;
+
+    GeneratedEntry generated[PB2K_MAX_ENTRIES];
+    unsigned count = 0;
+    uint32_t payload_offset = 0;
+    info_report("dcs-cache: generating ADSP PCM cache %s",
+                a->generated_cache_path);
+
+    for (unsigned command = first_command; command <= last_command; command++) {
+        size_t hint_frames = 0;
+        bool hinted_loop = false;
+        for (int i = 0; i < a->entry_cnt; i++) {
+            Pb2kEntry *e = &a->entries[i];
+            if (e->track_cmd != command) continue;
+            hint_frames += legacy_entry_frames(a, e);
+            hinted_loop |= has_entry_suffix(e->name, "-LP") ||
+                           has_entry_suffix(e->name, "-LP2");
+        }
+
+        if ((command & 7) == 1 || hint_frames) {
+            char status[96];
+            snprintf(status, sizeof(status),
+                     "Generating PB2KSlib %u/%u", command,
+                     last_command);
+            p2k_display_set_status(status);
+            p2k_display_refresh_status();
+        }
+
+        int16_t *pcm = NULL;
+        size_t frames = 0;
+        bool detected_loop = false;
+        if (!p2k_dcs_adsp_generate_track(command, hint_frames, &pcm,
+                                         &frames, &detected_loop))
+            continue;
+        if (count >= PB2K_MAX_ENTRIES || frames > UINT32_MAX / 2) {
+            g_free(pcm);
+            break;
+        }
+        GeneratedEntry *ge = &generated[count++];
+        ge->command = command;
+        snprintf(ge->name, sizeof(ge->name),
+                 (hinted_loop || detected_loop) ? "S%04X-LP" : "S%04X",
+                 command);
+        ge->payload_offset = payload_offset;
+        ge->payload_size = (uint32_t)(frames * sizeof(int16_t));
+        write_xor(payload, pcm, ge->payload_size);
+        payload_offset += ge->payload_size;
+        g_free(pcm);
+    }
+    fclose(payload);
+
+    FILE *out = fopen(final_tmp, "wb");
+    FILE *in = fopen(payload_path, "rb");
+    bool ok = out && in && count;
+    if (ok) {
+        uint8_t hdr[16] = {0};
+        stl_le_p(hdr + 0, 1); stl_le_p(hdr + 4, 0x10);
+        stl_le_p(hdr + 8, count); stl_le_p(hdr + 12, 0x48);
+        ok = fwrite(hdr, 1, sizeof(hdr), out) == sizeof(hdr);
+        uint32_t data_base = 16 + count * 72;
+        for (unsigned i = 0; ok && i < count; i++) {
+            uint8_t entry[72] = {0}, encoded[72];
+            memcpy(entry, generated[i].name,
+                   MIN(strlen(generated[i].name), (size_t)31));
+            stl_le_p(entry + 32 + 6 * 4, PB2K_PCM_MAGIC);
+            stl_le_p(entry + 32 + 7 * 4, DCS_OUT_RATE);
+            stl_le_p(entry + 32 + 8 * 4,
+                     data_base + generated[i].payload_offset);
+            stl_le_p(entry + 32 + 9 * 4, generated[i].payload_size);
+            for (int j = 0; j < 72; j++) encoded[j] = entry[j] ^ 0x3a;
+            ok = fwrite(encoded, 1, sizeof(encoded), out) == sizeof(encoded);
+        }
+        uint8_t copy[65536];
+        size_t n;
+        while (ok && (n = fread(copy, 1, sizeof(copy), in)) != 0)
+            ok = fwrite(copy, 1, n, out) == n;
+    }
+    if (in) fclose(in);
+    if (out) fclose(out);
+    unlink(payload_path);
+    if (ok && rename(final_tmp, a->generated_cache_path) == 0) {
+        info_report("dcs-cache: generated %u PCM tracks at %s", count,
+                    a->generated_cache_path);
+    } else {
+        unlink(final_tmp);
+        ok = false;
+        warn_report("dcs-cache: generation failed; cache not replaced");
+    }
+    p2k_display_set_status("");
+    p2k_display_refresh_status();
+    return ok;
+}
+
+void p2k_dcs_audio_adsp_runtime_ready(void)
+{
+    DcsAudio *a = &s_dcs_audio;
+    if (!a->adsp_cache_generator || a->generation_started) return;
+    a->generation_started = true;
+    if (!generate_pcm_container(a) ||
+        !pb2k_path_is_valid(a->generated_cache_path)) {
+        return;
+    }
+    pb2k_load(a, a->generated_cache_path);
+
+    /* Generation happens after the guest has booted the DSP.  Reopen the
+     * host voice in the sample mixer's natural format so this very first
+     * launch also changes over to lightweight cached playback. */
+    if (a->voice) {
+        AUD_set_active_out(a->voice, 0);
+        AUD_close_out(&a->card, a->voice);
+        a->voice = NULL;
+    }
+    a->adsp_engine = false;
+    a->adsp_cache_generator = false;
+    a->output_rate = DCS_OUT_RATE;
+    a->output_channels = DCS_OUT_CHANS;
+    struct audsettings as = {
+        .freq = DCS_OUT_RATE,
+        .nchannels = DCS_OUT_CHANS,
+        .fmt = AUDIO_FORMAT_S16,
+        .endianness = 0,
+    };
+    a->voice = AUD_open_out(&a->card, NULL, "p2k-dcs-out-pcm",
+                            a, dcs_audio_callback, &as);
+    if (a->voice) {
+        AUD_set_active_out(a->voice, 1);
+        info_report("dcs-cache: switched first launch to PCM playback");
+    } else {
+        warn_report("dcs-cache: could not reopen PCM audio output");
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -979,16 +1220,42 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
     const char *engine_env = getenv("P2K_DCS_ENGINE");
     const char *engine = (engine_env && *engine_env) ? engine_env :
                          "adsp-thread";
-    if (!strcmp(engine, "adsp") || !strcmp(engine, "adsp-thread")) {
+    bool cache_engine = !strcmp(engine, "pb2kslib-adsp");
+    bool generated_cache_ready = false;
+    if (cache_engine && st && st->game) {
+        const char *root = getenv("P2K_PB2K_ADSP_CACHE_DIR");
+        if (!root || !*root) root = g_get_user_cache_dir();
+        char *bundle;
+        if (st->update_path) {
+            /* update_path names the inner game-id directory.  Its parent is
+             * the actual versioned bundle and must be part of the key. */
+            char *parent = g_path_get_dirname(st->update_path);
+            bundle = g_path_get_basename(parent);
+            g_free(parent);
+        } else {
+            bundle = g_strdup("base");
+        }
+        snprintf(a->generated_cache_path, sizeof(a->generated_cache_path),
+                 "%s/%s/%s.pcm.pb2k", root, st->game, bundle);
+        g_free(bundle);
+        generated_cache_ready = pb2k_path_is_valid(a->generated_cache_path);
+        if (generated_cache_ready)
+            info_report("dcs-cache: using persistent PCM cache %s",
+                        a->generated_cache_path);
+    }
+    if (!generated_cache_ready &&
+        (!strcmp(engine, "adsp") || !strcmp(engine, "adsp-thread") ||
+         cache_engine)) {
         if (p2k_dcs_adsp_prepare(st)) {
             a->adsp_engine = true;
+            a->adsp_cache_generator = cache_engine;
             info_report("dcs-adsp: native ADSP-2104 execution selected "
                         "(%s); pb2kslib disabled", engine);
         } else {
             warn_report("dcs-adsp: original-format assets incomplete; "
                         "using pb2kslib fallback");
         }
-    } else if (strcmp(engine, "pb2kslib") != 0) {
+    } else if (!generated_cache_ready && strcmp(engine, "pb2kslib") != 0) {
         warn_report("dcs-audio: unknown P2K_DCS_ENGINE=%s; using pb2kslib",
                     engine);
     }
@@ -1051,13 +1318,26 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
      * every cmd lookup will count as a miss. */
     if (!a->adsp_engine && st && st->roms_dir && st->game) {
         char path[512];
-        if (pb2k_resolve_path(st->roms_dir, st->game, path, sizeof(path))) {
+        if (generated_cache_ready) {
+            pb2k_load(a, a->generated_cache_path);
+        } else if (pb2k_resolve_path(st->roms_dir, st->game, path,
+                                     sizeof(path))) {
             pb2k_load(a, path);
         } else {
             warn_report("dcs-audio: pb2kslib not found "
                         "(P2K_PB2KSLIB unset or invalid, "
                         "%s/%s_sound.bin missing) — every sample lookup "
                         "will miss", st->roms_dir, st->game);
+        }
+    }
+    if (a->adsp_cache_generator && st && st->roms_dir && st->game) {
+        char manifest[512];
+        if (pb2k_resolve_path(st->roms_dir, st->game, manifest,
+                              sizeof(manifest))) {
+            pb2k_load(a, manifest);
+            info_report("dcs-cache: legacy library used only for duration/loop hints");
+        } else {
+            info_report("dcs-cache: no legacy hints; probing update DSP directly");
         }
     }
 

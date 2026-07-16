@@ -46,6 +46,77 @@ typedef struct P2KDisplayState {
 } P2KDisplayState;
 
 static P2KDisplayState s_disp;
+static QemuMutex s_status_lock;
+static char s_status[96];
+static void p2k_display_update(void *opaque);
+
+void p2k_display_set_status(const char *status)
+{
+    qemu_mutex_lock(&s_status_lock);
+    snprintf(s_status, sizeof(s_status), "%s", status ? status : "");
+    qemu_mutex_unlock(&s_status_lock);
+}
+
+void p2k_display_refresh_status(void)
+{
+    if (s_disp.con) {
+        /* Request a normal console repaint.  Calling gfx_update directly
+         * from the DCS generation callback can recurse through QEMU's
+         * display backend (and crashes the display=none backend). */
+        dpy_gfx_update(s_disp.con, 0, 0, SCREEN_W, SCREEN_H);
+    }
+}
+
+/* Compact 5x7 font for the generation banner. */
+static const uint8_t *status_glyph(char c)
+{
+    static const uint8_t blank[7] = {0};
+#define GLYPH(ch,a,b,c,d,e,f,g) case ch: { static const uint8_t r[7] = {a,b,c,d,e,f,g}; return r; }
+    switch (c) {
+    GLYPH('A',14,17,17,31,17,17,17) GLYPH('B',30,17,17,30,17,17,30)
+    GLYPH('E',31,16,16,30,16,16,31) GLYPH('G',14,17,16,23,17,17,15)
+    GLYPH('I',31,4,4,4,4,4,31)      GLYPH('K',17,18,20,24,20,18,17)
+    GLYPH('L',16,16,16,16,16,16,31) GLYPH('N',17,25,21,19,17,17,17)
+    GLYPH('P',30,17,17,30,16,16,16) GLYPH('R',30,17,17,30,20,18,17)
+    GLYPH('S',15,16,16,14,1,1,30)   GLYPH('T',31,4,4,4,4,4,4)
+    GLYPH('0',14,17,19,21,25,17,14) GLYPH('1',4,12,4,4,4,4,14)
+    GLYPH('2',14,17,1,2,4,8,31)     GLYPH('3',30,1,1,14,1,1,30)
+    GLYPH('4',2,6,10,18,31,2,2)     GLYPH('5',31,16,16,30,1,1,30)
+    GLYPH('6',14,16,16,30,17,17,14) GLYPH('7',31,1,2,4,8,8,8)
+    GLYPH('8',14,17,17,14,17,17,14) GLYPH('9',14,17,17,15,1,1,14)
+    GLYPH('/',1,2,2,4,8,8,16)       GLYPH('.',0,0,0,0,0,12,12)
+    default: return blank;
+    }
+#undef GLYPH
+}
+
+static void draw_status(void *dst_raw, bool bpp16)
+{
+    char text[sizeof(s_status)];
+    qemu_mutex_lock(&s_status_lock);
+    memcpy(text, s_status, sizeof(text));
+    qemu_mutex_unlock(&s_status_lock);
+    if (!text[0]) return;
+
+    int width = MIN(SCREEN_W, 16 + (int)strlen(text) * 12);
+    for (int y = 8; y < 34; y++) {
+        for (int x = 8; x < width; x++) {
+            if (bpp16) ((uint16_t *)dst_raw)[y * SCREEN_W + x] = 0;
+            else ((uint32_t *)dst_raw)[y * SCREEN_W + x] = 0xff000000;
+        }
+    }
+    for (int n = 0; text[n] && 12 + n * 12 + 10 < SCREEN_W; n++) {
+        const uint8_t *rows = status_glyph(g_ascii_toupper(text[n]));
+        for (int gy = 0; gy < 7; gy++) for (int gx = 0; gx < 5; gx++) {
+            if (!(rows[gy] & (1 << (4 - gx)))) continue;
+            for (int sy = 0; sy < 2; sy++) for (int sx = 0; sx < 2; sx++) {
+                int x = 12 + n * 12 + gx * 2 + sx, y = 12 + gy * 2 + sy;
+                if (bpp16) ((uint16_t *)dst_raw)[y * SCREEN_W + x] = 0x7fff;
+                else ((uint32_t *)dst_raw)[y * SCREEN_W + x] = 0xffffffff;
+            }
+        }
+    }
+}
 
 /* Read a dword from system memory by physical address — used for both
  * the DC register at GX_BASE+0x8310 and the framebuffer pixels.  The
@@ -158,6 +229,8 @@ static void p2k_display_update(void *opaque)
         }
     }
 
+    draw_status(dst_raw, bpp16);
+
     dpy_gfx_update_full(s->con);
     s_disp_frames++;
 }
@@ -173,6 +246,7 @@ void p2k_install_display(void)
     const char     *bpp_env = getenv("P2K_DISPLAY_BPP");
     bool            bpp16   = bpp_env && !strcmp(bpp_env, "16");
 
+    qemu_mutex_init(&s_status_lock);
     s_disp.con = graphic_console_init(NULL, 0, &p2k_display_ops, &s_disp);
     qemu_console_resize(s_disp.con, SCREEN_W, SCREEN_H);
 
