@@ -41,6 +41,7 @@ DISPLAY_MODE=""
 HEADLESS=0
 FULLSCREEN=0
 NO_SAVEDATA=0
+FRESH_SAVEDATA=0
 MONITOR=""
 DEBUG=""
 TCG_ONLY=0
@@ -165,6 +166,8 @@ CORE LAUNCH
   --no-savedata             Run without persistent savedata (also exports
                             P2K_NO_SAVEDATA=1) and switches cwd to a fresh
                             throwaway dir for the run.
+  --fresh                   Ignore existing savedata for this boot, then save
+                            the newly initialized state normally on exit.
   --update <spec>           Update bundle selection. Spec is one of:
                               auto      (default) machine auto-discovers
                                         the newest matching bundle in
@@ -388,7 +391,7 @@ KEY BINDINGS (delivered by the QEMU machine, not by this wrapper)
 
 ENV PASSTHROUGH (advanced; see qemu/README.md for the full table)
   P2K_NO_UART_STDERR
-  P2K_NO_MEM_DETECT_PATCH P2K_DCS_AUDIO P2K_NO_DCS_AUDIO
+  P2K_FRESH_SAVEDATA P2K_NO_MEM_DETECT_PATCH P2K_DCS_AUDIO P2K_NO_DCS_AUDIO
   P2K_DCS_AUDIO_TRACE P2K_DCS_BYTE_TRACE P2K_DCS_NO_BYTE_PAIR
   P2K_DCS_RAW_55_PAIR P2K_DIAG P2K_NO_AUTO_UPDATE
   P2K_PB2KSLIB P2K_DCS_ENGINE P2K_DCS_MODE P2K_SCREENSHOT_DIR
@@ -405,6 +408,7 @@ while [[ $# -gt 0 ]]; do
     --roms)            ROMS_DIR="$2"; shift 2 ;;
     --savedata)        SAVEDATA_DIR="$2"; shift 2 ;;
     --no-savedata)     NO_SAVEDATA=1; shift ;;
+    --fresh)           FRESH_SAVEDATA=1; shift ;;
     --update)          UPDATE_TOKEN="$2"; shift 2 ;;
     --display)
       __qbin="${QEMU_BIN:-$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386}"
@@ -797,6 +801,13 @@ esac
 if [[ -n "${P2K_NO_SAVEDATA:-}" && "${P2K_NO_SAVEDATA:-}" != "0" ]]; then
   NO_SAVEDATA=1
 fi
+if [[ -n "${P2K_FRESH_SAVEDATA:-}" && "${P2K_FRESH_SAVEDATA:-}" != "0" ]]; then
+  FRESH_SAVEDATA=1
+fi
+if [[ $NO_SAVEDATA -eq 1 && $FRESH_SAVEDATA -eq 1 ]]; then
+  echo "[run-qemu] ERROR: --fresh and --no-savedata are mutually exclusive" >&2
+  exit 2
+fi
 RUN_CWD="$ROOT"
 CLEANUP=""
 if [[ $NO_SAVEDATA -eq 1 ]]; then
@@ -805,7 +816,13 @@ if [[ $NO_SAVEDATA -eq 1 ]]; then
   CLEANUP="$RUN_CWD"
   trap '[[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"' EXIT
   echo "[run-qemu] read-only savedata: P2K_NO_SAVEDATA=1; running in $RUN_CWD (no savedata/ subdir)"
-elif [[ "$SAVEDATA_DIR" != "$ROOT/savedata" ]]; then
+else
+  if [[ $FRESH_SAVEDATA -eq 1 ]]; then
+    export P2K_FRESH_SAVEDATA=1
+    echo "[run-qemu] fresh savedata: ignoring existing seeds; new state will be saved on exit"
+  fi
+fi
+if [[ $NO_SAVEDATA -eq 0 && "$SAVEDATA_DIR" != "$ROOT/savedata" ]]; then
   RUN_CWD="$(mktemp -d "$ROOT/.run-qemu.XXXXXX")"
   CLEANUP="$RUN_CWD"
   trap '[[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"' EXIT

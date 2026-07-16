@@ -548,7 +548,9 @@ void p2k_install_plx_regs(Pinball2000MachineState *s)
     if (s && s->game) {
         snprintf(s_seeprom_save_path, sizeof(s_seeprom_save_path),
                  "savedata/%s.see", s->game);
-        FILE *fp = p2k_no_savedata_enabled() ? NULL : fopen(s_seeprom_save_path, "rb");
+        FILE *fp = (p2k_no_savedata_enabled() ||
+                    p2k_fresh_savedata_enabled()) ? NULL :
+                   fopen(s_seeprom_save_path, "rb");
         if (fp) {
             long sz = -1;
             if (fseek(fp, 0, SEEK_END) == 0) {
@@ -576,6 +578,11 @@ void p2k_install_plx_regs(Pinball2000MachineState *s)
                             "defaults", s_seeprom_save_path, sz);
             }
             fclose(fp);
+        }
+        if (p2k_fresh_savedata_enabled()) {
+            info_report("pinball2000: fresh run — SEEPROM uses built-in "
+                        "defaults");
+            s_seeprom_dirty = true;
         }
         qemu_add_exit_notifier(&p2k_seeprom_exit_notifier);
     }

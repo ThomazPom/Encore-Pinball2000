@@ -23,6 +23,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--roms` | directory | `<repo>/roms` | Directory containing `<game>_u100.rom`/`.bin` etc.; passed as `roms-dir=`. | `scripts/run-qemu.sh --roms /data/p2k/roms` |
 | `--savedata` | directory | `<repo>/savedata` | Uses this directory as persistent `savedata/` by running QEMU from a temporary cwd with a symlink. | `scripts/run-qemu.sh --savedata ./my-save` |
 | `--no-savedata` | — | off | Exports `P2K_NO_SAVEDATA=1` and runs from a fresh throwaway cwd with no `savedata/` subdir; savedata seeds are skipped and exit writes are discarded. | `scripts/run-qemu.sh --no-savedata` |
+| `--fresh` | — | off | Ignores existing saved device files for this boot, then replaces them with the newly initialized state on clean exit. | `scripts/run-qemu.sh --fresh` |
 | `--update` | spec | `auto` | Selects update bundle: `auto`, `latest`, `none`, version token, or explicit inner bundle dir. | `scripts/run-qemu.sh --update 0210` |
 | `--display` | backend | `sdl` if desktop, else `none` | Validates against `qemu-system-i386 -display help` and passes QEMU `-display`. | `scripts/run-qemu.sh --display gtk` |
 | `--headless` | — | off | Shortcut for display `none` plus serial stdio unless `--uart-quiet` is used. Promotes verbosity to at least `-v`. | `scripts/run-qemu.sh --headless --game swe1` |

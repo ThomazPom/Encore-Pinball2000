@@ -20,6 +20,12 @@ static inline bool p2k_no_savedata_enabled(void)
     return v && *v && strcmp(v, "0") != 0;
 }
 
+static inline bool p2k_fresh_savedata_enabled(void)
+{
+    const char *v = getenv("P2K_FRESH_SAVEDATA");
+    return v && *v && strcmp(v, "0") != 0;
+}
+
 #define TYPE_PINBALL2000_MACHINE  MACHINE_TYPE_NAME("pinball2000")
 
 typedef struct Pinball2000MachineState {

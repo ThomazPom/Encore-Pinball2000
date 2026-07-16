@@ -65,7 +65,10 @@ static void p2k_seed_bar2_from_nvram(MemoryRegion *mr,
 {
     snprintf(s_bar2_save_path, sizeof(s_bar2_save_path),
              "savedata/%s.nvram2", s->game);
-    if (p2k_no_savedata_enabled()) {
+    if (p2k_no_savedata_enabled() || p2k_fresh_savedata_enabled()) {
+        if (p2k_fresh_savedata_enabled()) {
+            info_report("pinball2000: fresh run — BAR2 SRAM starts empty");
+        }
         return;
     }
     FILE *fp = fopen(s_bar2_save_path, "rb");
@@ -131,6 +134,10 @@ void p2k_install_plx_bars(Pinball2000MachineState *s)
 
     if (p2k_no_savedata_enabled() && !no_savedata_reported) {
         info_report("pinball2000: P2K_NO_SAVEDATA set — running in read-only savedata mode (no seed, no save)");
+        no_savedata_reported = true;
+    } else if (p2k_fresh_savedata_enabled() && !no_savedata_reported) {
+        info_report("pinball2000: P2K_FRESH_SAVEDATA set — ignoring saved "
+                    "device seeds and saving new state on exit");
         no_savedata_reported = true;
     }
 

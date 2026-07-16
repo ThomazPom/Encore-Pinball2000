@@ -488,7 +488,7 @@ void p2k_install_bar3_flash(Pinball2000MachineState *s)
     const char *game = s->game ? s->game : "swe1";
     snprintf(s_save_path, sizeof(s_save_path), "savedata/%s.flash", game);
     bool seeded = false;
-    if (!p2k_no_savedata_enabled()) {
+    if (!p2k_no_savedata_enabled() && !p2k_fresh_savedata_enabled()) {
         FILE *fp = fopen(s_save_path, "rb");
         if (fp) {
             size_t n = fread(s_flash, 1, P2K_BAR3_SIZE, fp);
@@ -501,6 +501,10 @@ void p2k_install_bar3_flash(Pinball2000MachineState *s)
                         "(fresh-from-factory; will look for updates/)",
                         s_save_path);
         }
+    } else if (p2k_fresh_savedata_enabled()) {
+        info_report("pinball2000: fresh run — ignoring saved BAR3 flash");
+        /* Persist even an all-erased base-ROM selection on clean exit. */
+        s_dirty = true;
     }
 
     /* Save comparisons must use the persistent image as it existed on entry,
