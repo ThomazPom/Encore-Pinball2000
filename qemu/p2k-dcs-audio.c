@@ -39,6 +39,7 @@
 #include "qapi/error.h"
 #include "audio/audio.h"
 #include "system/cpus.h"
+#include "system/runstate.h"
 
 #include "p2k-internal.h"
 
@@ -683,6 +684,12 @@ void p2k_dcs_audio_adsp_runtime_ready(void)
     bql_unlock();
     bool generated = generate_pcm_container(a);
     bql_lock();
+
+    if (getenv("P2K_PB2K_ADSP_WORKER")) {
+        info_report("dcs-cache: worker range complete");
+        qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
+        return;
+    }
 
     if (!generated ||
         !pb2k_path_is_valid(a->generated_cache_path)) {
