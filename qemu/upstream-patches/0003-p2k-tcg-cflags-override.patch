@@ -1,0 +1,51 @@
+p2k: cflags override hook in cpu_exec_loop for post-IRQ0 windowing
+
+Strategy 4 needs to OR-in CF_NO_GOTO_TB | CF_NO_GOTO_PTR for every TB
+translated/looked-up during a short virtual-time window after an IRQ0
+IRET, so the cpu_exec loop returns to its outer scheduler check after
+each TB and can pick up the next iothread-raised IRQ0 without waiting
+for a chain to break (which empirically takes ~500 us vtime, see
+docs/12-cpu-and-timers.md Part B).
+
+The hook is a single weak symbol queried right after cflags are
+chosen for the next TB. Default implementation is identity, so the
+upstream behavior is unchanged when the p2k object is not linked.
+
+--- a/accel/tcg/cpu-exec.c
++++ b/accel/tcg/cpu-exec.c
+@@ -944,6 +944,12 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
+ static int __attribute__((noinline))
+ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
+ {
++    /* p2k: post-IRQ0-IRET vtime window may demand CF_NO_GOTO_TB on
++     * every TB so cpu_exec returns to the scheduler frequently and
++     * the i8259 line raised by the iothread is honored within one
++     * TB instead of one chain. Identity if p2k is not built in. */
++    extern uint32_t p2k_tcg_cflags_override(uint32_t base);
++
+     int ret;
+ 
+     /* if an exception is pending, we execute it here */
+@@ -973,6 +979,7 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
+             } else {
+                 cpu->cflags_next_tb = -1;
+             }
++            cflags = p2k_tcg_cflags_override(cflags);
+ 
+             if (check_for_breakpoints(cpu, pc, &cflags)) {
+                 break;
+--- a/accel/tcg/tcg-accel-ops.c
++++ b/accel/tcg/tcg-accel-ops.c
+@@ -38,6 +38,12 @@
+ #include "tcg-accel-ops-mttcg.h"
+ #include "tcg-accel-ops-icount.h"
+ 
++/* p2k: weak default for the cflags override hook used by cpu-exec.c.
++ * Real implementation lives in hw/i386/p2k-timing-audit.c. Defined
++ * weak here so the upstream-patch is self-contained and a build
++ * without p2k object still links. */
++__attribute__((weak)) uint32_t p2k_tcg_cflags_override(uint32_t base) { return base; }
++
+ /* common functionality among all TCG variants */
+ 
+ void tcg_exec_realizefn(CPUState *cpu, Error **errp)

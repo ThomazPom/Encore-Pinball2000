@@ -1,0 +1,41 @@
+# 36 — Roadmap
+
+Encore boots SWE1 and RFM, renders graphics, plays DCS audio, provides desktop
+controls, persists machine state, loads genuine updates, and exposes Linux LPT
+passthrough. The remaining goal is to prove that it safely operates a physical
+Pinball 2000 cabinet.
+
+## Before cabinet power-on
+
+1. Run the complete update and DCS-engine validation matrix.
+2. Run `scripts/run-qemu.sh --bench` on the cabinet host and record steady-state
+   guest clock, IRQ0, LPT rate and PDB05 gaps.
+3. Exercise coins, start, flippers, service buttons, volume and door state with
+   the emulated LPT board.
+4. Verify `--cabinet-purist` refuses to start without an explicitly opened
+   `/dev/parportN` device.
+5. Capture real-port traffic with playfield power disabled.
+
+## Physical validation
+
+Test switch reads, lamps, low-risk outputs, service controls, DCS audio and
+sustained gameplay one class at a time. Record the host, parallel-port card,
+game, update, DCS engine, timing mode and trace artifact.
+
+A cabinet-facing code change needs a reproducible Encore failure or a physical
+trace identifying missing behavior.
+
+## Not roadmap work
+
+- replacing adaptive HOTLOOP merely because it is Encore-specific;
+- adding a BIOS boot before the protected-mode PRISM entry;
+- replacing the fixed PCI responder without a missing cabinet behavior;
+- removing the accepted memory-size correction;
+- removing the accepted base-ROM DCS probe support;
+- adding CPU or LPT pacing without a physical timing failure.
+
+These are deliberate current design choices.
+
+---
+
+← [Documentation index](README.md) · [Project README](../README.md)

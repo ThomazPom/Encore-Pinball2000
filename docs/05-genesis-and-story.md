@@ -1,0 +1,166 @@
+# 05 — Genesis and Story
+
+A chronological account of how Encore was built, what was discovered
+along the way, and why the project exists in its current form.
+
+> [!WARNING]
+> The behaviour described here is based on QEMU emulator testing only. Real-cabinet validation is pending — see [docs/29-cabinet-testing-call.md](29-cabinet-testing-call.md).
+
+## Starting point
+
+The project began as a single-developer investigation into whether the
+Pinball 2000 i386 game binary could be run on modern hardware without
+the original MediaGX machine. The only prior art was a closed-source,
+32-bit QEMU 0.8.1-based emulator from 2007 — functional but impossible
+to build or run cleanly on modern x64 Linux.
+
+The initial approach was to study the game binary through disassembly
+and identify the minimum viable hardware surface: which PCI devices,
+which MMIO regions, which I/O ports the game actually touched on the
+way to rendering a frame.
+
+> [!NOTE]
+> The project evolved through several architectural iterations before settling on the current QEMU machine implementation. Early prototypes explored different CPU emulation engines and hardware modelling approaches to understand the minimum viable hardware surface.
+
+## v0.1 — First boot (Encore v0.1)
+
+The first milestone was reaching the XINA boot prompt. `Encore v0.1`
+established the core architecture: a 16 MB guest RAM region, chip-ROM de-interleave, PCI config space,
+and a minimal UART stub so the serial console would produce output.
+
+Commit `826c79f` — *"Encore v0.1: initial build — ROM auto-detect,
+savedata, modular architecture"*.
+
+## v0.2 — XINA boot, EEPROM, MMIO fix
+
+MMIO callback ordering was refined; the PRISM GX register map needed
+proper initialization before the emulation started.
+SEEPROM (93C46) initialisation was also needed to pass the BIOS
+self-test. After those two fixes, XINA (the XINU shell) appeared on
+the virtual COM1 console.
+
+Commit `5aead9f` — *"Encore v0.2: MMIO callback fix + EEPROM verify + XINA boot"*.
+
+> [!TIP]
+> The XINA shell provides powerful diagnostic commands over serial. Connect to it via `--serial-tcp` and explore commands like `ps`, `mem`, `dcs`, `pdb`, and `switch test` to observe the game's internal state.
+
+## Graphics milestone
+
+Getting pixels on screen required understanding the Graphics Processor
+(GP) blit engine inside the MediaGX and the `DC_TIMING2` register that
+gates frame output. The framebuffer lives at `GX_BASE + 0x800000`
+(640×240 RGB555, 2048-byte row pitch). The emulator must increment
+`DC_TIMING2` on each read to convince the game the display controller
+is alive.
+
+Commit `792e48e` — *"MILESTONE: Game(Williams - Episode I) banner reached"*.
+
+## Performance work
+
+The earliest correct build ran at 5–6 FPS — the emulated guest was
+producing frames far slower than the target 57 Hz. A series of
+optimisations brought this to full speed:
+
+* Direct RAM-pointer reads bypassing unnecessary API overhead
+  doubled throughput.
+* Wall-clock PIT delivery (rather than cycle-counting) matched the game
+  scheduler's expected interrupt rate.
+* Iteration-count based batch execution (200 000 instructions per
+  call) replaced unreliable approaches.
+* The historical `nulluser` idle-loop HLT patch (BT-74) eliminated 100 % CPU
+  burn during XINU idle time.
+
+By commit `3bf49d1` the emulator reached 50–56 FPS.
+
+> [!IMPORTANT]
+> That patch belonged to the historical implementation. Current QEMU does not
+> rewrite `nulluser`; this remains genesis context, not current behavior.
+
+## LPT driver-board
+
+Pinball 2000 uses a proprietary parallel-port driver board for switch
+matrix, coil drivers, and lamp matrix. Reverse-engineering the LPT
+protocol from the game binary and the original P2K driver source took
+several weeks of tracing. The emulated switch matrix is now complete;
+real cabinet passthrough via Linux `ppdev` (`--lpt-device`) was added
+later.
+
+## DCS audio — the polarity discovery
+
+DCS audio was the last major subsystem to fall into place. The PCI
+probe that the game uses to detect the DCS board lives at guest address
+`0x1A2ABC`. The probe has **inverted polarity**: it returns 1 (device
+present) when the probed memory cell is **not** `0xFFFF`. Simply
+returning `0xFFFF` from the BAR4 read — the intuitive "device present"
+signal — caused the probe to return 0 and the game to skip DCS init
+entirely.
+
+The fix was two-pronged:
+1. **bar4-patch mode**: byte-patch the `CMP/JNE` in `dcs_mode_select`
+   to force `dcs_mode=1` regardless of the probe result.
+2. **io-handled mode**: scribble `0x0000` (not `0xFFFF`) into the probe
+   cell so the natural probe returns 1.
+
+The discovery that the DCS-detect cell and the watchdog health register
+are the **same memory location** was a separate insight, documented in
+[16-watchdog-scanner.md](16-watchdog-scanner.md).
+
+## Minimisation pass (2026-04-21)
+
+By April 2026 the codebase had accumulated roughly a dozen hardcoded
+per-version patches. A systematic audit removed every patch that could
+be replaced by a pattern scan or by letting the game initialise
+naturally. The final tally: seven dropped patch blocks, four surviving
+(all pattern-scanned or game-agnostic).
+
+The regression matrix (all seven bundles) was run after each removal.
+Nothing regressed. The resulting codebase is the current state of the
+`master` branch.
+
+> [!CAUTION]
+> Every patch removal must be validated against the full regression matrix covering all game ROMs in both base and update modes. Desktop boot success does not guarantee cabinet compatibility.
+
+## Current status
+
+Current update compatibility is recorded by the reproducible validation matrix,
+not by this history page. See [26-testing-validation-matrix.md](26-testing-validation-matrix.md).
+
+## Cross-references
+
+* Architecture: [10-architecture.md](10-architecture.md)
+* Watchdog scanner: [16-watchdog-scanner.md](16-watchdog-scanner.md)
+* Patching philosophy: [30-symptom-patches.md](30-symptom-patches.md)
+* Known limitations: [README.md](README.md)
+
+## Historical research notes
+
+### Why a from-scratch build (and not a binary translation of the original)
+
+Before Encore was started, several attempts were made to take the
+original 32-bit P2K runtime binary and re-host it on modern x86-64
+Linux directly. The shortest path explored was static binary
+translation via the Rev.ng toolchain. Five iterations of that
+approach were attempted; all of them failed for different reasons
+(symbol resolution, dynamic library bridging, calling-convention
+mismatches between the i386 C ABI used by the binary and the
+SysV AMD64 ABI of host libraries, and similar issues).
+
+The conclusion from those experiments was that re-hosting the
+original binary unmodified was not viable in any reasonable amount
+of work, and that a clean-room QEMU machine implementation would be both faster to
+deliver and easier to maintain.
+
+> [!NOTE]
+> This section documents pre-Encore research attempts, not the Unicorn prototype or the current QEMU implementation. Those binary-translation experiments were abandoned before any emulator work began.
+
+### Binary-stripping observations
+
+All shipped P2K game binaries are stripped of debugging symbols but
+retain dynamic symbols (the export table needed by the dynamic
+loader). This is enough to recover the call-graph for the major
+subsystems through standard reverse-engineering tools, which is how
+the function table in
+
+---
+
+← [Back to documentation index](README.md) · [Back to project README](../README.md)

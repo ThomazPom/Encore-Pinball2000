@@ -1,0 +1,362 @@
+[run-qemu] audio: auto-selected pa (host: pulse running, qemu: pa supported)
+[run-qemu] --update none → museum mode (P2K_NO_AUTO_UPDATE=1)
+[run-qemu] read-only savedata: P2K_NO_SAVEDATA=1; running in /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/.run-qemu.Z7ywMd (no savedata/ subdir)
+[run-qemu] cwd=/mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/.run-qemu.Z7ywMd
+[run-qemu] /home/encore/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386 -M pinball2000,game=rfm,roms-dir=/mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms -no-reboot -m 16 -display none -serial null -audio driver=pa 
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u100.rom (8388608 bytes -> chip0 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u101.rom (8388608 bytes -> chip1 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u102.rom (8388608 bytes -> chip0 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u103.rom (8388608 bytes -> chip1 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u104.rom (8388608 bytes -> chip0 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u105.rom (8388608 bytes -> chip1 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u106.rom (8388608 bytes -> chip0 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u107.rom (8388608 bytes -> chip1 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u109.bin (4194304 bytes -> chip0 16-bit lane)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u110.bin (4194304 bytes -> chip1 16-bit lane)
+qemu-system-i386: info: pinball2000: mapped p2k.optrom           @ 0x000c0000 (32 KiB)
+qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/bios.bin (65536 bytes -> BIOS)
+qemu-system-i386: info: pinball2000: mapped p2k.bios-shadow      @ 0x000f0000 (64 KiB, RW)
+qemu-system-i386: info: pinball2000: mapped p2k.bios-reset       @ 0xffff0000 (64 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.plx-bank0        @ 0x08000000 (16384 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.plx-bank1        @ 0x08800000 (16384 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.plx-bank2        @ 0x09800000 (16384 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.plx-bank3        @ 0x0a800000 (16384 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.dcs-cs3          @ 0x0b800000 (8192 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.dcs-rombar       @ 0x18000000 (8192 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.bar5-bank0       @ 0x14000000 (16384 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.bar5-bank1       @ 0x15000000 (16384 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.bar5-bank2       @ 0x16000000 (16384 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.bar5-bank3       @ 0x17000000 (16384 KiB)
+qemu-system-i386: info: pinball2000: mapped p2k.bank0-alias      @ 0xff000000 (4096 KiB)
+qemu-system-i386: info: pinball2000: Cyrix MediaGX TCG extensions ENABLED (0F 3B BB1_RESET, 0F 3C CPU_WRITE, 0F 3D CPU_READ implemented per databook §4.1.5/§4.1.6 + on-silicon scratchpad pipeline; 0F 36/37/39/3F log+UD; 0F 3A reserved for SSE4 dispatch). Stock i386 binaries are unaffected.
+qemu-system-i386: info: pinball2000: installed ISA stubs (kbd/0x61/cmos/post/com1) [UART<->chardev bidir]
+qemu-system-i386: info: pinball2000: SuperIO W83977EF (0x2E/0x2F), CC5530 (0xEA/0xEB) and port 0x61 toggler installed
+qemu-system-i386: info: pinball2000: installed Cyrix CCR at I/O 0x22/0x23 (GCR[0xb8] reset=0x0d -> GX_base_p=0x40000000, scratchpad=4KB; storage is mutable)
+qemu-system-i386: info: pinball2000: installed PCI cf8/cfc stub (MediaGX dev0, PRISM dev8, Cx5520 dev18)
+qemu-system-i386: info: pinball2000: P2K_NO_SAVEDATA set — running in read-only savedata mode (no seed, no save)
+qemu-system-i386: info: pinball2000: mapped p2k.bar2-sram        @ 0x11000000 (128 KiB SRAM + 16 MiB sentinel)
+qemu-system-i386: info: pinball2000: PLX BAR0 regs+SEEPROM @ 0x10000000 (256 bytes)
+qemu-system-i386: info: pinball2000: P2K_NO_AUTO_UPDATE set — leaving BAR3 all-0xFF (base-image path; known stall on SWE1, see qemu/NOTES.next.md)
+qemu-system-i386: info: pinball2000: DCS BAR4 MMIO @ 0x13000000 (16 MiB) [shared core, mode=io-handled]
+qemu-system-i386: info: pinball2000: DCS-2 UART installed at I/O 0x138-0x13f [shared core]
+qemu-system-i386: info: dcs-audio: pb2kslib loaded 866 entries from /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_sound.bin
+qemu-system-i386: info: pinball2000: DCS audio installed (44100 Hz S16 mono, 8-voice mixer, 866 pb2k entries; P2K_NO_DCS_AUDIO=1 to disable)
+qemu-system-i386: info: pinball2000: LPT driver-board installed at I/O 0x378-0x37a (STATUS=0x87, edge-detect dispatch; keys: F1 quit | F2 flip-Y | F3 screenshot | F4 door | F5/Enter pulse | F6/F9 actions | F7/F8 flippers | Space/S start | F10/C coin | F12 dump | Esc/Left service | Up/Down volume | Right enter)
+qemu-system-i386: info: pinball2000: GP BLT engine MMIO at 0x40008100 size 0x110
+qemu-system-i386: info: pinball2000: VSYNC ticker armed (~57 Hz frame, 30 sub-tick updates @ DC_TIMING2)
+qemu-system-i386: info: pinball2000: BT-130 mem_detect patcher armed
+qemu-system-i386: info: pinball2000: diag sampler ON (PIT/PIC/IDT/XINU-sched, every 100 ms; unset P2K_DIAG to silence)
+qemu-system-i386: info: pinball2000: timing-audit armed (initial @3s, every 5s with P2K_DIAG=1; disable with P2K_NO_TIMING_AUDIT=1)
+qemu-system-i386: info: pinball2000: BT-131 NIC LAN ROM shadow installed at 0xd0008 (8B read-only MMIO; MAC 00:00:c0:01:02:03 board_id=0x2a checksum=0x0f)
+qemu-system-i386: info: p2k-probe-cell-shim: ACTIVE (P2K_NO_AUTO_UPDATE) — Unicorn-style probe-cell maintenance scheduled. This is a TEMPORARY compatibility bridge for --update none parity, NOT clean QEMU device behavior. Removal condition: when DCS/PLX9054 model returns the right value at the probe address natively, delete p2k-probe-cell-shim.c and stop calling p2k_install_probe_cell_shim() from pinball2000.c.
+qemu-system-i386: info: pinball2000: machine ready (game=rfm, ram=16 MiB)
+qemu-system-i386: info: pinball2000: PM entry CS:EIP=0008:000801d9 ESP=0008b000
+qemu-system-i386: info: p2k-diag: PIT ch0 mode=3 gate=1 count=0 (18.21 Hz)
+qemu-system-i386: info: p2k-diag: PIT ch1 mode=3 gate=1 count=0 (18.21 Hz)
+qemu-system-i386: info: p2k-diag: PIT ch2 mode=3 gate=0 count=0 (18.21 Hz)
+qemu-system-i386: info: p2k-diag: PIC master imr=00 irr=01 isr=00 base=00
+qemu-system-i386: info: p2k-diag: IDT base=0x00000000 limit=0x0000
+qemu-system-i386: info: p2k-diag: IDT[0x20] sel=0x0000 off=0x00000000 type=0x00 (IRQ0/PIT)
+qemu-system-i386: info: p2k-diag: IDT[0x28] sel=0x0000 off=0x00000000 type=0x00 (IRQ8/RTC)
+qemu-system-i386: info: p2k-diag: cpu eip=0x00083e3c cs=0x0008 esp=0x0008af08 eflags=0x00000002 cr0=0x60000011
+qemu-system-i386: info: p2k-probe-cell-shim: located probe cell at 0x00231d78 — phase=pre-XINU scribble=0x0000ffff every 50 ms; will flip to 0x00000000 once XINU installs clkint at IDT[0x20] (--update none compatibility bridge)
+qemu-system-i386: info: pinball2000: BT-130 mem_detect patch applied at 0x001b9a55: 0x04 -> 0x0E (4 MiB -> 14 MiB pages)
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: IDT base=0x0024d324 limit=0x017f
+qemu-system-i386: info: p2k-diag: IDT[0x20] sel=0x0008 off=0x001b8a9b type=0x8f (IRQ0/PIT)
+qemu-system-i386: info: p2k-diag: IDT[0x28] sel=0x0008 off=0x001b8af3 type=0x8f (IRQ8/RTC)
+qemu-system-i386: info: p2k-diag: PIT ch0 mode=2 gate=1 count=298 (4003.97 Hz)
+qemu-system-i386: info: p2k-diag: PIC master imr=fd irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: IDT[0x20] sel=0x0008 off=0x001af6ba type=0x8f (IRQ0/PIT)
+qemu-system-i386: info: p2k-probe-cell-shim: phase=post-XINU (IDT[0x20]: panic-stub 0x001b8a9b → clkint 0x001af6ba) — switching scribble to 0x00000000 at [0x00231d78] so DCS probe returns PRESENT
+qemu-system-i386: info: p2k-probe-cell-shim: first post-XINU scribble committed; awaiting first DCS command from guest
+qemu-system-i386: info: pinball2000: irq0 missed-edge replay disabled (set P2K_IRQ_REPLAY=1 to enable legacy safety net)
+qemu-system-i386: info: pinball2000: irq0-iret tb-exit ENABLED (Strategy-1) (set P2K_NO_IRQ0_IRET_TB_EXIT=1 to disable)
+qemu-system-i386: info: p2k-diag: PIC master imr=e0 irr=01 isr=00 base=20
+qemu-system-i386: info: pinball2000: GP first-write off=0x8110 val=0xffffffff size=4
+qemu-system-i386: info: pinball2000: GP first-write off=0x8114 val=0xffffffff size=4
+qemu-system-i386: info: pinball2000: GP first-write off=0x8120 val=0xffffffff size=4
+qemu-system-i386: info: pinball2000: GP first-write off=0x8124 val=0xffffffff size=4
+qemu-system-i386: info: pinball2000: GP first-write off=0x8128 val=0xffffffff size=4
+qemu-system-i386: info: pinball2000: GP first-write off=0x812c val=0xffffffff size=4
+qemu-system-i386: info: pinball2000: GP first-write off=0x8108 val=0x02d00000 size=4
+qemu-system-i386: info: pinball2000: GP first-write off=0x8100 val=0x01df00c9 size=4
+qemu-system-i386: info: pinball2000: GP first-write off=0x8104 val=0x000100ee size=4
+qemu-system-i386: info: pinball2000: GP BLT #0: src(0,720) dst(201,479) w=238 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #1: src(238,720) dst(201,478) w=238 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #2: src(476,720) dst(201,477) w=238 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #3: src(714,720) dst(201,476) w=238 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #4: src(952,720) dst(201,475) w=72 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #5: src(0,721) dst(273,475) w=166 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #6: src(166,721) dst(201,474) w=238 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #7: src(404,721) dst(201,473) w=238 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #8: src(642,721) dst(201,472) w=238 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #9: src(880,721) dst(201,471) w=144 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #10: src(0,722) dst(345,471) w=94 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #11: src(94,722) dst(201,470) w=238 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #12: src(332,722) dst(201,469) w=238 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #13: src(570,722) dst(201,468) w=238 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #14: src(808,722) dst(201,467) w=216 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #15: src(0,723) dst(417,467) w=22 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #16: src(22,723) dst(201,466) w=238 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #17: src(260,723) dst(201,465) w=238 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #18: src(498,723) dst(201,464) w=238 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: pinball2000: GP BLT #19: src(736,723) dst(201,463) w=238 raster=0x000010c6 TRANSPARENT key=0x7c1f
+qemu-system-i386: info: p2k-diag: cpu eip=0x00182448 cs=0x0008 esp=0x003f7f9c eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: dcs-audio: ogg src_chans=1 src_rate=22050
+qemu-system-i386: info: dcs-audio: decoded cmd=0x003a name=dcs-bong frames=30024 peak=27816 rms=4870
+qemu-system-i386: info: dcs-audio: [BAR4] process_cmd 0x003a → key=0x003a name=dcs-bong frames=30024 ch=0 vol=255 pan=127 (played #1)
+qemu-system-i386: info: dcs-audio: [BAR4] process_cmd 0x00aa → key=0x0fff no-pb2k-entry (missed #1)
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: dcs-audio: ch0 END  (cmd=0x003a name=dcs-bong frames=30024 cb_elapsed=32)
+qemu-system-i386: info: dcs-audio: [BAR4] execute_mixer 0x55aa d1=0x40bf → GLOBAL_VOL=191 (broadcast to all 8 voices, per Unicorn Mix_Volume(-1))
+qemu-system-i386: info: dcs-audio: [BAR4] execute_mixer 0x55ab d1=0x3fff → ch7 VOL=255
+qemu-system-i386: info: dcs-audio: [BAR4] execute_mixer 0x55ac d1=0x3f7f → ch7 PAN=127
+qemu-system-i386: info: p2k-timing #0 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=12014 observed: irq0_raised=10318 irq0_replayed=0 clkint_entered=3686 eoi_seen=3686 delivery=35.7% replay=0.0% imr=e0 irr=00 isr=00 base=20 idt20=0x001af6ba handler=clkint clkint_hook=0x001af6ba shim=0 wall=3.014s vtime=3.001s scale=0.996x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=89us p95=167us p99=294us max=3265us max_total=3265us n=3686 | pdb05 count=3608
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=662us p95=1033us p99=2068us max=19605us max_total=19605us n=3607
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=662us p95=1033us p99=2068us max=19605us max_total=19605us n=3607
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=662us p95=1033us p99=2068us max=19605us max_total=19605us n=3607
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=662us p95=1033us p99=2068us max=19605us max_total=19605us n=3607
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=3014.0ms vtime=3000.6ms xinu=920.6ms drift=0.305 | delta: wall=0.0ms vtime=0.0ms xinu=0.0ms drift=0.000
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=83us p95=159us p99=292us max=3250us max_total=3250us n=3686
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=8us p99=28us max=194us max_total=194us n=3686
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=4us max=85us max_total=85us n=3686
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=47us p95=102us p99=315us max=1747us max_total=1747us n=3376
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=517us p95=882us p99=1417us max=19128us max_total=19128us n=3375
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=3686 iret_seen=3376 (vs clkint_entered=3686)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x001af6ba:3686 
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: PIC master imr=e0 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: PIC master imr=e0 irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-timing #1 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=24151 observed: irq0_raised=22457 irq0_replayed=0 clkint_entered=8650 eoi_seen=8650 delivery=38.5% replay=0.0% imr=e0 irr=01 isr=00 base=20 idt20=0x001af6ba handler=clkint clkint_hook=0x001af6ba shim=0 wall=6.045s vtime=6.032s scale=0.998x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=87us p95=139us p99=198us max=455us max_total=3265us n=4096 | pdb05 count=8572
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=661us p95=1021us p99=1176us max=4148us max_total=32161us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=661us p95=1021us p99=1176us max=4148us max_total=32161us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=661us p95=1021us p99=1176us max=4148us max_total=32161us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=661us p95=1021us p99=1176us max=4148us max_total=32161us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=6045.1ms vtime=6031.7ms xinu=2160.4ms drift=0.357 | delta: wall=3031.1ms vtime=3031.1ms xinu=1239.8ms drift=0.409
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=82us p95=133us p99=186us max=452us max_total=3250us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=7us p99=22us max=100us max_total=194us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=3us max=38us max_total=85us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=44us p95=89us p99=286us max=671us max_total=1747us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=522us p95=887us p99=1000us max=3975us max_total=31612us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=8650 iret_seen=8031 (vs clkint_entered=8650)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x001af6ba:8650 
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: PIC master imr=e0 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-timing #2 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=36278 observed: irq0_raised=34584 irq0_replayed=0 clkint_entered=13585 eoi_seen=13585 delivery=39.3% replay=0.0% imr=e0 irr=01 isr=00 base=20 idt20=0x001af6ba handler=clkint clkint_hook=0x001af6ba shim=0 wall=9.074s vtime=9.061s scale=0.999x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=89us p95=153us p99=215us max=718us max_total=3265us n=4096 | pdb05 count=13507
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=661us p95=1031us p99=1302us max=5666us max_total=29496us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=661us p95=1031us p99=1302us max=5666us max_total=32161us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=661us p95=1031us p99=1302us max=5666us max_total=29496us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=661us p95=1031us p99=1302us max=5666us max_total=32161us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=9074.0ms vtime=9060.6ms xinu=3392.9ms drift=0.374 | delta: wall=3028.9ms vtime=3028.9ms xinu=1232.5ms drift=0.407
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=84us p95=147us p99=209us max=1070us max_total=3250us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=7us p99=22us max=154us max_total=194us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=3us max=113us max_total=125us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=45us p95=101us p99=281us max=636us max_total=1747us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=518us p95=873us p99=998us max=1705us max_total=31612us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=13585 iret_seen=12646 (vs clkint_entered=13585)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x001af6ba:13585 
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: PIC master imr=e0 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-timing #3 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=48412 observed: irq0_raised=46718 irq0_replayed=0 clkint_entered=18718 eoi_seen=18718 delivery=40.1% replay=0.0% imr=e0 irr=01 isr=00 base=20 idt20=0x001af6ba handler=clkint clkint_hook=0x001af6ba shim=0 wall=12.104s vtime=12.091s scale=0.999x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=66us p95=140us p99=195us max=567us max_total=3265us n=4096 | pdb05 count=18640
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=642us p95=1017us p99=1289us max=3048us max_total=31511us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=642us p95=1017us p99=1289us max=3048us max_total=32161us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=642us p95=1017us p99=1289us max=3048us max_total=31511us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=642us p95=1017us p99=1289us max=3048us max_total=32161us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=12104.4ms vtime=12091.0ms xinu=4674.9ms drift=0.386 | delta: wall=3030.4ms vtime=3030.4ms xinu=1282.0ms drift=0.423
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=61us p95=133us p99=188us max=559us max_total=3250us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=7us p99=19us max=87us max_total=194us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=3us max=119us max_total=125us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=46us p95=99us p99=245us max=595us max_total=1747us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=511us p95=888us p99=1061us max=1821us max_total=31612us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=18718 iret_seen=17483 (vs clkint_entered=18718)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x001af6ba:18718 
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: PIC master imr=e0 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: cpu eip=0x001fd742 cs=0x0008 esp=0x003f5ef4 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: PIC master imr=e0 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: cpu eip=0x001fd75a cs=0x0008 esp=0x003f5ef4 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-timing #4 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=60541 observed: irq0_raised=58845 irq0_replayed=0 clkint_entered=23789 eoi_seen=23789 delivery=40.4% replay=0.0% imr=e0 irr=00 isr=00 base=20 idt20=0x001af6ba handler=clkint clkint_hook=0x001af6ba shim=0 wall=15.134s vtime=15.120s scale=0.999x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=69us p95=136us p99=192us max=397us max_total=3265us n=4096 | pdb05 count=23711
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=648us p95=1024us p99=1211us max=4376us max_total=30013us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=648us p95=1024us p99=1211us max=4376us max_total=32161us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=648us p95=1024us p99=1211us max=4376us max_total=30013us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=648us p95=1024us p99=1211us max=4376us max_total=32161us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=15133.7ms vtime=15120.3ms xinu=5941.4ms drift=0.393 | delta: wall=3029.3ms vtime=3029.3ms xinu=1266.5ms drift=0.418
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=64us p95=130us p99=184us max=393us max_total=3250us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=7us p99=16us max=121us max_total=194us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=3us max=57us max_total=125us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=46us p95=99us p99=307us max=569us max_total=1747us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=521us p95=892us p99=1037us max=4057us max_total=31612us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=23789 iret_seen=22215 (vs clkint_entered=23789)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x001af6ba:23789 
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: PIC master imr=e0 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-timing #5 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=72655 observed: irq0_raised=70961 irq0_replayed=0 clkint_entered=28748 eoi_seen=28748 delivery=40.5% replay=0.0% imr=e0 irr=01 isr=00 base=20 idt20=0x001af6ba handler=clkint clkint_hook=0x001af6ba shim=0 wall=18.159s vtime=18.146s scale=0.999x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=82us p95=148us p99=210us max=933us max_total=3265us n=4096 | pdb05 count=28670
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=653us p95=1018us p99=1338us max=9032us max_total=26415us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=653us p95=1018us p99=1338us max=9032us max_total=32161us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=653us p95=1018us p99=1338us max=9032us max_total=26415us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=653us p95=1018us p99=1338us max=9032us max_total=32161us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=18159.1ms vtime=18145.7ms xinu=7179.9ms drift=0.395 | delta: wall=3025.4ms vtime=3025.4ms xinu=1238.5ms drift=0.409
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=76us p95=141us p99=201us max=927us max_total=3250us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=7us p99=23us max=110us max_total=194us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=3us max=22us max_total=125us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=47us p95=105us p99=289us max=673us max_total=1747us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=516us p95=884us p99=1091us max=5629us max_total=31612us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=28748 iret_seen=26839 (vs clkint_entered=28748)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x001af6ba:28748 
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: PIC master imr=e0 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: PIC master imr=e0 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-timing #6 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=84762 observed: irq0_raised=83067 irq0_replayed=0 clkint_entered=33867 eoi_seen=33867 delivery=40.8% replay=0.0% imr=e0 irr=01 isr=00 base=20 idt20=0x001af6ba handler=clkint clkint_hook=0x001af6ba shim=0 wall=21.183s vtime=21.169s scale=0.999x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=90us p95=141us p99=212us max=714us max_total=3265us n=4096 | pdb05 count=33789
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=659us p95=992us p99=1145us max=3014us max_total=24372us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=659us p95=992us p99=1145us max=3014us max_total=32161us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=659us p95=992us p99=1145us max=3014us max_total=24372us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=659us p95=992us p99=1145us max=3014us max_total=32161us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=21182.9ms vtime=21169.5ms xinu=8458.4ms drift=0.399 | delta: wall=3023.8ms vtime=3023.8ms xinu=1278.5ms drift=0.423
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=85us p95=134us p99=199us max=705us max_total=3250us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=6us p99=22us max=209us max_total=209us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=3us max=78us max_total=125us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=43us p95=87us p99=265us max=1473us max_total=1747us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=524us p95=863us p99=960us max=2601us max_total=31612us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=33867 iret_seen=31652 (vs clkint_entered=33867)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x001af6ba:33867 
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: PIC master imr=e0 irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-timing #7 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=96866 observed: irq0_raised=95172 irq0_replayed=0 clkint_entered=38992 eoi_seen=38992 delivery=41.0% replay=0.0% imr=e0 irr=01 isr=00 base=20 idt20=0x001af6ba handler=clkint clkint_hook=0x001af6ba shim=0 wall=24.206s vtime=24.192s scale=0.999x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=91us p95=140us p99=199us max=330us max_total=3265us n=4096 | pdb05 count=38914
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=652us p95=984us p99=1134us max=2222us max_total=24210us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=652us p95=984us p99=1134us max=2222us max_total=32161us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=652us p95=984us p99=1134us max=2222us max_total=24210us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=652us p95=984us p99=1134us max=2222us max_total=32161us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=24205.9ms vtime=24192.5ms xinu=9738.3ms drift=0.402 | delta: wall=3023.0ms vtime=3023.0ms xinu=1280.0ms drift=0.423
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=85us p95=134us p99=193us max=324us max_total=3250us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=6us p99=15us max=109us max_total=209us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=3us max=178us max_total=178us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=43us p95=87us p99=290us max=626us max_total=1747us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=520us p95=855us p99=948us max=1863us max_total=31612us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=38992 iret_seen=36463 (vs clkint_entered=38992)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x001af6ba:38992 
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: PIC master imr=e0 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-timing #8 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=108970 observed: irq0_raised=107275 irq0_replayed=0 clkint_entered=44159 eoi_seen=44159 delivery=41.2% replay=0.0% imr=e0 irr=01 isr=00 base=20 idt20=0x001af6ba handler=clkint clkint_hook=0x001af6ba shim=0 wall=27.229s vtime=27.215s scale=1.000x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=91us p95=143us p99=215us max=439us max_total=3265us n=4096 | pdb05 count=44081
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=647us p95=977us p99=1106us max=4066us max_total=23695us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=647us p95=977us p99=1106us max=4066us max_total=32161us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=647us p95=977us p99=1106us max=4066us max_total=23695us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=647us p95=977us p99=1106us max=4066us max_total=32161us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=27228.8ms vtime=27215.4ms xinu=11028.8ms drift=0.405 | delta: wall=3022.9ms vtime=3022.9ms xinu=1290.5ms drift=0.427
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=86us p95=137us p99=208us max=436us max_total=3250us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=7us p99=19us max=97us max_total=209us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=3us max=91us max_total=178us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=43us p95=97us p99=270us max=508us max_total=1747us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=510us p95=845us p99=952us max=3904us max_total=31612us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=44159 iret_seen=41295 (vs clkint_entered=44159)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x001af6ba:44159 
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-timing #9 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=121084 observed: irq0_raised=119389 irq0_replayed=0 clkint_entered=49392 eoi_seen=49392 delivery=41.4% replay=0.0% imr=e0 irr=01 isr=00 base=20 idt20=0x001af6ba handler=clkint clkint_hook=0x001af6ba shim=0 wall=30.254s vtime=30.241s scale=1.000x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=96us p95=139us p99=196us max=501us max_total=3265us n=4096 | pdb05 count=49314
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=624us p95=975us p99=1118us max=2581us max_total=26710us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=624us p95=975us p99=1118us max=2581us max_total=32161us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=624us p95=975us p99=1118us max=2581us max_total=26710us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=624us p95=975us p99=1118us max=2581us max_total=32161us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=30254.4ms vtime=30240.9ms xinu=12335.8ms drift=0.408 | delta: wall=3025.6ms vtime=3025.6ms xinu=1307.0ms drift=0.432
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=91us p95=131us p99=188us max=494us max_total=3250us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=6us p99=21us max=110us max_total=209us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=3us max=30us max_total=178us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=42us p95=84us p99=305us max=550us max_total=1747us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=501us p95=836us p99=954us max=1229us max_total=31612us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=49392 iret_seen=46213 (vs clkint_entered=49392)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x001af6ba:49392 
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: PIC master imr=e0 irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=00 isr=00 base=20
+qemu-system-i386: info: p2k-diag: PIC master imr=e0 irr=01 isr=00 base=20
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-timing #10 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=133193 observed: irq0_raised=131496 irq0_replayed=0 clkint_entered=54610 eoi_seen=54610 delivery=41.5% replay=0.0% imr=e0 irr=00 isr=00 base=20 idt20=0x001af6ba handler=clkint clkint_hook=0x001af6ba shim=0 wall=33.279s vtime=33.265s scale=1.000x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=84us p95=132us p99=192us max=359us max_total=3265us n=4096 | pdb05 count=54532
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=637us p95=976us p99=1106us max=2485us max_total=24509us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=637us p95=976us p99=1106us max=2485us max_total=32161us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=637us p95=976us p99=1106us max=2485us max_total=24509us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=637us p95=976us p99=1106us max=2485us max_total=32161us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=33278.6ms vtime=33265.1ms xinu=13639.0ms drift=0.410 | delta: wall=3024.2ms vtime=3024.2ms xinu=1303.2ms drift=0.431
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=79us p95=126us p99=185us max=354us max_total=3250us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=6us p99=12us max=118us max_total=209us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=3us max=18us max_total=178us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=42us p95=84us p99=295us max=618us max_total=1747us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=507us p95=847us p99=947us max=1246us max_total=31612us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=54610 iret_seen=51122 (vs clkint_entered=54610)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x001af6ba:54610 
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-timing #11 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=145307 observed: irq0_raised=143613 irq0_replayed=0 clkint_entered=59773 eoi_seen=59773 delivery=41.6% replay=0.0% imr=e0 irr=01 isr=00 base=20 idt20=0x001af6ba handler=clkint clkint_hook=0x001af6ba shim=0 wall=36.304s vtime=36.291s scale=1.000x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency snap | raise->clkint p50=74us p95=142us p99=192us max=418us max_total=3265us n=4096 | pdb05 count=59695
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=650us p95=996us p99=1143us max=2240us max_total=26793us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=650us p95=996us p99=1143us max=2240us max_total=32161us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=650us p95=996us p99=1143us max=2240us max_total=26793us n=4096
+qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=650us p95=996us p99=1143us max=2240us max_total=32161us n=4096
+qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=36304.1ms vtime=36290.7ms xinu=14928.4ms drift=0.411 | delta: wall=3025.6ms vtime=3025.6ms xinu=1289.5ms drift=0.426
+qemu-system-i386: info: p2k-segment snap | raise_intack  p50=69us p95=136us p99=187us max=416us max_total=3250us n=4096
+qemu-system-i386: info: p2k-segment snap | intack_entry  p50=5us p95=7us p99=12us max=138us max_total=209us n=4096
+qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=1us p95=2us p99=3us max=115us max_total=178us n=4096
+qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=45us p95=99us p99=286us max=586us max_total=1747us n=4096
+qemu-system-i386: info: p2k-segment snap | iret_raise    p50=513us p95=865us p99=977us max=1224us max_total=31612us n=4096
+qemu-system-i386: info: p2k-segment snap | coverage intack_seen=59773 iret_seen=55987 (vs clkint_entered=59773)
+qemu-system-i386: info: p2k-eoi-eip snap | 0x001af6ba:59773 
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: info: p2k-diag: cpu eip=0x001b94b0 cs=0x0008 esp=0x003ffff0 eflags=0x00000202 cr0=0x60000011
+qemu-system-i386: terminating on signal 15 from pid 94310 (timeout)
+qemu-system-i386: info: p2k-timing #12 exit | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=155934 observed: irq0_raised=154233 irq0_replayed=0 clkint_entered=64368 eoi_seen=64368 delivery=41.7% replay=0.0% imr=e0 irr=00 isr=01 base=20 idt20=0x001af6ba handler=clkint clkint_hook=0x001af6ba shim=0 wall=38.959s vtime=38.945s scale=1.000x host_slow=no pic_base=0x20
+qemu-system-i386: info: p2k-latency exit | raise->clkint p50=75us p95=138us p99=193us max=580us max_total=3265us n=4096 | pdb05 count=64290
+qemu-system-i386: info: p2k-pdb05 exit | pdb05_wall_delta   p50=638us p95=980us p99=1090us max=2570us max_total=19811us n=4096
+qemu-system-i386: info: p2k-pdb05 exit | pdb05_wall_total   p50=638us p95=980us p99=1090us max=2570us max_total=32161us n=4096
+qemu-system-i386: info: p2k-pdb05 exit | pdb05_vtime_delta  p50=638us p95=980us p99=1090us max=2570us max_total=19811us n=4096
+qemu-system-i386: info: p2k-pdb05 exit | pdb05_vtime_total  p50=638us p95=980us p99=1090us max=2570us max_total=32161us n=4096
+qemu-system-i386: info: p2k-xinu-drift exit | period_ms=0.250 | total: wall=38959.0ms vtime=38944.8ms xinu=16076.1ms drift=0.413 | delta: wall=2654.9ms vtime=2654.1ms xinu=1147.6ms drift=0.432
+qemu-system-i386: info: p2k-segment exit | raise_intack  p50=69us p95=132us p99=184us max=1787us max_total=3250us n=4096
+qemu-system-i386: info: p2k-segment exit | intack_entry  p50=5us p95=7us p99=10us max=208us max_total=209us n=4096
+qemu-system-i386: info: p2k-segment exit | entry_eoi     p50=1us p95=2us p99=3us max=95us max_total=178us n=4096
+qemu-system-i386: info: p2k-segment exit | eoi_iret      p50=44us p95=95us p99=288us max=709us max_total=1747us n=4096
+qemu-system-i386: info: p2k-segment exit | iret_raise    p50=505us p95=852us p99=952us max=1446us max_total=31612us n=4096
+qemu-system-i386: info: p2k-segment exit | coverage intack_seen=64369 iret_seen=60304 (vs clkint_entered=64368)
+qemu-system-i386: info: p2k-eoi-eip exit | 0x001af6ba:64368 
+qemu-system-i386: info: pinball2000: P2K_NO_SAVEDATA set — discarding BAR3 flash changes
+qemu-system-i386: info: pinball2000: P2K_NO_SAVEDATA set — discarding SEEPROM changes
+qemu-system-i386: info: pinball2000: P2K_NO_SAVEDATA set — discarding BAR2 NVRAM changes
