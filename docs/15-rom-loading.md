@@ -92,7 +92,7 @@ The launcher provides four ways to select the directory:
 
 | Selection | Behavior |
 |---|---|
-| no option / `--update auto` | With no saved flash, choose the highest installed version for the selected game |
+| no option / `--update auto` | Choose the highest available version and install it when saved flash differs |
 | `--update latest` | Resolve and apply the highest installed version |
 | `--update VERSION` | Resolve a matching installed version |
 | `--update DIRECTORY` | Apply that inner game-number directory directly |
@@ -129,7 +129,8 @@ At startup, BAR3 is erased to `ff`, then:
 2. an explicitly selected update is compared with the saved flash;
 3. a mismatch replaces BAR3 with a clean assembly of the selected update;
 4. a match keeps the saved flash unchanged;
-5. `auto` discovers an update only when saved flash was not loaded;
+5. `auto` discovers the newest available update and performs the same
+   comparison, even when saved flash was loaded;
 6. `--update none` disables discovery.
 
 The comparison uses the complete update boot-data page, which contains the

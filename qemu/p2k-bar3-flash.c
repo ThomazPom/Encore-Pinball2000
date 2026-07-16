@@ -511,30 +511,29 @@ void p2k_install_bar3_flash(Pinball2000MachineState *s)
         info_report("pinball2000: checking selected update %s (--update)",
                     s->update_path);
         install_update_if_needed(s->update_path, seeded);
-    } else if (!seeded && getenv("P2K_NO_AUTO_UPDATE") == NULL) {
-        /* No persistent flash AND no explicit --update: auto-discover the
-         * newest bundle in updates/ (real cabinets always shipped with at
-         * least one update flashed). Without this, XINU stalls at "NO UPDATE"
-         * right after STARTING GAME CODE and never reaches PIT/clkint init.
-         * Set P2K_NO_AUTO_UPDATE=1 (or pass --update none via run-qemu.sh) to
-         * opt out and force the BASE-image path — which currently does NOT
-         * reach a usable state (known parity gap with the historical
-         * reference; XINU stalls before clkinit). */
+    } else if (getenv("P2K_NO_AUTO_UPDATE") == NULL) {
+        /* With no explicit selector, auto means newest available bundle.
+         * Compare it with persistent BAR3 even when a saved flash exists;
+         * otherwise adding a newer update would silently keep booting the
+         * older installed program forever. */
         char *auto_dir = find_default_update(s->roms_dir, game);
         if (auto_dir) {
-            info_report("pinball2000: applying auto-discovered update %s "
-                        "(no savedata flash, no --update)", auto_dir);
-            assemble_update(auto_dir);
+            info_report("pinball2000: checking auto-discovered latest update "
+                        "%s", auto_dir);
+            install_update_if_needed(auto_dir, seeded);
             /* Keep the resolved bundle available to sibling devices.  The
              * experimental native DCS path needs the matching *_sf.rom;
              * freeing this here previously discarded that association. */
             g_free(s->update_path);
             s->update_path = auto_dir;
-        } else {
+        } else if (!seeded) {
             warn_report("pinball2000: no savedata flash AND no update bundle "
                         "found under updates/ — XINU will likely hang at "
                         "[STARTING GAME CODE]; pass --update <dir> or place "
                         "savedata/%s.flash", game);
+        } else {
+            info_report("pinball2000: no update bundle found; using saved "
+                        "BAR3 flash");
         }
     } else if (!seeded) {
         info_report("pinball2000: P2K_NO_AUTO_UPDATE set — leaving BAR3 "
