@@ -47,6 +47,7 @@ NO_SAVEDATA=0
 FRESH_SAVEDATA=0
 CLEAR_PB2K_ADSP_CACHE=0
 PB2K_ADSP_CACHE_DIR="${P2K_PB2K_ADSP_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/encore-pb2k/pb2kslib-adsp}"
+PB2K_ADSP_CACHE_WORKERS="${P2K_PB2K_ADSP_CACHE_WORKERS:-4}"
 export P2K_PB2K_ADSP_CACHE_DIR="$PB2K_ADSP_CACHE_DIR"
 MONITOR=""
 DEBUG=""
@@ -256,6 +257,10 @@ AUDIO
                             pb2kslib-adsp generates/uses a persistent PCM
                             cache rendered by the update's native DSP.
   --clear-pb2kslib-cache   Delete the generated ADSP PCM cache before launch.
+  --pb2kslib-cache-workers <n>
+                            Parallel DSP processes used for first-time PCM
+                            generation (1..32, default: 4). Use 1 for the
+                            original in-window single-worker generator.
   --sound-loading lazy|preload
                             lazy   (default) decode samples on-demand.
                             preload  walk every pb2k entry at install
@@ -417,6 +422,8 @@ while [[ $# -gt 0 ]]; do
     --no-savedata)     NO_SAVEDATA=1; shift ;;
     --fresh)           FRESH_SAVEDATA=1; shift ;;
     --clear-pb2kslib-cache) CLEAR_PB2K_ADSP_CACHE=1; shift ;;
+    --pb2kslib-cache-workers)
+      PB2K_ADSP_CACHE_WORKERS="$2"; shift 2 ;;
     --update)          UPDATE_TOKEN="$2"; shift 2 ;;
     --display)
       __qbin="${QEMU_BIN:-$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386}"
@@ -805,6 +812,39 @@ if [[ $CLEAR_PB2K_ADSP_CACHE -eq 1 ]]; then
   echo "[run-qemu] cleared generated pb2kslib cache: $PB2K_ADSP_CACHE_DIR"
 fi
 mkdir -p "$PB2K_ADSP_CACHE_DIR"
+
+if [[ ! "$PB2K_ADSP_CACHE_WORKERS" =~ ^[0-9]+$ ]] ||
+   (( PB2K_ADSP_CACHE_WORKERS < 1 || PB2K_ADSP_CACHE_WORKERS > 32 )); then
+  echo "[run-qemu] --pb2kslib-cache-workers: expected 1..32" >&2
+  exit 2
+fi
+
+# Build a missing generated cache before the real game starts. Each worker is
+# a separate QEMU process with an independent DSP, so mutable firmware/SRAM
+# state is never shared across tracks. A single worker retains the interactive
+# in-window generator for diagnostics.
+if [[ "${P2K_DCS_ENGINE:-adsp-thread}" == "pb2kslib-adsp" &&
+      "$PB2K_ADSP_CACHE_WORKERS" -gt 1 &&
+      -z "${P2K_PB2K_ADSP_WORKER:-}" ]]; then
+  if [[ -n "$UPDATE_DIR_ABS" ]]; then
+    __cache_bundle="$(basename "$(dirname "$UPDATE_DIR_ABS")")"
+  else
+    __cache_bundle=base
+  fi
+  __cache_file="$PB2K_ADSP_CACHE_DIR/$GAME/${__cache_bundle}.pcm.pb2k"
+  if [[ ! -f "$__cache_file" ]]; then
+    __cache_args=(
+      "$ROOT/scripts/build-pcm-cache.py"
+      --qemu "$QEMU_BIN"
+      --game "$GAME"
+      --roms "$ROMS_DIR"
+      --cache-root "$PB2K_ADSP_CACHE_DIR"
+      --workers "$PB2K_ADSP_CACHE_WORKERS"
+    )
+    [[ -n "$UPDATE_DIR_ABS" ]] && __cache_args+=(--update "$UPDATE_DIR_ABS")
+    python3 "${__cache_args[@]}"
+  fi
+fi
 
 # --- savedata cwd handling --------------------------------------------------
 # The QEMU machine reads savedata/<game>.* relative to cwd. Choose cwd
