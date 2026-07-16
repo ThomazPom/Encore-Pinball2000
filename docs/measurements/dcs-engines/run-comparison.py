@@ -86,6 +86,8 @@ def run_engine(engine: str, args: argparse.Namespace, output: Path) -> Path:
     ]
     if args.strict:
         command.append("--strict")
+    if args.with_pit:
+        command.append("--with-pit")
 
     print(f"[comparison] {engine}: {args.duration:.0f}s -> {log_path}", flush=True)
     started = time.monotonic()
@@ -155,6 +157,11 @@ def summarize(log_path: Path, warmup: float) -> dict[str, float | int | str]:
     current = [field(line, "current_delivery") for line in snaps]
     final_timing = next((line for line in reversed(timing) if " exit |" in line), timing[-1])
 
+    cadence = [line for line in lines if "p2k-clkint-entry " in line]
+    if not cadence:
+        cadence = [line for line in lines if "p2k-clkint-hotloop " in line]
+    final_cadence = (next((line for line in reversed(cadence) if " exit |" in line), cadence[-1])
+                     if cadence else None)
     hotloop = [line for line in lines if "p2k-clkint-hotloop " in line]
     final_hotloop = (next((line for line in reversed(hotloop) if " exit |" in line), hotloop[-1])
                      if hotloop else None)
@@ -181,11 +188,11 @@ def summarize(log_path: Path, warmup: float) -> dict[str, float | int | str]:
         "windows": len(current),
         "gap_us": field(final_hotloop, "gap_ns") / 1000.0 if final_hotloop else None,
         "measured_hz": field(final_hotloop, "measured_hz") if final_hotloop else None,
-        "jitter_n": field(final_hotloop, "n", int) if final_hotloop else None,
-        "jitter_mean": field(final_hotloop, "mean_us") if final_hotloop else None,
-        "jitter_min": field(final_hotloop, "min_us") if final_hotloop else None,
-        "jitter_max": field(final_hotloop, "max_us") if final_hotloop else None,
-        "jitter_stddev": field(final_hotloop, "stddev_us") if final_hotloop else None,
+        "jitter_n": field(final_cadence, "n", int) if final_cadence else None,
+        "jitter_mean": field(final_cadence, "mean_us") if final_cadence else None,
+        "jitter_min": field(final_cadence, "min_us") if final_cadence else None,
+        "jitter_max": field(final_cadence, "max_us") if final_cadence else None,
+        "jitter_stddev": field(final_cadence, "stddev_us") if final_cadence else None,
         "pdb_n": sum(field(line, "n", int) for line in pdb_windows),
         "pdb_p95_worst": max((field(line, "p95", int) for line in pdb_windows), default=0),
         "pdb_p99_worst": max((field(line, "p99", int) for line in pdb_windows), default=0),
@@ -252,6 +259,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--update", default="0210")
     parser.add_argument("--strict", action="store_true",
                         help="run every selected engine with natural PIT timing")
+    parser.add_argument("--with-pit", action="store_true",
+                        help="run every selected engine with HOTLOOP plus natural PIT")
     parser.add_argument("--output", type=Path, help="artifact directory (default: timestamped /tmp directory)")
     parser.add_argument("--parse-only", type=Path, metavar="DIR", help="summarize existing logs without running QEMU")
     return parser.parse_args()
@@ -259,6 +268,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if args.strict and args.with_pit:
+        raise SystemExit("--strict and --with-pit are mutually exclusive")
     if args.duration <= args.input_delay:
         raise SystemExit("--duration must be greater than --input-delay")
     if args.warmup >= args.duration and not args.parse_only:
