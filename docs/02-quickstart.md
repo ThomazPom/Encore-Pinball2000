@@ -56,6 +56,8 @@ changed.
 | Task | Command |
 |---|---|
 | Select update 2.10 | `scripts/run-qemu.sh --update 0210` |
+| Start fresh, then save new state | `scripts/run-qemu.sh --fresh` |
+| Start fresh on update 2.00 | `scripts/run-qemu.sh --fresh --update 200` |
 | Run base software | `scripts/run-qemu.sh --update none --no-savedata` |
 | Interactive serial console | `scripts/run-qemu.sh --serial` |
 | TCP serial console | `scripts/run-qemu.sh --serial-tcp 4444` |
