@@ -1,13 +1,12 @@
 # 09 — Savedata
 
-Encore persists four guest-visible storage areas under `savedata/`:
+Encore persists three guest-visible storage areas under `savedata/`:
 
 | File | Guest device | Size |
 |---|---|---:|
 | `<game>.nvram2` | PRISM BAR2 battery SRAM | 128 KiB |
 | `<game>.flash` | PRISM BAR3 update flash | 4 MiB |
-| `<game>.see` | PLX serial EEPROM | 256 B |
-| `<game>.dcsflash` | writable DCS sound flash | 1 MiB |
+| `<game>.see` | PLX serial EEPROM | 128 B |
 
 These are hardware state, not save states. QEMU still boots the game normally;
 Encore seeds each emulated device from its file and writes changed state back on
@@ -35,7 +34,6 @@ The next normal run will create new state as the guest initializes the devices.
 - `qemu/p2k-bars.c`: BAR2 SRAM
 - `qemu/p2k-bar3-flash.c`: update flash
 - `qemu/p2k-plx-regs.c`: serial EEPROM
-- `qemu/p2k-dcs-adsp.c`: DCS flash
 
 ---
 

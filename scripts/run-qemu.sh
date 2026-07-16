@@ -231,7 +231,7 @@ AUDIO
                             For hardware-fidelity regression tests.
   --with-pit                Legacy combo mode (HOTLOOP + natural i8254
                             both raise IRQ0). Retained for A/B timing
-                            Kept for A/B testing only. Default is
+                            tests only. Default is HOTLOOP-only.
   --speed-target <percent>  Deliberate game-clock speed, 25..300 (default
                             100). Scales the i8254 PIT divisor in strict and
                             combo modes and the adaptive HOTLOOP target in
@@ -302,7 +302,7 @@ CONSOLE / DIAGNOSTICS
                             two-way XINA monitor: the guest's stream
                             comes out, your keystrokes go IN to the
                             serial-tcp mode). Compatible with --headless.
-  --serial-tcp <port>       Unicorn-compatible alias for
+  --serial-tcp <port>       Alias for
                             `--uart-tcp 127.0.0.1:<port>`. Same
                             bidirectional behavior — type XINA
                             commands like `?` or `continue` directly
@@ -331,10 +331,8 @@ CONSOLE / DIAGNOSTICS
                             (--headless implies at least -v so the
                             session isn't completely silent.)
   --dcs-mode io-handled|bar4-patch
-                            Documents which DCS frontend
-                            label this build matches; both run the same
-                            shared BAR4 + UART core today (see
-                            qemu/NOTES.next.md "DCS Mode Switch").
+                            Select a DCS frontend label. Both labels use the
+                            same shared BAR4 + UART core today.
 
 CABINET
   --cabinet | --cabinet-purist
@@ -360,7 +358,7 @@ CABINET
   --lpt-trace <file>        Append every LPT read/write to <file>
                             (P2K_LPT_TRACE_FILE). Format:
                             "<ts> R|W <off>=<val>" with µs timestamps.
-  --parport <device>        Unicorn-compatible alias for
+  --parport <device>        Alias for
                             `--lpt-device <device>`.
 
 ESCAPE HATCHES
