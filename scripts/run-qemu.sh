@@ -791,7 +791,7 @@ esac
 # --- savedata cwd handling --------------------------------------------------
 # The QEMU machine reads savedata/<game>.* relative to cwd. Choose cwd
 # accordingly. --no-savedata exports the C-side read-only signal and keeps
-# the empty throwaway cwd as a belt-and-suspenders guard so any future
+# the empty throwaway cwd as a second guard so any
 # cwd-relative seed probe cannot observe the repo savedata/ directory. Apply
 # the same cwd isolation when the env var was set by the caller.
 if [[ -n "${P2K_NO_SAVEDATA:-}" && "${P2K_NO_SAVEDATA:-}" != "0" ]]; then

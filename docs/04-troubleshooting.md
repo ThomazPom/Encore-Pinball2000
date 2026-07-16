@@ -67,7 +67,7 @@ scripts/run-qemu.sh --dcs-engine adsp -vv
 ```
 
 `pb2kslib` needs `<roms>/<game>_sound.bin` unless overridden. Native ADSP needs
-U109/U110 and sound flash. `--no-audio` disables output deliberately.
+U109/U110 and sound flash. `--no-audio` disables output.
 
 Open the coin door with `F4` before testing volume buttons. Insert a credit with
 `F10` to trigger a game sound. Details: [DCS sound](25-dcs-sound.md).
