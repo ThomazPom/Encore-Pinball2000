@@ -1,72 +1,12 @@
 /*
- * pinball2000: back-to-back IRQ0 replay (P2K_TCG_CLKINT_HOTLOOP).
+ * Pinball 2000 IRQ0 pacing.
  *
- * HOTLOOP promptly reasserts IRQ0 after the guest consumes it, while avoiding
- * duplicate pending or in-service requests. The target is real-time XINU clock
- * progress with measurable delivery and bounded inter-arrival gaps.
- *
- * Representative PIC observations during development:
- *
- *   pic0: irr=01 imr=60 isr=00     325 samples  (81.3 %)
- *   pic0: irr=01 imr=ff isr=00      52           (13.0 %) [inside disable() window]
- *   pic0: irr=00 imr=60 isr=00      10            (2.5 %)
- *   pic0: irr=01 imr=60 isr=01       7            (1.8 %)
- *   pic0: irr=00 imr=ff isr=00       5            (1.3 %)
- *   pic0: irr=00 imr=60 isr=01       1            (0.3 %)
- *
- * -> IRQ0 in the master PIC's IRR is asserted ~96 % of the time.
- *    ELCR=00 (edge-triggered), so this is NOT a level-high line but
- *    something that re-asserts IRQ0 promptly whenever it has just
- *    been consumed.
- * -> Inter-arrival of "Servicing hardware INT=0x20" events is
- *    tight (p50=p99=20 log-blocks, max=60) -- no bursts (max is
- *    only 3x the minimum, unlike Encore's strict path where max is
- *    62x p50).
- *
- * Mechanism this mode implements
- * ------------------------------
- * At every TB boundary (via p2k_tcg_cflags_override, same hook the
- * direct-clkint fast mode already uses), we look at the master
- * i8259:
- *
- *   if IRQ0 has been fully consumed (IRR bit 0 clear AND ISR bit 0
- *   clear), AND the guest is willing to take an IRQ (IF=1, IMR bit
- *   0 clear, no interrupt-shadow, not V86, not currently in clkint):
- *
- *     -> set master IRR bit 0
- *     -> mark last_irr low->high edge
- *     -> cpu_interrupt(CPU_INTERRUPT_HARD)
- *
- * "irr=01 nearly always" state: raise IRQ0 as soon as the previous
- * one has finished, and never before. There is no burst, no
- * multi-tick catch-up, no synthetic ISR-bit-forcing -- one IRQ0 in
- * flight at a time, back-to-back. If the guest's clkint handler
- * takes wall time T to run, this mode delivers ~1/T IRQ0 per second,
- * which is exactly the property that lets a real 486 board on the
- * cabinet reach the 4 kHz nominal PIT rate: on that hardware the
- * handler takes ~250 us, so back-to-back replay = 4 kHz.
- *
- * We deliberately do NOT touch the natural i8254 path. In this mode
- * the stock i8254 keeps ticking at 4 kHz and setting IRR too --
- * that's harmless because our own raise is idempotent (i8259 IRR is
- * a bit set, not a counter). The important effect is that after each
- * INTACK+EOI, our next TB-boundary check re-asserts IRR immediately
- * instead of waiting on the next PIT edge callback (which is the
- * source of Encore's natural coalescing).
- *
- * What this mode does NOT try to do (compared to direct-clkint):
- *   - it does NOT bypass the IDT[0x20] gate or upstream's interrupt
- *     entry path -- delivery uses the standard x86 CPU_INTERRUPT_HARD
- *     -> pic_read_irq -> do_interrupt_x86_hardirq flow
- *   - it does NOT synthesise multi-tick bursts to catch up on wall
- *     time (that is what upsets a real board's LPT byte cadence,
- *     per the user's cabinet observations)
- *   - it does NOT install a QEMUTimer at PIT rate; the natural
- *     i8254 remains the primary source, this hook just closes the
- *     coalescing gap
- *
- * Off by default; enable with P2K_TCG_CLKINT_HOTLOOP=1. Independent
- * from P2K_TCG_DIRECT_CLKINT.
+ * HOTLOOP replaces PIT ports 0x40-0x43 with the game's fixed-clock control
+ * stub and pulses the normal i8259 IRQ0 input from a host-clock timer.  The
+ * requested delay adapts to callback overhead so delivered guest clock ticks
+ * remain at the selected speed without catch-up bursts.  Setting
+ * P2K_HOTLOOP_HOST_TIMER=0 retains the older TB-boundary implementation for
+ * controlled regression tests.  Strict mode continues to use QEMU's i8254.
  */
 
 #include "qemu/osdep.h"
@@ -77,6 +17,7 @@
 #include "hw/core/cpu.h"
 #include "hw/intc/i8259.h"
 #include "hw/isa/i8259_internal.h"
+#include "hw/irq.h"
 #include "system/system.h"
 #include "target/i386/cpu.h"
 
@@ -85,6 +26,13 @@
 static int s_hotloop_state = -1;  /* -1 undecided, 0 off, 1 on */
 static int64_t s_hotloop_min_gap_ns = -1;  /* -1 uninit, 0 = no throttle, >0 = min ns between raises */
 static int64_t s_hotloop_last_raise_ns;
+static QEMUTimer *s_hotloop_host_timer;
+static qemu_irq s_hotloop_irq0;
+static int s_hotloop_pit_programmed;
+static int s_hotloop_host_timer_state = -1;
+static double s_hotloop_host_period_us;
+static int64_t s_hotloop_host_sample_ns;
+static uint64_t s_hotloop_host_sample_clkints;
 
 /* Small counters surfaced through the audit panel for honest reporting. */
 static uint64_t s_hotloop_reraises;
@@ -229,6 +177,136 @@ bool p2k_clkint_hotloop_no_pit(void)
     return s_no_pit_state == 1 && p2k_hotloop_env_on();
 }
 
+/* The machine's paced IRQ0 source.  Use the host clock and pulse the normal
+ * i8259 input line; the PIT output level gates delivery.  This keeps timing
+ * independent of translated-block boundaries while preserving the complete
+ * QEMU IRQ path.  The former TB-polling implementation remains available for
+ * controlled regression testing with P2K_HOTLOOP_HOST_TIMER=0. */
+static bool p2k_hotloop_host_timer_enabled(void)
+{
+    if (unlikely(s_hotloop_host_timer_state < 0)) {
+        const char *v = getenv("P2K_HOTLOOP_HOST_TIMER");
+        s_hotloop_host_timer_state = (!v || v[0] != '0') ? 1 : 0;
+    }
+    return s_hotloop_host_timer_state == 1;
+}
+
+bool p2k_clkint_hotloop_uses_host_timer(void)
+{
+    return p2k_hotloop_env_on() && p2k_hotloop_host_timer_enabled();
+}
+
+static int64_t p2k_hotloop_host_nominal_period_us(void)
+{
+    double percent = p2k_speed_target_percent();
+    int64_t period = (int64_t)(25000.0 / percent + 0.5);
+    return MAX(period, 1);
+}
+
+static int64_t p2k_hotloop_host_current_period_us(void)
+{
+    if (s_hotloop_host_period_us == 0.0) {
+        s_hotloop_host_period_us = p2k_hotloop_host_nominal_period_us();
+    }
+    return MAX((int64_t)(s_hotloop_host_period_us + 0.5), 1);
+}
+
+static void p2k_hotloop_host_adapt(int64_t now_ns)
+{
+    uint64_t clkints = p2k_audit_clkint_entered_count();
+
+    if (!s_hotloop_adaptive) {
+        return;
+    }
+    if (!s_hotloop_host_sample_ns) {
+        s_hotloop_host_sample_ns = now_ns;
+        s_hotloop_host_sample_clkints = clkints;
+        return;
+    }
+
+    int64_t elapsed_ns = now_ns - s_hotloop_host_sample_ns;
+    if (elapsed_ns < s_pi_period_ns) {
+        return;
+    }
+
+    double measured_hz = (double)(clkints - s_hotloop_host_sample_clkints) *
+                         1e9 / (double)elapsed_ns;
+    double target_hz = 4003.97 * p2k_speed_target_percent() / 100.0;
+    if (measured_hz > 1.0) {
+        double nominal = p2k_hotloop_host_nominal_period_us();
+        s_hotloop_host_period_us *= measured_hz / target_hz;
+        s_hotloop_host_period_us = CLAMP(s_hotloop_host_period_us,
+                                         nominal * 0.5, nominal * 2.0);
+        s_hotloop_min_gap_ns = p2k_hotloop_host_current_period_us() * 1000;
+        s_pi_last_measured_hz = measured_hz;
+    }
+    s_hotloop_host_sample_ns = now_ns;
+    s_hotloop_host_sample_clkints = clkints;
+}
+
+static void p2k_hotloop_host_timer_cb(void *opaque)
+{
+    int64_t now_us = qemu_clock_get_us(QEMU_CLOCK_HOST);
+
+    p2k_hotloop_host_adapt(now_us * 1000);
+    timer_mod(s_hotloop_host_timer,
+              now_us + p2k_hotloop_host_current_period_us());
+    if (!p2k_hotloop_env_on() || !s_hotloop_irq0 ||
+        !s_hotloop_pit_programmed) {
+        return;
+    }
+
+    p2k_timing_audit_note_irq0_raised();
+    qemu_irq_pulse(s_hotloop_irq0);
+    s_hotloop_reraises++;
+
+    int64_t now_ns = now_us * 1000;
+    if (s_hotloop_last_raise_ns && now_ns > s_hotloop_last_raise_ns) {
+        int64_t gap_ns = now_ns - s_hotloop_last_raise_ns;
+        s_jitter_min_ns = MIN(s_jitter_min_ns, gap_ns);
+        s_jitter_max_ns = MAX(s_jitter_max_ns, gap_ns);
+        s_jitter_sum_ns += gap_ns;
+        uint64_t gap_us = gap_ns / 1000;
+        s_jitter_sum_sq_us += gap_us * gap_us;
+        s_jitter_count++;
+    }
+    s_hotloop_last_raise_ns = now_ns;
+}
+
+void p2k_clkint_hotloop_connect_irq(qemu_irq irq0)
+{
+    s_hotloop_irq0 = irq0;
+    if (p2k_hotloop_host_timer_enabled() && !s_hotloop_host_timer) {
+        s_hotloop_host_timer = timer_new_us(QEMU_CLOCK_HOST,
+                                            p2k_hotloop_host_timer_cb, NULL);
+        timer_mod(s_hotloop_host_timer,
+                  qemu_clock_get_us(QEMU_CLOCK_HOST) +
+                  p2k_hotloop_host_current_period_us());
+    }
+}
+
+bool p2k_clkint_hotloop_uses_pit_stub(void)
+{
+    return p2k_clkint_hotloop_uses_host_timer();
+}
+
+void p2k_clkint_hotloop_pit_write(hwaddr addr, uint64_t value)
+{
+    if (addr != 0) {
+        return;
+    }
+
+    /* The guest writes channel 0 low byte then high byte.  A value of one
+     * enables the fixed clock source; any channel-0 write while enabled
+     * disables it first.  Thus the normal divisor sequence finishes enabled
+     * without retaining a second PIT waveform. */
+    if (s_hotloop_pit_programmed) {
+        s_hotloop_pit_programmed = 0;
+    } else if ((value & 0xff) == 1) {
+        s_hotloop_pit_programmed = 1;
+    }
+}
+
 /* Priming removed 2026-07-10. Empirical wedge study proved priming
  * does not fix the combo-mode disable()/enable() race (7/8 wedged
  * with PRIME_N=800 vs 0/23 wedged with NO_PIT + no prime). NO_PIT
@@ -282,6 +360,9 @@ static void p2k_hotloop_adaptive_step(int64_t now_ns)
 void p2k_clkint_hotloop_maybe_raise(CPUState *cs)
 {
     if (likely(!p2k_hotloop_env_on())) {
+        return;
+    }
+    if (p2k_hotloop_host_timer_enabled()) {
         return;
     }
     if (!cs || !isa_pic) {
