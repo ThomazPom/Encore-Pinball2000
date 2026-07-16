@@ -1,8 +1,7 @@
 # 06 — XINA and its serial console
 
-XINA is the Williams runtime that starts after the PRISM loader. It contains the
-XINU scheduler, device services, service menus and the game. Encore runs this
-original guest software; it does not replace its scheduler or processes.
+XINA is the Williams runtime that starts after the PRISM loader. Its XINU
+scheduler, device services, service menus and game execute as guest code.
 
 The boot log identifies both layers, for example:
 
@@ -43,8 +42,8 @@ Common useful commands observed in supported builds are:
 | `pdb` | Show power-driver-board commands. |
 | `sleep 10` | Sleep for ten guest seconds; useful for measuring guest clock speed. |
 
-Do not assume a command or subcommand exists until `help` on the selected update
-shows it.
+> [!TIP]
+> Run `help` on the selected update before relying on a command or subcommand.
 
 ## What Encore supplies to XINA
 
