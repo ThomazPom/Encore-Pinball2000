@@ -16,7 +16,18 @@ Writes use a temporary file followed by `rename()` so an interrupted save does
 not replace the last complete file. A hard kill cannot run the exit notifiers,
 so stop Encore normally whenever possible.
 
-## Fresh run
+## Start fresh and save the result
+
+```sh
+scripts/run-qemu.sh --fresh
+```
+
+This ignores the existing files for the selected game. BAR2 starts empty,
+BAR3 starts erased before the selected update is installed, and the serial
+EEPROM uses its built-in defaults. A clean exit replaces all three savedata
+files with the newly initialized state.
+
+## Run without loading or saving
 
 ```sh
 scripts/run-qemu.sh --no-savedata
@@ -26,8 +37,7 @@ This sets `P2K_NO_SAVEDATA=1`. No savedata is loaded or written, and volatile
 devices start from their compiled reset contents. It is useful for repeatable
 tests but is not the normal playing configuration.
 
-To reset one game permanently, stop Encore and remove that game's three files.
-The next normal run will create new state as the guest initializes the devices.
+`--fresh` and `--no-savedata` are mutually exclusive.
 
 ## Ownership
 
