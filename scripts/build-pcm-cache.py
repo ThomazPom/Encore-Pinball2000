@@ -3,10 +3,12 @@
 
 import argparse
 import os
+import re
 import shutil
 import struct
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 
 
@@ -91,6 +93,29 @@ def main():
     work = Path(tempfile.mkdtemp(prefix="pb2kslib-adsp-",
                                  dir=args.cache_root))
     processes = []
+    progress = [0] * workers
+    progress_lock = threading.Lock()
+    last_percent = [-1]
+
+    def drain_output(pipe, log, worker):
+        pattern = re.compile(rb"dcs-cache-progress: ([0-9]+)/([0-9]+)")
+        for line in iter(pipe.readline, b""):
+            log.write(line)
+            match = pattern.search(line)
+            if not match:
+                continue
+            with progress_lock:
+                progress[worker] = int(match.group(1))
+                done = sum(progress)
+                total = total_ids
+                if total:
+                    percent = min(100, done * 100 // total)
+                    if percent != last_percent[0]:
+                        last_percent[0] = percent
+                        print(f"[dcs-cache] generating PCM: {percent:3d}% "
+                              f"({done}/{total} IDs)", flush=True)
+        pipe.close()
+
     try:
         for worker in range(workers):
             first = range_first + (total_ids * worker) // workers
@@ -120,12 +145,18 @@ def main():
             print(f"[dcs-cache] worker {worker + 1}/{workers}: "
                   f"IDs {first:#05x}..{last:#05x}", flush=True)
             process = subprocess.Popen(command, cwd=cwd, env=env,
-                                       stdout=log, stderr=subprocess.STDOUT)
-            processes.append((process, log, root, worker))
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.STDOUT)
+            reader = threading.Thread(target=drain_output,
+                                      args=(process.stdout, log, worker),
+                                      daemon=True)
+            reader.start()
+            processes.append((process, reader, log, root, worker))
 
         failures = []
-        for process, log, _, worker in processes:
+        for process, reader, log, _, worker in processes:
             status = process.wait()
+            reader.join()
             log.close()
             if status:
                 failures.append((worker, status))
@@ -137,13 +168,14 @@ def main():
             raise RuntimeError(f"cache workers failed; logs: {logs}")
 
         parts = [root / args.game / f"{bundle}.pcm.pb2k"
-                 for _, _, root, _ in processes]
+                 for _, _, _, root, _ in processes]
         count = merge(parts, output)
         print(f"[dcs-cache] merged {count} tracks: {output}", flush=True)
     except Exception:
-        for process, log, _, _ in processes:
+        for process, reader, log, _, _ in processes:
             if process.poll() is None:
                 process.terminate()
+            reader.join(timeout=1)
             if not log.closed:
                 log.close()
         print(f"[dcs-cache] retained worker artifacts: {work}", flush=True)

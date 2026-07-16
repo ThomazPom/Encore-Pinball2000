@@ -38,9 +38,10 @@ lazy loading is the default.
 `pb2kslib-adsp` boots the native DSP once for each game/update combination,
 submits the DCS track IDs, and stores every valid decoded track as 44.1 kHz PCM
 under `~/.cache/encore-pb2k/pb2kslib-adsp/`. The game window shows generation
-progress when using one worker. By default, four isolated headless QEMU/DSP
+progress when using one worker. By default, six isolated headless QEMU/DSP
 workers split the ID range, merge their PCM atomically, and then launch the
-game. Later launches load that cache directly and do not run the DSP.
+game. Parallel generation reports its aggregate percentage in the terminal.
+Later launches load that cache directly and do not run the DSP.
 Use `--clear-pb2kslib-cache` to regenerate it, including after replacing an
 explicit `--dcs-sound-flash` file.
 
