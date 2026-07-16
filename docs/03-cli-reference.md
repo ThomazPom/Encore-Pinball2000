@@ -28,10 +28,15 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--audio` | `auto` \| `none` \| QEMU audio driver | `auto` | Autodetects the first QEMU-supported/host-available backend in order: `pa`, `alsa`, `sdl`, `oss`, `sndio`, `dbus`; falls back to `none` with a warning. Explicit backends are validated against QEMU `-audio help`. | `scripts/run-qemu.sh --audio alsa` |
 | `--no-audio` | — | off | Forces DCS audio off; overrides `--audio`. | `scripts/run-qemu.sh --no-audio` |
 | `--speed-target` | percent | `100` | Deliberate XINU game-clock speed from 25 through 300. Scales PIT and/or HOTLOOP according to timing mode. | `scripts/run-qemu.sh --speed-target 75` |
+| `--strict` | — | off | Disables HOTLOOP and uses the natural i8254/i8259 IRQ0 path. Intended for diagnostic comparison. | `scripts/run-qemu.sh --strict` |
+| `--with-pit` | — | off | Runs adaptive HOTLOOP together with the natural PIT. Retained for controlled timing tests. | `scripts/run-qemu.sh --with-pit` |
+| `--bench` | — | off | Runs the graphical steady-state self-diagnostic and reports guest clock, IRQ0, jitter, LPT rate and PDB05 gaps. | `scripts/run-qemu.sh --bench` |
 
 > [!TIP]
 > Use `--audio auto` to let the wrapper choose the first backend supported by both the QEMU build and host checks; use `--audio none` to run silent without the auto-detect warning, or `--sound-loading preload` to avoid first-trigger audio hitches.
 | `--pb2kslib` | path | `<roms>/<game>_sound.bin` lookup in machine | Exports `P2K_PB2KSLIB` to override the pb2kslib container. | `scripts/run-qemu.sh --pb2kslib ./roms/swe1_sound.bin` |
+| `--dcs-engine` | `pb2kslib` \| `adsp` \| `adsp-thread` | `pb2kslib` | Selects sample playback, synchronous native ADSP, or the condition-driven ADSP mailbox worker. | `scripts/run-qemu.sh --dcs-engine adsp` |
+| `--dcs-sound-flash` | path | auto from selected update or ROM directory | Selects the 1 MiB sound-flash image used by a native ADSP engine. | `scripts/run-qemu.sh --dcs-engine adsp --dcs-sound-flash ./roms/swe1_28f800.rom` |
 | `--sound-loading` | `lazy` \| `preload` | `lazy` | Lazy decodes samples on first use; preload exports `P2K_DCS_PRELOAD=1`. | `scripts/run-qemu.sh --sound-loading preload` |
 | `--serial` | — | off | Interactive COM1 in current terminal via temporary TCP UART plus foreground `nc`; requires `nc`; mutually exclusive with `--serial-tcp`, `--uart-tcp`, `--headless`. | `scripts/run-qemu.sh --serial` |
 | `--uart-quiet` | — | off | Silences COM1/UART stderr mirror and uses `-serial null` in headless mode. Wins over `-v`. | `scripts/run-qemu.sh --uart-quiet` |

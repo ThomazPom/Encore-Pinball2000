@@ -70,7 +70,9 @@ The wrapper translates friendly options into QEMU flags. When you run it on a de
 [run-qemu] ... qemu-system-i386 -M pinball2000,game=swe1,roms-dir=... -no-reboot -m 16 -display sdl,...
 ```
 
-The QEMU window is your playfield. Keys: `F1` quit, `F2` Y-flip toggle, `F3` screenshot, `F4` coin door, `F5`/`Enter` menu select, `F7`/`F8` flippers, `F10`/`C` coin, `Space`/`S` start. See [41-cli-keyboard-guide.md](docs/41-cli-keyboard-guide.md) for the full key table.
+The QEMU window is your playfield. Use `Space` to start, `F10` to insert a
+credit and `F4` to open the coin door. See
+[41 — Desktop controls](41-cli-keyboard-guide.md) for the complete table.
 
 ## Common tasks
 
@@ -87,6 +89,9 @@ The QEMU window is your playfield. Keys: `F1` quit, `F2` Y-flip toggle, `F3` scr
 | Silence audio | `scripts/run-qemu.sh --game swe1 --no-audio` |
 | Timing self-diagnostic | `scripts/run-qemu.sh --bench --game swe1 --update 0200` |
 | Deliberate 75% game speed | `scripts/run-qemu.sh --speed-target 75` |
+| Native ADSP sound | `scripts/run-qemu.sh --dcs-engine adsp` |
+| Threaded ADSP experiment | `scripts/run-qemu.sh --dcs-engine adsp-thread` |
+| Preload sample audio | `scripts/run-qemu.sh --dcs-engine pb2kslib --sound-loading preload` |
 
 > [!TIP]
 > Use `--update none` for museum/base mode or `--serial` for interactive serial in your terminal.
