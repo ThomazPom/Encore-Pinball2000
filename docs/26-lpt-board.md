@@ -37,9 +37,8 @@ The report includes:
 - LPT DATA writes per second;
 - PDB05 median, p95, p99 and worst gaps.
 
-Use steady-state values, not boot totals. The guest clock should be near the
-requested `--speed-target`, and the physical-board gap budget should be judged
-from the PDB05 tail values.
+Use steady-state values, not boot totals. Compare the guest clock with the
+requested `--speed-target`; compare PDB05 tail gaps with physical-port traces.
 
 `--lpt-trace <file>` records register accesses for protocol diagnosis. Timing
 audit panels do not count the direct `ppdev` early-return path, so physical-port
@@ -47,13 +46,13 @@ validation must use the trace and external observation.
 
 ## Real cabinet
 
-Real passthrough exists but still requires physical validation. Follow
-[46 — Real LPT passthrough](46-real-lpt-passthrough.md) and [47 — Recommended
-configuration](12-cpu-and-timers.md) before powering a playfield.
+Real passthrough exists but still requires physical validation.
 
-Do not add delays or change the protocol based on an emulator comparison. A
-change needs a reproducible Encore failure or a physical trace showing the
-missing behavior.
+> [!WARNING]
+> Start with playfield power disabled and capture real-port traffic before
+> enabling coils or lamps.
+
+Details: [real LPT passthrough](46-real-lpt-passthrough.md).
 
 ---
 

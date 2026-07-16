@@ -15,14 +15,14 @@ the Williams loader and game normally from that point.
 5. Set EIP to `0x801d9`.
 6. Resume QEMU's normal CPU execution.
 
-The entry deliberately skips BIOS reset, option-ROM enumeration and the
-real-mode transition. Adding those stages is not required for Encore's goal.
+This entry skips BIOS reset, option-ROM enumeration and the real-mode
+transition.
 
 ## What happens next
 
-The guest validates update boot data when present, starts XINU/XINA, initializes
-the display, DCS and cabinet services, then reaches the serial prompt and attract
-mode. QEMU owns subsequent instruction execution and interrupt delivery.
+The Williams loader continues from this entry, validates update data when
+present, and starts XINU/XINA. QEMU owns subsequent instruction execution and
+interrupt delivery.
 
 ## Related compatibility behavior
 
@@ -31,9 +31,8 @@ mode. QEMU owns subsequent instruction execution and interrupt delivery.
   one-byte correction before heap initialization.
 - Only `--update none` enables base-ROM DCS probe-cell maintenance.
 
-See [10 — Architecture](10-architecture.md), [13 — Memory map](13-memory-map.md),
-[15 — ROM loading](15-rom-loading.md), and
-[30 — Compatibility mechanisms](30-compatibility-support.md).
+Details: [architecture](10-architecture.md), [memory map](13-memory-map.md),
+and [compatibility support](30-compatibility-support.md).
 
 ---
 

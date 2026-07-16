@@ -28,8 +28,8 @@ i8254 PIT, then installs Encore devices. The reset callback in `qemu/p2k-boot.c`
 copies the PRISM option-ROM entry code, constructs the required protected-mode
 state and begins execution at the Williams entry point.
 
-Encore deliberately skips BIOS POST and real-mode option-ROM discovery. That is
-the project boot design, not unfinished work.
+Encore starts directly at the protected-mode PRISM entry, skipping BIOS POST
+and real-mode option-ROM discovery.
 
 ## Device ownership
 
@@ -53,16 +53,16 @@ the project boot design, not unfinished work.
 - Adaptive HOTLOOP raises IRQ0 through QEMU's PIC path; it does not patch XINU
   scheduler state.
 
-## Accepted compatibility behavior
+## Compatibility support
 
-The fixed PCI responder is the intended cabinet topology. A signature-gated
-memory correction supports firmware that reports only 4 MiB. `--update none`
-enables a narrowly gated DCS probe-cell mechanism so base software can use
-sound. These are current design choices; see
-[30 — Compatibility mechanisms](30-compatibility-support.md).
+The fixed PCI responder supplies the board topology read by the software. A
+signature-gated correction changes the known 4 MiB `mem_detect` result to the
+usable memory size. In base-ROM mode, a probe-cell helper supplies the staged
+values used during DCS detection.
 
-For exact module ownership see [`qemu/README.md`](../qemu/README.md). For guest
-addresses see [13 — Memory map](13-memory-map.md).
+Details: [compatibility support](30-compatibility-support.md),
+[`qemu/` source map](../qemu/README.md), and
+[memory map](13-memory-map.md).
 
 ---
 
