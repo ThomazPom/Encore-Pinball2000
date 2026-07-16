@@ -82,7 +82,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 
 | Spec | Meaning | Example |
 |---|---|---|
-| `auto` | Default. Leave `-M update=` unset; the QEMU machine auto-discovers in `./updates` and falls back to base ROMs. | `scripts/run-qemu.sh --update auto` |
+| `auto` | Default. The machine discovers the newest available update and installs it when saved update flash differs. | `scripts/run-qemu.sh --update auto` |
 | `latest` | Wrapper resolves the highest version directory for the selected game. | `scripts/run-qemu.sh --game rfm --update latest` |
 | `none` | Base-ROM mode. Exports `P2K_NO_AUTO_UPDATE=1`; no update bundle is staged. | `scripts/run-qemu.sh --update none --no-savedata` |
 | `0210`, `210`, `2.10`, `2.1` | Short version token resolved against `updates/pin2000_<gid>_<vvvv>_*/<gid>/`. | `scripts/run-qemu.sh --game swe1 --update 2.10` |
