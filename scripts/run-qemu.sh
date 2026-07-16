@@ -826,8 +826,12 @@ fi
 if [[ "${P2K_DCS_ENGINE:-adsp-thread}" == "pb2kslib-adsp" &&
       "$PB2K_ADSP_CACHE_WORKERS" -gt 1 &&
       -z "${P2K_PB2K_ADSP_WORKER:-}" ]]; then
-  if [[ -n "$UPDATE_DIR_ABS" ]]; then
-    __cache_bundle="$(basename "$(dirname "$UPDATE_DIR_ABS")")"
+  __cache_update="$UPDATE_DIR_ABS"
+  if [[ -z "$__cache_update" && "$UPDATE_TOKEN" != "none" ]]; then
+    __cache_update="$(resolve_update_token latest || true)"
+  fi
+  if [[ -n "$__cache_update" ]]; then
+    __cache_bundle="$(basename "$(dirname "$__cache_update")")"
   else
     __cache_bundle=base
   fi
@@ -841,7 +845,7 @@ if [[ "${P2K_DCS_ENGINE:-adsp-thread}" == "pb2kslib-adsp" &&
       --cache-root "$PB2K_ADSP_CACHE_DIR"
       --workers "$PB2K_ADSP_CACHE_WORKERS"
     )
-    [[ -n "$UPDATE_DIR_ABS" ]] && __cache_args+=(--update "$UPDATE_DIR_ABS")
+    [[ -n "$__cache_update" ]] && __cache_args+=(--update "$__cache_update")
     python3 "${__cache_args[@]}"
   fi
 fi

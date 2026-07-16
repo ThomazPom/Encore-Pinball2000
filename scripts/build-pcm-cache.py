@@ -167,8 +167,15 @@ def main():
                              for i, _ in failures)
             raise RuntimeError(f"cache workers failed; logs: {logs}")
 
-        parts = [root / args.game / f"{bundle}.pcm.pb2k"
-                 for _, _, _, root, _ in processes]
+        produced = []
+        for _, _, _, root, _ in processes:
+            produced.extend((root / args.game).glob("*.pcm.pb2k"))
+        names = {part.name for part in produced}
+        if len(names) > 1:
+            raise RuntimeError("workers selected different update bundles")
+        if names:
+            output = Path(args.cache_root) / args.game / names.pop()
+        parts = produced
         count = merge(parts, output)
         print(f"[dcs-cache] merged {count} tracks: {output}", flush=True)
     except Exception:
