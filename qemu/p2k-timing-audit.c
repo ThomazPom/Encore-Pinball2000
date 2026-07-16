@@ -47,6 +47,7 @@
 #include "qemu/error-report.h"
 #include "qemu/timer.h"
 #include "qemu/notify.h"
+#include <math.h>
 #include <stdlib.h>
 #include "system/cpu-timers.h"
 #include "system/system.h"
@@ -87,6 +88,15 @@ static uint64_t p2k_audit_irq0_raised;
 static uint64_t p2k_audit_clkint_entered;
 static uint64_t p2k_audit_eoi_seen;
 static uint32_t p2k_audit_clkint_pc;
+
+/* Handler-entry cadence, independent of which source raised IRQ0. This fills
+ * the same steady timing fields for strict, HOTLOOP, and HOTLOOP+PIT. */
+static int64_t  p2k_clkint_entry_last_wall_ns;
+static uint64_t p2k_clkint_entry_n;
+static uint64_t p2k_clkint_entry_sum_ns;
+static long double p2k_clkint_entry_sum_sq_us;
+static int64_t  p2k_clkint_entry_min_ns = INT64_MAX;
+static int64_t  p2k_clkint_entry_max_ns;
 
 /* Raise -> clkint latency tracking.
  *
@@ -340,6 +350,22 @@ void p2k_timing_audit_note_pic_eoi(bool master, int irq, uint8_t ocw2)
 void p2k_timing_audit_note_clkint_enter(uint64_t eip)
 {
     int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    int64_t now_wall = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+
+    if (p2k_audit_arm_wall_ns && p2k_clkint_entry_last_wall_ns &&
+        now_wall >= p2k_audit_arm_wall_ns + 30000000000LL) {
+        int64_t gap_ns = now_wall - p2k_clkint_entry_last_wall_ns;
+        if (gap_ns > 0) {
+            uint64_t gap_us = gap_ns / 1000;
+            p2k_clkint_entry_n++;
+            p2k_clkint_entry_sum_ns += gap_ns;
+            p2k_clkint_entry_sum_sq_us +=
+                (long double)gap_us * (long double)gap_us;
+            p2k_clkint_entry_min_ns = MIN(p2k_clkint_entry_min_ns, gap_ns);
+            p2k_clkint_entry_max_ns = MAX(p2k_clkint_entry_max_ns, gap_ns);
+        }
+    }
+    p2k_clkint_entry_last_wall_ns = now_wall;
 
     /* intack -> entry dwell (CPU frame-push + CS:EIP load + first
      * instruction). Only valid when we observed the corresponding
@@ -813,6 +839,22 @@ static void p2k_audit_emit(const char *tag)
                 tag, p50_us, p95_us, p99_us, pmax_us,
                 p2k_audit_lat_max_total, p2k_audit_lat_n,
                 (unsigned long long)p2k_audit_pdb05_count);
+
+    uint64_t entry_mean_ns = p2k_clkint_entry_n
+        ? p2k_clkint_entry_sum_ns / p2k_clkint_entry_n : 0;
+    long double entry_mean_us = (long double)entry_mean_ns / 1000.0L;
+    long double entry_variance = p2k_clkint_entry_n
+        ? p2k_clkint_entry_sum_sq_us / p2k_clkint_entry_n -
+          entry_mean_us * entry_mean_us : 0.0L;
+    if (entry_variance < 0.0L) entry_variance = 0.0L;
+    info_report("p2k-clkint-entry %s | n=%llu mean_us=%llu min_us=%lld "
+                "max_us=%lld stddev_us=%llu",
+                tag, (unsigned long long)p2k_clkint_entry_n,
+                (unsigned long long)(entry_mean_ns / 1000),
+                (long long)(p2k_clkint_entry_n ?
+                            p2k_clkint_entry_min_ns / 1000 : 0),
+                (long long)(p2k_clkint_entry_max_ns / 1000),
+                (unsigned long long)sqrtl(entry_variance));
 
     struct { const char *name; P2KDwell *d; bool reset_after; } pdb05_dwells[] = {
         { "pdb05_wall_delta",  &p2k_dw_pdb05_wall_delta,  true  },
