@@ -57,6 +57,7 @@
 #define PB2K_MAX_ENTRIES   4096
 #define SAMPLE_CACHE_SIZE  0x1000
 #define PB2K_PCM_MAGIC     0x314d4350u /* "PCM1" */
+#define PB2K_ADSP_PCM_GAIN 6
 
 typedef struct {
     char     name[33];
@@ -410,17 +411,27 @@ static Sample *decode_pcm_to_s16(const uint8_t *data, size_t size,
     }
     size_t frames = (src_frames * DCS_OUT_RATE + rate - 1) / rate;
     int16_t *pcm = g_new(int16_t, frames);
+    int32_t peak = 0;
+    int64_t squares = 0;
     for (size_t i = 0; i < frames; i++) {
         double pos = (double)i * rate / DCS_OUT_RATE;
         size_t p0 = MIN((size_t)pos, src_frames - 1);
         size_t p1 = MIN(p0 + 1, src_frames - 1);
         double frac = pos - p0;
-        pcm[i] = (int16_t)((1.0 - frac) * src[p0] + frac * src[p1]);
+        int32_t value = (int32_t)(((1.0 - frac) * src[p0] +
+                                   frac * src[p1]) * PB2K_ADSP_PCM_GAIN);
+        value = CLAMP(value, -32768, 32767);
+        pcm[i] = value;
+        int32_t magnitude = value == INT16_MIN ? 32768 : abs(value);
+        peak = MAX(peak, magnitude);
+        squares += (int64_t)value * value;
     }
     g_free(src);
     Sample *s = g_new0(Sample, 1);
     s->pcm = pcm;
     s->frames = frames;
+    s->peak = peak;
+    s->rms = isqrt64((uint64_t)(squares / (int64_t)frames));
     return s;
 }
 
