@@ -57,14 +57,8 @@ shows it.
 - an emulated or real LPT driver-board connection
 - COM1 transport for this console
 
-Encore does not patch `nulluser`, `prnull`, XINU queues or scheduler variables.
-Adaptive HOTLOOP changes IRQ0 delivery at the emulated-machine boundary.
-
-`--update none` is the one mode that enables the accepted base-ROM DCS probe
-compatibility mechanism. Normal update boots do not use it.
-
-For the boot sequence see [14 — Boot recipe](14-boot-recipe.md). For update
-files see [38 — Installing an update](15-rom-loading.md).
+Details: [boot path](14-boot-recipe.md) and
+[ROM/update loading](15-rom-loading.md).
 
 ---
 

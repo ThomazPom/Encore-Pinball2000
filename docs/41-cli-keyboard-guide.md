@@ -36,9 +36,8 @@ by game state or update.
 
 ## Credit pulses
 
-Each `F10` or `C` press queues a discrete coin-switch pulse. Rapid presses are
-serialized so the guest sees separate coin closures instead of one long held
-switch. This is also the easiest way to test DCS credit music.
+Each `F10` or `C` press starts a 60-scan coin-switch pulse. Pressing again while
+the pulse is active restarts that duration.
 
 ## Modes without desktop keys
 
@@ -50,8 +49,8 @@ switch. This is also the easiest way to test DCS credit music.
 For automated input, use the QEMU monitor `sendkey` command. For low-level
 state, press `F12` or enable `--lpt-trace`.
 
-See [26 — LPT board](26-lpt-board.md), [03 — CLI reference](03-cli-reference.md)
-and [04 — Troubleshooting](04-troubleshooting.md).
+Details: [LPT board](26-lpt-board.md) and
+[CLI reference](03-cli-reference.md).
 
 ---
 

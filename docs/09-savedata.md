@@ -26,7 +26,7 @@ This sets `P2K_NO_SAVEDATA=1`. No savedata is loaded or written, and volatile
 devices start from their compiled reset contents. It is useful for repeatable
 tests but is not the normal playing configuration.
 
-To reset one game permanently, stop Encore and remove that game's four files.
+To reset one game permanently, stop Encore and remove that game's three files.
 The next normal run will create new state as the guest initializes the devices.
 
 ## Ownership
