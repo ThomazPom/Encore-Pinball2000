@@ -59,12 +59,7 @@ void p2k_display_set_status(const char *status)
 
 void p2k_display_refresh_status(void)
 {
-    if (s_disp.con) {
-        /* Request a normal console repaint.  Calling gfx_update directly
-         * from the DCS generation callback can recurse through QEMU's
-         * display backend (and crashes the display=none backend). */
-        dpy_gfx_update(s_disp.con, 0, 0, SCREEN_W, SCREEN_H);
-    }
+    /* Status is painted by the display's normal refresh timer. */
 }
 
 /* Compact 5x7 font for the generation banner. */

@@ -38,6 +38,7 @@
 #include "qemu/timer.h"
 #include "qapi/error.h"
 #include "audio/audio.h"
+#include "system/cpus.h"
 
 #include "p2k-internal.h"
 
@@ -591,7 +592,6 @@ static bool generate_pcm_container(DcsAudio *a)
                      "Generating PB2KSlib %u/%u", command,
                      last_command);
             p2k_display_set_status(status);
-            p2k_display_refresh_status();
         }
 
         int16_t *pcm = NULL;
@@ -655,7 +655,6 @@ static bool generate_pcm_container(DcsAudio *a)
         warn_report("dcs-cache: generation failed; cache not replaced");
     }
     p2k_display_set_status("");
-    p2k_display_refresh_status();
     return ok;
 }
 
@@ -664,8 +663,20 @@ void p2k_dcs_audio_adsp_runtime_ready(void)
     DcsAudio *a = &s_dcs_audio;
     if (!a->adsp_cache_generator || a->generation_started) return;
     a->generation_started = true;
-    if (!generate_pcm_container(a) ||
+    if (a->voice)
+        AUD_set_active_out(a->voice, 0);
+
+    /* This callback originates in a guest MMIO write with the BQL held.
+     * Keep that vCPU stopped, but let QEMU's main loop repaint and process
+     * window events while the selected update's DSP builds the cache. */
+    bql_unlock();
+    bool generated = generate_pcm_container(a);
+    bql_lock();
+
+    if (!generated ||
         !pb2k_path_is_valid(a->generated_cache_path)) {
+        if (a->voice)
+            AUD_set_active_out(a->voice, 1);
         return;
     }
     pb2k_load(a, a->generated_cache_path);
