@@ -49,7 +49,7 @@ validation must use the trace and external observation.
 
 Real passthrough exists but still requires physical validation. Follow
 [46 — Real LPT passthrough](46-real-lpt-passthrough.md) and [47 — Recommended
-configuration](47-recommended-configuration.md) before powering a playfield.
+configuration](12-cpu-and-timers.md) before powering a playfield.
 
 Do not add delays or change the protocol based on an emulator comparison. A
 change needs a reproducible Encore failure or a physical trace showing the

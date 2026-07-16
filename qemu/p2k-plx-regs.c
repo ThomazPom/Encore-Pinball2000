@@ -285,7 +285,7 @@ static void seeprom_process_write(uint32_t cntrl_val)
  * cmd word writes.
  *
  * No host invention here — this is faithful to real silicon as
- * documented in the unicorn POC (i386/bar4.c → ported to bar.c). */
+ * used by the PLX serial protocol. */
 static struct {
     int     enable_prev, clock_prev;
     int     cmd_received, byte_complete;
@@ -440,7 +440,7 @@ static uint64_t p2k_plx_read(void *opaque, hwaddr addr, unsigned size)
          * "pci_watchdog_bone(): the watchdog has expired" Fatal when
          * bone()==1.  So bit 2 = 1 means "no watchdog action needed"
          * and bit 2 = 0 means "trigger Fatal".  Force bit2=1 and bit5=1
-         * (PLX ready). Replaces the unicorn RAM scribbler. */
+         * (PLX ready). Replaces the Encore RAM scribbler. */
         val = val | 0x04u | 0x20u;
         break;
     case 0x50:                          /* CNTRL */

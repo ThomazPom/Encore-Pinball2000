@@ -1,148 +1,0 @@
-[run-qemu] read-only savedata: P2K_NO_SAVEDATA=1; running in /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/.run-qemu.ia3y4M (no savedata/ subdir)
-[run-qemu] cwd=/mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/.run-qemu.ia3y4M
-[run-qemu] /home/encore/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386 -M pinball2000,game=rfm,roms-dir=/mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms -no-reboot -m 16 -display sdl,show-cursor=on -audio driver=pa 
-qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u100.rom (8388608 bytes -> chip0 16-bit lane)
-qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u101.rom (8388608 bytes -> chip1 16-bit lane)
-qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u102.rom (8388608 bytes -> chip0 16-bit lane)
-qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u103.rom (8388608 bytes -> chip1 16-bit lane)
-qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u104.rom (8388608 bytes -> chip0 16-bit lane)
-qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u105.rom (8388608 bytes -> chip1 16-bit lane)
-qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u106.rom (8388608 bytes -> chip0 16-bit lane)
-qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u107.rom (8388608 bytes -> chip1 16-bit lane)
-qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u109.bin (4194304 bytes -> chip0 16-bit lane)
-qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_u110.bin (4194304 bytes -> chip1 16-bit lane)
-qemu-system-i386: info: pinball2000: mapped p2k.optrom           @ 0x000c0000 (32 KiB)
-qemu-system-i386: info: pinball2000: loaded /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/bios.bin (65536 bytes -> BIOS)
-qemu-system-i386: info: pinball2000: mapped p2k.bios-shadow      @ 0x000f0000 (64 KiB, RW)
-qemu-system-i386: info: pinball2000: mapped p2k.bios-reset       @ 0xffff0000 (64 KiB)
-qemu-system-i386: info: pinball2000: mapped p2k.plx-bank0        @ 0x08000000 (16384 KiB)
-qemu-system-i386: info: pinball2000: mapped p2k.plx-bank1        @ 0x08800000 (16384 KiB)
-qemu-system-i386: info: pinball2000: mapped p2k.plx-bank2        @ 0x09800000 (16384 KiB)
-qemu-system-i386: info: pinball2000: mapped p2k.plx-bank3        @ 0x0a800000 (16384 KiB)
-qemu-system-i386: info: pinball2000: mapped p2k.dcs-cs3          @ 0x0b800000 (8192 KiB)
-qemu-system-i386: info: pinball2000: mapped p2k.dcs-rombar       @ 0x18000000 (8192 KiB)
-qemu-system-i386: info: pinball2000: mapped p2k.bar5-bank0       @ 0x14000000 (16384 KiB)
-qemu-system-i386: info: pinball2000: mapped p2k.bar5-bank1       @ 0x15000000 (16384 KiB)
-qemu-system-i386: info: pinball2000: mapped p2k.bar5-bank2       @ 0x16000000 (16384 KiB)
-qemu-system-i386: info: pinball2000: mapped p2k.bar5-bank3       @ 0x17000000 (16384 KiB)
-qemu-system-i386: info: pinball2000: mapped p2k.bank0-alias      @ 0xff000000 (4096 KiB)
-qemu-system-i386: info: pinball2000: Cyrix MediaGX TCG extensions ENABLED (0F 3B BB1_RESET, 0F 3C CPU_WRITE, 0F 3D CPU_READ implemented per databook §4.1.5/§4.1.6 + on-silicon scratchpad pipeline; 0F 36/37/39/3F log+UD; 0F 3A reserved for SSE4 dispatch). Stock i386 binaries are unaffected.
-qemu-system-i386: info: pinball2000: installed ISA stubs (kbd/0x61/cmos/post/com1) [UART->stderr] [UART<->chardev bidir]
-qemu-system-i386: info: pinball2000: SuperIO W83977EF (0x2E/0x2F), CC5530 (0xEA/0xEB) and port 0x61 toggler installed
-qemu-system-i386: info: pinball2000: installed Cyrix CCR at I/O 0x22/0x23 (GCR[0xb8] reset=0x0d -> GX_base_p=0x40000000, scratchpad=4KB; storage is mutable)
-qemu-system-i386: info: pinball2000: installed PCI cf8/cfc stub (MediaGX dev0, PRISM dev8, Cx5520 dev18)
-qemu-system-i386: info: pinball2000: P2K_NO_SAVEDATA set — running in read-only savedata mode (no seed, no save)
-qemu-system-i386: info: pinball2000: mapped p2k.bar2-sram        @ 0x11000000 (128 KiB SRAM + 16 MiB sentinel)
-qemu-system-i386: info: pinball2000: PLX BAR0 regs+SEEPROM @ 0x10000000 (256 bytes)
-qemu-system-i386: info: pinball2000: applying auto-discovered update /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/updates/pin2000_50070_0260_08082024_B_10000000/50070 (no savedata flash, no --update)
-qemu-system-i386: info: pinball2000: update bundle assembled into BAR3 (boot=32768 im=450604 game=2624512 syms=788992, total=0x3b762c)
-qemu-system-i386: info: pinball2000: DCS BAR4 MMIO @ 0x13000000 (16 MiB) [shared core, mode=io-handled]
-qemu-system-i386: info: pinball2000: DCS-2 UART installed at I/O 0x138-0x13f [shared core]
-qemu-system-i386: info: dcs-audio: pb2kslib loaded 866 entries from /mnt/hgfs/encore_forensic/composis/Encore-Pinball2000/roms/rfm_sound.bin
-qemu-system-i386: info: pinball2000: DCS audio installed (44100 Hz S16 mono, 8-voice mixer, 866 pb2k entries; P2K_NO_DCS_AUDIO=1 to disable)
-qemu-system-i386: info: pinball2000: LPT driver-board installed at I/O 0x378-0x37a (STATUS=0x87, edge-detect dispatch; keys: F1 quit | F2 flip-Y | F3 screenshot | F4 door | F5/Enter pulse | F6/F9 actions | F7/F8 flippers | Space/S start | F10/C coin | F12 dump | Esc/Left service | Up/Down volume | Right enter)
-qemu-system-i386: info: pinball2000: GP BLT engine MMIO at 0x40008100 size 0x110
-qemu-system-i386: info: pinball2000: VSYNC ticker armed (~57 Hz frame, 30 sub-tick updates @ DC_TIMING2)
-qemu-system-i386: info: pinball2000: BT-130 mem_detect patcher armed
-qemu-system-i386: info: pinball2000: diag sampler ON (PIT/PIC/IDT/XINU-sched, every 100 ms; unset P2K_DIAG to silence)
-qemu-system-i386: info: pinball2000: timing-audit armed (initial @3s, every 5s with P2K_DIAG=1; disable with P2K_NO_TIMING_AUDIT=1)
-qemu-system-i386: info: pinball2000: BT-131 NIC LAN ROM shadow installed at 0xd0008 (8B read-only MMIO; MAC 00:00:c0:01:02:03 board_id=0x2a checksum=0x0f)
-qemu-system-i386: info: pinball2000: machine ready (game=rfm, ram=16 MiB)
-qemu-system-i386: info: pinball2000: PM entry CS:EIP=0008:000801d9 ESP=0008b000
-qemu-system-i386: info: p2k-diag: PIT ch0 mode=3 gate=1 count=0 (18.21 Hz)
-qemu-system-i386: info: p2k-diag: PIT ch1 mode=3 gate=1 count=0 (18.21 Hz)
-qemu-system-i386: info: p2k-diag: PIT ch2 mode=3 gate=0 count=0 (18.21 Hz)
-qemu-system-i386: info: p2k-diag: PIC master imr=00 irr=01 isr=00 base=00
-qemu-system-i386: info: p2k-diag: IDT base=0x00000000 limit=0x0000
-qemu-system-i386: info: p2k-diag: IDT[0x20] sel=0x0000 off=0x00000000 type=0x00 (IRQ0/PIT)
-qemu-system-i386: info: p2k-diag: IDT[0x28] sel=0x0000 off=0x00000000 type=0x00 (IRQ8/RTC)
-qemu-system-i386: info: p2k-diag: cpu eip=0x000801d9 cs=0x0008 esp=0x0008b000 eflags=0x00000002 cr0=0x60000011
-[ VALIDATING UPDATE BOOT DATA ]
-Boot data structure:
-  boot_data_timestamp: "Thu Aug 08 12:44:50 2024"
-  boot_data_checksum:  0xcac018f6
-  boot_data_version:   1.1
-  boot_data_size:      8192
-  im_sys0_size:        112651
-  im_sys0_checksum:    0x8558487f
-  system_version:      8241.13111
-  game_id:             50070
-  game_version:        2.60
-  game_reloc:          0x100000
-  game_code_size:      656128
-  game_code_checksum:  0x242e30d
-  symbols_size:        197248
-  symbols_checksum:    0x633e125b
-  im_mask0_size:       3045554
-  im_mask0_checksum:   0x9f1410bd
-  im_mask1_size:       4194304
-  im_mask1_checksum:   0x40f764fb
-  im_mask2_size:       4194304
-  im_mask2_checksum:   0xb1f84431
-  im_mask3_size:       4184362
-  im_mask3_checksum:   0x5745869f
-  magic_cookie:        "13Dec96"
-  boot_state:          1
-[ VALIDATING UPDATE SYS IMAGE ]
-[ VALIDATING UPDATE GAME CODE ]
-qemu-system-i386: info: p2k-diag: cpu eip=0x00085c0a cs=0x0008 esp=0x0008afb8 eflags=0x00000002 cr0=0x60000011
-qemu-system-i386: info: pinball2000: BT-130 mem_detect patch applied at 0x00274571: 0x04 -> 0x0E (4 MiB -> 14 MiB pages)
-[ VALIDATING UPDATE SYMBOLS ]
-[ STARTING UPDATE GAME CODE ]
-qemu-system-i386: info: p2k-diag: PIC master imr=ff irr=01 isr=00 base=20
-qemu-system-i386: info: p2k-diag: IDT base=0x0033adec limit=0x017f
-qemu-system-i386: info: p2k-diag: IDT[0x20] sel=0x0008 off=0x00273150 type=0x8f (IRQ0/PIT)
-qemu-system-i386: info: p2k-diag: IDT[0x28] sel=0x0008 off=0x002731a8 type=0x8f (IRQ8/RTC)
-qemu-system-i386: info: p2k-diag: exec_xpid=0 state=0xff (1=CURR 2=skip 3=READY 5=PR_SLEEP 6=SUSP 9=FREE)
-qemu-system-i386: info: p2k-diag: currpid=1977320720 state=0xff exec_pass=0x0 ms_since_exec=0x0
-qemu-system-i386: info: p2k-diag: clkrun=2179470709 slnonempty=1911051008 qhead_ptr=0x15175468 qhead_key=0xdeadbeef intr_depth=2315255629
-pci_probe(): PLX EEPROM data was stale - updated OK
-
-XINA: V1.36 - Thu Aug 08 10:23:00 2024
-(C) Copyright 1997-1999 Williams Electronics Games, Inc.
-XINU: V7
-qemu-system-i386: info: p2k-diag: PIT ch0 mode=2 gate=1 count=298 (4003.97 Hz)
-qemu-system-i386: info: p2k-diag: IDT[0x20] sel=0x0008 off=0x0026d612 type=0x8f (IRQ0/PIT)
-qemu-system-i386: info: p2k-diag: cpu eip=0x002891b6 cs=0x0008 esp=0x00dffe2c eflags=0x00000202 cr0=0x60000011
-qemu-system-i386: info: p2k-timing #0 snap | clock=QEMU_CLOCK_VIRTUAL icount=off expected: pit0_div=298 pit0_mode=2 pit0_hz=4003.97 irq0_edges_pit_expected=12014 observed: irq0_raised=2539 irq0_replayed=0 clkint_entered=0 eoi_seen=0 delivery=0.0% replay=0.0% imr=ff irr=01 isr=00 base=20 idt20=0x0026d612 handler=clkint clkint_hook=0x0026d612 shim=0 wall=3.011s vtime=3.000s scale=0.997x host_slow=no pic_base=0x20
-qemu-system-i386: info: p2k-latency snap | raise->clkint p50=0us p95=0us p99=0us max=0us max_total=0us n=0 | pdb05 count=0
-qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_delta   p50=0us p95=0us p99=0us max=0us max_total=0us n=0
-qemu-system-i386: info: p2k-pdb05 snap | pdb05_wall_total   p50=0us p95=0us p99=0us max=0us max_total=0us n=0
-qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_delta  p50=0us p95=0us p99=0us max=0us max_total=0us n=0
-qemu-system-i386: info: p2k-pdb05 snap | pdb05_vtime_total  p50=0us p95=0us p99=0us max=0us max_total=0us n=0
-qemu-system-i386: info: p2k-xinu-drift snap | period_ms=0.250 | total: wall=3010.8ms vtime=3000.5ms xinu=0.0ms drift=0.000 | delta: wall=0.0ms vtime=0.0ms xinu=0.0ms drift=0.000
-qemu-system-i386: info: p2k-segment snap | raise_intack  p50=0us p95=0us p99=0us max=0us max_total=0us n=0
-qemu-system-i386: info: p2k-segment snap | intack_entry  p50=0us p95=0us p99=0us max=0us max_total=0us n=0
-qemu-system-i386: info: p2k-segment snap | entry_eoi     p50=0us p95=0us p99=0us max=0us max_total=0us n=0
-qemu-system-i386: info: p2k-segment snap | eoi_iret      p50=0us p95=0us p99=0us max=0us max_total=0us n=0
-qemu-system-i386: info: p2k-segment snap | iret_raise    p50=0us p95=0us p99=0us max=0us max_total=0us n=0
-qemu-system-i386: info: p2k-segment snap | coverage intack_seen=0 iret_seen=0 (vs clkint_entered=0)
-qemu: fatal: cpu_io_recompile: could not find TB for pc=0x7f418c7b6f3d
-EAX=0005af03 EBX=1218b020 ECX=00002245 EDX=00008a2f
-ESI=0005af02 EDI=000453fd EBP=00dffe44 ESP=00dffe2c
-EIP=002891b6 EFL=00000206 [-----P-] CPL=0 II=0 A20=1 SMM=0 HLT=0
-ES =0010 00000000 ffffffff 00cf9300 DPL=0 DS   [-WA]
-CS =0008 00000000 ffffffff 00cf9e00 DPL=0 CS32 [CR-]
-SS =0018 00000000 ffffffff 00cf9300 DPL=0 DS   [-WA]
-DS =0010 00000000 ffffffff 00cf9300 DPL=0 DS   [-WA]
-FS =0010 00000000 ffffffff 00c09300 DPL=0 DS   [-WA]
-GS =0010 00000000 ffffffff 00c09300 DPL=0 DS   [-WA]
-LDT=0000 00000000 0000ffff 00008200 DPL=0 LDT
-TR =0000 00000000 0000ffff 00008b00 DPL=0 TSS32-busy
-GDT=     0033b19c 0000003f
-IDT=     0033adec 0000017f
-CR0=60000011 CR2=00000000 CR3=00000000 CR4=00000000
-DR0=00000000 DR1=00000000 DR2=00000000 DR3=00000000 
-DR6=ffff0ff0 DR7=00000400
-CCS=00045178 CCD=0005af03 CCO=LOGICL
-EFER=0000000000000000
-FCW=037f FSW=0000 [ST=0] FTW=00 MXCSR=00001f80
-FPR0=0000000000000000 0000 FPR1=0000000000000000 0000
-FPR2=0000000000000000 0000 FPR3=0000000000000000 0000
-FPR4=0000000000000000 0000 FPR5=0000000000000000 0000
-FPR6=0000000000000000 0000 FPR7=0000000000000000 0000
-XMM00=0000000000000000 0000000000000000 XMM01=0000000000000000 0000000000000000
-XMM02=0000000000000000 0000000000000000 XMM03=0000000000000000 0000000000000000
-XMM04=0000000000000000 0000000000000000 XMM05=0000000000000000 0000000000000000
-XMM06=0000000000000000 0000000000000000 XMM07=0000000000000000 0000000000000000
-scripts/run-qemu.sh : ligne 811 : 93419 Abandon                 "$QEMU_BIN" "${ARGS[@]}" "${EXTRA[@]}"

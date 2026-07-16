@@ -178,7 +178,7 @@ void p2k_install_superio(void)
     /* NOTE: do NOT register an overlap on port 0x61. QEMU's PC-HW i8254
      * already exposes the System Control port B at 0x61; layering our
      * own handler causes timer-calibration code to read garbage.
-     * Unicorn needed the toggle because it had no real i8254 backing. */
+     * Encore needed the toggle because it had no real i8254 backing. */
 
     info_report("pinball2000: SuperIO W83977EF (0x2E/0x2F), PC97338 "
                 "(0x370/0x371), CC5530 (0xEA/0xEB) installed");

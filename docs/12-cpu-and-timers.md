@@ -13,7 +13,7 @@ default because it keeps game time close to real time on modern hosts.
 |---|---|---|
 | `scripts/run-qemu.sh` | Adaptive HOTLOOP-only | Normal play and cabinet testing. |
 | `scripts/run-qemu.sh --strict` | Natural i8254 PIT only | Diagnostic comparison without HOTLOOP assistance. |
-| `scripts/run-qemu.sh --with-pit` | Adaptive HOTLOOP plus natural PIT | Legacy comparison mode. |
+| `scripts/run-qemu.sh --with-pit` | Adaptive HOTLOOP plus natural PIT | Controlled timing comparison. |
 
 All three modes use QEMU's real i8259 interrupt controller and the guest's real
 IDT handler. Encore does not push an interrupt frame, rewrite XINU timer
@@ -143,28 +143,12 @@ The reset recipe deliberately begins at the known PRISM protected-mode entry.
 It is documented separately in [14-boot-recipe.md](14-boot-recipe.md) and is
 not part of timer delivery.
 
-## Removed experiments
-
-Current Encore does not contain the former:
-
-- direct guest `clkint` dispatch;
-- INJECT/NOCHAIN modes;
-- missed-PIT-edge replay;
-- `prnull` or `nulluser` HLT rewrites;
-- scheduler tick injection;
-- prime-count boot delays;
-- starvation valves or timing wedge detectors.
-
-They are not runtime options and should not be used to explain current Encore
-behavior.
-
 ## See also
 
 - [03-cli-reference.md](03-cli-reference.md)
 - [14-boot-recipe.md](14-boot-recipe.md)
 - [26-lpt-board.md](26-lpt-board.md)
 - [35-known-limitations.md](35-known-limitations.md)
-- [47-recommended-configuration.md](47-recommended-configuration.md)
 
 ---
 

@@ -1,8 +1,7 @@
 /*
  * Pinball 2000 hardware address map / register constants.
  *
- * Distilled from the Unicorn-era reverse-engineering work (see archived
- * switch — they describe the silicon, not the emulator.
+ * Constants used by the Encore machine and its guest-visible devices.
  */
 #ifndef HW_PINBALL2000_H
 #define HW_PINBALL2000_H
@@ -24,7 +23,7 @@
  * (`qemu/upstream-patches/0001-i386-tcg-cyrix-0f3c-shim.patch`) that
  * adds a generator `gen_CYRIX_0F3C_shim` for the slot. That generator
  * is intentionally NOT a full CPU_WRITE implementation — it only
- * reproduces the observable side-effect of the legacy Unicorn /
+ * reproduces the observable side-effect of the former guest-visible
  * IDT[6]+0x540 RAM stub that the Pinball 2000 XINU bring-up relied on:
  *
  *     [DS:EDX]   := EAX        ; 32-bit
@@ -38,7 +37,7 @@
  * and (b) keeping the matrix passing while a proper CPU_WRITE /
  * CPU_READ / BB?_RESET model is built incrementally.
  *
- * Long-term direction (NOT done yet — tracked in NOTES.next.md):
+ * A complete implementation would:
  *   - implement real CPU_WRITE / CPU_READ semantics with EBX as the
  *     internal-register address, plus models for the few CPU-internal
  *     registers Pinball 2000 actually touches (BLT buffer base /

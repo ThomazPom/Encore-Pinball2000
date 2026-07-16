@@ -57,9 +57,9 @@ chardev or a separate helper process.
 Do not add artificial LPT delays merely because host execution is fast. Add
 pacing only if a physical trace proves a setup/hold or cadence failure.
 
-See [29 — Cabinet testing](29-cabinet-testing-call.md), [37 — Driver-board
-protocol](37-power-driver-board-protocol.md), and [47 — Recommended
-configuration](47-recommended-configuration.md).
+See [29 — Cabinet testing](46-real-lpt-passthrough.md), [37 — Driver-board
+protocol](26-lpt-board.md), and [47 — Recommended
+configuration](12-cpu-and-timers.md).
 
 ---
 

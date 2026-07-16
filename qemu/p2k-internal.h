@@ -62,7 +62,7 @@ void p2k_install_gfxlist_watch(Pinball2000MachineState *s);
 
 /* p2k-display.c: 640×480 SDL/QEMU display reading FB at RAM 0x800000. */
 void p2k_install_display(void);
-/* F2 Y-flip toggle. Default on (matches Unicorn's default orientation). */
+/* F2 Y-flip toggle. Default on (matches the default framebuffer orientation). */
 void p2k_display_toggle_flip_y(void);
 
 /* p2k-dcs-core.c: single shared DCS-2 state machine.  Both p2k-dcs.c
@@ -157,7 +157,7 @@ void p2k_install_nic_dseg(void);
 void p2k_install_diag(Pinball2000MachineState *s);
 
 /* p2k-probe-cell-shim.c: STRICTLY GATED guest-data scribble for
- * --update none / P2K_NO_AUTO_UPDATE parity. Mirrors Unicorn's
+ * --update none / P2K_NO_AUTO_UPDATE parity. Implements the required
  * "watchdog/probe-cell @ pci_watchdog_bone()" RAM_WR32 maintenance.
  * Active ONLY when P2K_NO_AUTO_UPDATE is set. NEVER active on normal
  * update boots. Documented as a temporary compatibility bridge. */

@@ -339,7 +339,7 @@ static char *autodiscover_update(const char *updates_root, const char *game)
 }
 
 /* Try a few likely roots for the updates/ directory:
- *   1. ./updates  (matches Unicorn cwd-relative behavior)
+ *   1. ./updates  (uses the launcher working directory)
  *   2. <roms_dir>/../updates  (works under --no-savedata where cwd is /tmp)
  * Returns malloced path to the inner game-num subdir, or NULL.
  */
