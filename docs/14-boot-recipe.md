@@ -24,13 +24,6 @@ The Williams loader continues from this entry, validates update data when
 present, and starts XINU/XINA. QEMU owns subsequent instruction execution and
 interrupt delivery.
 
-## Related compatibility behavior
-
-- MediaGX-specific instructions are decoded by Encore's gated TCG helpers.
-- Firmware with the 4 MiB `mem_detect` constant receives the signature-gated
-  one-byte correction before heap initialization.
-- Only `--update none` enables base-ROM DCS probe-cell maintenance.
-
 Details: [architecture](10-architecture.md), [memory map](13-memory-map.md),
 and [compatibility support](30-compatibility-support.md).
 
