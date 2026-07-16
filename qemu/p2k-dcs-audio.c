@@ -588,6 +588,8 @@ static bool generate_pcm_container(DcsAudio *a)
                 a->generated_cache_path);
 
     for (unsigned command = first_command; command <= last_command; command++) {
+        bool report_progress = (((command - first_command) & 7) == 0 ||
+                                command == last_command);
         size_t hint_frames = 0;
         bool hinted_loop = false;
         for (int i = 0; i < a->entry_cnt; i++) {
@@ -610,8 +612,14 @@ static bool generate_pcm_container(DcsAudio *a)
         size_t frames = 0;
         bool detected_loop = false;
         if (!p2k_dcs_adsp_generate_track(command, hint_frames, &pcm,
-                                         &frames, &detected_loop))
+                                         &frames, &detected_loop)) {
+            if (report_progress) {
+                info_report("dcs-cache-progress: %u/%u",
+                            command - first_command + 1,
+                            last_command - first_command + 1);
+            }
             continue;
+        }
         if (count >= PB2K_MAX_ENTRIES || frames > UINT32_MAX / 2) {
             g_free(pcm);
             break;
@@ -626,6 +634,11 @@ static bool generate_pcm_container(DcsAudio *a)
         write_xor(payload, pcm, ge->payload_size);
         payload_offset += ge->payload_size;
         g_free(pcm);
+        if (report_progress) {
+            info_report("dcs-cache-progress: %u/%u",
+                        command - first_command + 1,
+                        last_command - first_command + 1);
+        }
     }
     fclose(payload);
 

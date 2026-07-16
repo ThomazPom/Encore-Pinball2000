@@ -47,7 +47,7 @@ NO_SAVEDATA=0
 FRESH_SAVEDATA=0
 CLEAR_PB2K_ADSP_CACHE=0
 PB2K_ADSP_CACHE_DIR="${P2K_PB2K_ADSP_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/encore-pb2k/pb2kslib-adsp}"
-PB2K_ADSP_CACHE_WORKERS="${P2K_PB2K_ADSP_CACHE_WORKERS:-4}"
+PB2K_ADSP_CACHE_WORKERS="${P2K_PB2K_ADSP_CACHE_WORKERS:-6}"
 export P2K_PB2K_ADSP_CACHE_DIR="$PB2K_ADSP_CACHE_DIR"
 MONITOR=""
 DEBUG=""
@@ -259,7 +259,7 @@ AUDIO
   --clear-pb2kslib-cache   Delete the generated ADSP PCM cache before launch.
   --pb2kslib-cache-workers <n>
                             Parallel DSP processes used for first-time PCM
-                            generation (1..32, default: 4). Use 1 for the
+                            generation (1..32, default: 6). Use 1 for the
                             original in-window single-worker generator.
   --sound-loading lazy|preload
                             lazy   (default) decode samples on-demand.
