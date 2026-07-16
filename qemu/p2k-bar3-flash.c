@@ -222,6 +222,77 @@ static uint8_t *slurp(const char *path, size_t *out_sz)
     return buf;
 }
 
+static bool assemble_update(const char *dir);
+
+static uint32_t read_le32(const uint8_t *p)
+{
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+/* The boot-data page is the update's identity.  In particular, its game
+ * version is stored as two little-endian words at 0x40/0x44.  Comparing the
+ * complete supplied page also catches rebuilt updates that retain a version
+ * number but contain different component sizes or checksums. */
+static bool flash_matches_update(const char *dir, unsigned *flash_major,
+                                 unsigned *flash_minor,
+                                 unsigned *update_major,
+                                 unsigned *update_minor)
+{
+    char *path = find_with_suffix(dir, "_bootdata.rom");
+    size_t size = 0;
+    uint8_t *boot = path ? slurp(path, &size) : NULL;
+    bool comparable = boot && size >= 0x48 && size <= 0x8000;
+    bool matches = comparable && memcmp(s_flash, boot, size) == 0;
+
+    if (flash_major)  *flash_major  = read_le32(s_flash + 0x40);
+    if (flash_minor)  *flash_minor  = read_le32(s_flash + 0x44);
+    if (update_major) *update_major = comparable ? read_le32(boot + 0x40) : 0;
+    if (update_minor) *update_minor = comparable ? read_le32(boot + 0x44) : 0;
+
+    g_free(boot);
+    g_free(path);
+    return matches;
+}
+
+/* Install an explicitly selected bundle as a complete flash image.  An
+ * update must never be assembled over stale flash contents: bytes outside
+ * the new bundle would otherwise survive from the previously installed
+ * version.  Preserve the old image if validation/assembly fails. */
+static bool install_update_if_needed(const char *dir, bool seeded)
+{
+    unsigned old_major = 0, old_minor = 0, new_major = 0, new_minor = 0;
+
+    if (seeded && flash_matches_update(dir, &old_major, &old_minor,
+                                       &new_major, &new_minor)) {
+        info_report("pinball2000: BAR3 already contains selected update "
+                    "%u.%02u; keeping saved flash", old_major, old_minor);
+        return true;
+    }
+
+    if (seeded) {
+        /* flash_matches_update also extracts both versions when the bundle is
+         * valid.  A zero target simply means its boot-data could not be read;
+         * assemble_update will emit the useful validation error below. */
+        flash_matches_update(dir, &old_major, &old_minor,
+                             &new_major, &new_minor);
+        info_report("pinball2000: saved BAR3 update %u.%02u differs from "
+                    "selected update %u.%02u; installing selected update",
+                    old_major, old_minor, new_major, new_minor);
+    }
+
+    uint8_t *old_flash = seeded ? g_memdup2(s_flash, P2K_BAR3_SIZE) : NULL;
+    memset(s_flash, 0xFF, P2K_BAR3_SIZE);
+    bool installed = assemble_update(dir);
+    if (!installed && old_flash) {
+        memcpy(s_flash, old_flash, P2K_BAR3_SIZE);
+        warn_report("pinball2000: selected update was not installed; "
+                    "restored saved BAR3 flash");
+    }
+    g_free(old_flash);
+    return installed;
+}
+
 /* Assemble the update bundle into the flash buffer. Layout:
  *   [0      .. 0x8000)  bootdata (truncated if larger)
  *   [0x8000 .. +A    )  im_flsh0
@@ -257,6 +328,7 @@ static bool assemble_update(const char *dir)
         if (ok && off + s_game <= P2K_BAR3_SIZE) { memcpy(s_flash + off, b_game, s_game); off += s_game; } else ok = false;
         if (ok && off + s_syms <= P2K_BAR3_SIZE) { memcpy(s_flash + off, b_syms, s_syms); off += s_syms; } else ok = false;
         if (ok) {
+            s_dirty = true;
             info_report("pinball2000: update bundle assembled into BAR3 "
                         "(boot=%zu im=%zu game=%zu syms=%zu, total=0x%zx)",
                         s_boot, s_im, s_game, s_syms, off);
@@ -431,10 +503,14 @@ void p2k_install_bar3_flash(Pinball2000MachineState *s)
         }
     }
 
+    /* Save comparisons must use the persistent image as it existed on entry,
+     * before a host-side update installation changes BAR3. */
+    memcpy(s_flash_loaded, s_flash, P2K_BAR3_SIZE);
+
     if (s->update_path && *s->update_path) {
-        info_report("pinball2000: applying update from %s (--update)",
+        info_report("pinball2000: checking selected update %s (--update)",
                     s->update_path);
-        assemble_update(s->update_path);
+        install_update_if_needed(s->update_path, seeded);
     } else if (!seeded && getenv("P2K_NO_AUTO_UPDATE") == NULL) {
         /* No persistent flash AND no explicit --update: auto-discover the
          * newest bundle in updates/ (real cabinets always shipped with at
@@ -465,15 +541,11 @@ void p2k_install_bar3_flash(Pinball2000MachineState *s)
                     "all-0xFF (explicit base/museum image path)");
     }
 
-    memcpy(s_flash_loaded, s_flash, P2K_BAR3_SIZE);
-
     MemoryRegion *mr = g_new(MemoryRegion, 1);
     memory_region_init_io(mr, NULL, &p2k_bar3_ops, NULL,
                           "p2k.bar3-flash", P2K_BAR3_SIZE);
     memory_region_add_subregion(get_system_memory(), P2K_BAR3_BASE, mr);
 
-    /* Persist any guest writes back to savedata/<game>.flash on exit so
-     * high scores, audits, and recorded service settings survive runs.
-     * Without this, every boot resets the cabinet to factory state. */
+    /* Persist an installed update and any later guest flash writes. */
     qemu_add_exit_notifier(&p2k_bar3_exit_notifier);
 }

@@ -115,8 +115,9 @@ scripts/run-qemu.sh --game swe1 --update /data/my-update/50069
 
 > [!TIP]
 > After dropping a new extracted update into `updates/`, use `--update latest`
-> or its version number. This applies it even when `savedata/<game>.flash`
-> already exists.
+> or its version number. Encore compares the selected boot-data page with the
+> update already installed in `savedata/<game>.flash`. A mismatch installs the
+> selected update into an erased BAR3 image; a match keeps the existing flash.
 
 `--update none` disables discovery and runs the base-ROM path.
 
@@ -125,12 +126,18 @@ scripts/run-qemu.sh --game swe1 --update /data/my-update/50069
 At startup, BAR3 is erased to `ff`, then:
 
 1. `savedata/<game>.flash` is loaded when present;
-2. an explicitly selected update is assembled over it;
-3. `auto` discovers an update only when saved flash was not loaded;
-4. `--update none` disables discovery.
+2. an explicitly selected update is compared with the saved flash;
+3. a mismatch replaces BAR3 with a clean assembly of the selected update;
+4. a match keeps the saved flash unchanged;
+5. `auto` discovers an update only when saved flash was not loaded;
+6. `--update none` disables discovery.
 
-Use `--no-savedata` for an isolated run. A normal clean exit writes changed
-BAR3 content back to `savedata/<game>.flash`.
+The comparison uses the complete update boot-data page, which contains the
+game version and the component sizes and checksums. The other saved devices
+(`.nvram2` and `.see`) are retained across an update.
+
+Use `--no-savedata` for an isolated run. A normal clean exit writes an
+installed update or guest flash changes back to `savedata/<game>.flash`.
 
 Details: [savedata](09-savedata.md).
 
