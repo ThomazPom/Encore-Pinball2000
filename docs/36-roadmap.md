@@ -22,19 +22,8 @@ Test switch reads, lamps, low-risk outputs, service controls, DCS audio and
 sustained gameplay one class at a time. Record the host, parallel-port card,
 game, update, DCS engine, timing mode and trace artifact.
 
-A cabinet-facing code change needs a reproducible Encore failure or a physical
-trace identifying missing behavior.
-
-## Not roadmap work
-
-- replacing adaptive HOTLOOP merely because it is Encore-specific;
-- adding a BIOS boot before the protected-mode PRISM entry;
-- replacing the fixed PCI responder without a missing cabinet behavior;
-- removing the accepted memory-size correction;
-- removing the accepted base-ROM DCS probe support;
-- adding CPU or LPT pacing without a physical timing failure.
-
-These are deliberate current design choices.
+Record failures with the corresponding LPT trace so they can be tied to a
+specific device behavior.
 
 ---
 

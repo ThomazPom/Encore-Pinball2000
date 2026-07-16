@@ -3,16 +3,15 @@
 Encore can pass guest parallel-port traffic directly to a Linux `ppdev` device.
 The implementation is in `qemu/p2k-lpt-board.c`.
 
-> Real Pinball 2000 cabinet validation is still pending. Use the emulated LPT
-> mode until you are prepared to observe the physical board and stop immediately
-> if coils, lamps, or relays behave incorrectly.
+> [!WARNING]
+> Real Pinball 2000 cabinet validation is still pending. Begin with playfield
+> power disabled and stop immediately if outputs behave incorrectly.
 
 ## Required hardware
 
-Use a bidirectional parallel port exposed as `/dev/parportN`. An onboard LPT
-port or a PCI/PCIe parallel card normally works. A USB printer adapter exposed
-as `/dev/usb/lpN` does not provide the register-level bidirectional interface
-required by the cabinet.
+Use a bidirectional parallel port exposed through Linux `ppdev` as
+`/dev/parportN`. `/dev/usb/lpN` is a printer interface, not the `ppdev`
+register interface used by Encore.
 
 ## Linux setup
 
@@ -54,12 +53,8 @@ chardev or a separate helper process.
 4. Enable playfield power only when the idle state is correct.
 5. Test one switch, lamp and low-risk output at a time.
 
-Do not add artificial LPT delays merely because host execution is fast. Add
-pacing only if a physical trace proves a setup/hold or cadence failure.
-
-See [29 — Cabinet testing](46-real-lpt-passthrough.md), [37 — Driver-board
-protocol](26-lpt-board.md), and [47 — Recommended
-configuration](12-cpu-and-timers.md).
+Details: [LPT driver-board interface](26-lpt-board.md) and
+[CPU/timing measurement](12-cpu-and-timers.md).
 
 ---
 
