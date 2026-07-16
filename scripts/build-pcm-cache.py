@@ -84,8 +84,12 @@ def main():
         raise ValueError("empty DSP track range")
     total_ids = range_last - range_first + 1
     workers = min(workers, total_ids)
-    bundle = Path(args.update).parent.name if args.update else "base"
-    output = Path(args.cache_root) / args.game / f"{bundle}.pcm.pb2k"
+    key_command = [str(Path(__file__).with_name("pb2k-sound-key.py")),
+                   "--game", args.game, "--roms", args.roms]
+    if args.update:
+        key_command += ["--update", args.update]
+    source_key = subprocess.check_output(key_command, text=True).strip()
+    output = Path(args.cache_root) / args.game / f"{source_key}.pcm.pb2k"
     if output.is_file():
         return
 

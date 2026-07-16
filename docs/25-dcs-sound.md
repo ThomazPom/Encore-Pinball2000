@@ -35,9 +35,11 @@ scripts/run-qemu.sh --dcs-engine adsp-thread
 audio backend. `--sound-loading preload` decodes the full container at startup;
 lazy loading is the default.
 
-`pb2kslib-adsp` boots the native DSP once for each game/update combination,
+`pb2kslib-adsp` boots the native DSP once for each unique sound-source set,
 submits the DCS track IDs, and stores every valid decoded track as 44.1 kHz PCM
-under `~/.cache/encore-pb2k/pb2kslib-adsp/`. The game window shows generation
+under `~/.cache/encore-pb2k/pb2kslib-adsp/`. The SHA-256 cache key covers the
+interleaved U109/U110 data and the selected sound flash, so renamed updates
+reuse identical audio while changed sound data generates a new cache. The game window shows generation
 progress when using one worker. By default, six isolated headless QEMU/DSP
 workers split the ID range, merge their PCM atomically, and then launch the
 game. Parallel generation reports its aggregate percentage in the terminal.

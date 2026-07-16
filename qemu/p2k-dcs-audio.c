@@ -1267,19 +1267,14 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
     if (cache_engine && st && st->game) {
         const char *root = getenv("P2K_PB2K_ADSP_CACHE_DIR");
         if (!root || !*root) root = g_get_user_cache_dir();
-        char *bundle;
-        if (st->update_path) {
-            /* update_path names the inner game-id directory.  Its parent is
-             * the actual versioned bundle and must be part of the key. */
-            char *parent = g_path_get_dirname(st->update_path);
-            bundle = g_path_get_basename(parent);
-            g_free(parent);
+        char source_key[65];
+        if (p2k_dcs_adsp_source_key(st, source_key)) {
+            snprintf(a->generated_cache_path,
+                     sizeof(a->generated_cache_path),
+                     "%s/%s/%s.pcm.pb2k", root, st->game, source_key);
         } else {
-            bundle = g_strdup("base");
+            a->generated_cache_path[0] = '\0';
         }
-        snprintf(a->generated_cache_path, sizeof(a->generated_cache_path),
-                 "%s/%s/%s.pcm.pb2k", root, st->game, bundle);
-        g_free(bundle);
         generated_cache_ready = pb2k_path_is_valid(a->generated_cache_path);
         if (generated_cache_ready)
             info_report("dcs-cache: using persistent PCM cache %s",
