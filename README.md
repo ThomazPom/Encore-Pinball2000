@@ -1,4 +1,4 @@
-# Encore — Pinball 2000 on QEMU
+# Encore Pinball 2000 emulator
 
 Encore runs the original Williams Pinball 2000 software on modern computers.
 It supports **Star Wars Episode I** and **Revenge from Mars**, including their
