@@ -13,12 +13,12 @@ gaps and long gameplay runs must be observed on physical hardware.
 
 Details: [real LPT passthrough](46-real-lpt-passthrough.md).
 
-## Native ADSP engines are experimental
+## Native ADSP audio needs broader listening coverage
 
 `adsp` and `adsp-thread` execute the original DSP firmware and render SPORT PCM.
 They pass the automated boot/progress matrix, but manual sound behavior still
-needs broader gameplay and service-menu testing. `pb2kslib` remains the default
-sample engine.
+needs broader gameplay and service-menu testing. `adsp-thread` is the default;
+`pb2kslib` remains available as a compatibility fallback.
 
 ## No project-level license file
 

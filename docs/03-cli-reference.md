@@ -37,7 +37,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--bench` | — | off | Runs the graphical steady-state self-diagnostic and reports guest clock, IRQ0, jitter, LPT rate and PDB05 gaps. | `scripts/run-qemu.sh --bench` |
 
 | `--pb2kslib` | path | `<roms>/<game>_sound.bin` lookup in machine | Exports `P2K_PB2KSLIB` to override the pb2kslib container. | `scripts/run-qemu.sh --pb2kslib ./roms/swe1_sound.bin` |
-| `--dcs-engine` | `pb2kslib` \| `adsp` \| `adsp-thread` | `pb2kslib` | Selects sample playback, synchronous native ADSP, or the condition-driven ADSP mailbox worker. | `scripts/run-qemu.sh --dcs-engine adsp` |
+| `--dcs-engine` | `pb2kslib` \| `adsp` \| `adsp-thread` | `adsp-thread` | Selects sample playback, synchronous native ADSP, or the condition-driven native ADSP mailbox worker. Missing native assets fall back to `pb2kslib`. | `scripts/run-qemu.sh --dcs-engine adsp` |
 | `--dcs-sound-flash` | path | auto from selected update or ROM directory | Selects the 1 MiB sound-flash image used by a native ADSP engine. | `scripts/run-qemu.sh --dcs-engine adsp --dcs-sound-flash ./roms/swe1_28f800.rom` |
 | `--sound-loading` | `lazy` \| `preload` | `lazy` | Lazy decodes samples on first use; preload exports `P2K_DCS_PRELOAD=1`. | `scripts/run-qemu.sh --sound-loading preload` |
 | `--serial` | — | off | Interactive COM1 in current terminal via temporary TCP UART plus foreground `nc`; requires `nc`; mutually exclusive with `--serial-tcp`, `--uart-tcp`, `--headless`. | `scripts/run-qemu.sh --serial` |

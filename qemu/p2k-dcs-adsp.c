@@ -534,7 +534,8 @@ bool p2k_dcs_adsp_prepare(Pinball2000MachineState *s)
     p2k_adsp2105_reset();
     s_adsp.initialized = true;
     const char *engine = getenv("P2K_DCS_ENGINE");
-    s_adsp.threaded_engine = engine && !strcmp(engine, "adsp-thread");
+    s_adsp.threaded_engine = !engine || !*engine ||
+                             !strcmp(engine, "adsp-thread");
     snprintf(s_sound_flash_path, sizeof(s_sound_flash_path), "%s", path);
     info_report("dcs-adsp: original assets ready (u109/u110=%u MiB, "
                 "sound-flash=%s, %u KiB)",
