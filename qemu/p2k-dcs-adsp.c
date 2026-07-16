@@ -535,7 +535,8 @@ bool p2k_dcs_adsp_prepare(Pinball2000MachineState *s)
     s_adsp.initialized = true;
     const char *engine = getenv("P2K_DCS_ENGINE");
     s_adsp.threaded_engine = !engine || !*engine ||
-                             !strcmp(engine, "adsp-thread");
+                             !strcmp(engine, "adsp-thread") ||
+                             !strcmp(engine, "pb2kslib-adsp");
     snprintf(s_sound_flash_path, sizeof(s_sound_flash_path), "%s", path);
     info_report("dcs-adsp: original assets ready (u109/u110=%u MiB, "
                 "sound-flash=%s, %u KiB)",
@@ -661,6 +662,7 @@ void p2k_dcs_adsp_write_cmd(uint16_t command)
     }
     if (start_worker) {
         adsp_worker_start();
+        p2k_dcs_audio_adsp_runtime_ready();
     }
     if (command == 0x003a || command == 0x001b || command == 0x00aa) {
         unsigned limit = command == 0x001b ? 250000000 : 20000000;
@@ -931,4 +933,92 @@ void p2k_dcs_adsp_render(int16_t *samples, int frames, int output_rate)
         }
     }
     qemu_mutex_unlock(&s_adsp.core_lock);
+}
+
+bool p2k_dcs_adsp_generate_track(uint16_t command, size_t hint_frames_44100,
+                                 int16_t **pcm_44100, size_t *frames_44100,
+                                 bool *loop)
+{
+    enum { NATIVE_RATE = 31250, BLOCK = 1024 };
+    if (!s_adsp.initialized || !s_adsp.selftest_ready || !pcm_44100 ||
+        !frames_44100 || !loop) {
+        return false;
+    }
+
+    size_t target_native = hint_frames_44100 ?
+        (hint_frames_44100 * NATIVE_RATE + 44099) / 44100 :
+        30 * NATIVE_RATE;
+    size_t cap = MIN(target_native, (size_t)BLOCK * 8);
+    int16_t *native = g_new0(int16_t, cap * 2);
+    size_t native_frames = 0, last_signal = 0, silence = 0;
+    bool heard = false;
+
+    /* ACE1 play triple: track, full volume/centre pan, channel zero. */
+    p2k_dcs_adsp_write_cmd(command);
+    p2k_dcs_adsp_write_cmd(0xff7f);
+    p2k_dcs_adsp_write_cmd(0x8180);
+    while (native_frames < target_native) {
+        size_t count = MIN((size_t)BLOCK, target_native - native_frames);
+        if (native_frames + count > cap) {
+            cap = MIN(target_native, MAX(cap * 2, native_frames + count));
+            native = g_renew(int16_t, native, cap * 2);
+        }
+        p2k_dcs_adsp_render(native + native_frames * 2, count, NATIVE_RATE);
+        for (size_t i = 0; i < count; i++) {
+            int a = abs(native[(native_frames + i) * 2]);
+            int b = abs(native[(native_frames + i) * 2 + 1]);
+            if (a > 8 || b > 8) {
+                heard = true;
+                last_signal = native_frames + i + 1;
+                silence = 0;
+            } else if (heard) {
+                silence++;
+            }
+        }
+        native_frames += count;
+        if (!hint_frames_44100 && !heard && native_frames >= NATIVE_RATE / 4)
+            break;
+        if (!hint_frames_44100 && heard && silence >= NATIVE_RATE * 2 / 5)
+            break;
+    }
+
+    *loop = !hint_frames_44100 && heard &&
+            native_frames >= target_native && silence < NATIVE_RATE * 2 / 5;
+    if (!heard) {
+        g_free(native);
+        native = NULL;
+    } else if (!hint_frames_44100 && !*loop) {
+        native_frames = MIN(native_frames, last_signal + NATIVE_RATE / 20);
+    }
+
+    size_t output_frames = hint_frames_44100 ? hint_frames_44100 :
+        (native_frames * 44100 + NATIVE_RATE - 1) / NATIVE_RATE;
+    int16_t *output = heard ? g_new(int16_t, output_frames) : NULL;
+
+    /* Convert the board's stereo 31.25 kHz stream to the natural pb2kslib
+     * mixer's mono 44.1 kHz PCM. */
+    for (size_t i = 0; heard && i < output_frames; i++) {
+        double pos = (double)i * NATIVE_RATE / 44100.0;
+        size_t p0 = MIN((size_t)pos, native_frames - 1);
+        size_t p1 = MIN(p0 + 1, native_frames - 1);
+        double frac = pos - (double)p0;
+        int32_t m0 = ((int32_t)native[p0 * 2] + native[p0 * 2 + 1]) / 2;
+        int32_t m1 = ((int32_t)native[p1 * 2] + native[p1 * 2 + 1]) / 2;
+        output[i] = (int16_t)((1.0 - frac) * m0 + frac * m1);
+    }
+    g_free(native);
+
+    /* Quiet all mixer tracks before generating the next isolated entry. */
+    p2k_dcs_adsp_write_cmd(0x55ae);
+    p2k_dcs_adsp_write_cmd(0x3f00);
+    p2k_dcs_adsp_write_cmd(0x8180);
+    int16_t settle[1024 * 2];
+    for (int i = 0; i < 8; i++) {
+        p2k_dcs_adsp_render(settle, 1024, NATIVE_RATE);
+    }
+
+    if (!heard) return false;
+    *pcm_44100 = output;
+    *frames_44100 = output_frames;
+    return true;
 }

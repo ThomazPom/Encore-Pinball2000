@@ -45,6 +45,9 @@ HEADLESS=0
 FULLSCREEN=0
 NO_SAVEDATA=0
 FRESH_SAVEDATA=0
+CLEAR_PB2K_ADSP_CACHE=0
+PB2K_ADSP_CACHE_DIR="${P2K_PB2K_ADSP_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/encore-pb2k/pb2kslib-adsp}"
+export P2K_PB2K_ADSP_CACHE_DIR="$PB2K_ADSP_CACHE_DIR"
 MONITOR=""
 DEBUG=""
 TCG_ONLY=0
@@ -245,11 +248,14 @@ AUDIO
   --dcs-sound-flash <path>  Explicit 1 MiB ADSP 28F800/sf.rom image.
                             Useful with update bundles such as SWE1 2.00
                             that contain game code but omit *_sf.rom.
-  --dcs-engine pb2kslib|adsp|adsp-thread
+  --dcs-engine pb2kslib|pb2kslib-adsp|adsp|adsp-thread
                             Audio content engine. adsp-thread is the default:
                             original firmware/assets with a condition-driven
                             mailbox worker. adsp runs the same firmware
                             synchronously. pb2kslib uses extracted samples.
+                            pb2kslib-adsp generates/uses a persistent PCM
+                            cache rendered by the update's native DSP.
+  --clear-pb2kslib-cache   Delete the generated ADSP PCM cache before launch.
   --sound-loading lazy|preload
                             lazy   (default) decode samples on-demand.
                             preload  walk every pb2k entry at install
@@ -410,6 +416,7 @@ while [[ $# -gt 0 ]]; do
     --savedata)        SAVEDATA_DIR="$2"; shift 2 ;;
     --no-savedata)     NO_SAVEDATA=1; shift ;;
     --fresh)           FRESH_SAVEDATA=1; shift ;;
+    --clear-pb2kslib-cache) CLEAR_PB2K_ADSP_CACHE=1; shift ;;
     --update)          UPDATE_TOKEN="$2"; shift 2 ;;
     --display)
       __qbin="${QEMU_BIN:-$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386}"
@@ -493,8 +500,8 @@ while [[ $# -gt 0 ]]; do
       export P2K_DCS_SOUND_FLASH="$(realpath "$2")"; shift 2 ;;
     --dcs-engine)
       case "$2" in
-        pb2kslib|adsp|adsp-thread) export P2K_DCS_ENGINE="$2" ;;
-        *) echo "[run-qemu] --dcs-engine: expected pb2kslib|adsp|adsp-thread, got '$2'" >&2; exit 2 ;;
+        pb2kslib|pb2kslib-adsp|adsp|adsp-thread) export P2K_DCS_ENGINE="$2" ;;
+        *) echo "[run-qemu] --dcs-engine: expected pb2kslib|pb2kslib-adsp|adsp|adsp-thread, got '$2'" >&2; exit 2 ;;
       esac
       shift 2 ;;
     --sound-loading)
@@ -792,6 +799,12 @@ case "$UPDATE_TOKEN" in
     fi
     ;;
 esac
+
+if [[ $CLEAR_PB2K_ADSP_CACHE -eq 1 ]]; then
+  rm -rf -- "$PB2K_ADSP_CACHE_DIR"
+  echo "[run-qemu] cleared generated pb2kslib cache: $PB2K_ADSP_CACHE_DIR"
+fi
+mkdir -p "$PB2K_ADSP_CACHE_DIR"
 
 # --- savedata cwd handling --------------------------------------------------
 # The QEMU machine reads savedata/<game>.* relative to cwd. Choose cwd

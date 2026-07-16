@@ -20,6 +20,12 @@ They pass the automated boot/progress matrix, but manual sound behavior still
 needs broader gameplay and service-menu testing. `adsp-thread` is the default;
 `pb2kslib` remains available as a compatibility fallback.
 
+The first `pb2kslib-adsp` launch for a game/update pauses while the native DSP
+renders its persistent PCM cache. PCM is intentionally uncompressed, so the
+cache uses more disk space than the extracted Vorbis library. If an explicitly
+selected sound-flash file is replaced in place, clear the cache before testing
+the replacement.
+
 ## No project-level license file
 
 The repository currently has no project-level license file. QEMU and bundled
