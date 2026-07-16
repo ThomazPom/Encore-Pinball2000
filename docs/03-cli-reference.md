@@ -1,8 +1,11 @@
 # 03 — CLI Reference
 
-This doc covers every user-facing option accepted by `scripts/run-qemu.sh` and `scripts/build-qemu.sh` at HEAD, with synopsis, semantics, defaults, and examples.
+This page lists the options parsed by `scripts/run-qemu.sh` and
+`scripts/build-qemu.sh`.
 
-> **Status:** Behaviour described here is based on emulator testing only. Real-cabinet validation is pending; cabinet and parport flags are documented because the wrapper exposes them, not because they are cabinet-certified.
+> [!WARNING]
+> The real-LPT options expose implemented code paths. Physical-cabinet
+> validation is still required before powering a playfield.
 
 ## `scripts/run-qemu.sh` synopsis
 
@@ -29,11 +32,9 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--no-audio` | — | off | Forces DCS audio off; overrides `--audio`. | `scripts/run-qemu.sh --no-audio` |
 | `--speed-target` | percent | `100` | Deliberate XINU game-clock speed from 25 through 300. Scales PIT and/or HOTLOOP according to timing mode. | `scripts/run-qemu.sh --speed-target 75` |
 | `--strict` | — | off | Disables HOTLOOP and uses the natural i8254/i8259 IRQ0 path. Intended for diagnostic comparison. | `scripts/run-qemu.sh --strict` |
-| `--with-pit` | — | off | Runs adaptive HOTLOOP together with the natural PIT. Retained for controlled timing tests. | `scripts/run-qemu.sh --with-pit` |
+| `--with-pit` | — | off | Runs adaptive HOTLOOP together with the natural PIT. | `scripts/run-qemu.sh --with-pit` |
 | `--bench` | — | off | Runs the graphical steady-state self-diagnostic and reports guest clock, IRQ0, jitter, LPT rate and PDB05 gaps. | `scripts/run-qemu.sh --bench` |
 
-> [!TIP]
-> Use `--audio auto` to let the wrapper choose the first backend supported by both the QEMU build and host checks; use `--audio none` to run silent without the auto-detect warning, or `--sound-loading preload` to avoid first-trigger audio hitches.
 | `--pb2kslib` | path | `<roms>/<game>_sound.bin` lookup in machine | Exports `P2K_PB2KSLIB` to override the pb2kslib container. | `scripts/run-qemu.sh --pb2kslib ./roms/swe1_sound.bin` |
 | `--dcs-engine` | `pb2kslib` \| `adsp` \| `adsp-thread` | `pb2kslib` | Selects sample playback, synchronous native ADSP, or the condition-driven ADSP mailbox worker. | `scripts/run-qemu.sh --dcs-engine adsp` |
 | `--dcs-sound-flash` | path | auto from selected update or ROM directory | Selects the 1 MiB sound-flash image used by a native ADSP engine. | `scripts/run-qemu.sh --dcs-engine adsp --dcs-sound-flash ./roms/swe1_28f800.rom` |
@@ -41,8 +42,6 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--serial` | — | off | Interactive COM1 in current terminal via temporary TCP UART plus foreground `nc`; requires `nc`; mutually exclusive with `--serial-tcp`, `--uart-tcp`, `--headless`. | `scripts/run-qemu.sh --serial` |
 | `--uart-quiet` | — | off | Silences COM1/UART stderr mirror and uses `-serial null` in headless mode. Wins over `-v`. | `scripts/run-qemu.sh --uart-quiet` |
 
-> [!WARNING]
-> `--serial` blocks your terminal. Use `--serial-tcp` if you want QEMU in the background.
 | `--uart-drop` | substring | drops `swd Debug:` by default | Repeatable line filter for UART output before stdout/TCP/stderr. | `scripts/run-qemu.sh --uart-drop NonFatal` |
 | `--uart-no-filter` | — | off | Exports empty `P2K_UART_DROP`, disabling the default `swd Debug:` filter and custom drops. | `scripts/run-qemu.sh --uart-no-filter` |
 | `--uart-tcp` | `host:port` | off | Binds COM1 to QEMU TCP serial server. Compatible with `--headless`. | `scripts/run-qemu.sh --uart-tcp 127.0.0.1:4444` |
@@ -61,27 +60,20 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--cabinet`, `--cabinet-purist` | — | off | Exports `P2K_CABINET_PURIST=1`; wrapper refuses to start unless a real `--lpt-device <hostdev>` is supplied. | `scripts/run-qemu.sh --cabinet --lpt-device /dev/parport0` |
 | `--lpt-device`, `--lpt` | `emu` \| `emulated` \| `none` \| `/dev/parportN` \| `0xNNN` | `emu` | Configures driver-board path: emulated, disabled, ppdev passthrough, or custom emulated I/O port. | `scripts/run-qemu.sh --lpt-device emu` |
 
-> [!CAUTION]
-> `--cabinet-purist` requires a real hardware driver board. Do not use with real cabinets until you have validated the emulator behavior.
 | `--lpt-trace` | file | off | Exports `P2K_LPT_TRACE_FILE`; appends LPT read/write trace lines. Parent directory must exist. | `scripts/run-qemu.sh --lpt-trace ./logs/lpt.txt` |
 | `--parport` | device | off | Alias for ppdev passthrough; device must exist. | `scripts/run-qemu.sh --parport /dev/parport0` |
 
-> [!NOTE]
-> `--parport` is an alias. Use `--lpt-device` for clarity.
 | `--tcg-only` | — | off | Smoke-tests host QEMU with `-M isapc`; does not boot Pinball 2000. | `scripts/run-qemu.sh --tcg-only` |
 | `--` | QEMU args | none | Forwards remaining args verbatim to QEMU. | `scripts/run-qemu.sh -- -S` |
 | `-h`, `--help` | — | — | Prints the wrapper help. | `scripts/run-qemu.sh --help` |
 
-## Compatibility flags accepted but not advertised
-
-| Flag | Default | Semantics | Example |
-|---|---|---|---|
-| `--splash-screen <path>` | ignored | Accepted and dropped so old command lines do not fail. QEMU draws too quickly for the former in-window splash approach. | `scripts/run-qemu.sh --splash-screen none` |
-| `--splash-time <value>` | ignored | Accepted and dropped with its argument. | `scripts/run-qemu.sh --splash-time 2` |
-| `--no-splash` | ignored | Accepted and dropped. | `scripts/run-qemu.sh --no-splash` |
+> [!TIP]
+> `--audio auto` selects an available host backend. `--audio none` runs silent.
+> `--sound-loading preload` moves sample decoding to startup.
 
 > [!WARNING]
-> These splash flags are compatibility no-ops in the current QEMU wrapper. Do not document them in new tutorials except to explain why old commands still parse.
+> `--serial` occupies the current terminal. Use `--serial-tcp` for a separate
+> client. Real-LPT modes require physical validation before playfield power.
 
 ## Update specs
 
@@ -92,7 +84,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 |---|---|---|
 | `auto` | Default. Leave `-M update=` unset; the QEMU machine auto-discovers in `./updates` and falls back to base ROMs. | `scripts/run-qemu.sh --update auto` |
 | `latest` | Wrapper resolves the highest version directory for the selected game. | `scripts/run-qemu.sh --game rfm --update latest` |
-| `none` | Museum/base mode. Exports `P2K_NO_AUTO_UPDATE=1`; no update bundle is staged. | `scripts/run-qemu.sh --update none --no-savedata` |
+| `none` | Base-ROM mode. Exports `P2K_NO_AUTO_UPDATE=1`; no update bundle is staged. | `scripts/run-qemu.sh --update none --no-savedata` |
 | `0210`, `210`, `2.10`, `2.1` | Short version token resolved against `updates/pin2000_<gid>_<vvvv>_*/<gid>/`. | `scripts/run-qemu.sh --game swe1 --update 2.10` |
 | `<dir>` | Explicit path to inner bundle directory containing `*_bootdata.rom`, `*_im_flsh0.rom`, `*_game.rom`, and `*_symbols.rom`. | `scripts/run-qemu.sh --update /data/p2k/update/50069` |
 
@@ -163,23 +155,15 @@ Builds a minimal `qemu-system-i386` with the Encore `pinball2000` machine.
 | `--list`, `--list-qemu-versions` | stable only | Lists versions available on the QEMU mirror, then exits. | `scripts/build-qemu.sh --list` |
 | `-h`, `--help` | — | Prints the script's usage block. | `scripts/build-qemu.sh --help` |
 | `--` | — | Stops option parsing; currently there are no build passthrough args after it. | `scripts/build-qemu.sh --` |
-| `QEMU_VER=...` | `10.0.8` | Legacy environment override for version. | `QEMU_VER=10.0.8 scripts/build-qemu.sh` |
+| `QEMU_VER=...` | `10.0.8` | Environment override for version. | `QEMU_VER=10.0.8 scripts/build-qemu.sh` |
 | `P2K_QEMU_BUILD_DIR=...` | `$HOME/.cache/p2k-qemu-build` | Build/cache root. Use a real Linux filesystem; shared folders may not support QEMU's symlinks. | `P2K_QEMU_BUILD_DIR=$HOME/p2k-build scripts/build-qemu.sh` |
 
-> [!WARNING]
-> `--unstable` may download release candidates. Only use for testing bleeding-edge QEMU versions.
 | `P2K_QEMU_MIRROR=...` | `https://download.qemu.org` | Alternate QEMU tarball mirror. | `P2K_QEMU_MIRROR=https://download.qemu.org scripts/build-qemu.sh --list` |
+
+> [!WARNING]
+> `--unstable` may select a release candidate.
 
 The build script configures QEMU with `--target-list=i386-softmmu`, `--enable-sdl`, `--enable-debug`, disabled docs/tools/guest-agent/VNC, and GTK enabled only when `pkg-config --exists gtk+-3.0` succeeds.
 
-## See also
-
-* [↑ Documentation index](README.md)
-* [02-quickstart.md](02-quickstart.md)
-* [04-troubleshooting.md](04-troubleshooting.md)
-* [10-architecture.md](10-architecture.md)
-* [12-cpu-and-timers.md](12-cpu-and-timers.md)
-* [15-rom-loading.md](15-rom-loading.md)
-* [23-mediagx-and-display.md](23-mediagx-and-display.md)
-* [25-dcs-sound.md](25-dcs-sound.md)
-* [26-lpt-board.md](26-lpt-board.md)
+Details: [quickstart](02-quickstart.md), [troubleshooting](04-troubleshooting.md)
+and [documentation index](README.md).

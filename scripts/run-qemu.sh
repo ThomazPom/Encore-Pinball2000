@@ -160,7 +160,7 @@ CORE LAUNCH
   --game swe1|rfm           Game ROM bank to load. Default: swe1.
   --roms <dir>              ROM directory. Default: <repo>/roms.
   --savedata <dir>          Persistent savedata dir (reads
-                            <dir>/<game>.{flash,nvram2,see,ems}).
+                            <dir>/<game>.{flash,nvram2,see}).
                             Default: <repo>/savedata.
   --no-savedata             Run without persistent savedata (also exports
                             P2K_NO_SAVEDATA=1) and switches cwd to a fresh
@@ -172,10 +172,10 @@ CORE LAUNCH
                                         if no bundle is found.
                               latest    explicitly resolve to the highest
                                         version bundle for this game.
-                              none      museum/base mode — no update
+                              none      base-ROM mode — no update
                                         bundle is staged. Sets
                                         P2K_NO_AUTO_UPDATE=1, isolating
-                                        every museum compatibility gate
+                                        base-ROM compatibility support
                                         (probe-cell shim, etc.) to this
                                         mode only.
                               0210      short version code (also accepts
@@ -224,13 +224,10 @@ AUDIO
                             `driver=auto`. The DCS code path is
                             unchanged.
   --no-audio                Force DCS audio off (overrides --audio).
-  --strict                  Disable HOTLOOP IRQ0 delivery -- fall
-                            back to the strict natural i8254+i8259
-                            path (~44% delivery, sleep 10 = 23s).
-                            For hardware-fidelity regression tests.
-  --with-pit                Legacy combo mode (HOTLOOP + natural i8254
-                            both raise IRQ0). Retained for A/B timing
-                            tests only. Default is HOTLOOP-only.
+  --strict                  Disable HOTLOOP IRQ0 delivery and use the
+                            natural i8254+i8259 path.
+  --with-pit                Let HOTLOOP and the natural i8254 both
+                            supply IRQ0. Default is HOTLOOP-only.
   --speed-target <percent>  Deliberate game-clock speed, 25..300 (default
                             100). Scales the i8254 PIT divisor in strict and
                             combo modes and the adaptive HOTLOOP target in
@@ -471,12 +468,10 @@ while [[ $# -gt 0 ]]; do
       esac ;;
     --no-audio)        AUDIO="none"; unset P2K_DCS_AUDIO || true; shift ;;
     --strict)
-      # Disable HOTLOOP: fall back to strict natural i8254 + i8259
-      # delivery (~44% delivery, sleep 10 = 23s). For hardware-fidelity
-      # regression testing.
+      # Disable HOTLOOP and use natural i8254 + i8259 delivery.
       export P2K_TCG_CLKINT_HOTLOOP=0; shift ;;
     --with-pit)
-      # Legacy combo mode: HOTLOOP AND natural i8254 both raise IRQ0.
+      # Combined mode: HOTLOOP and the natural i8254 both raise IRQ0.
       export P2K_TCG_CLKINT_HOTLOOP_WITH_PIT=1
       unset P2K_TCG_CLKINT_HOTLOOP_NO_PIT || true
       shift ;;
