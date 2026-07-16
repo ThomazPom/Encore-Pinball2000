@@ -48,6 +48,7 @@ DECLARE_INSTANCE_CHECKER(Pinball2000MachineState, PINBALL2000_MACHINE,
 int  p2k_load_bank0(Pinball2000MachineState *s);
 void p2k_load_extra_banks(Pinball2000MachineState *s);
 void p2k_load_dcs_rom(Pinball2000MachineState *s);
+bool p2k_dcs_adsp_source_key(Pinball2000MachineState *s, char key[65]);
 
 /* p2k-boot.c: post-reset PM-entry recipe (option ROM copy + GDT + CPU regs). */
 void p2k_post_reset(void *opaque);

@@ -447,6 +447,36 @@ static bool load_exact(const char *path, uint8_t **out)
     return true;
 }
 
+bool p2k_dcs_adsp_source_key(Pinball2000MachineState *s, char key[65])
+{
+    if (!s || !s->dcs_rom || !key) {
+        return false;
+    }
+    char path[sizeof(s_sound_flash_path)] = {0};
+    const char *override = getenv("P2K_DCS_SOUND_FLASH");
+    if (override && *override) {
+        snprintf(path, sizeof(path), "%s", override);
+    } else if (!find_update_sound_flash(s->update_path, path, sizeof(path))) {
+        snprintf(path, sizeof(path), "%s/%s_28f800.rom",
+                 s->roms_dir ?: "roms", s->game ?: "swe1");
+        if (!g_file_test(path, G_FILE_TEST_IS_REGULAR)) {
+            snprintf(path, sizeof(path), "%s/%s/28f800.rom",
+                     s->roms_dir ?: "roms", s->game ?: "swe1");
+        }
+    }
+    uint8_t *flash = NULL;
+    if (!load_exact(path, &flash)) {
+        return false;
+    }
+    GChecksum *sum = g_checksum_new(G_CHECKSUM_SHA256);
+    g_checksum_update(sum, s->dcs_rom, P2K_DCS_BANK_SIZE);
+    g_checksum_update(sum, flash, P2K_DCS_SOUND_FLASH_SIZE);
+    snprintf(key, 65, "%s", g_checksum_get_string(sum));
+    g_checksum_free(sum);
+    g_free(flash);
+    return true;
+}
+
 bool p2k_dcs_adsp_prepare(Pinball2000MachineState *s)
 {
     if (!s || !s->dcs_rom) {

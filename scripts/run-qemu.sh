@@ -831,11 +831,12 @@ if [[ "${P2K_DCS_ENGINE:-adsp-thread}" == "pb2kslib-adsp" &&
     __cache_update="$(resolve_update_token latest || true)"
   fi
   if [[ -n "$__cache_update" ]]; then
-    __cache_bundle="$(basename "$(dirname "$__cache_update")")"
+    __key_args=(--game "$GAME" --roms "$ROMS_DIR" --update "$__cache_update")
   else
-    __cache_bundle=base
+    __key_args=(--game "$GAME" --roms "$ROMS_DIR")
   fi
-  __cache_file="$PB2K_ADSP_CACHE_DIR/$GAME/${__cache_bundle}.pcm.pb2k"
+  __cache_key="$("$ROOT/scripts/pb2k-sound-key.py" "${__key_args[@]}")"
+  __cache_file="$PB2K_ADSP_CACHE_DIR/$GAME/${__cache_key}.pcm.pb2k"
   if [[ ! -f "$__cache_file" ]]; then
     __cache_args=(
       "$ROOT/scripts/build-pcm-cache.py"
