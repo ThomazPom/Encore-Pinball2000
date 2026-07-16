@@ -48,6 +48,10 @@ where its decoded stream ends. An existing pb2kslib supplies duration and loop
 hints during generation, but it is not the source of the PCM and does not limit
 which IDs are probed.
 
+For IDs without a hint, generation reads the DSP's resolved voice metadata
+after one render block. Missing IDs do not create a voice and are rejected
+immediately; valid IDs continue rendering until their PCM boundary is found.
+
 The native engines execute the ADSP-2105 core in
 `qemu/p2k-adsp2105-core.c`, map original U109/U110 data and render SPORT PCM.
 Sound flash is selected in this order:

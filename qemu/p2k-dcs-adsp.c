@@ -940,6 +940,8 @@ bool p2k_dcs_adsp_generate_track(uint16_t command, size_t hint_frames_44100,
                                  bool *loop)
 {
     enum { NATIVE_RATE = 31250, BLOCK = 1024 };
+    uint16_t voice_head_before[0x10];
+    uint16_t voice_body_before[0x33];
     if (!s_adsp.initialized || !s_adsp.selftest_ready || !pcm_44100 ||
         !frames_44100 || !loop) {
         return false;
@@ -952,6 +954,17 @@ bool p2k_dcs_adsp_generate_track(uint16_t command, size_t hint_frames_44100,
     int16_t *native = g_new0(int16_t, cap * 2);
     size_t native_frames = 0, last_signal = 0, silence = 0;
     bool heard = false;
+
+    /* The runtime resolves a valid track into channel-zero voice metadata.
+     * Preserve the two track-specific regions so IDs absent from this
+     * update can be rejected after one DSP block.  The intervening words
+     * contain global command counters and are intentionally excluded. */
+    qemu_mutex_lock(&s_adsp.core_lock);
+    memcpy(voice_head_before, &s_adsp.sram[0x455],
+           sizeof(voice_head_before));
+    memcpy(voice_body_before, &s_adsp.sram[0x4b0],
+           sizeof(voice_body_before));
+    qemu_mutex_unlock(&s_adsp.core_lock);
 
     /* ACE1 play triple: track, full volume/centre pan, channel zero. */
     p2k_dcs_adsp_write_cmd(command);
@@ -976,6 +989,17 @@ bool p2k_dcs_adsp_generate_track(uint16_t command, size_t hint_frames_44100,
             }
         }
         native_frames += count;
+        if (!hint_frames_44100 && native_frames == count) {
+            bool indexed;
+            qemu_mutex_lock(&s_adsp.core_lock);
+            indexed = memcmp(voice_head_before, &s_adsp.sram[0x455],
+                             sizeof(voice_head_before)) != 0 ||
+                      memcmp(voice_body_before, &s_adsp.sram[0x4b0],
+                             sizeof(voice_body_before)) != 0;
+            qemu_mutex_unlock(&s_adsp.core_lock);
+            if (!indexed && !heard)
+                break;
+        }
         if (!hint_frames_44100 && !heard && native_frames >= NATIVE_RATE / 4)
             break;
         if (!hint_frames_44100 && heard && silence >= NATIVE_RATE * 2 / 5)
