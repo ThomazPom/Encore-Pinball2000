@@ -84,6 +84,8 @@ def run_engine(engine: str, args: argparse.Namespace, output: Path) -> Path:
         "--monitor", f"unix:{sock_path},server=on,wait=off",
         "-v",
     ]
+    if args.strict:
+        command.append("--strict")
 
     print(f"[comparison] {engine}: {args.duration:.0f}s -> {log_path}", flush=True)
     started = time.monotonic()
@@ -154,9 +156,8 @@ def summarize(log_path: Path, warmup: float) -> dict[str, float | int | str]:
     final_timing = next((line for line in reversed(timing) if " exit |" in line), timing[-1])
 
     hotloop = [line for line in lines if "p2k-clkint-hotloop " in line]
-    if not hotloop:
-        raise ValueError(f"{log_path}: no p2k-clkint-hotloop statistics")
-    final_hotloop = next((line for line in reversed(hotloop) if " exit |" in line), hotloop[-1])
+    final_hotloop = (next((line for line in reversed(hotloop) if " exit |" in line), hotloop[-1])
+                     if hotloop else None)
 
     pdb_windows = []
     snap_wall = None
@@ -178,13 +179,13 @@ def summarize(log_path: Path, warmup: float) -> dict[str, float | int | str]:
         "window_max": max(current),
         "window_last": current[-1],
         "windows": len(current),
-        "gap_us": field(final_hotloop, "gap_ns") / 1000.0,
-        "measured_hz": field(final_hotloop, "measured_hz"),
-        "jitter_n": field(final_hotloop, "n", int),
-        "jitter_mean": field(final_hotloop, "mean_us"),
-        "jitter_min": field(final_hotloop, "min_us"),
-        "jitter_max": field(final_hotloop, "max_us"),
-        "jitter_stddev": field(final_hotloop, "stddev_us"),
+        "gap_us": field(final_hotloop, "gap_ns") / 1000.0 if final_hotloop else None,
+        "measured_hz": field(final_hotloop, "measured_hz") if final_hotloop else None,
+        "jitter_n": field(final_hotloop, "n", int) if final_hotloop else None,
+        "jitter_mean": field(final_hotloop, "mean_us") if final_hotloop else None,
+        "jitter_min": field(final_hotloop, "min_us") if final_hotloop else None,
+        "jitter_max": field(final_hotloop, "max_us") if final_hotloop else None,
+        "jitter_stddev": field(final_hotloop, "stddev_us") if final_hotloop else None,
         "pdb_n": sum(field(line, "n", int) for line in pdb_windows),
         "pdb_p95_worst": max((field(line, "p95", int) for line in pdb_windows), default=0),
         "pdb_p99_worst": max((field(line, "p99", int) for line in pdb_windows), default=0),
@@ -201,11 +202,12 @@ def report(rows: list[dict[str, float | int | str]], warmup: float) -> str:
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
+        gap = f"{row['gap_us']:.1f} us" if row["gap_us"] is not None else "—"
+        measured = f"{row['measured_hz']:.0f}" if row["measured_hz"] is not None else "—"
         out.append(
             f"| {row['engine']} | {row['cumulative']:.1f}% | {row['weighted']:.2f}% | "
             f"{row['window_mean']:.2f}% | {row['window_min']:.1f}–{row['window_max']:.1f}% | "
-            f"{row['window_last']:.1f}% | {row['windows']} | {row['gap_us']:.1f} us | "
-            f"{row['measured_hz']:.0f} |"
+            f"{row['window_last']:.1f}% | {row['windows']} | {gap} | {measured} |"
         )
     out.extend([
         "",
@@ -213,11 +215,14 @@ def report(rows: list[dict[str, float | int | str]], warmup: float) -> str:
         "|---|---:|---:|---:|---:|---:|",
     ])
     for row in rows:
-        out.append(
-            f"| {row['engine']} | {row['jitter_n']:,} | {row['jitter_mean']:.0f} us | "
-            f"{row['jitter_min']:.0f} us | {row['jitter_stddev']:.0f} us | "
-            f"{row['jitter_max'] / 1000.0:.1f} ms |"
-        )
+        if row["jitter_n"] is None:
+            out.append(f"| {row['engine']} | — | — | — | — | — |")
+        else:
+            out.append(
+                f"| {row['engine']} | {row['jitter_n']:,} | {row['jitter_mean']:.0f} us | "
+                f"{row['jitter_min']:.0f} us | {row['jitter_stddev']:.0f} us | "
+                f"{row['jitter_max'] / 1000.0:.1f} ms |"
+            )
     out.extend([
         "",
         "| Engine | PDB05 samples | Worst p95 | Worst p99 | Worst steady window | Worst observed |",
@@ -245,6 +250,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup", type=float, default=30.0, help="ignore snap windows before this wall time")
     parser.add_argument("--game", default="swe1")
     parser.add_argument("--update", default="0210")
+    parser.add_argument("--strict", action="store_true",
+                        help="run every selected engine with natural PIT timing")
     parser.add_argument("--output", type=Path, help="artifact directory (default: timestamped /tmp directory)")
     parser.add_argument("--parse-only", type=Path, metavar="DIR", help="summarize existing logs without running QEMU")
     return parser.parse_args()
