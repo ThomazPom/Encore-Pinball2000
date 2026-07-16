@@ -1,8 +1,9 @@
 # DCS engine timing comparison
 
 `run-comparison.py` reproduces the standard DCS workload against `pb2kslib`,
-the synchronous ADSP engine, and the threaded ADSP engine. Each engine runs
-sequentially so they do not compete for host CPU time.
+the generated-PCM `pb2kslib-adsp` engine, the synchronous ADSP engine, and the
+threaded ADSP engine. Each engine runs sequentially so they do not compete for
+host CPU time.
 
 The defaults are SWE1 update 2.10, a 90-second run, and this input sequence
 beginning exactly 11 seconds after the wrapper is launched:
@@ -17,7 +18,7 @@ Run it from anywhere in the repository:
 docs/measurements/dcs-engines/run-comparison.py
 ```
 
-It writes the three raw logs and `report.md` to a timestamped directory under
+It writes the four raw logs and `report.md` to a timestamped directory under
 `/tmp`. Use `--output DIR` to retain them somewhere else. The generated tables
 use full timing-audit `snap` windows at or after 30 seconds; the partial exit
 window is excluded from current delivery.

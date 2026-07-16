@@ -25,7 +25,7 @@ import sys
 import time
 
 
-ENGINES = ("pb2kslib", "adsp", "adsp-thread")
+ENGINES = ("pb2kslib", "pb2kslib-adsp", "adsp", "adsp-thread")
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 RUNNER = ROOT / "scripts" / "run-qemu.sh"
@@ -158,6 +158,15 @@ def summarize(log_path: Path, warmup: float) -> dict[str, float | int | str]:
         raise ValueError(f"{log_path}: no p2k-clkint-hotloop statistics")
     final_hotloop = next((line for line in reversed(hotloop) if " exit |" in line), hotloop[-1])
 
+    pdb_windows = []
+    snap_wall = None
+    for line in lines:
+        if "p2k-timing #" in line and " snap |" in line:
+            snap_wall = field(line, "wall")
+        elif "p2k-pdb05 snap | pdb05_wall_delta" in line:
+            if snap_wall is not None and snap_wall >= warmup:
+                pdb_windows.append(line)
+
     return {
         "engine": log_path.stem,
         "cumulative": field(final_timing, "delivery"),
@@ -176,6 +185,11 @@ def summarize(log_path: Path, warmup: float) -> dict[str, float | int | str]:
         "jitter_min": field(final_hotloop, "min_us"),
         "jitter_max": field(final_hotloop, "max_us"),
         "jitter_stddev": field(final_hotloop, "stddev_us"),
+        "pdb_n": sum(field(line, "n", int) for line in pdb_windows),
+        "pdb_p95_worst": max((field(line, "p95", int) for line in pdb_windows), default=0),
+        "pdb_p99_worst": max((field(line, "p99", int) for line in pdb_windows), default=0),
+        "pdb_window_worst": max((field(line, "max", int) for line in pdb_windows), default=0),
+        "pdb_run_worst": max((field(line, "max_total", int) for line in pdb_windows), default=0),
     }
 
 
@@ -204,6 +218,18 @@ def report(rows: list[dict[str, float | int | str]], warmup: float) -> str:
             f"{row['jitter_min']:.0f} us | {row['jitter_stddev']:.0f} us | "
             f"{row['jitter_max'] / 1000.0:.1f} ms |"
         )
+    out.extend([
+        "",
+        "| Engine | PDB05 samples | Worst p95 | Worst p99 | Worst steady window | Worst observed |",
+        "|---|---:|---:|---:|---:|---:|",
+    ])
+    for row in rows:
+        if row["pdb_n"]:
+            values = (f"{row['pdb_p95_worst']:.0f} us", f"{row['pdb_p99_worst']:.0f} us",
+                      f"{row['pdb_window_worst']:.0f} us", f"{row['pdb_run_worst']:.0f} us")
+        else:
+            values = ("—", "—", "—", "—")
+        out.append(f"| {row['engine']} | {row['pdb_n']:,} | " + " | ".join(values) + " |")
     out.extend([
         "",
         "`Current weighted` is sum(current services) / sum(current raises), not a mean of percentages.",
