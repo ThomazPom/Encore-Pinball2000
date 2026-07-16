@@ -17,9 +17,9 @@ dispatcher. The two `--dcs-mode` labels select that shared implementation.
 
 | Engine | Input | Status |
 |---|---|---|
-| `pb2kslib` | Extracted `<roms>/<game>_sound.bin` sample container | Default sample player |
+| `pb2kslib` | Extracted `<roms>/<game>_sound.bin` sample container | Compatibility sample player |
 | `adsp` | Original U109/U110 plus 1 MiB sound flash | Experimental synchronous native DSP |
-| `adsp-thread` | Same original assets | Experimental condition-driven mailbox worker; SPORT remains audio-clocked |
+| `adsp-thread` | Same original assets | Default native DSP; condition-driven mailbox worker, SPORT remains audio-clocked |
 
 Select one with:
 
@@ -41,6 +41,11 @@ Sound flash is selected in this order:
 2. `*_sf.rom` in the selected update;
 3. `<roms>/<game>_28f800.rom`;
 4. `<roms>/<game>/28f800.rom`.
+
+`adsp-thread` is the default because it keeps original firmware sound behavior
+while draining bursts of runtime commands independently from host audio
+callbacks. If original-format assets are incomplete, Encore reports that and
+falls back to `pb2kslib`.
 
 ## Host output
 

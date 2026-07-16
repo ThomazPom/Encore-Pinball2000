@@ -19,6 +19,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# Preserve explicit environment selection; the CLI can replace it below.
+export P2K_DCS_ENGINE="${P2K_DCS_ENGINE:-adsp-thread}"
+
 # --bench is an orchestration mode, not a QEMU machine option.  Dispatch it
 # before normal argument parsing and forward every other option (game, update,
 # strict, etc.) to the isolated self-diagnostic runner.
@@ -243,12 +246,10 @@ AUDIO
                             Useful with update bundles such as SWE1 2.00
                             that contain game code but omit *_sf.rom.
   --dcs-engine pb2kslib|adsp|adsp-thread
-                            Audio content engine. pb2kslib is the stable
-                            default. adsp is experimental: boot and execute
-                            original u109/u110 + selected update sf.rom and
-                            render SPORT PCM without pb2kslib playback.
-                            adsp-thread is the experimental condition-driven
-                            mailbox worker; SPORT stays callback-clocked.
+                            Audio content engine. adsp-thread is the default:
+                            original firmware/assets with a condition-driven
+                            mailbox worker. adsp runs the same firmware
+                            synchronously. pb2kslib uses extracted samples.
   --sound-loading lazy|preload
                             lazy   (default) decode samples on-demand.
                             preload  walk every pb2k entry at install

@@ -976,9 +976,10 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
         return;                          /* off by default; wrapper opts in */
     }
 
-    const char *engine = getenv("P2K_DCS_ENGINE");
-    if (engine && (!strcmp(engine, "adsp") ||
-                   !strcmp(engine, "adsp-thread"))) {
+    const char *engine_env = getenv("P2K_DCS_ENGINE");
+    const char *engine = (engine_env && *engine_env) ? engine_env :
+                         "adsp-thread";
+    if (!strcmp(engine, "adsp") || !strcmp(engine, "adsp-thread")) {
         if (p2k_dcs_adsp_prepare(st)) {
             a->adsp_engine = true;
             info_report("dcs-adsp: native ADSP-2104 execution selected "
@@ -987,7 +988,7 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
             warn_report("dcs-adsp: original-format assets incomplete; "
                         "using pb2kslib fallback");
         }
-    } else if (engine && strcmp(engine, "pb2kslib") != 0) {
+    } else if (strcmp(engine, "pb2kslib") != 0) {
         warn_report("dcs-audio: unknown P2K_DCS_ENGINE=%s; using pb2kslib",
                     engine);
     }

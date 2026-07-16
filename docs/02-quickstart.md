@@ -63,7 +63,8 @@ changed.
 | TCP serial console | `scripts/run-qemu.sh --serial-tcp 4444` |
 | Run without a window | `scripts/run-qemu.sh --display none` |
 | Disable audio | `scripts/run-qemu.sh --no-audio` |
-| Native DSP audio | `scripts/run-qemu.sh --dcs-engine adsp` |
+| Synchronous DSP diagnostic | `scripts/run-qemu.sh --dcs-engine adsp` |
+| Extracted-sample compatibility audio | `scripts/run-qemu.sh --dcs-engine pb2kslib` |
 | Timing self-diagnostic | `scripts/run-qemu.sh --bench` |
 | Run at 75% game speed | `scripts/run-qemu.sh --speed-target 75` |
 
