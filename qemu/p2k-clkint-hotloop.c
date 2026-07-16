@@ -292,7 +292,7 @@ void p2k_clkint_hotloop_maybe_raise(CPUState *cs)
     CPUX86State *env = &X86_CPU(cs)->env;
 
     /* One IRQ0 in flight at a time: never raise while previous is
-     * still pending in IRR or being serviced (ISR). This is the
+     * still pending in IRR or being serviced (ISR). */
     if (m->irr & 0x01) {
         s_hotloop_skipped_pending++;
         return;
