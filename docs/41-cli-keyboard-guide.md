@@ -9,7 +9,7 @@ to XINA.
 | Key | Action |
 |---|---|
 | `Space` / `S` | Start |
-| `F10` / `C` | Insert credit |
+| `F10` / `C` | Pulse coin slot 1 |
 | `F4` | Open or close the coin door |
 | `F7` / `F8` | Left/right flipper |
 | `F6` / `F9` | Left/right action button |
@@ -37,7 +37,8 @@ by game state or update.
 ## Credit pulses
 
 Each `F10` or `C` press starts a 60-scan coin-switch pulse. Pressing again while
-the pulse is active restarts that duration.
+the pulse is active restarts that duration. The game awards credits according
+to its pricing adjustments, so one pulse is not necessarily one credit.
 
 ## Modes without desktop keys
 
