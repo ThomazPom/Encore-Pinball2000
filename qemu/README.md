@@ -36,29 +36,59 @@ The files under `upstream-patches/` modify the pinned QEMU core. They are not
 interchangeable machine sources: review and revalidate them whenever the QEMU
 version changes.
 
-Encore defaults to the validated QEMU 10.0.8 source release. The build applies
-patches with zero context fuzz: an upstream source change must fail at the
-patch step rather than attach a hook at a nearby location. Other QEMU versions
-are experimental until the complete machine has been built and boot-tested;
-successful compilation alone is not validation.
+Encore defaults to the validated QEMU 10.0.8 source release. Each directory is
+one logical patch family. Variant filenames declare their source-compatible
+release or inclusive range:
+
+```text
+qemu-10.0.8.patch
+qemu-10.0.0_to_10.0.8.patch
+```
+
+`upstream-patches/series` defines family order without encoding it in directory
+names. The builder requires one and only one declared variant from every family
+to apply with zero context fuzz. A missing, ambiguous or rejected family stops
+the build before compilation.
 
 | Patch | Why it exists | Maintenance status |
 |---|---|---|
-| `0001-i386-tcg-cyrix-mediagx-shim.patch` | Implements the gated MediaGX display-driver instructions missing from stock i386 TCG | Required CPU support. `CPU_WRITE` includes an empirically established scratchpad side effect in addition to the documented internal-register write. |
-| `0002-p2k-observe-irq0-delivery.patch` | Observes clkint entry, interrupt acknowledgement, IRET and PIC EOI | Required for current timing control and diagnostics. It crosses several QEMU interrupt paths, so benchmark its overhead after an upgrade. |
-| `0003-p2k-tcg-cflags-override.patch` | Gives the machine a callback at the TCG execution-loop boundary | Required by HOTLOOP. This is the most upgrade-sensitive patch because the callback is evaluated for every translated-block lookup. Its ordinary path returns the original flags. |
-| `0004-p2k-pit-speed-target.patch` | Scales the i8254 channel divisor for `--speed-target` | Required for speed control in PIT-backed modes. The weak default leaves other machines unchanged. |
+| `mediagx-instructions` | Implements the gated MediaGX display-driver instructions missing from stock i386 TCG | Required CPU support. `CPU_WRITE` includes an empirically established scratchpad side effect in addition to the documented internal-register write. |
+| `irq-observation` | Observes clkint entry, interrupt acknowledgement, IRET and PIC EOI | Required for current timing control and diagnostics. It crosses several QEMU interrupt paths, so benchmark its overhead after an upgrade. |
+| `tcg-cflags-override` | Gives the machine a callback at the TCG execution-loop boundary | Used by `--legacy-hotloop` and TB-boundary diagnostics. Default host-timer HOTLOOP returns before using its legacy delivery path. This is the most upgrade-sensitive family. |
+| `pit-speed-target` | Scales the i8254 channel divisor for `--speed-target` | Required for speed control in PIT-backed modes. The weak default leaves other machines unchanged. |
 
 > [!IMPORTANT]
-> Do not remove `0002` as “diagnostics only”: HOTLOOP's adaptive controller
-> reads the observed clkint count. Do not remove `0003` while HOTLOOP is a
-> supported clock source.
+> Do not remove `irq-observation` as “diagnostics only”: HOTLOOP's adaptive
+> controller reads the observed clkint count.
 
-`0002` supplies the clkint-entry count used by default HOTLOOP, HOTLOOP with
+`irq-observation` supplies the clkint-entry count used by default HOTLOOP, HOTLOOP with
 `--with-pit`, and HOTLOOP `--speed-target` control. It also supplies the guest
 IRQ observations reported by `-v` and `--bench`. Plain `--strict` execution
 does not need the count for clock control, although `--strict --bench` and
 `--strict -v` still use it for measurement.
+
+## Validate a QEMU release range
+
+Source-test every stable release in an inclusive range against pristine QEMU
+trees:
+
+```sh
+scripts/qemu-patch-series.py validate \
+  --from 10.0.0 --to 10.0.8
+```
+
+Add `--update-names` only after the complete requested range passes. It renames
+each selected variant to the tested compatibility range. The validator checks
+patch application, not compilation or boot behavior; promote a release into
+`KNOWN_GOOD_VERS` only after those later checks also pass.
+
+Compatibility ranges cover stable releases only. Release candidates require
+an explicitly RC-named variant and a validation run with `--include-rc`.
+
+The current patch bodies pass zero-fuzz source validation across every
+published stable QEMU 10.x release from 10.0.0 through 10.2.4. This is source
+compatibility, not a claim that those releases have all been compiled or
+boot-tested; 10.0.8 remains the runtime-validated default.
 
 ## Deliberate compatibility boundaries
 

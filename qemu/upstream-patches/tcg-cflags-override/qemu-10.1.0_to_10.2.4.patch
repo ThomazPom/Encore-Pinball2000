@@ -1,0 +1,41 @@
+p2k: cflags override hook for the TCG execution loop
+
+Expose a weak identity callback after next-TB flags are selected. The
+pinball2000 machine uses it for the retained TB-boundary clock path and
+timing diagnostics.
+
+--- a/accel/tcg/cpu-exec.c
++++ b/accel/tcg/cpu-exec.c
+@@ -915,6 +915,9 @@
+ static int __attribute__((noinline))
+ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
+ {
++    /* Machine callback is identity unless the selected machine overrides it. */
++    extern uint32_t p2k_tcg_cflags_override(uint32_t base);
++
+     int ret;
+ 
+     /* if an exception is pending, we execute it here */
+@@ -939,6 +942,7 @@
+             } else {
+                 cpu->cflags_next_tb = -1;
+             }
++            s.cflags = p2k_tcg_cflags_override(s.cflags);
+ 
+             if (check_for_breakpoints(cpu, s.pc, &s.cflags)) {
+                 break;
+--- a/accel/tcg/tcg-accel-ops.c
++++ b/accel/tcg/tcg-accel-ops.c
+@@ -48,6 +48,12 @@
+ #include "tcg-accel-ops-rr.h"
+ #include "tcg-accel-ops-icount.h"
+ 
++/* Identity default; the pinball2000 machine supplies the implementation. */
++__attribute__((weak)) uint32_t p2k_tcg_cflags_override(uint32_t base)
++{
++    return base;
++}
++
+ /* common functionality among all TCG variants */
+ 
+ void tcg_cpu_init_cflags(CPUState *cpu, bool parallel)

@@ -1,0 +1,132 @@
+p2k: observe IRQ0 delivery from TCG and PIC EOI paths
+
+Expose narrow audit hooks to the Pinball 2000 machine so its timing panel
+can distinguish PIT-derived expected edges from observed IRQ0 delivery:
+TCG clkint handler entries and master-PIC EOI writes that clear IRQ0.
+Adds intack (do_interrupt_x86_hardirq) and IRET (helper_iret_protected)
+observers so the audit panel can split per-segment dwell.
+
+--- a/target/i386/helper.h
++++ b/target/i386/helper.h
+@@ -7,6 +7,7 @@
+ DEF_HELPER_1(p2k_mediagx_bb1_reset,    void, env)
+ DEF_HELPER_FLAGS_3(p2k_mediagx_log_0f3x_ud,   TCG_CALL_NO_WG,
+                    noreturn, env, i32, tl)
++DEF_HELPER_1(p2k_clkint_enter,          void, env)
+ 
+ DEF_HELPER_FLAGS_4(cc_compute_all, TCG_CALL_NO_RWG_SE, tl, tl, tl, tl, int)
+ DEF_HELPER_FLAGS_4(cc_compute_c, TCG_CALL_NO_RWG_SE, tl, tl, tl, tl, int)
+--- a/target/i386/tcg/misc_helper.c
++++ b/target/i386/tcg/misc_helper.c
+@@ -42,6 +42,7 @@
+                                                uint32_t value);
+ extern uint32_t p2k_mediagx_internal_reg_read(uint32_t ebx_addr);
+ extern void     p2k_mediagx_bb1_reset_internal(void);
++extern void     p2k_timing_audit_note_clkint_enter(uint64_t eip);
+ extern uint8_t  p2k_cyrix_ccr_get(uint8_t index);
+ 
+ /* Databook §4.1.5: GCR[B8h] bits[3:2] = SCRATCHPAD_SIZE. Zero means
+@@ -73,6 +74,11 @@
+         env->segs[R_CS].selector, env->segs[R_DS].selector);
+ }
+ 
++void helper_p2k_clkint_enter(CPUX86State *env)
++{
++    p2k_timing_audit_note_clkint_enter(env->eip);
++}
++
+ /* 0F 3C CPU_WRITE.
+  *
+  * Updates the modeled MediaGX internal register at address EBX with
+--- a/target/i386/tcg/translate.c
++++ b/target/i386/tcg/translate.c
+@@ -38,6 +38,8 @@
+ #include "exec/helper-info.c.inc"
+ #undef  HELPER_H
+ 
++extern bool p2k_clkint_tcg_match_pc(uint64_t pc, uint64_t cs_base);
++
+ /* Fixes for Windows namespace pollution.  */
+ #undef IN
+ #undef OUT
+@@ -3781,6 +3783,11 @@
+         pc_arg &= ~TARGET_PAGE_MASK;
+     }
+     tcg_gen_insn_start(pc_arg, dc->cc_op);
++#ifndef CONFIG_USER_ONLY
++    if (p2k_clkint_tcg_match_pc(dc->base.pc_next, dc->cs_base)) {
++        gen_helper_p2k_clkint_enter(tcg_env);
++    }
++#endif
+ }
+ 
+ static void i386_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
+--- a/target/i386/tcg/seg_helper.c
++++ b/target/i386/tcg/seg_helper.c
+@@ -1269,8 +1269,16 @@
+     qemu_plugin_vcpu_interrupt_cb(CPU(cpu), last_pc);
+ }
+ 
++/* p2k: hardware-IRQ intack observer (CPU side: vector resolved, about to
++ * push frame and load handler CS:EIP). Called for every hardirq, the
++ * audit module filters on intno==0x20 so cost outside p2k is one
++ * comparison + indirect call. */
++extern void p2k_timing_audit_note_intack(int intno);
++__attribute__((weak)) void p2k_timing_audit_note_intack(int intno) { }
++
+ void do_interrupt_x86_hardirq(CPUX86State *env, int intno, int is_hw)
+ {
++    p2k_timing_audit_note_intack(intno);
+     do_interrupt_all(env_archcpu(env), intno, 0, 0, 0, is_hw);
+ }
+ 
+@@ -2215,10 +2223,14 @@
+     env->regs[R_ESP] = new_esp;
+ }
+ 
++extern void p2k_timing_audit_note_iret(uint32_t eip);
++__attribute__((weak)) void p2k_timing_audit_note_iret(uint32_t eip) { }
++
+ void helper_iret_protected(CPUX86State *env, int shift, int next_eip)
+ {
+     int tss_selector, type;
+     uint32_t e1, e2;
++    p2k_timing_audit_note_iret(env->eip);
+ 
+     /* specific case for TSS */
+     if (env->eflags & NT_MASK) {
+--- a/hw/intc/i8259.c
++++ b/hw/intc/i8259.c
+@@ -58,6 +58,8 @@
+ PICCommonState *isa_pic;
+ static PICCommonState *slave_pic;
+ 
++extern void p2k_timing_audit_note_pic_eoi(bool master, int irq, uint8_t ocw2);
++
+ /* return the highest priority found in mask (highest = smallest
+    number). Return 8 if no irq */
+ static int get_priority(PICCommonState *s, int mask)
+@@ -267,6 +269,7 @@
+                 priority = get_priority(s, s->isr);
+                 if (priority != 8) {
+                     irq = (priority + s->priority_add) & 7;
++                    p2k_timing_audit_note_pic_eoi(s->master, irq, val);
+                     s->isr &= ~(1 << irq);
+                     if (cmd == 5) {
+                         s->priority_add = (irq + 1) & 7;
+@@ -276,6 +279,7 @@
+                 break;
+             case 3:
+                 irq = val & 7;
++                p2k_timing_audit_note_pic_eoi(s->master, irq, val);
+                 s->isr &= ~(1 << irq);
+                 pic_update_irq(s);
+                 break;
+@@ -285,6 +289,7 @@
+                 break;
+             case 7:
+                 irq = val & 7;
++                p2k_timing_audit_note_pic_eoi(s->master, irq, val);
+                 s->isr &= ~(1 << irq);
+                 s->priority_add = (irq + 1) & 7;
+                 pic_update_irq(s);

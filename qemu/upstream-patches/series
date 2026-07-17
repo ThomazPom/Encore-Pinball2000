@@ -1,0 +1,4 @@
+mediagx-instructions
+irq-observation
+tcg-cflags-override
+pit-speed-target

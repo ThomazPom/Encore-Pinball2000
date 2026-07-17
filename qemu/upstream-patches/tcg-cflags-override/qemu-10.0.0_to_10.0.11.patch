@@ -36,8 +36,8 @@ upstream behavior is unchanged when the p2k object is not linked.
                  break;
 --- a/accel/tcg/tcg-accel-ops.c
 +++ b/accel/tcg/tcg-accel-ops.c
-@@ -38,6 +38,12 @@
- #include "tcg-accel-ops-mttcg.h"
+@@ -46,6 +46,12 @@
+ #include "tcg-accel-ops-rr.h"
  #include "tcg-accel-ops-icount.h"
  
 +/* p2k: weak default for the cflags override hook used by cpu-exec.c.
@@ -48,4 +48,4 @@ upstream behavior is unchanged when the p2k object is not linked.
 +
  /* common functionality among all TCG variants */
  
- void tcg_exec_realizefn(CPUState *cpu, Error **errp)
+ void tcg_cpu_init_cflags(CPUState *cpu, bool parallel)
