@@ -2,13 +2,13 @@
 # Build a minimal qemu-system-i386 that knows the 'pinball2000' machine.
 #
 # Strategy: NO vendoring, NO fork.  Download a pinned upstream QEMU
-# release tarball into qemu-build/, copy our small out-of-tree machine
-# source from qemu/ into hw/i386/, append two lines to hw/i386/meson.build
-# + hw/i386/Kconfig, configure --target-list=i386-softmmu only, build.
+# release tarball into the cache, copy changed out-of-tree machine sources
+# from qemu/ into hw/i386/, maintain a generated Meson/Kconfig graft, configure
+# a no-default-devices i386-softmmu target, and build only qemu-system-i386.
 #
 # Output: $P2K_QEMU_BUILD_DIR/qemu-<ver>/build/qemu-system-i386
 #
-# Idempotent: re-running just refreshes the copies and rebuilds (ninja).
+# Idempotent: unchanged sources do not touch the graft or trigger recompiles.
 #
 # Usage:
 #   scripts/build-qemu.sh                      # build the pinned default ($DEFAULT_VER)
@@ -113,30 +113,19 @@ URL="$MIRROR/$TARBALL"
 mkdir -p "$WORK"
 cd "$WORK"
 
-# --- Detect orphaned patches (removed from source but still baked into a
-# cached extracted tree) and force a clean re-extraction if found ----------
-# A patch's *effects* persist in $SRC forever once applied, even after its
-# .patch file is later deleted from qemu/upstream-patches/ (e.g. an
-# experiment that got ripped out). The hash-tracked sentinel loop further
-# below only re-applies patches that still EXIST on disk; it has no
-# mechanism to reverse-apply one whose source file is gone. Without this
-# check, a deleted patch's dangling declarations/definitions/call-sites
-# silently survive in the cached build tree across rebuilds.
-# Root-caused 2026-07: 0004-p2k-idle-loop-tb-cutter.patch was deleted (its
-# effects removed from qemu/*.c) but its `p2k_idle_loop_breaker_enabled()`
-# extern declaration + call-site patched into target/i386/tcg/translate.c
-# survived in every cached $SRC, producing an undefined-reference link
-# failure the next time anything touched that translation unit.
+# --- Detect stale patch effects -------------------------------------------
+# The extracted upstream tree is disposable. If an applied patch disappears
+# or changes, re-extract instead of trying to reverse a different patch body
+# against an already modified tree.
 PATCH_DIR="$ROOT/qemu/upstream-patches"
 APPLIED_DIR="$SRC/.p2k-applied-patches"
 if [[ -d "$APPLIED_DIR" ]]; then
   for sentinel in "$APPLIED_DIR"/*.patch; do
     [[ -e "$sentinel" ]] || continue
     name="$(basename "$sentinel")"
-    if [[ ! -e "$PATCH_DIR/$name" ]]; then
-      echo "[build-qemu] $name was removed from qemu/upstream-patches/ but" \
-           "its effects are still baked into the cached $SRC -- forcing a" \
-           "clean re-extraction so patches re-apply from a pristine tree"
+    if [[ ! -e "$PATCH_DIR/$name" ]] || \
+       [[ "$(cat "$sentinel")" != "$(sha1sum "$PATCH_DIR/$name" | awk '{print $1}')" ]]; then
+      echo "[build-qemu] patch set changed; refreshing cached upstream source"
       rm -rf "$SRC"
       break
     fi
@@ -184,56 +173,68 @@ if [[ -d "$PATCH_DIR" ]]; then
       continue
     fi
     echo "[build-qemu] applying upstream patch $name"
-    if ! patch -d "$SRC" -p1 --forward --silent < "$p"; then
-      # Maybe a stale, different version of this patch is already applied.
-      echo "[build-qemu] patch $name failed forward; trying reverse-then-apply"
-      patch -d "$SRC" -p1 -R --silent < "$p" || true
-      patch -d "$SRC" -p1 --silent < "$p"
-    fi
+    patch -d "$SRC" -p1 --forward --silent < "$p"
     echo "$cur_hash" > "$sentinel"
   done
 fi
 
 # --- Inject our machine source ---------------------------------------------
 HW_I386="$SRC/hw/i386"
-echo "[build-qemu] copying qemu/{pinball2000,p2k-*}.{c,h} -> $HW_I386/"
+UPDATED_FILES=0
+copy_if_changed() {
+  local source="$1" destination="$2"
+  if [[ ! -f "$destination" ]] || ! cmp -s "$source" "$destination"; then
+    cp "$source" "$destination"
+    UPDATED_FILES=$((UPDATED_FILES + 1))
+  fi
+}
 # Headers first so the .c files compile
-cp "$ROOT/qemu/pinball2000.h" "$HW_I386/pinball2000.h"
-cp "$ROOT/qemu/p2k-internal.h" "$HW_I386/p2k-internal.h"
+copy_if_changed "$ROOT/qemu/pinball2000.h" "$HW_I386/pinball2000.h"
+copy_if_changed "$ROOT/qemu/p2k-internal.h" "$HW_I386/p2k-internal.h"
 for f in "$ROOT"/qemu/p2k-*.h "$ROOT"/qemu/p2k-*.inc; do
   [[ -e "$f" ]] || continue
-  cp "$f" "$HW_I386/$(basename "$f")"
+  copy_if_changed "$f" "$HW_I386/$(basename "$f")"
 done
 # Machine + per-concern source files
-cp "$ROOT/qemu/pinball2000.c" "$HW_I386/pinball2000.c"
+copy_if_changed "$ROOT/qemu/pinball2000.c" "$HW_I386/pinball2000.c"
 for f in "$ROOT"/qemu/p2k-*.c; do
-  cp "$f" "$HW_I386/$(basename "$f")"
+  copy_if_changed "$f" "$HW_I386/$(basename "$f")"
 done
+echo "[build-qemu] machine graft: $UPDATED_FILES changed file(s)"
 P2K_C_FILES=( pinball2000.c )
 for f in "$ROOT"/qemu/p2k-*.c; do
   P2K_C_FILES+=( "$(basename "$f")" )
 done
 
-# --- Patch hw/i386/meson.build (re-patched every run so new p2k-*.c get added) -
+# --- Patch hw/i386/meson.build only when generated content changes ---------
 MESON="$HW_I386/meson.build"
-# Strip any previous pinball2000 block (between the marker and the next blank line).
-sed -i '/# --- Pinball 2000 /,/^$/d' "$MESON"
-# Also strip a trailing line that may have been left without a blank separator.
-sed -i '/i386_ss\.add.*pinball2000\.c/d' "$MESON"
-echo "[build-qemu] patching $MESON"
+MESON_NEW="$(mktemp "$HW_I386/.p2k-meson.XXXXXX")"
+awk '
+  /# --- Pinball 2000 \(out-of-tree/ { stop = 1 }
+  !stop { line[++count] = $0 }
+  END {
+    while (count > 0 && line[count] == "") count--
+    for (i = 1; i <= count; i++) print line[i]
+  }
+' "$MESON" > "$MESON_NEW"
 {
   echo
   echo "# --- Pinball 2000 (out-of-tree, copied in by scripts/build-qemu.sh) ---"
   echo "p2k_vorbisfile_dep = dependency('vorbisfile', required: false)"
-  printf "p2k_files = files("
-  first=1
+  printf "p2k_files = files('x86-common.c'"
   for f in "${P2K_C_FILES[@]}"; do
-    if [[ $first -eq 1 ]]; then first=0; else printf ", "; fi
-    printf "'%s'" "$f"
+    printf ", '%s'" "$f"
   done
   printf ")\n"
   echo "i386_ss.add(when: 'CONFIG_PINBALL2000', if_true: [p2k_files, p2k_vorbisfile_dep])"
-} >> "$MESON"
+  echo "# --- end Pinball 2000 ---"
+} >> "$MESON_NEW"
+if cmp -s "$MESON_NEW" "$MESON"; then
+  rm -f "$MESON_NEW"
+else
+  echo "[build-qemu] updating Encore Meson graft"
+  mv "$MESON_NEW" "$MESON"
+fi
 
 # --- Patch hw/i386/Kconfig (idempotent) ------------------------------------
 KCONFIG="$HW_I386/Kconfig"
@@ -260,31 +261,45 @@ if [[ -f "$DEFCFG" ]] && ! grep -q "PINBALL2000" "$DEFCFG"; then
   echo "CONFIG_PINBALL2000=y" >> "$DEFCFG"
 fi
 
-# --- Configure (only once) -------------------------------------------------
+# --- Configure when the minimal build profile changes ----------------------
 BUILD="$SRC/build"
+GTK_FLAG="--disable-gtk"
+if pkg-config --exists gtk+-3.0 2>/dev/null; then
+  GTK_FLAG="--enable-gtk"
+fi
+CONFIG_ARGS=(
+  --target-list=i386-softmmu
+  --without-default-devices
+  --disable-docs
+  --disable-tools
+  --disable-guest-agent
+  "$GTK_FLAG"
+  --disable-vnc
+  --disable-werror
+  --disable-plugins
+  --enable-sdl
+)
+CONFIG_PROFILE="$(printf '%s\n' "${CONFIG_ARGS[@]}" | sha256sum | awk '{print $1}')"
+CONFIG_SENTINEL="$SRC/.p2k-config-profile"
+if [[ -f "$BUILD/build.ninja" ]] && \
+   { [[ ! -f "$CONFIG_SENTINEL" ]] || [[ "$(cat "$CONFIG_SENTINEL")" != "$CONFIG_PROFILE" ]]; }; then
+  echo "[build-qemu] minimal configure profile changed; recreating build directory"
+  rm -rf "$BUILD"
+fi
 if [[ ! -f "$BUILD/build.ninja" ]]; then
-  echo "[build-qemu] configuring (i386-softmmu only)"
+  echo "[build-qemu] configuring minimal pinball2000/i386-softmmu build"
   rm -rf "$BUILD"
   cd "$SRC"
   # Enable GTK display backend if dev headers are present so users can
   # `--display gtk` from run-qemu.sh; otherwise fall back to disabling it
   # so configure doesn't error out.
-  GTK_FLAG="--disable-gtk"
-  if pkg-config --exists gtk+-3.0 2>/dev/null; then
-    GTK_FLAG="--enable-gtk"
+  if [[ "$GTK_FLAG" == "--enable-gtk" ]]; then
     echo "[build-qemu] gtk+-3.0 found → --enable-gtk"
   else
     echo "[build-qemu] gtk+-3.0 not found → --disable-gtk (apt install libgtk-3-dev to enable)"
   fi
-  ./configure \
-    --target-list=i386-softmmu \
-    --disable-docs \
-    --disable-tools \
-    --disable-guest-agent \
-    "$GTK_FLAG" \
-    --disable-vnc \
-    --disable-werror \
-    --enable-sdl
+  ./configure "${CONFIG_ARGS[@]}"
+  echo "$CONFIG_PROFILE" > "$CONFIG_SENTINEL"
 fi
 
 # --- Build qemu-system-i386 ------------------------------------------------

@@ -43,9 +43,10 @@ scripts/run-qemu.sh --game swe1
 scripts/run-qemu.sh --game rfm
 ```
 
-The build cache defaults to `$HOME/.cache/p2k-qemu-build`. Re-running the build
-script copies current Encore sources into that cache and rebuilds only what
-changed.
+The build cache defaults to `$HOME/.cache/p2k-qemu-build`. The build excludes
+QEMU's default hardware-device set and includes the i386/TCG core plus Encore's
+explicit dependencies. Re-running the script copies only changed Encore files;
+an unchanged build is normally a sub-second Ninja check.
 
 > [!TIP]
 > Press `F10` for a credit, `Space` to start and `F4` to open the coin door.
