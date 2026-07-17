@@ -126,46 +126,49 @@ def build_probe(output: Path) -> bytes:
 
 
 def locate_clkint(port: int, artifact: Path) -> int:
-    memory = artifact / "guest-system-memory.bin"
-    deadline = time.monotonic() + 20.0
-    while True:
-        memory.unlink(missing_ok=True)
-        gdb(port, [f"dump binary memory {memory} 0x00000000 0x00300000", "detach"])
-        image = memory.read_bytes()
-        hits: list[int] = []
-        start = 0
-        while True:
-            found = image.find(CLKINT_SIGNATURE, start)
-            if found < 0:
-                break
-            hits.append(found)
-            start = found + 1
+    # Ask the running CPU for IDTR rather than searching RAM for something
+    # that merely resembles an IDT. XINU updates do not all align IDTR to an
+    # eight-byte address, and several legitimate routines share clkint's six
+    # prologue bytes. Vector 0x20 in the active table is unambiguous.
+    registers = gdb(port, ["monitor info registers", "detach"])
+    match = re.search(r"^IDT=\s*([0-9a-fA-F]+)\s+([0-9a-fA-F]+)",
+                      registers, re.MULTILINE)
+    if not match:
+        raise RuntimeError("QEMU did not report the active IDT register")
+    idt_base = int(match.group(1), 16)
+    idt_limit = int(match.group(2), 16)
+    vector_offset = 0x20 * 8
+    if idt_limit < vector_offset + 7:
+        raise RuntimeError(f"active IDT is too short for IRQ0: limit=0x{idt_limit:x}")
 
-        def valid_gate(position: int) -> bool:
-            return (position >= 0 and position + 8 <= len(image) and
-                    image[position + 2:position + 6] == bytes.fromhex("0800008f"))
+    gate_path = artifact / "irq0-gate.bin"
+    gate_address = idt_base + vector_offset
+    gdb(port, [f"dump binary memory {gate_path} 0x{gate_address:08x} "
+               f"0x{gate_address + 8:08x}", "detach"])
+    descriptor = gate_path.read_bytes()
+    if len(descriptor) != 8:
+        raise RuntimeError("could not read the active IRQ0 gate")
+    selector = struct.unpack_from("<H", descriptor, 2)[0]
+    attributes = descriptor[5]
+    handler = (struct.unpack_from("<H", descriptor)[0] |
+               struct.unpack_from("<H", descriptor, 6)[0] << 16)
+    if not attributes & 0x80 or attributes & 0x0F not in (0x0E, 0x0F):
+        raise RuntimeError(f"active IRQ0 descriptor is not a present x86 gate: "
+                           f"{descriptor.hex()}")
 
-        irq0: list[tuple[int, int]] = []
-        for idt_base in range(0, len(image) - 33 * 8, 8):
-            if valid_gate(idt_base - 8):
-                continue
-            if not all(valid_gate(idt_base + vector * 8) for vector in range(33)):
-                continue
-            descriptor = image[idt_base + 0x20 * 8:idt_base + 0x20 * 8 + 8]
-            address = (struct.unpack_from("<H", descriptor)[0] |
-                       struct.unpack_from("<H", descriptor, 6)[0] << 16)
-            if address in hits:
-                irq0.append((address, idt_base))
-        irq0 = sorted(set(irq0))
-        if len(irq0) == 1:
-            (artifact / "idt.json").write_text(json.dumps({
-                "irq0_handler": f"0x{irq0[0][0]:08x}",
-                "idt_base": f"0x{irq0[0][1]:08x}",
-            }, indent=2) + "\n")
-            return irq0[0][0]
-        if time.monotonic() >= deadline:
-            raise RuntimeError(f"expected one live clkint handler, signatures={list(map(hex, hits))}")
-        time.sleep(1.0)
+    prologue = artifact / "irq0-prologue.bin"
+    gdb(port, [f"dump binary memory {prologue} 0x{handler:08x} "
+               f"0x{handler + len(CLKINT_SIGNATURE):08x}", "detach"])
+    actual = prologue.read_bytes()
+    if actual != CLKINT_SIGNATURE:
+        raise RuntimeError(f"active IRQ0 handler 0x{handler:08x} has unknown "
+                           f"prologue {actual.hex()}")
+    (artifact / "idt.json").write_text(json.dumps({
+        "irq0_handler": f"0x{handler:08x}",
+        "idt_base": f"0x{idt_base:08x}", "idt_limit": f"0x{idt_limit:04x}",
+        "selector": f"0x{selector:04x}", "descriptor": descriptor.hex(),
+    }, indent=2) + "\n")
+    return handler
 
 
 def install_probe(port: int, artifact: Path, template: bytes) -> tuple[int, bytes]:
