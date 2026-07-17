@@ -26,9 +26,8 @@ executing translated blocks. On affected hosts, XINU therefore receives fewer
 timer interrupts than intended and commands such as `sleep 10` take too long in
 wall time.
 
-HOTLOOP avoids that slowdown by checking delivery at TCG block boundaries and
-re-raising QEMU's IRQ0 input when the CPU can accept another interrupt. QEMU's
-i8259 arbitrates the request,
+HOTLOOP avoids that slowdown by pacing normal i8259 IRQ0 pulses from a
+host-wall-clock timer. QEMU's i8259 arbitrates the request,
 the x86 CPU enters the guest's IDT vector, and XINU performs its normal EOI and
 IRET.
 
@@ -41,8 +40,8 @@ Implementation:
 - `qemu/p2k-clkint-hotloop.c` — rate control and IRQ0 re-raise decisions;
 - `qemu/pinball2000.c` — PIT IRQ0 tap and HOTLOOP-only suppression;
 - `qemu/p2k-timing-audit.c` — observes PIT, IRQ0, handler entry, EOI and drift;
-- QEMU upstream hooks installed by `scripts/build-qemu.sh` — call the observer
-  and HOTLOOP check at TCG execution boundaries.
+- QEMU upstream hooks installed by `scripts/build-qemu.sh` — call the timing
+  observer and retain the legacy TB-boundary HOTLOOP for controlled A/B tests.
 
 ## Adaptive rate control
 

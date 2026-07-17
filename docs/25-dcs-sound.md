@@ -75,6 +75,53 @@ while draining bursts of runtime commands independently from host audio
 callbacks. If original-format assets are incomplete, Encore reports that and
 falls back to `pb2kslib`.
 
+## Timing candidates
+
+Five configurations were selected for a matched rerun. Three passed the
+steady-state gates of IRQ standard deviation below 10 microseconds and PDB05
+worst gap no greater than 2 milliseconds. These are one-host SWE1 2.00 results,
+not portable guarantees. The driver-board reference describes blanking after
+about 2.5 milliseconds without a PDB05 watchdog pulse, so cabinet validation
+should prioritize repeatable worst gaps over small percentile differences.
+
+| Configuration | Delivery | IRQ σ | IRQ worst | PDB p99 | PDB worst | Result |
+|---|---:|---:|---:|---:|---:|---|
+| HOTLOOP `pb2kslib-adsp` | 100.07% | 7 µs | 474 µs | 274 µs | 410 µs | Pass |
+| HOTLOOP `adsp-thread` | 100.10% | 7 µs | 362 µs | 275 µs | 407 µs | Pass |
+| HOTLOOP+PIT `pb2kslib-adsp` | 100.16% | 16 µs | 681 µs | 285 µs | 2.63 ms | Fail |
+| HOTLOOP+PIT `adsp-thread` | 100.60% | 53 µs | 1.47 ms | 274 µs | 537 µs | Fail |
+| HOTLOOP `adsp-thread --dcs-pcm-cpu 2` | 100.11% | 7 µs | 392 µs | 276 µs | 830 µs | Pass |
+
+How to interpret the candidates:
+
+- HOTLOOP `pb2kslib-adsp` has the strongest measured gaps and lightweight
+  playback after generation. It requires preprocessing and plays PCM derived
+  from the selected update rather than emulating the sound hardware live.
+- HOTLOOP `adsp-thread` is the strongest live-hardware result in the refreshed
+  run. It needs neither the natural PIT nor a host-specific affinity choice,
+  and every measured PDB gap remained below 407 microseconds.
+- Adding PIT to `pb2kslib-adsp` did not repeat its earlier result: IRQ sigma
+  rose to 16 microseconds and PDB worst to 2.63 milliseconds. It fails both
+  selection gates and currently demonstrates no reason to prefer dual-source
+  timing.
+- Adding PIT to live `adsp-thread` also failed to repeat: delivery overshot to
+  100.60% and IRQ sigma rose to 53 microseconds. The earlier tail improvement
+  was not stable enough to justify the added timing interaction.
+- Pinning only `dcs-pcm` works through the public runtime option, but did not
+  improve this rerun: IRQ sigma tied unpinned HOTLOOP, IRQ worst was slightly
+  higher and PDB worst roughly doubled while remaining safe. Affinity depends
+  on CPU topology, power state and competing host load, so it stays optional.
+
+Run the pinned candidate with:
+
+```sh
+scripts/run-qemu.sh --dcs-engine adsp-thread --dcs-pcm-cpu 2
+```
+
+Do not pin the entire QEMU process: the vCPU, main loop and audio work require
+concurrent host scheduling. Re-run the full forensic benchmark before choosing
+a default for a different host.
+
 ## Host output
 
 The launcher chooses a supported host audio backend in `auto` mode. Use an
