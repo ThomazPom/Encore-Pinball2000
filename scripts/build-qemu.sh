@@ -33,7 +33,10 @@ DEFAULT_VER="10.0.8"
 # Versions known to build cleanly with the current hw/i386 grafts. Update
 # this list whenever a new release is validated end-to-end. --latest will
 # pick the newest entry from this list (or, with --unstable, ignore it).
-KNOWN_GOOD_VERS=( 10.0.0 10.0.1 10.0.2 10.0.3 10.0.4 10.0.5 10.0.6 10.0.7 10.0.8 )
+# Add a version only after the complete machine has been built and boot-tested
+# with the current patch set. At present, only the pinned default has that
+# evidence.
+KNOWN_GOOD_VERS=( 10.0.8 )
 QEMU_VER="${QEMU_VER:-$DEFAULT_VER}"
 INCLUDE_UNSTABLE=0
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -173,7 +176,10 @@ if [[ -d "$PATCH_DIR" ]]; then
       continue
     fi
     echo "[build-qemu] applying upstream patch $name"
-    patch -d "$SRC" -p1 --forward --silent < "$p"
+    # Never accept a nearby context match after an upstream refactor. A QEMU
+    # upgrade must either match the reviewed location exactly or stop here for
+    # an explicit patch port.
+    patch -d "$SRC" -p1 --forward --silent --fuzz=0 < "$p"
     echo "$cur_hash" > "$sentinel"
   done
 fi
