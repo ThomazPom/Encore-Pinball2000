@@ -286,6 +286,18 @@ AUDIO
     Plain pb2kslib is excluded because a fixed library can omit sounds added
     by newer updates. Strict real-ADSP modes currently fail the IRQ-jitter gate.
 
+    Example steady-state results (SWE1 2.00, this host; lower is better):
+      Configuration                 Delivery  IRQ sigma  IRQ worst  PDB p99  PDB worst
+      HOTLOOP pb2kslib-adsp          100.07%       7 us      383 us   274 us     548 us
+      HOTLOOP adsp-thread rerun      100.09%       9 us      554 us   343 us    1.07 ms
+      HOTLOOP+PIT pb2kslib-adsp      100.07%       7 us      393 us   273 us    1.08 ms
+      HOTLOOP+PIT adsp-thread        100.15%       8 us      445 us   295 us    1.10 ms
+      HOTLOOP adsp-thread PCM CPU2   100.12%       6 us      362 us   273 us    1.15 ms
+
+    Qualification gates used here: IRQ sigma < 10 us and PDB worst <= 2 ms.
+    These figures are a comparison example, not portable performance promises;
+    rerun the forensic full benchmark when choosing for another host.
+
 CONSOLE / DIAGNOSTICS
   --bench                   Run an isolated self-diagnostic using the normal
                             windowed display and audio defaults, including
