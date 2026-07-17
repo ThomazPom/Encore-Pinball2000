@@ -229,6 +229,15 @@ static void p2k_hotloop_host_adapt(int64_t now_ns)
         return;
     }
 
+    /* A debugger stop, host suspend, or scheduler freeze is not a pacing
+     * sample.  Rebasing avoids a full-gain correction from a window in which
+     * neither the timer nor the guest could run. */
+    if (elapsed_ns > s_pi_period_ns * 2) {
+        s_hotloop_host_sample_ns = now_ns;
+        s_hotloop_host_sample_clkints = clkints;
+        return;
+    }
+
     double measured_hz = (double)(clkints - s_hotloop_host_sample_clkints) *
                          1e9 / (double)elapsed_ns;
     double target_hz = 4003.97 * p2k_speed_target_percent() / 100.0;
