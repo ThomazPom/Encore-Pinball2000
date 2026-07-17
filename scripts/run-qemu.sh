@@ -158,7 +158,27 @@ audio_pick_auto() {
 
 # --- help -------------------------------------------------------------------
 print_help() {
-    cat <<'EOF'
+    local -a help_filter=(cat)
+    if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != dumb ]]; then
+        help_filter=(awk '
+          BEGIN {
+            esc = sprintf("%c", 27)
+            reset = esc "[0m"; bold = esc "[1m"; cyan = esc "[36m"
+            green = esc "[32m"; bright_green = esc "[1;32m"
+            yellow = esc "[33m"
+          }
+          /^[A-Z][A-Z /-]+$/ { print bold $0 reset; next }
+          /^    scripts\/run-qemu/ { print cyan $0 reset; next }
+          /^    HOTLOOP adsp-thread with/ { print cyan $0 reset; next }
+          /^      Configuration/ { print bold $0 reset; next }
+          /^      HOTLOOP adsp-thread PCM CPU2/ { print bright_green $0 reset; next }
+          /^      HOTLOOP/ { print green $0 reset; next }
+          /^    Plain pb2kslib/ || /^    Qualification gates/ ||
+          /^    These figures/ { print yellow $0 reset; next }
+          { print }
+        ')
+    fi
+    cat <<'EOF' | "${help_filter[@]}"
 Usage: scripts/run-qemu.sh [OPTIONS] [-- <qemu passthrough>]
 
 Run Williams Pinball 2000 firmware under the custom QEMU `pinball2000`
