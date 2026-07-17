@@ -17,7 +17,7 @@
 #include "qemu/notify.h"
 #include "qapi/error.h"
 #include "system/system.h"
-#include "exec/address-spaces.h"
+#include "p2k-qemu-compat.h"
 #include <dirent.h>
 #include <errno.h>
 #include <sys/stat.h>

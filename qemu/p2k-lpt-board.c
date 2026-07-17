@@ -30,8 +30,8 @@
 
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
-#include "exec/address-spaces.h"
-#include "exec/ioport.h"
+#include "p2k-qemu-compat.h"
+#include "p2k-qemu-compat.h"
 #include "ui/input.h"
 #include "ui/console.h"
 #include "ui/surface.h"

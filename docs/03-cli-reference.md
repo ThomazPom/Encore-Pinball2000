@@ -166,6 +166,9 @@ Builds a minimal `qemu-system-i386` with the Encore `pinball2000` machine.
 | `-h`, `--help` | — | Prints the script's usage block. | `scripts/build-qemu.sh --help` |
 | `--` | — | Stops option parsing; currently there are no build passthrough args after it. | `scripts/build-qemu.sh --` |
 | `QEMU_VER=...` | `10.0.8` | Environment override for version. | `QEMU_VER=10.0.8 scripts/build-qemu.sh` |
+
+The runtime-validated releases are QEMU 10.0.8 and 10.2.4. The pinned default
+remains 10.0.8; `--latest` selects 10.2.4.
 | `P2K_QEMU_BUILD_DIR=...` | `$HOME/.cache/p2k-qemu-build` | Build/cache root. Use a real Linux filesystem; shared folders may not support QEMU's symlinks. | `P2K_QEMU_BUILD_DIR=$HOME/p2k-build scripts/build-qemu.sh` |
 
 | `P2K_QEMU_MIRROR=...` | `https://download.qemu.org` | Alternate QEMU tarball mirror. | `P2K_QEMU_MIRROR=https://download.qemu.org scripts/build-qemu.sh --list` |

@@ -26,7 +26,7 @@
 #include "qemu/main-loop.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
-#include "exec/address-spaces.h"
+#include "p2k-qemu-compat.h"
 #include "system/system.h"
 #include "system/reset.h"
 #include "hw/boards.h"
@@ -338,7 +338,7 @@ static void p2k_set_update(Object *obj, const char *value, Error **errp)
     s->update_path = (value && *value) ? g_strdup(value) : NULL;
 }
 
-static void pinball2000_class_init(ObjectClass *oc, void *data)
+static void pinball2000_class_init(ObjectClass *oc, P2K_CLASS_INIT_DATA data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 

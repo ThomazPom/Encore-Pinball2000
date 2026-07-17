@@ -25,7 +25,7 @@
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "exec/cpu-common.h"
-#include "exec/address-spaces.h"
+#include "p2k-qemu-compat.h"
 #include "hw/intc/i8259.h"
 #include "hw/isa/i8259_internal.h"
 #include "hw/timer/i8254.h"
@@ -98,10 +98,10 @@ static void p2k_diag_collect(DiagSample *s)
 
     /* PIT — use the public accessor; no internal state poking. */
     if (p2k_diag_state && p2k_diag_state->pit) {
-        ISADevice *pit = (ISADevice *)p2k_diag_state->pit;
+        void *pit = p2k_diag_state->pit;
         for (int i = 0; i < 3; i++) {
             PITChannelInfo info;
-            pit_get_channel_info(pit, i, &info);
+            pit_get_channel_info(P2K_PIT_STATE(pit), i, &info);
             s->pit_mode[i]  = info.mode;
             s->pit_count[i] = info.initial_count & 0xffff;
             s->pit_gate[i]  = info.gate;
