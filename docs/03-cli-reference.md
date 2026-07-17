@@ -183,5 +183,11 @@ enabled only when `pkg-config --exists gtk+-3.0` succeeds. A hashed configure
 profile recreates the build directory when these choices change; ordinary
 source edits preserve the incremental build.
 
+The `machine-build-integration` patch family connects upstream QEMU to an
+Encore-owned `hw/i386/p2k/` directory. Its filename declares the tested QEMU
+source range. Validation requires zero-fuzz application; the builder generates
+the changing source list and machine Kconfig without rewriting upstream build
+files directly.
+
 Details: [quickstart](02-quickstart.md), [troubleshooting](04-troubleshooting.md)
 and [documentation index](README.md).

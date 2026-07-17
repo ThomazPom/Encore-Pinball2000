@@ -1,0 +1,24 @@
+diff --git a/hw/i386/meson.build b/hw/i386/meson.build
+--- a/hw/i386/meson.build
++++ b/hw/i386/meson.build
+@@ -45,1 +45,3 @@ i386_ss.add_all(xenpv_ss)
+ hw_arch += {'i386': i386_ss}
++
++subdir('p2k')
+diff --git a/hw/i386/Kconfig b/hw/i386/Kconfig
+--- a/hw/i386/Kconfig
++++ b/hw/i386/Kconfig
+@@ -210,3 +210,5 @@ config XEN_EMU
+     bool
+     default y
+     depends on KVM && I386
++
++source p2k/Kconfig
+diff --git a/configs/devices/i386-softmmu/default.mak b/configs/devices/i386-softmmu/default.mak
+--- a/configs/devices/i386-softmmu/default.mak
++++ b/configs/devices/i386-softmmu/default.mak
+@@ -26,2 +26,4 @@
+ # CONFIG_MICROVM=n
+ # CONFIG_NITRO_ENCLAVE=n
++
++CONFIG_PINBALL2000=y

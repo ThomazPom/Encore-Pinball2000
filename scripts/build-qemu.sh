@@ -3,7 +3,7 @@
 #
 # Strategy: NO vendoring, NO fork.  Download a pinned upstream QEMU
 # release tarball into the cache, copy changed out-of-tree machine sources
-# from qemu/ into hw/i386/, maintain a generated Meson/Kconfig graft, configure
+# from qemu/ into hw/i386/, generate Encore-owned Meson/Kconfig files, configure
 # a no-default-devices i386-softmmu target, and build only qemu-system-i386.
 #
 # Output: $P2K_QEMU_BUILD_DIR/qemu-<ver>/build/qemu-system-i386
@@ -150,8 +150,8 @@ fi
 if ! is_known_good "$QEMU_VER"; then
   echo "[build-qemu] NOTE: $QEMU_VER is NOT in the validated list."
   echo "[build-qemu]       Known-good: ${KNOWN_GOOD_VERS[*]}."
-  echo "[build-qemu]       hw/i386/meson.build + Kconfig grafts may need"
-  echo "[build-qemu]       adjustment for newer/older releases."
+  echo "[build-qemu]       A patch-family variant and source compatibility"
+  echo "[build-qemu]       validation may be needed for this release."
 fi
 
 # --- Apply one compatible variant from every patch family -----------------
@@ -193,42 +193,33 @@ for f in "$ROOT"/qemu/p2k-*.c; do
   P2K_C_FILES+=( "$(basename "$f")" )
 done
 
-# --- Patch hw/i386/meson.build only when generated content changes ---------
-MESON="$HW_I386/meson.build"
-MESON_NEW="$(mktemp "$HW_I386/.p2k-meson.XXXXXX")"
-awk '
-  /# --- Pinball 2000 \(out-of-tree/ { stop = 1 }
-  !stop { line[++count] = $0 }
-  END {
-    while (count > 0 && line[count] == "") count--
-    for (i = 1; i <= count; i++) print line[i]
-  }
-' "$MESON" > "$MESON_NEW"
+# --- Generate the files consumed by the versioned build-integration patch --
+# The upstream Meson/Kconfig edits live in the patch family. Their only job is
+# to enter this owned subdirectory; Encore's changing source list stays here.
+P2K_BUILD_DIR="$HW_I386/p2k"
+mkdir -p "$P2K_BUILD_DIR"
+MESON="$P2K_BUILD_DIR/meson.build"
+MESON_NEW="$(mktemp "$P2K_BUILD_DIR/.meson.XXXXXX")"
 {
-  echo
-  echo "# --- Pinball 2000 (out-of-tree, copied in by scripts/build-qemu.sh) ---"
   echo "p2k_vorbisfile_dep = dependency('vorbisfile', required: false)"
-  printf "p2k_files = files('x86-common.c'"
+  printf "p2k_files = files('../x86-common.c'"
   for f in "${P2K_C_FILES[@]}"; do
-    printf ", '%s'" "$f"
+    printf ", '../%s'" "$f"
   done
   printf ")\n"
   echo "i386_ss.add(when: 'CONFIG_PINBALL2000', if_true: [p2k_files, p2k_vorbisfile_dep])"
-  echo "# --- end Pinball 2000 ---"
-} >> "$MESON_NEW"
+} > "$MESON_NEW"
 if cmp -s "$MESON_NEW" "$MESON"; then
   rm -f "$MESON_NEW"
 else
-  echo "[build-qemu] updating Encore Meson graft"
+  echo "[build-qemu] updating Encore Meson source list"
   mv "$MESON_NEW" "$MESON"
 fi
 
-# --- Patch hw/i386/Kconfig (idempotent) ------------------------------------
-KCONFIG="$HW_I386/Kconfig"
-if ! grep -q "PINBALL2000" "$KCONFIG"; then
-  echo "[build-qemu] patching $KCONFIG"
-  cat >> "$KCONFIG" <<'KCONFIG_EOF'
-
+# This file is wholly owned by Encore; upstream merely sources it.
+KCONFIG="$P2K_BUILD_DIR/Kconfig"
+KCONFIG_NEW="$(mktemp "$P2K_BUILD_DIR/.Kconfig.XXXXXX")"
+cat > "$KCONFIG_NEW" <<'KCONFIG_EOF'
 config PINBALL2000
     bool
     default y
@@ -239,13 +230,11 @@ config PINBALL2000
     select MC146818RTC
     select SERIAL_ISA
 KCONFIG_EOF
-fi
-
-# Make sure the i386-softmmu target enables CONFIG_PINBALL2000.
-DEFCFG="$SRC/configs/devices/i386-softmmu/default.mak"
-if [[ -f "$DEFCFG" ]] && ! grep -q "PINBALL2000" "$DEFCFG"; then
-  echo "[build-qemu] enabling PINBALL2000 in $DEFCFG"
-  echo "CONFIG_PINBALL2000=y" >> "$DEFCFG"
+if cmp -s "$KCONFIG_NEW" "$KCONFIG"; then
+  rm -f "$KCONFIG_NEW"
+else
+  echo "[build-qemu] updating Encore Kconfig"
+  mv "$KCONFIG_NEW" "$KCONFIG"
 fi
 
 # --- Configure when the minimal build profile changes ----------------------
