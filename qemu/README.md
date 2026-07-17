@@ -36,6 +36,12 @@ The files under `upstream-patches/` modify the pinned QEMU core. They are not
 interchangeable machine sources: review and revalidate them whenever the QEMU
 version changes.
 
+Encore defaults to the validated QEMU 10.0.8 source release. The build applies
+patches with zero context fuzz: an upstream source change must fail at the
+patch step rather than attach a hook at a nearby location. Other QEMU versions
+are experimental until the complete machine has been built and boot-tested;
+successful compilation alone is not validation.
+
 | Patch | Why it exists | Maintenance status |
 |---|---|---|
 | `0001-i386-tcg-cyrix-mediagx-shim.patch` | Implements the gated MediaGX display-driver instructions missing from stock i386 TCG | Required CPU support. `CPU_WRITE` includes an empirically established scratchpad side effect in addition to the documented internal-register write. |
