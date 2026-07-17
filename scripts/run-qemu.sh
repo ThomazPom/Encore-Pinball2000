@@ -270,6 +270,16 @@ AUDIO
                             Adds ~1 s startup cost; eliminates first-
                             trigger decode hitch.
 
+  Faithful ADSP timing candidates currently under validation:
+    scripts/run-qemu.sh --dcs-engine adsp-thread
+                            Host-clock HOTLOOP; simplest qualifying mode.
+    scripts/run-qemu.sh --with-pit --dcs-engine adsp-thread
+                            Host-clock HOTLOOP plus the natural PIT; strongest
+                            qualifying mode without CPU-affinity assistance.
+
+    The PCM-worker-pinned HOTLOOP candidate is intentionally benchmark-only
+    until repeated measurements justify a supported runtime option.
+
 CONSOLE / DIAGNOSTICS
   --bench                   Run an isolated self-diagnostic using the normal
                             windowed display and audio defaults, including
