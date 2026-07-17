@@ -48,6 +48,12 @@ version changes.
 > reads the observed clkint count. Do not remove `0003` while HOTLOOP is a
 > supported clock source.
 
+`0002` supplies the clkint-entry count used by default HOTLOOP, HOTLOOP with
+`--with-pit`, and HOTLOOP `--speed-target` control. It also supplies the guest
+IRQ observations reported by `-v` and `--bench`. Plain `--strict` execution
+does not need the count for clock control, although `--strict --bench` and
+`--strict -v` still use it for measurement.
+
 ## Deliberate compatibility boundaries
 
 Not every file in this directory is a complete chip model:
