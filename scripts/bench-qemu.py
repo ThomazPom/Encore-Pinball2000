@@ -538,6 +538,20 @@ def with_unit(value: str, unit: str) -> str:
     return value if value == "n/a" else value + unit
 
 
+def print_irq_preview(irq: dict, sleep_wall: float) -> None:
+    effective = 1000.0 / sleep_wall
+    print("[bench] clkint preview:", flush=True)
+    print(f"  XINU sleep 10 wall:    {sleep_wall:.3f}s "
+          f"({effective:.2f}% real-time)", flush=True)
+    print(f"  Guest IRQ delivery:    {irq['delivery']:.2f}%", flush=True)
+    print(f"  Guest IRQ rate:        {irq['rate']:.1f}/s "
+          f"({irq['samples']} entries)", flush=True)
+    print(f"  Guest IRQ intervals:   mean={fmt_us(irq['mean'])} "
+          f"sigma={fmt_us(irq['stddev'])} p50={fmt_us(irq['p50'])} "
+          f"p95={fmt_us(irq['p95'])} p99={fmt_us(irq['p99'])} "
+          f"worst={fmt_us(irq['worst'])}", flush=True)
+
+
 def write_report(artifact: Path, result: dict) -> None:
     irq, lpt, boot = result["irq"], result["lpt"], result["boot"]
     report = [
@@ -585,6 +599,7 @@ def main() -> int:
         template = build_probe(irq_dir)
         irq, sleep_wall = run_irq_pass(forwarded, irq_dir, template, target_speed,
                                        guest_load)
+        print_irq_preview(irq, sleep_wall)
         print("[bench] pass 2/2: unpatched LPT/PDB measurement", flush=True)
         boot_lines, steady_lines, boot_wall = run_lpt_pass(
             forwarded, lpt_dir, target_speed, guest_load)
