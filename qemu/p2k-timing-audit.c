@@ -52,6 +52,9 @@
 #include "system/cpu-timers.h"
 #include "system/system.h"
 #include "exec/cpu-common.h"
+#if __has_include("exec/icount.h")
+#include "exec/icount.h"
+#endif
 #include "hw/core/cpu.h"
 #include "exec/translation-block.h"
 #include "hw/intc/i8259.h"
@@ -62,6 +65,7 @@
 #include "target/i386/cpu.h"
 
 #include "p2k-internal.h"
+#include "p2k-qemu-compat.h"
 
 #define P2K_AUDIT_INITIAL_NS  (3ull  * 1000ull * 1000ull * 1000ull)  /*  3 s */
 #define P2K_AUDIT_PERIOD_NS   (3ull  * 1000ull * 1000ull * 1000ull)  /*  3 s */
@@ -617,7 +621,7 @@ static uint64_t p2k_pit_period_ns(void)
     if (p2k_audit_state && p2k_audit_state->pit) {
         ISADevice *pit = (ISADevice *)p2k_audit_state->pit;
         PITChannelInfo info;
-        pit_get_channel_info(pit, 0, &info);
+        pit_get_channel_info(P2K_PIT_STATE(pit), 0, &info);
         unsigned cnt = (info.initial_count & 0xffff);
         if (cnt == 0) {
             cnt = 0x10000;
@@ -737,7 +741,7 @@ static void p2k_audit_emit(const char *tag)
     if (p2k_audit_state && p2k_audit_state->pit) {
         ISADevice *pit = (ISADevice *)p2k_audit_state->pit;
         PITChannelInfo info;
-        pit_get_channel_info(pit, 0, &info);
+        pit_get_channel_info(P2K_PIT_STATE(pit), 0, &info);
         pit0_count = info.initial_count & 0xffff;
         pit0_mode  = info.mode;
         unsigned cnt = pit0_count ? pit0_count : 0x10000;

@@ -37,7 +37,11 @@
 #include "qemu/main-loop.h"
 #include "qemu/timer.h"
 #include "qapi/error.h"
+#if __has_include("qemu/audio.h")
+#include "qemu/audio.h"
+#else
 #include "audio/audio.h"
+#endif
 #include "system/cpus.h"
 #include "system/runstate.h"
 
@@ -69,6 +73,15 @@ typedef struct {
     uint32_t rate;
 } Pb2kEntry;
 
+#if QEMU_VERSION_MAJOR > 10 || \
+    (QEMU_VERSION_MAJOR == 10 && QEMU_VERSION_MINOR >= 2)
+#define P2K_NEW_AUDIO_BACKEND 1
+#define P2K_AUDIO_HANDLE(a) ((a)->backend)
+#else
+#define P2K_NEW_AUDIO_BACKEND 0
+#define P2K_AUDIO_HANDLE(a) (&(a)->card)
+#endif
+
 typedef struct {
     int16_t *pcm;            /* mono S16 at DCS_OUT_RATE, malloc'd */
     size_t   frames;
@@ -90,7 +103,11 @@ typedef struct {
 } Voice;
 
 typedef struct DcsAudio {
+#if P2K_NEW_AUDIO_BACKEND
+    AudioBackend *backend;
+#else
     QEMUSoundCard card;
+#endif
     SWVoiceOut   *voice;
     bool          enabled;
     bool          opened;
@@ -740,7 +757,7 @@ void p2k_dcs_audio_adsp_runtime_ready(void)
      * launch also changes over to lightweight cached playback. */
     if (a->voice) {
         AUD_set_active_out(a->voice, 0);
-        AUD_close_out(&a->card, a->voice);
+        AUD_close_out(P2K_AUDIO_HANDLE(a), a->voice);
         a->voice = NULL;
     }
     a->adsp_engine = false;
@@ -753,7 +770,7 @@ void p2k_dcs_audio_adsp_runtime_ready(void)
         .fmt = AUDIO_FORMAT_S16,
         .endianness = 0,
     };
-    a->voice = AUD_open_out(&a->card, NULL, "p2k-dcs-out-pcm",
+    a->voice = AUD_open_out(P2K_AUDIO_HANDLE(a), NULL, "p2k-dcs-out-pcm",
                             a, dcs_audio_callback, &as);
     if (a->voice) {
         AUD_set_active_out(a->voice, 1);
@@ -1321,12 +1338,21 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
     }
 
     Error *local_err = NULL;
+#if P2K_NEW_AUDIO_BACKEND
+    if (!AUD_backend_check(&a->backend, &local_err)) {
+        warn_report("pinball2000: audio backend unavailable: %s",
+                    local_err ? error_get_pretty(local_err) : "?");
+        error_free(local_err);
+        return;
+    }
+#else
     if (!AUD_register_card("p2k-dcs-audio", &a->card, &local_err)) {
         warn_report("pinball2000: AUD_register_card failed: %s",
                     local_err ? error_get_pretty(local_err) : "?");
         error_free(local_err);
         return;
     }
+#endif
     /* Native ADSP output is 31,250 Hz, signed 16-bit little-endian stereo.
      * Keep the sample mixer at 44.1 kHz mono. */
     a->output_rate = a->adsp_engine ? DCS_ADSP_RATE : DCS_OUT_RATE;
@@ -1337,12 +1363,14 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
         .fmt        = AUDIO_FORMAT_S16,
         .endianness = 0,
     };
-    a->voice = AUD_open_out(&a->card, NULL, "p2k-dcs-out",
+    a->voice = AUD_open_out(P2K_AUDIO_HANDLE(a), NULL, "p2k-dcs-out",
                             a, dcs_audio_callback, &as);
     if (!a->voice) {
         warn_report("pinball2000: AUD_open_out failed (no audiodev?). "
                     "Pass `-audio driver=pa` (or `--audio pa` via wrapper).");
+#if !P2K_NEW_AUDIO_BACKEND
         AUD_remove_card(&a->card);
+#endif
         return;
     }
     AUD_set_active_out(a->voice, 1);

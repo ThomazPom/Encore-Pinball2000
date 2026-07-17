@@ -36,7 +36,7 @@ DEFAULT_VER="10.0.8"
 # Add a version only after the complete machine has been built and boot-tested
 # with the current patch set. At present, only the pinned default has that
 # evidence.
-KNOWN_GOOD_VERS=( 10.0.8 )
+KNOWN_GOOD_VERS=( 10.0.8 10.2.4 )
 QEMU_VER="${QEMU_VER:-$DEFAULT_VER}"
 INCLUDE_UNSTABLE=0
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

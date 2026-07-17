@@ -25,8 +25,7 @@
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
-#include "exec/address-spaces.h"
-#include "exec/ioport.h"
+#include "p2k-qemu-compat.h"
 #include "system/system.h"
 #include "chardev/char-fe.h"
 #include "chardev/char.h"
@@ -253,7 +252,12 @@ static bool     s_tx_filter_inited;
  *       IRQ4 fires when IER bit 0 (RDA) is enabled. This is what makes
  *       --serial-tcp interactive — type XINA monitor commands like
  *       `continue\r\n` or `?` straight from your terminal. */
+#if QEMU_VERSION_MAJOR > 10 || \
+    (QEMU_VERSION_MAJOR == 10 && QEMU_VERSION_MINOR >= 2)
+static CharFrontend s_uart_be;
+#else
 static CharBackend s_uart_be;
+#endif
 static bool        s_uart_be_inited;
 
 #define P2K_UART_RX_RING 256

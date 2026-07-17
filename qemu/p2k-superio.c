@@ -17,8 +17,8 @@
 
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
-#include "exec/address-spaces.h"
-#include "exec/ioport.h"
+#include "p2k-qemu-compat.h"
+#include "p2k-qemu-compat.h"
 
 #include "p2k-internal.h"
 
