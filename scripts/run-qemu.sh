@@ -238,8 +238,6 @@ AUDIO
                             natural i8254+i8259 path.
   --with-pit                Let HOTLOOP and the natural i8254 both
                             supply IRQ0. Default is HOTLOOP-only.
-  --legacy-hotloop          Select the retained TB-boundary HOTLOOP instead
-                            of host-wall-clock pacing for temporary A/B tests.
   --speed-target <percent>  Deliberate game-clock speed, 25..300 (default
                             100). Scales the i8254 PIT divisor in strict and
                             combo modes and the adaptive HOTLOOP target in
@@ -495,9 +493,6 @@ while [[ $# -gt 0 ]]; do
       # Combined mode: HOTLOOP and the natural i8254 both raise IRQ0.
       export P2K_TCG_CLKINT_HOTLOOP_WITH_PIT=1
       unset P2K_TCG_CLKINT_HOTLOOP_NO_PIT || true
-      shift ;;
-    --legacy-hotloop)
-      export P2K_HOTLOOP_HOST_TIMER=0
       shift ;;
     --speed-target)
       [[ -n "${2:-}" ]] || { echo "[run-qemu] --speed-target: expected percent" >&2; exit 2; }
