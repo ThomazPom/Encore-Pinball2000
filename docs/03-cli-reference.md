@@ -44,6 +44,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--dcs-sound-flash` | path | auto from selected update or ROM directory | Selects the 1 MiB sound-flash image used by a native ADSP engine. | `scripts/run-qemu.sh --dcs-engine adsp --dcs-sound-flash ./roms/swe1_28f800.rom` |
 | `--sound-loading` | `lazy` \| `preload` | `lazy` | Lazy decodes samples on first use; preload exports `P2K_DCS_PRELOAD=1`. | `scripts/run-qemu.sh --sound-loading preload` |
 | `--serial` | — | off | Interactive COM1 in current terminal via temporary TCP UART plus foreground `nc`; requires `nc`; mutually exclusive with `--serial-tcp`, `--uart-tcp`, `--headless`. | `scripts/run-qemu.sh --serial` |
+| `--script` | file | off | Waits for XINU, executes ordinary lines as console commands, supports `@wait SECONDS` and `@key KEY`, then leaves the emulator running. It manages a private TCP UART and QEMU monitor. `--console-script` is an alias. | `scripts/run-qemu.sh --script scripts/demos/start-game.p2k` |
 | `--uart-quiet` | — | off | Silences COM1/UART stderr mirror and uses `-serial null` in headless mode. Wins over `-v`. | `scripts/run-qemu.sh --uart-quiet` |
 
 | `--uart-drop` | substring | drops `swd Debug:` by default | Repeatable line filter for UART output before stdout/TCP/stderr. | `scripts/run-qemu.sh --uart-drop NonFatal` |
@@ -74,6 +75,11 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 > [!TIP]
 > `--audio auto` selects an available host backend. `--audio none` runs silent.
 > `--sound-loading preload` moves sample decoding to startup.
+
+> [!NOTE]
+> `scripts/demos/start-game.p2k` sends real emulated coin and Start switches.
+> Coin pulses become credits according to the game's saved pricing adjustments;
+> edit or repeat the `@key c` lines when that configuration requires it.
 
 > [!WARNING]
 > `--serial` occupies the current terminal. Use `--serial-tcp` for a separate

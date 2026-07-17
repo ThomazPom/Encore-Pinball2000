@@ -58,6 +58,8 @@ AUDIO=""
 SOUND_LOADING="lazy"
 UART_TCP=""
 SERIAL_STDIO=0
+CONSOLE_SCRIPT=""
+AUTOMATION_DIR=""
 SPEED_TARGET="${P2K_SPEED_TARGET_PERCENT:-100}"
 EXTRA=()
 
@@ -367,6 +369,13 @@ CONSOLE / DIAGNOSTICS
                             child). Mutually exclusive with
                             --serial-tcp / --uart-tcp / --headless.
                             Implies --uart-quiet.
+  --script <file>           After XINU is ready, execute each non-comment line
+                            as a console command. `@wait SECONDS` pauses and
+                            `@key KEY` sends a normal QEMU keyboard event
+                            through the emulated LPT board. The emulator stays
+                            open when the file completes. Example:
+                            `--script scripts/demos/start-game.p2k`.
+  --console-script <file>   Compatibility alias for --script.
   --uart-quiet              Silence ALL COM1/UART output (stderr mirror
                             AND chardev sink, the latter via
                             -serial null). Wins over -v. Also pre-stuffs
@@ -533,6 +542,9 @@ while [[ $# -gt 0 ]]; do
         *) shift 2 ;;
       esac ;;
     --serial)          SERIAL_STDIO=1; shift ;;
+    --script|--console-script)
+      [[ -f "${2:-}" ]] || { echo "[run-qemu] $1: '${2:-}' is not a file" >&2; exit 2; }
+      CONSOLE_SCRIPT="$(realpath "$2")"; shift 2 ;;
     --monitor)         MONITOR="$2"; shift 2 ;;
     --debug)           DEBUG="$2"; shift 2 ;;
     --uart-quiet)      UART_QUIET=1; shift ;;
@@ -715,6 +727,17 @@ fi
 # once on stdout via the chardev, once on stderr via the mirror).
 # --uart-quiet always wins (forces UART silent regardless of level).
 if [[ $SERIAL_STDIO -eq 1 ]]; then
+  UART_QUIET=1
+fi
+if [[ -n "$CONSOLE_SCRIPT" ]]; then
+  if [[ $SERIAL_STDIO -eq 1 || -n "$UART_TCP" || -n "$MONITOR" || $HEADLESS -eq 1 ]]; then
+    echo "[run-qemu] --script manages UART and monitor itself; do not combine it with --serial, --uart-tcp, --monitor or --headless" >&2
+    exit 2
+  fi
+  AUTOMATION_DIR="$(mktemp -d /tmp/p2k-console-script.XXXXXX)"
+  SERIAL_PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')"
+  UART_TCP="127.0.0.1:$SERIAL_PORT"
+  MONITOR="unix:$AUTOMATION_DIR/monitor.sock,server=on,wait=off"
   UART_QUIET=1
 fi
 if [[ $HEADLESS -eq 1 && $VERBOSITY -lt 1 ]]; then
@@ -1083,9 +1106,14 @@ fi
 
 "$QEMU_BIN" "${ARGS[@]}" "${EXTRA[@]}" &
 QEMU_PID=$!
-trap 'status=$?; if [[ -n "${QEMU_PID:-}" ]]; then kill "$QEMU_PID" 2>/dev/null; wait "$QEMU_PID" 2>/dev/null || true; fi; [[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"; exit "$status"' EXIT INT TERM
+trap 'status=$?; if [[ -n "${QEMU_PID:-}" ]]; then kill "$QEMU_PID" 2>/dev/null; wait "$QEMU_PID" 2>/dev/null || true; fi; [[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"; [[ -n "$AUTOMATION_DIR" ]] && rm -rf "$AUTOMATION_DIR"; exit "$status"' EXIT INT TERM
+if [[ -n "$CONSOLE_SCRIPT" ]]; then
+  python3 "$ROOT/scripts/run-console-script.py" "$CONSOLE_SCRIPT" \
+    --port "$SERIAL_PORT" --monitor "$AUTOMATION_DIR/monitor.sock"
+fi
 wait "$QEMU_PID"
 QEMU_STATUS=$?
 trap - EXIT INT TERM
 [[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"
+[[ -n "$AUTOMATION_DIR" ]] && rm -rf "$AUTOMATION_DIR"
 exit "$QEMU_STATUS"
