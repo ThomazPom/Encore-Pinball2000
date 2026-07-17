@@ -166,7 +166,7 @@ print_help() {
             reset = esc "[0m"; bold = esc "[1m"; cyan = esc "[36m"
             bright_cyan = esc "[1;36m"; section = esc "[1;34m"
             green = esc "[32m"; bright_green = esc "[1;32m"
-            yellow = esc "[33m"; dim = esc "[2m"
+            yellow = esc "[33m"; red = esc "[31m"; dim = esc "[2m"
           }
           /^Usage:/ { print bold $0 reset; next }
           /^[A-Z][A-Z /-]+$/ { print section $0 reset; next }
@@ -183,6 +183,7 @@ print_help() {
           /^  Faithful ADSP timing candidates/ { print bold $0 reset; next }
           /^    Example steady-state results/ { print bold $0 reset; next }
           /^      Configuration/ { print bold $0 reset; next }
+          /^      HOTLOOP.*FAIL$/ { print red $0 reset; next }
           /^      HOTLOOP adsp-thread PCM CPU2/ { print bright_green $0 reset; next }
           /^      HOTLOOP/ { print green $0 reset; next }
           /^    Plain pb2kslib/ || /^    Qualification gates/ ||
@@ -293,6 +294,9 @@ AUDIO
                             synchronously. pb2kslib uses extracted samples.
                             pb2kslib-adsp generates/uses a persistent PCM
                             cache rendered by the update's native DSP.
+  --dcs-pcm-cpu <cpu>       Pin only the adsp-thread dcs-pcm worker to this
+                            Linux logical CPU. Experimental; host topology and
+                            workload determine whether affinity helps.
   --clear-pb2kslib-cache   Delete the generated ADSP PCM cache before launch.
   --pb2kslib-cache-workers <n>
                             Parallel DSP processes used for first-time PCM
@@ -314,22 +318,22 @@ AUDIO
                             HOTLOOP plus natural PIT with update-derived PCM.
     scripts/run-qemu.sh --with-pit --dcs-engine adsp-thread
                             HOTLOOP plus natural PIT with live DSP emulation.
-    HOTLOOP adsp-thread with the dcs-pcm worker pinned
-                            Fifth qualifying benchmark configuration; no public
-                            runtime option until affinity is proven repeatable.
+    scripts/run-qemu.sh --dcs-engine adsp-thread --dcs-pcm-cpu 2
+                            Host-clock HOTLOOP with the dcs-pcm worker pinned.
 
     Plain pb2kslib is excluded because a fixed library can omit sounds added
     by newer updates. Strict real-ADSP modes currently fail the IRQ-jitter gate.
 
-    Example steady-state results (SWE1 2.00, this host; lower is better):
-      Configuration                 Delivery  IRQ sigma  IRQ worst  PDB p99  PDB worst
-      HOTLOOP pb2kslib-adsp          100.07%       7 us      383 us   274 us     548 us
-      HOTLOOP adsp-thread rerun      100.09%       9 us      554 us   343 us    1.07 ms
-      HOTLOOP+PIT pb2kslib-adsp      100.07%       7 us      393 us   273 us    1.08 ms
-      HOTLOOP+PIT adsp-thread        100.15%       8 us      445 us   295 us    1.10 ms
-      HOTLOOP adsp-thread PCM CPU2   100.12%       6 us      362 us   273 us    1.15 ms
+    Refreshed steady-state results (SWE1 2.00, this host):
+      Configuration                 Delivery IRQ/s Mean Sigma p50 p95 p99 Worst DATA/s PDB/s P50 P95 P99 Worst    Status
+      HOTLOOP pb2kslib-adsp          100.07%  4007  250     7 249 254 277   474  42558  4004 249 254 274  410 us   PASS
+      HOTLOOP adsp-thread            100.10%  4008  250     7 249 255 275   362  42562  4004 248 255 275  407 us   PASS
+      HOTLOOP+PIT pb2kslib-adsp      100.16%  4010  249    16 248 265 296   681  42559  4004 248 260 285  2.63 ms  FAIL
+      HOTLOOP+PIT adsp-thread        100.60%  4028  248    53 242 300 480  1470  42563  4004 248 255 274  537 us   FAIL
+      HOTLOOP adsp-thread PCM CPU2   100.11%  4008  249     7 249 255 276   392  42560  4004 248 256 276  830 us   PASS
+      Timing columns after IRQ/s and PDB/s are microseconds unless marked ms.
 
-    Qualification gates used here: IRQ sigma < 10 us and PDB worst <= 2 ms.
+    Qualification gates: IRQ sigma < 10 us and PDB worst <= 2 ms.
     These figures are a comparison example, not portable performance promises;
     rerun the forensic full benchmark when choosing for another host.
 
@@ -471,7 +475,7 @@ ENV PASSTHROUGH (advanced; see qemu/README.md for the full table)
   P2K_FRESH_SAVEDATA P2K_NO_MEM_DETECT_PATCH P2K_DCS_AUDIO P2K_NO_DCS_AUDIO
   P2K_DCS_AUDIO_TRACE P2K_DCS_BYTE_TRACE P2K_DCS_NO_BYTE_PAIR
   P2K_DCS_RAW_55_PAIR P2K_DIAG P2K_NO_AUTO_UPDATE
-  P2K_PB2KSLIB P2K_DCS_ENGINE P2K_DCS_MODE P2K_SCREENSHOT_DIR
+  P2K_PB2KSLIB P2K_DCS_ENGINE P2K_DCS_PCM_CPU P2K_DCS_MODE P2K_SCREENSHOT_DIR
   P2K_DISPLAY_BPP P2K_LPT_DISABLE P2K_LPT_PARPORT
   P2K_LPT_IOPORT P2K_LPT_TRACE_FILE P2K_DCS_PRELOAD P2K_CABINET_PURIST
 EOF
@@ -579,6 +583,12 @@ while [[ $# -gt 0 ]]; do
         *) echo "[run-qemu] --dcs-engine: expected pb2kslib|pb2kslib-adsp|adsp|adsp-thread, got '$2'" >&2; exit 2 ;;
       esac
       shift 2 ;;
+    --dcs-pcm-cpu)
+      [[ -n "${2:-}" && "$2" =~ ^[0-9]+$ ]] || {
+        echo "[run-qemu] --dcs-pcm-cpu: expected a non-negative logical CPU" >&2
+        exit 2
+      }
+      export P2K_DCS_PCM_CPU="$2"; shift 2 ;;
     --sound-loading)
       case "$2" in
         lazy)    SOUND_LOADING="lazy" ;;

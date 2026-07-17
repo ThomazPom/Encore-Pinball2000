@@ -734,6 +734,27 @@ static void *adsp_mailbox_worker(void *opaque)
     (void)opaque;
 #ifdef __linux__
     pthread_setname_np(pthread_self(), "dcs-pcm");
+    const char *cpu_env = getenv("P2K_DCS_PCM_CPU");
+    if (cpu_env && cpu_env[0]) {
+        char *end = NULL;
+        errno = 0;
+        long cpu = strtol(cpu_env, &end, 10);
+        if (errno || end == cpu_env || *end || cpu < 0 || cpu >= CPU_SETSIZE) {
+            warn_report("dcs-adsp: invalid P2K_DCS_PCM_CPU=%s", cpu_env);
+        } else {
+            cpu_set_t cpuset;
+            CPU_ZERO(&cpuset);
+            CPU_SET(cpu, &cpuset);
+            int err = pthread_setaffinity_np(pthread_self(), sizeof(cpuset),
+                                             &cpuset);
+            if (err) {
+                warn_report("dcs-adsp: cannot pin dcs-pcm to CPU %ld: %s",
+                            cpu, strerror(err));
+            } else {
+                info_report("dcs-adsp: dcs-pcm pinned to logical CPU %ld", cpu);
+            }
+        }
+    }
 #endif
     for (;;) {
         qemu_mutex_lock(&s_adsp.lock);
