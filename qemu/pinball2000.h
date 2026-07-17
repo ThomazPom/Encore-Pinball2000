@@ -18,43 +18,18 @@
  * `0F 3D` CPU_READ; per the data book they are gated on GCR index B8h
  * scratchpad-size bits[3:2] != 0 and otherwise raise illegal opcode.
  *
- * Vanilla QEMU TCG raises #UD on `0F 3C` because the slot is empty in
- * `opcodes_0F[]`. We ship an upstream-style patch
- * (`qemu/upstream-patches/0001-i386-tcg-cyrix-0f3c-shim.patch`) that
- * adds a generator `gen_CYRIX_0F3C_shim` for the slot. That generator
- * is intentionally NOT a full CPU_WRITE implementation — it only
- * reproduces the observable side-effect of the former guest-visible
- * IDT[6]+0x540 RAM stub that the Pinball 2000 XINU bring-up relied on:
+ * Stock QEMU TCG does not implement these MediaGX instructions. Encore's
+ * `0001-i386-tcg-cyrix-mediagx-shim.patch` adds gated decode helpers backed
+ * by the machine's internal-register model. CPU_WRITE also reproduces an
+ * empirically established scratchpad stream side effect:
  *
  *     [DS:EDX]   := EAX        ; 32-bit
  *     [DS:EDX+4] := EBX        ; 32-bit
  *     EDX        += 8
  *
- * That pointer-walk is what the XINU users of `0F 3C` actually depend
- * on; it has no relation to the real internal-register address space
- * documented in the data book. The shim exists because (a) it lets us
- * delete the much dirtier guest-visible IDT[6] / low-RAM-stub layer,
- * and (b) keeping the matrix passing while a proper CPU_WRITE /
- * CPU_READ / BB?_RESET model is built incrementally.
- *
- * A complete implementation would:
- *   - implement real CPU_WRITE / CPU_READ semantics with EBX as the
- *     internal-register address, plus models for the few CPU-internal
- *     registers Pinball 2000 actually touches (BLT buffer base /
- *     pointer, etc).
- *   - implement BB0_RESET (`0F 3A`) / BB1_RESET (`0F 3B`) if the guest
- *     ever issues them (currently it does not, per matrix logs).
- *   - either gate the instructions to the pinball2000/MediaGX machine
- *     or document that this QEMU build globally patches i386.
- *   - extend p2k-cyrix-ccr.c so GCR[B8h] also reflects the
- *     scratchpad-size field if a future XINU build queries it.
- *
- * Historical note: the previous host-side IDT[6] catchall (deleted
- * with `qemu/p2k-cyrix-0f3c.c`) had a non-cyrix fall-through that did
- * `LEAVE; RET` for every #UD, silently swallowing wild jumps as well.
- * That masked, among other things, swe1-default's wild-jump-into-GDT
- * at phys 0x1008 — which is why `P2K_GDT_BASE` is now `0x88000` and
- * not `0x1000`. Documented further in `qemu/p2k-boot.c`.
+ * Decode is enabled only by the pinball2000 machine and remains gated by
+ * the MediaGX scratchpad-size control bits. See `p2k-mediagx-gate.c` for
+ * the modeled registers and `upstream-patches/0001-*` for the decoder.
  *
  * PCI bridge: PLX 9054
  *   BAR0  = ROM window (game ROM bank, paged)
