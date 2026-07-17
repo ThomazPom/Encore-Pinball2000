@@ -21,6 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 RUNNER = ROOT / "scripts" / "run-qemu.sh"
 PROBE_SOURCE = ROOT / "scripts" / "guest-irq-probe.S"
+LOAD_SOURCE = ROOT / "scripts" / "guest-load.S"
 EXPECTED_IRQ_HZ = 1193182.0 / 298.0
 DATA_ADDR = 0x00FE0000
 CODE_ADDR = 0x00FF0000
@@ -28,6 +29,11 @@ RING_ENTRIES = 8192
 CLKINT_SIGNATURE = bytes.fromhex("fa60b020e620")
 WARMUP_MARKER = b"__P2K_BENCH_WARM__"
 DONE_MARKER = b"__P2K_BENCH_DONE__"
+
+
+def take_internal_options(arguments: list[str]) -> tuple[list[str], bool]:
+    guest_load = "--bench-guest-load" in arguments
+    return [arg for arg in arguments if arg != "--bench-guest-load"], guest_load
 
 
 def field(line: str, name: str, default: str = "n/a") -> str:
@@ -123,6 +129,70 @@ def build_probe(output: Path) -> bytes:
     subprocess.run(["objcopy", "-O", "binary", "-j", ".text",
                     str(elf), str(raw)], check=True)
     return raw.read_bytes()
+
+
+def update_token(arguments: list[str]) -> str:
+    for index, argument in enumerate(arguments):
+        if argument == "--update" and index + 1 < len(arguments):
+            return arguments[index + 1].lstrip("0") or "0"
+    return "210"
+
+
+def load_symbols(arguments: list[str]) -> tuple[int, int, int, int]:
+    token = update_token(arguments)
+    candidates = sorted(ROOT.glob(f"updates/*_{int(token):04d}_*/*/*_symbols.rom"))
+    if not candidates:
+        raise RuntimeError(f"guest load needs a symbol ROM for update {token}")
+    sys.path.insert(0, str(ROOT / "tools"))
+    sys.dont_write_bytecode = True
+    import sym_dump  # type: ignore
+    data, count, base, by_no, _ = sym_dump.parse(str(candidates[-1]))
+    values = []
+    for name in ("create(void *, int, unsigned int, char *, int,...)",
+                 "resume(int, Bool)", "resched(void)", "announce(void)"):
+        address = sym_dump.lookup(data, count, base, by_no, name)
+        if address is None:
+            raise RuntimeError(f"update {token} has no symbol for {name}")
+        values.append(address)
+    return values[0], values[1], values[2], values[3] + 0x13A
+
+
+def build_guest_load(output: Path, arguments: list[str], port: int) -> None:
+    create, resume, resched, idle = load_symbols(arguments)
+    original_path = output / "idle-original.bin"
+    gdb(port, [f"dump binary memory {original_path} 0x{idle:08x} 0x{idle + 5:08x}",
+               "detach"])
+    original = original_path.read_bytes()
+    if original[:2] != b"\xeb\xfe":
+        raise RuntimeError(f"XINU idle loop at 0x{idle:08x} is {original.hex()}, expected ebfe")
+    code_address = 0x00FD0000
+    obj, elf, raw = (output / "guest-load.o", output / "guest-load.elf",
+                     output / "guest-load.bin")
+    defs = [f"CREATE_ADDR={create}", f"RESUME_ADDR={resume}",
+            f"RESCHED_ADDR={resched}", f"IDLE_ADDR={idle}",
+            f"IDLE_ORIGINAL={int.from_bytes(original[:4], 'little')}",
+            f"IDLE_ORIGINAL_4={original[4]}"]
+    command = ["as", "--32", "-o", str(obj)]
+    for value in defs:
+        command.extend(("--defsym", value))
+    command.append(str(LOAD_SOURCE))
+    subprocess.run(command, check=True)
+    subprocess.run(["ld", "-m", "elf_i386", "-e", "load_trampoline",
+                    f"-Ttext=0x{code_address:x}",
+                    "-o", str(elf), str(obj)], check=True)
+    subprocess.run(["objcopy", "-O", "binary", "-j", ".text", str(elf), str(raw)],
+                   check=True)
+    patch = b"\xe9" + struct.pack("<i", code_address - (idle + 5))
+    commands = [f"restore {raw} binary 0x{code_address:08x}"]
+    commands.extend(f"set {{unsigned char}}0x{idle + i:08x} = 0x{byte:02x}"
+                    for i, byte in enumerate(patch))
+    commands.extend(("detach",))
+    gdb(port, commands)
+    (output / "guest-load.json").write_text(json.dumps({
+        "create": hex(create), "resume": hex(resume), "resched": hex(resched),
+        "idle": hex(idle),
+        "code": hex(code_address), "original": original.hex(), "patch": patch.hex(),
+    }, indent=2) + "\n")
 
 
 def locate_clkint(port: int, artifact: Path) -> int:
@@ -311,7 +381,7 @@ def warm_guest(console: socket.socket, target_speed: float, monitor: Path) -> No
 
 
 def run_irq_pass(forwarded: list[str], artifact: Path, template: bytes,
-                 target_speed: float) -> tuple[dict, float]:
+                 target_speed: float, guest_load: bool) -> tuple[dict, float]:
     port, gdb_port = pick_port(), pick_port()
     monitor = artifact / "monitor.sock"
     log_path = artifact / "encore.log"
@@ -333,6 +403,9 @@ def run_irq_pass(forwarded: list[str], artifact: Path, template: bytes,
             gdb(gdb_port, ["detach"])
             with connect_console(port, process, 30.0) as console:
                 warm_guest(console, target_speed, monitor)
+                if guest_load:
+                    build_guest_load(artifact, forwarded, gdb_port)
+                    time.sleep(1.0)
                 handler, original = install_probe(gdb_port, artifact, template)
                 # First attachment perturbs pacing. Resume, settle, then clear
                 # and re-arm so no GDB pause is included in the sample window.
@@ -360,11 +433,15 @@ def run_irq_pass(forwarded: list[str], artifact: Path, template: bytes,
 
 
 def run_lpt_pass(forwarded: list[str], artifact: Path,
-                 target_speed: float) -> tuple[list[str], list[str], float]:
+                 target_speed: float, guest_load: bool) -> tuple[list[str], list[str], float]:
     port = pick_port()
     monitor = artifact / "monitor.sock"
     log_path = artifact / "encore.log"
-    command = launch_command(forwarded, port, monitor, ["-v"])
+    gdb_port = pick_port()
+    extra = ["-v"]
+    if guest_load:
+        extra += ["--", "-gdb", f"tcp:127.0.0.1:{gdb_port}"]
+    command = launch_command(forwarded, port, monitor, extra)
     (artifact / "command.json").write_text(json.dumps(command, indent=2) + "\n")
     with log_path.open("wb") as log:
         launched = time.monotonic()
@@ -372,8 +449,14 @@ def run_lpt_pass(forwarded: list[str], artifact: Path,
                                    stdout=log, stderr=subprocess.STDOUT,
                                    start_new_session=True)
         try:
+            if guest_load:
+                wait_port(gdb_port, process)
+                gdb(gdb_port, ["detach"])
             with connect_console(port, process, 30.0) as console:
                 warm_guest(console, target_speed, monitor)
+                if guest_load:
+                    build_guest_load(artifact, forwarded, gdb_port)
+                    time.sleep(1.0)
                 boot_wall = time.monotonic() - launched
                 boot_lines = log_path.read_text(errors="replace").splitlines()
                 console.sendall(b"sleep 10\recho __P2K_BENCH_DONE__\r")
@@ -463,6 +546,9 @@ def write_report(artifact: Path, result: dict) -> None:
         "> [!NOTE]",
         "> IRQ timing comes from a temporary guest-RAM `clkint` probe. LPT and "
         "PDB05 timing comes from a separate unpatched run.",
+        "> Guest CPU load: " +
+        ("cooperative low-priority worker." if result["guest_load"]
+         else "normal game workload."),
         "",
         "| Phase | Speed/delivery | IRQ rate | IRQ sigma | IRQ p99 | IRQ worst | DATA/s | PDB05/s | PDB p99 | PDB worst |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
@@ -481,7 +567,7 @@ def write_report(artifact: Path, result: dict) -> None:
 
 
 def main() -> int:
-    forwarded = sys.argv[1:]
+    forwarded, guest_load = take_internal_options(sys.argv[1:])
     target_speed = requested_speed(forwarded)
     artifact = Path(tempfile.mkdtemp(prefix="p2k-bench-"))
     irq_dir, lpt_dir = artifact / "irq", artifact / "lpt"
@@ -497,10 +583,11 @@ def main() -> int:
     print("[bench] pass 1/2: guest-RAM clkint probe", flush=True)
     try:
         template = build_probe(irq_dir)
-        irq, sleep_wall = run_irq_pass(forwarded, irq_dir, template, target_speed)
+        irq, sleep_wall = run_irq_pass(forwarded, irq_dir, template, target_speed,
+                                       guest_load)
         print("[bench] pass 2/2: unpatched LPT/PDB measurement", flush=True)
         boot_lines, steady_lines, boot_wall = run_lpt_pass(
-            forwarded, lpt_dir, target_speed)
+            forwarded, lpt_dir, target_speed, guest_load)
         lpt = parse_lpt(steady_lines)
         boot = parse_boot(boot_lines)
     except Exception as error:
@@ -510,7 +597,8 @@ def main() -> int:
 
     effective = 1000.0 / sleep_wall
     result = {
-        "requested_speed": target_speed, "sleep_wall": sleep_wall,
+        "requested_speed": target_speed, "guest_load": guest_load,
+        "sleep_wall": sleep_wall,
         "effective_speed": effective, "boot_wall": boot_wall,
         "irq": irq, "lpt": lpt, "boot": boot,
     }
@@ -525,6 +613,7 @@ def main() -> int:
 
     print("\nEncore self-diagnostic")
     print(f"  Requested speed:        {target_speed:.2f}%")
+    print(f"  Guest CPU load:         {'cooperative worker' if guest_load else 'normal'}")
     print("  Boot/warmup phase:")
     print(f"    Wall duration:         {boot_wall:.3f}s")
     print(f"    IRQ delivery total:    {boot['delivery']}")

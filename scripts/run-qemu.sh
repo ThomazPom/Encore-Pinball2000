@@ -351,6 +351,11 @@ CONSOLE / DIAGNOSTICS
                             headless testing. Requires gdb, as, ld and objcopy.
                             Returns 2 for unhealthy speed, IRQ delivery or a
                             steady PDB05 gap above 2.5 ms.
+  --bench-guest-load        With --bench, create a temporary low-priority XINU
+                            worker in guest RAM. It keeps the guest scheduler
+                            busy while yielding cooperatively, without touching
+                            game state or devices. The worker and patches vanish
+                            when each isolated benchmark pass exits.
   --serial                  Bind COM1 to THIS terminal interactively.
                             Spawns QEMU in the background with a
                             127.0.0.1 TCP UART, then runs `nc` in the
