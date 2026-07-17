@@ -164,17 +164,32 @@ print_help() {
           BEGIN {
             esc = sprintf("%c", 27)
             reset = esc "[0m"; bold = esc "[1m"; cyan = esc "[36m"
+            bright_cyan = esc "[1;36m"; section = esc "[1;34m"
             green = esc "[32m"; bright_green = esc "[1;32m"
-            yellow = esc "[33m"
+            yellow = esc "[33m"; dim = esc "[2m"
           }
-          /^[A-Z][A-Z /-]+$/ { print bold $0 reset; next }
-          /^    scripts\/run-qemu/ { print cyan $0 reset; next }
-          /^    HOTLOOP adsp-thread with/ { print cyan $0 reset; next }
+          /^Usage:/ { print bold $0 reset; next }
+          /^[A-Z][A-Z /-]+$/ { print section $0 reset; next }
+          /^  --/ {
+            option_line = substr($0, 3)
+            match(option_line, /  +/)
+            signature = "  " substr(option_line, 1, RSTART - 1)
+            description = substr(option_line, RSTART)
+            print cyan signature reset description
+            next
+          }
+          /^    scripts\/run-qemu/ { print bright_cyan $0 reset; next }
+          /^    HOTLOOP adsp-thread with/ { print bright_cyan $0 reset; next }
+          /^  Faithful ADSP timing candidates/ { print bold $0 reset; next }
+          /^    Example steady-state results/ { print bold $0 reset; next }
           /^      Configuration/ { print bold $0 reset; next }
           /^      HOTLOOP adsp-thread PCM CPU2/ { print bright_green $0 reset; next }
           /^      HOTLOOP/ { print green $0 reset; next }
           /^    Plain pb2kslib/ || /^    Qualification gates/ ||
           /^    These figures/ { print yellow $0 reset; next }
+          /^Run Williams Pinball 2000/ || /^machine\. Stock/ {
+            print dim $0 reset; next
+          }
           { print }
         ')
     fi
