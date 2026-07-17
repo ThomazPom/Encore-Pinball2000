@@ -19,7 +19,7 @@
  * scratchpad-size bits[3:2] != 0 and otherwise raise illegal opcode.
  *
  * Stock QEMU TCG does not implement these MediaGX instructions. Encore's
- * `0001-i386-tcg-cyrix-mediagx-shim.patch` adds gated decode helpers backed
+ * `upstream-patches/mediagx-instructions/` adds gated decode helpers backed
  * by the machine's internal-register model. CPU_WRITE also reproduces an
  * empirically established scratchpad stream side effect:
  *
@@ -29,7 +29,7 @@
  *
  * Decode is enabled only by the pinball2000 machine and remains gated by
  * the MediaGX scratchpad-size control bits. See `p2k-mediagx-gate.c` for
- * the modeled registers and `upstream-patches/0001-*` for the decoder.
+ * the modeled registers and the MediaGX patch family for the decoder.
  *
  * PCI bridge: PLX 9054
  *   BAR0  = ROM window (game ROM bank, paged)

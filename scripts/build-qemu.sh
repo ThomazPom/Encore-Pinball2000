@@ -117,22 +117,19 @@ mkdir -p "$WORK"
 cd "$WORK"
 
 # --- Detect stale patch effects -------------------------------------------
-# The extracted upstream tree is disposable. If an applied patch disappears
-# or changes, re-extract instead of trying to reverse a different patch body
-# against an already modified tree.
+# The extracted upstream tree is disposable. Hash the ordered family list,
+# selector and only the variants selected for this QEMU version. A relevant
+# change starts again from pristine source; variants for other versions do not
+# invalidate this build cache.
 PATCH_DIR="$ROOT/qemu/upstream-patches"
-APPLIED_DIR="$SRC/.p2k-applied-patches"
-if [[ -d "$APPLIED_DIR" ]]; then
-  for sentinel in "$APPLIED_DIR"/*.patch; do
-    [[ -e "$sentinel" ]] || continue
-    name="$(basename "$sentinel")"
-    if [[ ! -e "$PATCH_DIR/$name" ]] || \
-       [[ "$(cat "$sentinel")" != "$(sha1sum "$PATCH_DIR/$name" | awk '{print $1}')" ]]; then
-      echo "[build-qemu] patch set changed; refreshing cached upstream source"
-      rm -rf "$SRC"
-      break
-    fi
-  done
+PATCH_TOOL="$ROOT/scripts/qemu-patch-series.py"
+PATCHSET_HASH="$(python3 "$PATCH_TOOL" fingerprint \
+  --patch-root "$PATCH_DIR" --version "$QEMU_VER")"
+PATCHSET_SENTINEL="$SRC/.p2k-patchset-sha256"
+if [[ -d "$SRC" ]] && \
+   { [[ ! -f "$PATCHSET_SENTINEL" ]] || [[ "$(cat "$PATCHSET_SENTINEL")" != "$PATCHSET_HASH" ]]; }; then
+  echo "[build-qemu] patch set changed or incomplete; refreshing cached upstream source"
+  rm -rf "$SRC"
 fi
 
 if [[ ! -d "$SRC" ]]; then
@@ -157,31 +154,15 @@ if ! is_known_good "$QEMU_VER"; then
   echo "[build-qemu]       adjustment for newer/older releases."
 fi
 
-# --- Apply our upstream-QEMU patches (idempotent) --------------------------
-# Patches in qemu/upstream-patches/*.patch are applied to the extracted
-# upstream source. We track applied patches via a sentinel file so re-runs
-# don't re-apply (which would fail). Touching/removing the sentinel forces
-# re-application on the next build (and the patches must be reverse-clean
-# against the current tree, otherwise we fail loudly). Deleted patches are
-# handled above (orphan-detection forces a clean re-extraction before we
-# get here), so PATCH_DIR/APPLIED_DIR are already defined.
-mkdir -p "$APPLIED_DIR"
-if [[ -d "$PATCH_DIR" ]]; then
-  for p in "$PATCH_DIR"/*.patch; do
-    [[ -e "$p" ]] || continue
-    name="$(basename "$p")"
-    sentinel="$APPLIED_DIR/$name"
-    cur_hash="$(sha1sum "$p" | awk '{print $1}')"
-    if [[ -f "$sentinel" ]] && [[ "$(cat "$sentinel")" == "$cur_hash" ]]; then
-      continue
-    fi
-    echo "[build-qemu] applying upstream patch $name"
-    # Never accept a nearby context match after an upstream refactor. A QEMU
-    # upgrade must either match the reviewed location exactly or stop here for
-    # an explicit patch port.
-    patch -d "$SRC" -p1 --forward --silent --fuzz=0 < "$p"
-    echo "$cur_hash" > "$sentinel"
-  done
+# --- Apply one compatible variant from every patch family -----------------
+# Filename ranges declare source compatibility. The selector additionally
+# requires exactly one declared variant per family to apply with zero fuzz.
+if [[ ! -f "$PATCHSET_SENTINEL" ]]; then
+  python3 "$PATCH_TOOL" apply \
+    --patch-root "$PATCH_DIR" \
+    --source "$SRC" \
+    --version "$QEMU_VER"
+  echo "$PATCHSET_HASH" > "$PATCHSET_SENTINEL"
 fi
 
 # --- Inject our machine source ---------------------------------------------

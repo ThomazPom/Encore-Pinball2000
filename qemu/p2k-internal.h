@@ -140,7 +140,7 @@ void p2k_install_superio(void);
 /* p2k-mediagx-gate.c: runtime gate for Cyrix/MediaGX TCG opcode
  * extensions (0F 3A/3B/3C/3D and friends). pinball2000 init must call
  * p2k_mediagx_enable_extensions() so the helpers added by
- * qemu/upstream-patches/0001-i386-tcg-cyrix-mediagx-shim.patch take
+ * qemu/upstream-patches/mediagx-instructions/ take
  * effect; outside the pinball2000 machine the gate stays FALSE and the
  * helpers behave as plain #UD (preserving SSE4 dispatch on 0F 3A).
  * p2k_mediagx_note_opcode/get_opcode_count back the per-opcode hit
