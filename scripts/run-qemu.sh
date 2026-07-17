@@ -339,15 +339,18 @@ AUDIO
 
 CONSOLE / DIAGNOSTICS
   --bench                   Run an isolated self-diagnostic using the normal
-                            windowed display and audio defaults, including
-                            a wall-timed XINU `sleep 10`, current IRQ0 delivery,
-                            adaptive HOTLOOP state, LPT/PDB05 rates and jitter.
-                            Measurement starts after 30 s of guest-time warmup,
-                            excluding boot from rolling and jitter statistics.
+                            windowed display and audio defaults. Pass 1 installs
+                            a temporary RAM-only probe in XINU's live clkint
+                            entry, settles after GDB, measures IRQ intervals and
+                            restores the six original bytes. Pass 2 starts a new,
+                            unpatched guest for LPT/PDB05 measurement. Both run
+                            the cabinet-input workload before 30 s guest warmup;
+                            a wall-timed XINU `sleep 10` checks absolute speed.
                             Other options such as --game, --update and --strict
                             are forwarded. Pass `--display none --no-audio` for
-                            the former headless benchmark. Returns 2 for
-                            abnormal HOTLOOP pace.
+                            headless testing. Requires gdb, as, ld and objcopy.
+                            Returns 2 for unhealthy speed, IRQ delivery or a
+                            steady PDB05 gap above 2.5 ms.
   --serial                  Bind COM1 to THIS terminal interactively.
                             Spawns QEMU in the background with a
                             127.0.0.1 TCP UART, then runs `nc` in the
