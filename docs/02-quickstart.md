@@ -60,6 +60,8 @@ changed.
 | Start fresh on update 2.00 | `scripts/run-qemu.sh --fresh --update 200` |
 | Run base software | `scripts/run-qemu.sh --update none --no-savedata` |
 | Interactive serial console | `scripts/run-qemu.sh --serial` |
+| Replay the cabinet start demo | `scripts/run-qemu.sh --script scripts/demos/start-game.p2k` |
+| Execute a XINU command file | `scripts/run-qemu.sh --script my-session.p2k` |
 | TCP serial console | `scripts/run-qemu.sh --serial-tcp 4444` |
 | Run without a window | `scripts/run-qemu.sh --display none` |
 | Disable audio | `scripts/run-qemu.sh --no-audio` |
