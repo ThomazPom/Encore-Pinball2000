@@ -85,15 +85,30 @@ scripts/run-qemu.sh --bench --strict
 scripts/run-qemu.sh --bench --with-pit
 ```
 
-The benchmark separates boot/warmup from steady state and reports:
+The benchmark runs two fresh guests so its measurement mechanisms cannot
+contaminate one another:
+
+1. The IRQ pass finds XINU's active IDT and `clkint` handler, replaces its six
+   prologue bytes with a jump to a temporary RAM trampoline, and records real
+   handler-entry intervals with `RDTSC`. It counts every IRQ but timestamps one
+   consecutive pair in sixteen to keep probe cost small. After attaching GDB,
+   it resumes, settles, clears the ring and rearms a clean measurement window.
+   The original six bytes are restored before the pass exits.
+2. The LPT pass boots an unmodified guest without GDB or the IRQ trampoline and
+   measures host-side DATA traffic and completed PDB05 frames independently.
+
+Both passes apply the same coin-door, credit and volume-button workload before
+30 seconds of guest-time warmup. The benchmark then reports:
 
 - wall time for the guest command `sleep 10`;
-- measured game-clock speed;
-- current IRQ0 delivery and counts;
-- adaptive HOTLOOP gap and measured frequency;
-- IRQ0 jitter;
+- guest-side IRQ0 delivery, rate and interval distribution;
 - LPT DATA rate;
 - PDB05 frame gaps.
+
+Probe code and counters live only in unused guest RAM for the duration of the
+IRQ pass. Update ROMs, saved data and guest files are never changed. Raw logs,
+the assembled probe, memory discovery data and JSON results are retained in the
+printed `/tmp/p2k-bench-*` artifact directory.
 
 For normal 100% operation, the most direct check is that XINU `sleep 10` takes
 approximately ten wall seconds after warmup. Boot-time cumulative delivery can
@@ -111,7 +126,9 @@ in the measured window. It is useful only together with game-clock speed:
   than wall time.
 - Values above 100% mean the requested mode is overspeeding the guest.
 
-`--bench` uses steady-state windows for its final result.
+`--bench` uses only the clean guest-side probe window for IRQ results and only
+post-warmup rolling windows from the separate LPT pass. It returns `2` when
+speed or delivery is unhealthy, or when a steady PDB05 gap exceeds 2.5 ms.
 
 ## Jitter and cabinet traffic
 

@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Boot Encore, run a XINU sleep test, and summarize live timing diagnostics."""
+"""Run Encore's non-invasive guest IRQ and LPT/PDB self-diagnostic."""
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import shutil
 import signal
 import socket
+import statistics
+import struct
 import subprocess
 import sys
 import tempfile
@@ -15,8 +20,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNNER = ROOT / "scripts" / "run-qemu.sh"
-MARKER = b"__P2K_BENCH_DONE__"
+PROBE_SOURCE = ROOT / "scripts" / "guest-irq-probe.S"
+EXPECTED_IRQ_HZ = 1193182.0 / 298.0
+DATA_ADDR = 0x00FE0000
+CODE_ADDR = 0x00FF0000
+RING_ENTRIES = 8192
+CLKINT_SIGNATURE = bytes.fromhex("fa60b020e620")
 WARMUP_MARKER = b"__P2K_BENCH_WARM__"
+DONE_MARKER = b"__P2K_BENCH_DONE__"
 
 
 def field(line: str, name: str, default: str = "n/a") -> str:
@@ -24,28 +35,32 @@ def field(line: str, name: str, default: str = "n/a") -> str:
     return match.group(1) if match else default
 
 
-def last_line(lines: list[str], needle: str, extra: str = "") -> str:
-    return next(
-        (line for line in reversed(lines) if needle in line and extra in line), ""
-    )
+def numeric_field(line: str, name: str) -> float:
+    value = field(line, name, "")
+    match = re.match(r"[-+]?[0-9]+(?:\.[0-9]+)?", value)
+    if not match:
+        raise ValueError(f"missing {name}= in {line}")
+    return float(match.group())
 
 
-def max_field(lines: list[str], needle: str, name: str) -> str:
-    values: list[int] = []
-    for line in lines:
-        if needle not in line:
-            continue
-        match = re.search(rf"(?:^|[ |]){re.escape(name)}=(\d+)", line)
-        if match:
-            values.append(int(match.group(1)))
-    return str(max(values)) if values else "n/a"
+def pick_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
-def connect_console(port: int, process: subprocess.Popen[bytes], timeout: float) -> socket.socket:
+def requested_speed(arguments: list[str]) -> float:
+    for index, argument in enumerate(arguments):
+        if argument == "--speed-target" and index + 1 < len(arguments):
+            return float(arguments[index + 1])
+    return 100.0
+
+
+def connect_console(port: int, process: subprocess.Popen, timeout: float) -> socket.socket:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if process.poll() is not None:
-            raise RuntimeError(f"Encore exited before XINU became ready (status {process.returncode})")
+            raise RuntimeError(f"Encore exited before XINU became ready ({process.returncode})")
         try:
             sock = socket.create_connection(("127.0.0.1", port), timeout=1.0)
             sock.settimeout(1.0)
@@ -55,7 +70,8 @@ def connect_console(port: int, process: subprocess.Popen[bytes], timeout: float)
     raise RuntimeError("timed out connecting to Encore's XINU console")
 
 
-def wait_for(sock: socket.socket, token: bytes, timeout: float, wake: bool = False) -> bytes:
+def wait_for(sock: socket.socket, token: bytes, timeout: float,
+             wake: bool = False) -> bytes:
     deadline = time.monotonic() + timeout
     received = bytearray()
     next_wake = 0.0
@@ -75,163 +91,465 @@ def wait_for(sock: socket.socket, token: bytes, timeout: float, wake: bool = Fal
     raise RuntimeError(f"timed out waiting for XINU response {token!r}")
 
 
-def pick_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
+def wait_port(port: int, process: subprocess.Popen, timeout: float = 30.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError(f"Encore exited before GDB became ready ({process.returncode})")
+        with socket.socket() as sock:
+            sock.settimeout(0.1)
+            if sock.connect_ex(("127.0.0.1", port)) == 0:
+                return
+        time.sleep(0.05)
+    raise RuntimeError(f"GDB port {port} did not become ready")
 
 
-def requested_speed(arguments: list[str]) -> float:
-    for index, argument in enumerate(arguments):
-        if argument == "--speed-target" and index + 1 < len(arguments):
-            return float(arguments[index + 1])
-    return 100.0
+def gdb(port: int, commands: list[str]) -> str:
+    argv = ["gdb", "-q", "-batch", "-ex", f"target remote 127.0.0.1:{port}"]
+    for command in commands:
+        argv.extend(("-ex", command))
+    result = subprocess.run(argv, check=True, text=True, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT)
+    return result.stdout
+
+
+def build_probe(output: Path) -> bytes:
+    obj = output / "guest-irq-probe.o"
+    elf = output / "guest-irq-probe.elf"
+    raw = output / "guest-irq-probe-template.bin"
+    subprocess.run(["as", "--32", "-o", str(obj), str(PROBE_SOURCE)], check=True)
+    subprocess.run(["ld", "-m", "elf_i386", f"-Ttext=0x{CODE_ADDR:x}",
+                    "-o", str(elf), str(obj)], check=True)
+    subprocess.run(["objcopy", "-O", "binary", "-j", ".text",
+                    str(elf), str(raw)], check=True)
+    return raw.read_bytes()
+
+
+def locate_clkint(port: int, artifact: Path) -> int:
+    memory = artifact / "guest-system-memory.bin"
+    deadline = time.monotonic() + 20.0
+    while True:
+        memory.unlink(missing_ok=True)
+        gdb(port, [f"dump binary memory {memory} 0x00000000 0x00300000", "detach"])
+        image = memory.read_bytes()
+        hits: list[int] = []
+        start = 0
+        while True:
+            found = image.find(CLKINT_SIGNATURE, start)
+            if found < 0:
+                break
+            hits.append(found)
+            start = found + 1
+
+        def valid_gate(position: int) -> bool:
+            return (position >= 0 and position + 8 <= len(image) and
+                    image[position + 2:position + 6] == bytes.fromhex("0800008f"))
+
+        irq0: list[tuple[int, int]] = []
+        for idt_base in range(0, len(image) - 33 * 8, 8):
+            if valid_gate(idt_base - 8):
+                continue
+            if not all(valid_gate(idt_base + vector * 8) for vector in range(33)):
+                continue
+            descriptor = image[idt_base + 0x20 * 8:idt_base + 0x20 * 8 + 8]
+            address = (struct.unpack_from("<H", descriptor)[0] |
+                       struct.unpack_from("<H", descriptor, 6)[0] << 16)
+            if address in hits:
+                irq0.append((address, idt_base))
+        irq0 = sorted(set(irq0))
+        if len(irq0) == 1:
+            (artifact / "idt.json").write_text(json.dumps({
+                "irq0_handler": f"0x{irq0[0][0]:08x}",
+                "idt_base": f"0x{irq0[0][1]:08x}",
+            }, indent=2) + "\n")
+            return irq0[0][0]
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"expected one live clkint handler, signatures={list(map(hex, hits))}")
+        time.sleep(1.0)
+
+
+def install_probe(port: int, artifact: Path, template: bytes) -> tuple[int, bytes]:
+    handler = locate_clkint(port, artifact)
+    original = CLKINT_SIGNATURE
+    stub = bytearray(template)
+    if stub[-5] != 0xE9:
+        raise RuntimeError("probe template has no final JMP")
+    struct.pack_into("<i", stub, len(stub) - 4,
+                     handler + len(original) - (CODE_ADDR + len(stub)))
+    stub_path = artifact / "guest-irq-probe.bin"
+    stub_path.write_bytes(stub)
+    patch = b"\xe9" + struct.pack("<i", CODE_ADDR - (handler + 5)) + b"\x90"
+    commands = [
+        f"restore {stub_path} binary 0x{CODE_ADDR:08x}",
+        f"set {{unsigned int}}0x{DATA_ADDR:08x} = 0",
+        f"set {{unsigned int}}0x{DATA_ADDR + 4:08x} = 0",
+        f"set {{unsigned int}}0x{DATA_ADDR + 8:08x} = 0",
+    ]
+    commands.extend(f"set {{unsigned char}}0x{handler + i:08x} = 0x{byte:02x}"
+                    for i, byte in enumerate(patch))
+    commands.append("detach")
+    gdb(port, commands)
+    (artifact / "probe.json").write_text(json.dumps({
+        "handler": f"0x{handler:08x}", "original": original.hex(),
+        "patch": patch.hex(), "data": f"0x{DATA_ADDR:08x}",
+        "code": f"0x{CODE_ADDR:08x}",
+    }, indent=2) + "\n")
+    return handler, original
+
+
+def read_count(port: int, artifact: Path, name: str) -> int:
+    path = artifact / f"{name}.bin"
+    gdb(port, [f"dump binary memory {path} 0x{DATA_ADDR:08x} 0x{DATA_ADDR + 8:08x}",
+               "detach"])
+    return struct.unpack_from("<I", path.read_bytes())[0]
+
+
+def arm_probe(port: int, artifact: Path) -> int:
+    count = read_count(port, artifact, "irq-before-arm")
+    armed = (count & ~0xF) | 0xF
+    gdb(port, [
+        f"set {{unsigned int}}0x{DATA_ADDR:08x} = {armed}",
+        f"set {{unsigned int}}0x{DATA_ADDR + 4:08x} = 0",
+        f"set {{unsigned int}}0x{DATA_ADDR + 8:08x} = 0",
+        f"set {{unsigned int}}0x{DATA_ADDR + 12:08x} = 0",
+        f"set {{unsigned char[{RING_ENTRIES * 4}]}}0x{DATA_ADDR + 16:08x} = {{0}}",
+        "detach",
+    ])
+    return armed
+
+
+def finish_probe(port: int, artifact: Path, handler: int,
+                 original: bytes) -> tuple[int, list[int]]:
+    ring = artifact / "guest-irq-ring.bin"
+    commands = [f"set {{unsigned char}}0x{handler + i:08x} = 0x{byte:02x}"
+                for i, byte in enumerate(original)]
+    commands += [
+        f"dump binary memory {ring} 0x{DATA_ADDR:08x} "
+        f"0x{DATA_ADDR + 16 + RING_ENTRIES * 4:08x}",
+        "detach",
+    ]
+    gdb(port, commands)
+    data = ring.read_bytes()
+    count = struct.unpack_from("<I", data)[0]
+    values = struct.unpack_from(f"<{RING_ENTRIES}I", data, 16)
+    return count, [value for value in values if value]
+
+
+def probe_stats(start_count: int, end_count: int, elapsed: float,
+                cycles: list[int], target_speed: float) -> dict[str, float | int]:
+    delivered = (end_count - start_count) & 0xFFFFFFFF
+    if delivered < 100 or len(cycles) < 100:
+        raise RuntimeError(f"too few IRQ samples: delivered={delivered}, ring={len(cycles)}")
+    rate = delivered / elapsed
+    mean_us = 1.0e6 / rate
+    raw_mean = statistics.fmean(cycles)
+    scaled = sorted(value * mean_us / raw_mean for value in cycles)
+
+    def percentile(q: float) -> float:
+        return scaled[int((len(scaled) - 1) * q)]
+
+    return {
+        "samples": delivered, "ring_samples": len(scaled), "rate": rate,
+        "delivery": 100.0 * rate / (EXPECTED_IRQ_HZ * target_speed / 100.0),
+        "mean": mean_us, "stddev": statistics.pstdev(scaled),
+        "p50": percentile(0.50), "p95": percentile(0.95),
+        "p99": percentile(0.99), "worst": scaled[-1], "elapsed": elapsed,
+    }
+
+
+def monitor_workload(path: Path) -> None:
+    deadline = time.monotonic() + 10.0
+    while not path.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if not path.exists():
+        raise RuntimeError("QEMU monitor socket did not appear")
+    commands = ["sendkey f4"] + ["sendkey c"] * 3
+    commands += [f"sendkey {'up' if index % 2 == 0 else 'down'}" for index in range(20)]
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.settimeout(2.0)
+        sock.connect(str(path))
+        try:
+            sock.recv(4096)
+        except socket.timeout:
+            pass
+        for index, command in enumerate(commands):
+            sock.sendall((command + "\n").encode())
+            time.sleep(0.5 if index == 0 else 0.3 if index <= 3 else 0.1)
+
+
+def stop_process(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    os.killpg(process.pid, signal.SIGTERM)
+    try:
+        process.wait(timeout=8)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+
+
+def launch_command(forwarded: list[str], port: int, monitor: Path,
+                   extra: list[str]) -> list[str]:
+    return [
+        "bash", str(RUNNER), *forwarded, "--no-savedata", "--uart-quiet",
+        "--uart-tcp", f"127.0.0.1:{port}",
+        "--monitor", f"unix:{monitor},server=on,wait=off", *extra,
+    ]
+
+
+def warm_guest(console: socket.socket, target_speed: float, monitor: Path) -> None:
+    wait_for(console, b"%", 45.0, wake=True)
+    # Apply the cabinet workload before warmup. Its key sequence deliberately
+    # creates short scheduling/audio disturbances; the measured phase must
+    # begin only after those have drained, not in a snapshot crossing them.
+    monitor_workload(monitor)
+    console.sendall(b"sleep 30\recho __P2K_BENCH_WARM__\r")
+    wait_for(console, WARMUP_MARKER, max(120.0, 45.0 * 100.0 / target_speed))
+
+
+def run_irq_pass(forwarded: list[str], artifact: Path, template: bytes,
+                 target_speed: float) -> tuple[dict, float]:
+    port, gdb_port = pick_port(), pick_port()
+    monitor = artifact / "monitor.sock"
+    log_path = artifact / "encore.log"
+    command = launch_command(forwarded, port, monitor,
+                             ["--", "-gdb", f"tcp:127.0.0.1:{gdb_port}"])
+    (artifact / "command.json").write_text(json.dumps(command, indent=2) + "\n")
+    with log_path.open("wb") as log:
+        process = subprocess.Popen(command, cwd=ROOT, stdin=subprocess.DEVNULL,
+                                   stdout=log, stderr=subprocess.STDOUT,
+                                   start_new_session=True)
+        handler = None
+        original = b""
+        try:
+            wait_port(gdb_port, process)
+            # A readiness connection can leave some GDB-stub versions in a
+            # stopped state after the peer closes without a detach packet.
+            # Perform one real attach/detach before waiting for XINU so boot
+            # is explicitly resumed and the probe's later pauses are known.
+            gdb(gdb_port, ["detach"])
+            with connect_console(port, process, 30.0) as console:
+                warm_guest(console, target_speed, monitor)
+                handler, original = install_probe(gdb_port, artifact, template)
+                # First attachment perturbs pacing. Resume, settle, then clear
+                # and re-arm so no GDB pause is included in the sample window.
+                arm_probe(gdb_port, artifact)
+                time.sleep(1.0)
+                start_count = arm_probe(gdb_port, artifact)
+                started = time.monotonic()
+                console.sendall(b"sleep 10\recho __P2K_BENCH_DONE__\r")
+                wait_for(console, DONE_MARKER,
+                         max(45.0, 15.0 * 100.0 / target_speed))
+                stopped = time.monotonic()
+                end_count, cycles = finish_probe(gdb_port, artifact, handler, original)
+                handler = None
+                elapsed = stopped - started
+                return probe_stats(start_count, end_count, elapsed, cycles,
+                                   target_speed), elapsed
+        finally:
+            if handler is not None and process.poll() is None:
+                try:
+                    finish_probe(gdb_port, artifact, handler, original)
+                except Exception:
+                    pass
+            stop_process(process)
+            monitor.unlink(missing_ok=True)
+
+
+def run_lpt_pass(forwarded: list[str], artifact: Path,
+                 target_speed: float) -> tuple[list[str], list[str], float]:
+    port = pick_port()
+    monitor = artifact / "monitor.sock"
+    log_path = artifact / "encore.log"
+    command = launch_command(forwarded, port, monitor, ["-v"])
+    (artifact / "command.json").write_text(json.dumps(command, indent=2) + "\n")
+    with log_path.open("wb") as log:
+        launched = time.monotonic()
+        process = subprocess.Popen(command, cwd=ROOT, stdin=subprocess.DEVNULL,
+                                   stdout=log, stderr=subprocess.STDOUT,
+                                   start_new_session=True)
+        try:
+            with connect_console(port, process, 30.0) as console:
+                warm_guest(console, target_speed, monitor)
+                boot_wall = time.monotonic() - launched
+                boot_lines = log_path.read_text(errors="replace").splitlines()
+                console.sendall(b"sleep 10\recho __P2K_BENCH_DONE__\r")
+                wait_for(console, DONE_MARKER,
+                         max(45.0, 15.0 * 100.0 / target_speed))
+                time.sleep(6.2)
+                lines = log_path.read_text(errors="replace").splitlines()
+                return boot_lines, lines[len(boot_lines):], boot_wall
+        finally:
+            stop_process(process)
+            monitor.unlink(missing_ok=True)
+
+
+def parse_lpt(lines: list[str]) -> dict[str, float]:
+    data_rates: list[float] = []
+    pdb: list[dict[str, float]] = []
+    pdb_counts: list[tuple[float, int]] = []
+    current_wall: float | None = None
+    for line in lines:
+        if "p2k-timing #" in line and " snap |" in line:
+            current_wall = numeric_field(line, "wall")
+        elif "p2k-lpt-hz snap" in line:
+            match = re.search(r"data=\d+ \(\+([0-9.]+)/s\)", line)
+            if match:
+                data_rates.append(float(match.group(1)))
+        elif "p2k-pdb05 snap | pdb05_wall_delta" in line:
+            pdb.append({name: numeric_field(line, name)
+                        for name in ("p50", "p95", "p99", "max_total")})
+        elif "p2k-latency snap" in line and current_wall is not None:
+            match = re.search(r"pdb05 count=(\d+)", line)
+            if match:
+                pdb_counts.append((current_wall, int(match.group(1))))
+    rates = [(b_count - a_count) / (b_wall - a_wall)
+             for (a_wall, a_count), (b_wall, b_count)
+             in zip(pdb_counts, pdb_counts[1:]) if b_wall > a_wall]
+    if not data_rates or not pdb or not rates:
+        raise RuntimeError("steady LPT/PDB snapshots missing")
+    return {
+        "data_rate": statistics.fmean(data_rates),
+        "rate": statistics.fmean(rates),
+        "p50": statistics.fmean(item["p50"] for item in pdb),
+        "p95": statistics.fmean(item["p95"] for item in pdb),
+        "p99": statistics.fmean(item["p99"] for item in pdb),
+        "worst": max(item["max_total"] for item in pdb),
+    }
+
+
+def parse_boot(lines: list[str]) -> dict[str, str]:
+    timing = next((line for line in reversed(lines)
+                   if "p2k-timing #" in line and " snap |" in line), "")
+    lpt = next((line for line in reversed(lines) if "p2k-lpt-hz snap" in line), "")
+    data = re.search(r"data=\d+ \(\+([0-9.]+)/s\)", lpt)
+    hotloop_worst = []
+    pdb_worst = []
+    for line in lines:
+        if "p2k-clkint-hotloop snap" in line:
+            value = field(line, "max_us", "")
+            if value.isdigit():
+                hotloop_worst.append(int(value))
+        if "p2k-pdb05 snap" in line and "pdb05_wall_total" in line:
+            try:
+                pdb_worst.append(int(numeric_field(line, "max_total")))
+            except ValueError:
+                pass
+    return {
+        "delivery": field(timing, "delivery"),
+        "current_delivery": field(timing, "current_delivery"),
+        "data_rate": data.group(1) if data else "n/a",
+        "irq_worst": str(max(hotloop_worst)) if hotloop_worst else "n/a",
+        "pdb_worst": str(max(pdb_worst)) if pdb_worst else "n/a",
+    }
+
+
+def fmt_us(value: float) -> str:
+    return f"{value / 1000:.2f}ms" if value >= 1000 else f"{value:.0f}us"
+
+
+def with_unit(value: str, unit: str) -> str:
+    return value if value == "n/a" else value + unit
+
+
+def write_report(artifact: Path, result: dict) -> None:
+    irq, lpt, boot = result["irq"], result["lpt"], result["boot"]
+    report = [
+        "# Encore self-diagnostic",
+        "",
+        "> [!NOTE]",
+        "> IRQ timing comes from a temporary guest-RAM `clkint` probe. LPT and "
+        "PDB05 timing comes from a separate unpatched run.",
+        "",
+        "| Phase | Speed/delivery | IRQ rate | IRQ sigma | IRQ p99 | IRQ worst | DATA/s | PDB05/s | PDB p99 | PDB worst |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        f"| Boot/warmup | {boot['current_delivery']} | — | — | — | "
+        f"{with_unit(boot['irq_worst'], 'us')} | {boot['data_rate']} | — | — | "
+        f"{with_unit(boot['pdb_worst'], 'us')} |",
+        f"| Steady state | {irq['delivery']:.2f}% | {irq['rate']:.1f} | "
+        f"{fmt_us(irq['stddev'])} | {fmt_us(irq['p99'])} | "
+        f"{fmt_us(irq['worst'])} | {lpt['data_rate']:.0f} | {lpt['rate']:.0f} | "
+        f"{fmt_us(lpt['p99'])} | {fmt_us(lpt['worst'])} |",
+        "",
+        f"XINU `sleep 10`: {result['sleep_wall']:.3f}s wall "
+        f"({result['effective_speed']:.2f}% real-time).",
+    ]
+    (artifact / "report.md").write_text("\n".join(report) + "\n")
 
 
 def main() -> int:
     forwarded = sys.argv[1:]
     target_speed = requested_speed(forwarded)
-    port = pick_port()
     artifact = Path(tempfile.mkdtemp(prefix="p2k-bench-"))
-    log_path = artifact / "encore.log"
-    command = [
-        "bash", str(RUNNER), *forwarded,
-        "--no-savedata", "--uart-quiet",
-        "--uart-tcp", f"127.0.0.1:{port}", "-v",
-    ]
-
+    irq_dir, lpt_dir = artifact / "irq", artifact / "lpt"
+    irq_dir.mkdir()
+    lpt_dir.mkdir()
     print(f"[bench] artifact={artifact}", flush=True)
-    print(f"[bench] launching: {' '.join(command)}", flush=True)
-    with log_path.open("wb") as log:
-        launch_started = time.monotonic()
-        process = subprocess.Popen(
-            command, cwd=ROOT, stdin=subprocess.DEVNULL,
-            stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-        )
-        try:
-            with connect_console(port, process, 30.0) as console:
-                wait_for(console, b"%", 45.0, wake=True)
-                # Advance a full 30 seconds of *guest* time before measuring.
-                # HOTLOOP resets its cumulative jitter statistics at this
-                # boundary, and subsequent rolling audit windows no longer
-                # contain firmware/DCS initialization behavior.  Guest-time
-                # warmup remains correct even on a host whose delivery is
-                # slower than wall time.
-                console.sendall(b"sleep 30\recho __P2K_BENCH_WARM__\r")
-                wait_for(console, WARMUP_MARKER,
-                         max(120.0, 45.0 * 100.0 / target_speed))
-                boot_wall = time.monotonic() - launch_started
-                # Snapshot the log boundary before the measured phase. The
-                # child writes directly to this file descriptor, so a fresh
-                # read captures every completed audit line up to the marker.
-                boot_lines = log_path.read_text(
-                    encoding="utf-8", errors="replace"
-                ).splitlines()
-                started = time.monotonic()
-                console.sendall(b"sleep 10\recho __P2K_BENCH_DONE__\r")
-                wait_for(console, MARKER,
-                         max(45.0, 15.0 * 100.0 / target_speed))
-                sleep_wall = time.monotonic() - started
-                time.sleep(6.2)  # ensure at least two fresh 3-second audit snapshots
-        except Exception as error:
-            print(f"[bench] ERROR: {error}", file=sys.stderr)
-            return_code = 1
-        else:
-            return_code = 0
-        finally:
-            if process.poll() is None:
-                try:
-                    signal_pid = process.pid
-                    # The wrapper execs QEMU; signal the process group defensively.
-                    import os
-                    os.killpg(signal_pid, signal.SIGTERM)
-                    process.wait(timeout=8)
-                except (ProcessLookupError, subprocess.TimeoutExpired):
-                    if process.poll() is None:
-                        import os
-                        os.killpg(process.pid, signal.SIGKILL)
-                        process.wait()
-
-    if return_code:
-        print(f"[bench] log={log_path}", file=sys.stderr)
-        return return_code
-
-    lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
-    timing = last_line(lines, "p2k-timing #", " snap |")
-    drift = last_line(lines, "p2k-xinu-drift snap")
-    hotloop = last_line(lines, "p2k-clkint-hotloop snap")
-    lpt = last_line(lines, "p2k-lpt-hz snap")
-    pdb = last_line(lines, "p2k-pdb05 snap", "pdb05_wall_delta")
-
-    boot_timing = last_line(boot_lines, "p2k-timing #", " snap |")
-    boot_lpt = last_line(boot_lines, "p2k-lpt-hz snap")
-    boot_data_match = re.search(r"data=\d+ \(\+([0-9.]+)/s\)", boot_lpt)
-    boot_irq_jitter_max = max_field(
-        boot_lines, "p2k-clkint-hotloop snap", "max_us"
-    )
-    boot_pdb_max = max_field(
-        [line for line in boot_lines if "pdb05_wall_total" in line],
-        "p2k-pdb05 snap", "max_total",
-    )
-
-    if not timing:
-        print(f"[bench] ERROR: timing snapshots missing; log={log_path}", file=sys.stderr)
+    missing = [tool for tool in ("gdb", "as", "ld", "objcopy")
+               if shutil.which(tool) is None]
+    if missing:
+        print(f"[bench] ERROR: required tools missing: {', '.join(missing)}",
+              file=sys.stderr)
+        return 1
+    print("[bench] pass 1/2: guest-RAM clkint probe", flush=True)
+    try:
+        template = build_probe(irq_dir)
+        irq, sleep_wall = run_irq_pass(forwarded, irq_dir, template, target_speed)
+        print("[bench] pass 2/2: unpatched LPT/PDB measurement", flush=True)
+        boot_lines, steady_lines, boot_wall = run_lpt_pass(
+            forwarded, lpt_dir, target_speed)
+        lpt = parse_lpt(steady_lines)
+        boot = parse_boot(boot_lines)
+    except Exception as error:
+        print(f"[bench] ERROR: {error}", file=sys.stderr)
+        print(f"[bench] artifacts={artifact}", file=sys.stderr)
         return 1
 
     effective = 1000.0 / sleep_wall
-    data_match = re.search(r"data=\d+ \(\+([0-9.]+)/s\)", lpt)
-    delta_match = re.search(r"delta:.*drift=([0-9.]+)", drift)
-    print()
-    print("Encore self-diagnostic")
-    print(f"  Requested speed:       {target_speed:.2f}%")
-    print("  Boot/warmup phase:")
-    print(f"    Wall duration:        {boot_wall:.3f} s")
-    print(f"    IRQ0 delivery total:  {field(boot_timing, 'delivery')}")
-    print(f"    IRQ0 delivery end:    {field(boot_timing, 'current_delivery')}")
-    print(f"    IRQ0 jitter worst:    {boot_irq_jitter_max} us")
-    print(f"    LPT DATA rate end:    "
-          f"{boot_data_match.group(1) + '/s' if boot_data_match else 'n/a'}")
-    print(f"    PDB05 worst:          {boot_pdb_max} us")
-    print("  Steady-state phase:")
-    print("    Warmup completed:     30.000 s guest time")
-    print(f"    XINU sleep 10 wall:   {sleep_wall:.3f} s ({effective:.2f}% real-time)")
-    print(f"    Measured clock speed: {field(timing, 'current_speed')}")
-    print(f"    Current IRQ0 delivery: {field(timing, 'current_delivery')}")
-    print(f"    Current IRQ0 counts: {field(timing, 'current_clkint_entered')} / "
-          f"{field(timing, 'current_irq0_raised')}")
-    print(f"    Current XINU drift:  {delta_match.group(1) + 'x' if delta_match else 'n/a'}")
-    if hotloop:
-        print(f"    HOTLOOP adaptive:    {field(hotloop, 'adaptive')}")
-        print(f"    HOTLOOP gap:         {field(hotloop, 'gap_ns')} ns")
-        print(f"    HOTLOOP measured:    {field(hotloop, 'measured_hz')} Hz")
-        jitter = re.search(
-            r"jitter:.*mean_us=(\d+).*min_us=(\d+).*max_us=(\d+).*stddev_us=(\d+)",
-            hotloop,
-        )
-        if jitter:
-            print(f"    IRQ0 jitter µs:      mean={jitter.group(1)} min={jitter.group(2)} "
-                  f"max={jitter.group(3)} stddev={jitter.group(4)}")
-    else:
-        print("    HOTLOOP:             disabled (--strict)")
-    print(f"    LPT DATA rate:       {data_match.group(1) + '/s' if data_match else 'n/a'}")
-    if pdb:
-        print(f"    PDB05 gaps:          p50={field(pdb, 'p50')} p95={field(pdb, 'p95')} "
-              f"p99={field(pdb, 'p99')} worst={field(pdb, 'max')}")
-    print(f"  Log:                   {log_path}")
+    result = {
+        "requested_speed": target_speed, "sleep_wall": sleep_wall,
+        "effective_speed": effective, "boot_wall": boot_wall,
+        "irq": irq, "lpt": lpt, "boot": boot,
+    }
+    (artifact / "results.json").write_text(json.dumps(result, indent=2) + "\n")
+    (artifact / "metadata.json").write_text(json.dumps({
+        "arguments": forwarded, "expected_irq_hz": EXPECTED_IRQ_HZ,
+        "repo_commit": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+        "probe_source": str(PROBE_SOURCE.relative_to(ROOT)),
+    }, indent=2) + "\n")
+    write_report(artifact, result)
 
-    delivery_text = field(timing, "current_delivery", "0%")
-    try:
-        delivery = float(delivery_text.rstrip("%"))
-    except ValueError:
-        delivery = 0.0
-    speed_low = target_speed * 0.95
-    speed_high = target_speed * 1.05
-    if delivery < 95.0 or delivery > 105.0 or not (speed_low <= effective <= speed_high):
-        print(f"  RESULT: ABNORMAL — achieved speed is outside "
-              f"{speed_low:.2f}–{speed_high:.2f}% or IRQ0 delivery is unhealthy")
-        return 2
-    print("  RESULT: PASS")
-    return 0
+    print("\nEncore self-diagnostic")
+    print(f"  Requested speed:        {target_speed:.2f}%")
+    print("  Boot/warmup phase:")
+    print(f"    Wall duration:         {boot_wall:.3f}s")
+    print(f"    IRQ delivery total:    {boot['delivery']}")
+    print(f"    IRQ delivery end:      {boot['current_delivery']}")
+    print(f"    Emulator IRQ worst:    {with_unit(boot['irq_worst'], 'us')}")
+    print(f"    LPT DATA rate end:     {boot['data_rate']}/s")
+    print(f"    PDB05 worst:           {with_unit(boot['pdb_worst'], 'us')}")
+    print("  Steady-state phase:")
+    print("    Warmup completed:      30.000s guest time")
+    print(f"    XINU sleep 10 wall:    {sleep_wall:.3f}s ({effective:.2f}% real-time)")
+    print(f"    Guest IRQ delivery:    {irq['delivery']:.2f}%")
+    print(f"    Guest IRQ rate:        {irq['rate']:.1f}/s ({irq['samples']} entries)")
+    print(f"    Guest IRQ intervals:   mean={fmt_us(irq['mean'])} "
+          f"sigma={fmt_us(irq['stddev'])} p50={fmt_us(irq['p50'])} "
+          f"p95={fmt_us(irq['p95'])} p99={fmt_us(irq['p99'])} "
+          f"worst={fmt_us(irq['worst'])}")
+    print(f"    LPT DATA rate:         {lpt['data_rate']:.0f}/s")
+    print(f"    PDB05 rate:            {lpt['rate']:.1f}/s")
+    print(f"    PDB05 intervals:       p50={fmt_us(lpt['p50'])} "
+          f"p95={fmt_us(lpt['p95'])} p99={fmt_us(lpt['p99'])} "
+          f"worst={fmt_us(lpt['worst'])}")
+    print(f"  Artifacts:               {artifact}")
+
+    speed_low, speed_high = target_speed * 0.95, target_speed * 1.05
+    healthy = (95.0 <= irq["delivery"] <= 105.0 and
+               speed_low <= effective <= speed_high and lpt["worst"] <= 2500.0)
+    print(f"  RESULT: {'PASS' if healthy else 'ABNORMAL'}")
+    return 0 if healthy else 2
 
 
 if __name__ == "__main__":
