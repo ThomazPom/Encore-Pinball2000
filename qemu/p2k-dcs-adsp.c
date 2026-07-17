@@ -732,6 +732,9 @@ void p2k_dcs_adsp_write_cmd(uint16_t command)
 static void *adsp_mailbox_worker(void *opaque)
 {
     (void)opaque;
+#ifdef __linux__
+    pthread_setname_np(pthread_self(), "dcs-pcm");
+#endif
     for (;;) {
         qemu_mutex_lock(&s_adsp.lock);
         bool pcm_work = s_adsp.pcm_output_rate > 0 && !s_adsp.host_boot &&
