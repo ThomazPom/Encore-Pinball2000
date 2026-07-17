@@ -173,7 +173,12 @@ Builds a minimal `qemu-system-i386` with the Encore `pinball2000` machine.
 > [!WARNING]
 > `--unstable` may select a release candidate.
 
-The build script configures QEMU with `--target-list=i386-softmmu`, `--enable-sdl`, `--enable-debug`, disabled docs/tools/guest-agent/VNC, and GTK enabled only when `pkg-config --exists gtk+-3.0` succeeds.
+The build script configures QEMU with `--target-list=i386-softmmu`,
+`--without-default-devices`, SDL, and only Encore's explicit Kconfig/Meson
+dependencies. Docs, tools, guest agent, plugins and VNC are disabled. GTK is
+enabled only when `pkg-config --exists gtk+-3.0` succeeds. A hashed configure
+profile recreates the build directory when these choices change; ordinary
+source edits preserve the incremental build.
 
 Details: [quickstart](02-quickstart.md), [troubleshooting](04-troubleshooting.md)
 and [documentation index](README.md).
