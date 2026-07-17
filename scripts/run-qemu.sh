@@ -271,14 +271,20 @@ AUDIO
                             trigger decode hitch.
 
   Faithful ADSP timing candidates currently under validation:
+    scripts/run-qemu.sh --dcs-engine pb2kslib-adsp
+                            Host-clock HOTLOOP with update-derived PCM.
     scripts/run-qemu.sh --dcs-engine adsp-thread
-                            Host-clock HOTLOOP; simplest qualifying mode.
+                            Host-clock HOTLOOP with live DSP emulation.
+    scripts/run-qemu.sh --with-pit --dcs-engine pb2kslib-adsp
+                            HOTLOOP plus natural PIT with update-derived PCM.
     scripts/run-qemu.sh --with-pit --dcs-engine adsp-thread
-                            Host-clock HOTLOOP plus the natural PIT; strongest
-                            qualifying mode without CPU-affinity assistance.
+                            HOTLOOP plus natural PIT with live DSP emulation.
+    HOTLOOP adsp-thread with the dcs-pcm worker pinned
+                            Fifth qualifying benchmark configuration; no public
+                            runtime option until affinity is proven repeatable.
 
-    The PCM-worker-pinned HOTLOOP candidate is intentionally benchmark-only
-    until repeated measurements justify a supported runtime option.
+    Plain pb2kslib is excluded because a fixed library can omit sounds added
+    by newer updates. Strict real-ADSP modes currently fail the IRQ-jitter gate.
 
 CONSOLE / DIAGNOSTICS
   --bench                   Run an isolated self-diagnostic using the normal
