@@ -23,6 +23,8 @@
 #define P2K_DCS_REGION_WORDS     0x600000
 #define P2K_DCS_U109_WORD_OFFSET 0x200000
 #define P2K_DCS_U110_WORD_OFFSET 0x400000
+#define ADSP_CLOCK_RING_FRAMES   4096
+#define ADSP_CLOCK_SLICE_FRAMES  2
 
 static uint8_t *s_sound_flash;
 static char s_sound_flash_path[1024];
@@ -77,6 +79,11 @@ typedef struct {
     bool worker_started;
     bool worker_run;
     bool threaded_engine;
+    bool clock_thread_engine;
+    int16_t clock_ring[ADSP_CLOCK_RING_FRAMES * 2];
+    unsigned clock_ring_head;
+    unsigned clock_ring_count;
+    int clock_output_rate;
 } P2KDcsAdsp;
 
 static P2KDcsAdsp s_adsp;
@@ -84,6 +91,7 @@ static P2KDcsAdsp s_adsp;
 static void *adsp_mailbox_worker(void *opaque);
 static void adsp_worker_shutdown(Notifier *notifier, void *data);
 static void adsp_worker_start(void);
+static void adsp_render_direct(int16_t *samples, int frames, int output_rate);
 
 static Notifier adsp_exit_notifier = {
     .notify = adsp_worker_shutdown,
@@ -546,6 +554,9 @@ bool p2k_dcs_adsp_prepare(Pinball2000MachineState *s)
     s_adsp.pcm_frames = 0;
     s_adsp.pcm_nonzero = 0;
     s_adsp.pcm_peak = 0;
+    s_adsp.clock_ring_head = 0;
+    s_adsp.clock_ring_count = 0;
+    s_adsp.clock_output_rate = 0;
     memset(s_adsp.last_sample, 0, sizeof(s_adsp.last_sample));
     s_adsp.selftest_sent = false;
     s_adsp.selftest_ready = false;
@@ -566,7 +577,10 @@ bool p2k_dcs_adsp_prepare(Pinball2000MachineState *s)
     const char *engine = getenv("P2K_DCS_ENGINE");
     s_adsp.threaded_engine = !engine || !*engine ||
                              !strcmp(engine, "adsp-thread") ||
+                             !strcmp(engine, "adsp-clock-thread") ||
                              !strcmp(engine, "pb2kslib-adsp");
+    s_adsp.clock_thread_engine = engine &&
+                                 !strcmp(engine, "adsp-clock-thread");
     snprintf(s_sound_flash_path, sizeof(s_sound_flash_path), "%s", path);
     info_report("dcs-adsp: original assets ready (u109/u110=%u MiB, "
                 "sound-flash=%s, %u KiB)",
@@ -742,6 +756,50 @@ static void *adsp_mailbox_worker(void *opaque)
         }
     }
 #endif
+    if (s_adsp.clock_thread_engine) {
+        const struct timespec yield_time = { .tv_sec = 0, .tv_nsec = 250 };
+        for (;;) {
+            qemu_mutex_lock(&s_adsp.lock);
+            while (s_adsp.worker_run && s_adsp.clock_output_rate > 0 &&
+                   s_adsp.clock_ring_count >
+                   ADSP_CLOCK_RING_FRAMES - ADSP_CLOCK_SLICE_FRAMES) {
+                qemu_cond_wait(&s_adsp.worker_cond, &s_adsp.lock);
+            }
+            bool run = s_adsp.worker_run;
+            int output_rate = s_adsp.clock_output_rate;
+            qemu_mutex_unlock(&s_adsp.lock);
+            if (!run) {
+                break;
+            }
+
+            if (output_rate > 0) {
+                int16_t slice[ADSP_CLOCK_SLICE_FRAMES * 2];
+                adsp_render_direct(slice, ADSP_CLOCK_SLICE_FRAMES,
+                                   output_rate);
+                qemu_mutex_lock(&s_adsp.lock);
+                if (!s_adsp.host_boot && s_adsp.clock_ring_count <=
+                    ADSP_CLOCK_RING_FRAMES - ADSP_CLOCK_SLICE_FRAMES) {
+                    unsigned tail = (s_adsp.clock_ring_head +
+                                     s_adsp.clock_ring_count) %
+                                    ADSP_CLOCK_RING_FRAMES;
+                    for (unsigned i = 0; i < ADSP_CLOCK_SLICE_FRAMES; i++) {
+                        unsigned dst = (tail + i) % ADSP_CLOCK_RING_FRAMES;
+                        s_adsp.clock_ring[dst * 2] = slice[i * 2];
+                        s_adsp.clock_ring[dst * 2 + 1] = slice[i * 2 + 1];
+                    }
+                    s_adsp.clock_ring_count += ADSP_CLOCK_SLICE_FRAMES;
+                }
+                qemu_mutex_unlock(&s_adsp.lock);
+            } else {
+                qemu_mutex_lock(&s_adsp.core_lock);
+                p2k_adsp2105_execute(500);
+                s_adsp.cycles += 500;
+                qemu_mutex_unlock(&s_adsp.core_lock);
+            }
+            nanosleep(&yield_time, NULL);
+        }
+        return NULL;
+    }
     for (;;) {
         qemu_mutex_lock(&s_adsp.lock);
         while (s_adsp.worker_run && !adsp_worker_has_command()) {
@@ -832,6 +890,9 @@ void p2k_dcs_adsp_host_reset(void)
     s_adsp.command_head = 0;
     s_adsp.command_count = 0;
     s_adsp.output_full = false;
+    s_adsp.clock_ring_head = 0;
+    s_adsp.clock_ring_count = 0;
+    qemu_cond_signal(&s_adsp.worker_cond);
     qemu_mutex_unlock(&s_adsp.lock);
     qemu_mutex_unlock(&s_adsp.core_lock);
 }
@@ -878,7 +939,7 @@ uint16_t p2k_dcs_adsp_read_response(void)
     return value;
 }
 
-void p2k_dcs_adsp_render(int16_t *samples, int frames, int output_rate)
+static void adsp_render_direct(int16_t *samples, int frames, int output_rate)
 {
     if (!s_adsp.initialized || output_rate <= 0) {
         memset(samples, 0, frames * 2 * sizeof(*samples));
@@ -987,6 +1048,32 @@ void p2k_dcs_adsp_render(int16_t *samples, int frames, int output_rate)
         }
     }
     qemu_mutex_unlock(&s_adsp.core_lock);
+}
+
+void p2k_dcs_adsp_render(int16_t *samples, int frames, int output_rate)
+{
+    if (!s_adsp.clock_thread_engine || !s_adsp.worker_started) {
+        adsp_render_direct(samples, frames, output_rate);
+        return;
+    }
+
+    qemu_mutex_lock(&s_adsp.lock);
+    s_adsp.clock_output_rate = output_rate;
+    int copied = 0;
+    while (copied < frames && s_adsp.clock_ring_count) {
+        unsigned src = s_adsp.clock_ring_head;
+        samples[copied * 2] = s_adsp.clock_ring[src * 2];
+        samples[copied * 2 + 1] = s_adsp.clock_ring[src * 2 + 1];
+        s_adsp.clock_ring_head = (src + 1) % ADSP_CLOCK_RING_FRAMES;
+        s_adsp.clock_ring_count--;
+        copied++;
+    }
+    qemu_cond_signal(&s_adsp.worker_cond);
+    qemu_mutex_unlock(&s_adsp.lock);
+    if (copied < frames) {
+        memset(samples + copied * 2, 0,
+               (frames - copied) * 2 * sizeof(*samples));
+    }
 }
 
 bool p2k_dcs_adsp_generate_track(uint16_t command, size_t hint_frames_44100,
