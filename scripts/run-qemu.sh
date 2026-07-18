@@ -20,7 +20,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Preserve explicit environment selection; the CLI can replace it below.
-export P2K_DCS_ENGINE="${P2K_DCS_ENGINE:-adsp-thread}"
+export P2K_DCS_ENGINE="${P2K_DCS_ENGINE:-adsp-clock-thread}"
 
 # --bench is an orchestration mode, not a QEMU machine option.  Dispatch it
 # before normal argument parsing and forward every other option (game, update,
@@ -68,7 +68,7 @@ QEMU_BIN="${QEMU_BIN:-$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-
 [[ -x "$QEMU_BIN" ]] || QEMU_BIN="qemu-system-i386"
 
 # --- audio backend support --------------------------------------------------
-AUDIO_AUTO_CANDIDATES=(pa alsa sdl oss sndio dbus)
+AUDIO_AUTO_CANDIDATES=(sdl pa alsa oss sndio dbus)
 QEMU_AUDIO_HELP=""
 QEMU_AUDIO_DRIVERS=""
 QEMU_AUDIO_HELP_LOADED=0
@@ -263,7 +263,7 @@ AUDIO
   --audio auto|none|pa|alsa|sdl|oss|sndio|dbus|wav|<qemu-driver>
                             DCS audio backend. Default and `auto`:
                             choose the first QEMU-supported backend
-                            whose host check passes (pa, alsa, sdl,
+                            whose host check passes (sdl, pa, alsa,
                             oss, sndio, dbus). `pa` requires pactl;
                             `alsa` requires /proc/asound/cards;
                             later backends trust QEMU. Falls back to
@@ -296,12 +296,12 @@ AUDIO
                             Useful with update bundles such as SWE1 2.00
                             that contain game code but omit *_sf.rom.
   --dcs-engine pb2kslib|pb2kslib-adsp|adsp|adsp-thread|adsp-clock-thread
-                            Audio content engine. adsp-thread is the default:
-                            original firmware/assets with a condition-driven
-                            mailbox worker. adsp runs the same firmware
-                            synchronously. adsp-clock-thread is experimental:
-                            a fixed-slice DSP producer with a lightweight
-                            audio consumer. pb2kslib uses extracted samples.
+                            Audio content engine. adsp-clock-thread is the
+                            default: original firmware/assets with a fixed-
+                            slice DSP producer and lightweight host-audio
+                            consumer. adsp-thread retains the condition-driven
+                            mailbox worker; adsp runs the same firmware
+                            synchronously. pb2kslib uses extracted samples.
                             pb2kslib-adsp generates/uses a persistent PCM
                             cache rendered by the update's native DSP.
   --dcs-pcm-cpu <cpu>       Pin the ADSP worker used by adsp-thread or
@@ -332,7 +332,7 @@ AUDIO
     scripts/run-qemu.sh --dcs-engine adsp-thread --dcs-pcm-cpu 2
                             Host-clock HOTLOOP with the dcs-pcm worker pinned.
     scripts/run-qemu.sh --dcs-engine adsp-clock-thread --dcs-pcm-cpu 3
-                            Experimental fixed-slice DSP clock, pinned.
+                            Default fixed-slice DSP clock with optional pinning.
 
     Plain pb2kslib is excluded because a fixed library can omit sounds added
     by newer updates. Strict real-ADSP modes currently fail the IRQ-jitter gate.
@@ -954,7 +954,7 @@ fi
 # a separate QEMU process with an independent DSP, so mutable firmware/SRAM
 # state is never shared across tracks. A single worker retains the interactive
 # in-window generator for diagnostics.
-if [[ "${P2K_DCS_ENGINE:-adsp-thread}" == "pb2kslib-adsp" &&
+if [[ "${P2K_DCS_ENGINE:-adsp-clock-thread}" == "pb2kslib-adsp" &&
       "$PB2K_ADSP_CACHE_WORKERS" -gt 1 &&
       -z "${P2K_PB2K_ADSP_WORKER:-}" ]]; then
   __cache_update="$UPDATE_DIR_ABS"
