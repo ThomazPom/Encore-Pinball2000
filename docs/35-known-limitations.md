@@ -15,10 +15,11 @@ Details: [real LPT passthrough](46-real-lpt-passthrough.md).
 
 ## Native ADSP audio needs broader listening coverage
 
-`adsp` and `adsp-thread` execute the original DSP firmware and render SPORT PCM.
-They pass the automated boot/progress matrix, but manual sound behavior still
-needs broader gameplay and service-menu testing. `adsp-thread` is the default;
-`pb2kslib` remains available as a compatibility fallback.
+`adsp`, `adsp-thread` and `adsp-clock-thread` execute the original DSP firmware
+and render SPORT PCM. They pass the automated boot/progress matrix, but manual
+sound behavior still needs broader gameplay and service-menu testing.
+`adsp-clock-thread` is the default; `adsp-thread` remains available for A/B
+testing and `pb2kslib` remains available as a compatibility fallback.
 
 The first `pb2kslib-adsp` launch for a game/update pauses while the native DSP
 renders its persistent PCM cache. PCM is intentionally uncompressed, so the

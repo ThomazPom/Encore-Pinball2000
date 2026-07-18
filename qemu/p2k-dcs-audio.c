@@ -1301,7 +1301,7 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
 
     const char *engine_env = getenv("P2K_DCS_ENGINE");
     const char *engine = (engine_env && *engine_env) ? engine_env :
-                         "adsp-thread";
+                         "adsp-clock-thread";
     bool cache_engine = !strcmp(engine, "pb2kslib-adsp");
     bool generated_cache_ready = false;
     if (cache_engine && st && st->game) {
@@ -1322,6 +1322,7 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
     }
     if (!generated_cache_ready &&
         (!strcmp(engine, "adsp") || !strcmp(engine, "adsp-thread") ||
+         !strcmp(engine, "adsp-clock-thread") ||
          cache_engine)) {
         if (p2k_dcs_adsp_prepare(st)) {
             a->adsp_engine = true;
