@@ -295,14 +295,17 @@ AUDIO
   --dcs-sound-flash <path>  Explicit 1 MiB ADSP 28F800/sf.rom image.
                             Useful with update bundles such as SWE1 2.00
                             that contain game code but omit *_sf.rom.
-  --dcs-engine pb2kslib|pb2kslib-adsp|adsp|adsp-thread
+  --dcs-engine pb2kslib|pb2kslib-adsp|adsp|adsp-thread|adsp-clock-thread
                             Audio content engine. adsp-thread is the default:
                             original firmware/assets with a condition-driven
                             mailbox worker. adsp runs the same firmware
-                            synchronously. pb2kslib uses extracted samples.
+                            synchronously. adsp-clock-thread is experimental:
+                            a fixed-slice DSP producer with a lightweight
+                            audio consumer. pb2kslib uses extracted samples.
                             pb2kslib-adsp generates/uses a persistent PCM
                             cache rendered by the update's native DSP.
-  --dcs-pcm-cpu <cpu>       Pin only the adsp-thread dcs-pcm worker to this
+  --dcs-pcm-cpu <cpu>       Pin the ADSP worker used by adsp-thread or
+                            adsp-clock-thread to this
                             Linux logical CPU. Experimental; host topology and
                             workload determine whether affinity helps.
   --clear-pb2kslib-cache   Delete the generated ADSP PCM cache before launch.
@@ -328,6 +331,8 @@ AUDIO
                             HOTLOOP plus natural PIT with live DSP emulation.
     scripts/run-qemu.sh --dcs-engine adsp-thread --dcs-pcm-cpu 2
                             Host-clock HOTLOOP with the dcs-pcm worker pinned.
+    scripts/run-qemu.sh --dcs-engine adsp-clock-thread --dcs-pcm-cpu 3
+                            Experimental fixed-slice DSP clock, pinned.
 
     Plain pb2kslib is excluded because a fixed library can omit sounds added
     by newer updates. Strict real-ADSP modes currently fail the IRQ-jitter gate.
@@ -607,8 +612,8 @@ while [[ $# -gt 0 ]]; do
       export P2K_DCS_SOUND_FLASH="$(realpath "$2")"; shift 2 ;;
     --dcs-engine)
       case "$2" in
-        pb2kslib|pb2kslib-adsp|adsp|adsp-thread) export P2K_DCS_ENGINE="$2" ;;
-        *) echo "[run-qemu] --dcs-engine: expected pb2kslib|pb2kslib-adsp|adsp|adsp-thread, got '$2'" >&2; exit 2 ;;
+        pb2kslib|pb2kslib-adsp|adsp|adsp-thread|adsp-clock-thread) export P2K_DCS_ENGINE="$2" ;;
+        *) echo "[run-qemu] --dcs-engine: expected pb2kslib|pb2kslib-adsp|adsp|adsp-thread|adsp-clock-thread, got '$2'" >&2; exit 2 ;;
       esac
       shift 2 ;;
     --dcs-pcm-cpu)
