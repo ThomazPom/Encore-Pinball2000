@@ -252,6 +252,12 @@ DISPLAY / UX
                             x1r5g5b5 — the source format the GX framebuffer
                             already uses, so pixels are copied without
                             conversion (P2K_DISPLAY_BPP=16).
+  --framebuffer             Experimental direct host renderer. QEMU runs with
+                            display none while a dedicated SDL thread reads
+                            native guest RGB555 RAM and lets SDL scale and
+                            present it without host pixel conversion.
+                            Without it the established QEMU display path is
+                            unchanged.
 
 AUDIO
   --audio auto|none|pa|alsa|sdl|oss|sndio|dbus|wav|<qemu-driver>
@@ -484,7 +490,8 @@ KEY BINDINGS (delivered by the QEMU machine, not by this wrapper)
                             (default dir /tmp; override with
                              --screenshot-dir or P2K_SCREENSHOT_DIR.
                              Falls back to .ppm if no jpeg helper —
-                             cjpeg / magick / convert — is on PATH)
+                             cjpeg / magick / convert — is on PATH;
+                             --framebuffer writes .bmp directly through SDL)
   (Fullscreen toggle: use SDL's default Ctrl+Alt+F.)
 
 ENV PASSTHROUGH (advanced; see qemu/README.md for the full table)
@@ -493,7 +500,7 @@ ENV PASSTHROUGH (advanced; see qemu/README.md for the full table)
   P2K_DCS_AUDIO_TRACE P2K_DCS_BYTE_TRACE P2K_DCS_NO_BYTE_PAIR
   P2K_DCS_RAW_55_PAIR P2K_DIAG P2K_NO_AUTO_UPDATE
   P2K_PB2KSLIB P2K_DCS_ENGINE P2K_DCS_PCM_CPU P2K_DCS_MODE P2K_SCREENSHOT_DIR
-  P2K_DISPLAY_BPP P2K_LPT_DISABLE P2K_LPT_PARPORT
+  P2K_DISPLAY_BPP P2K_FRAMEBUFFER_THREAD P2K_LPT_DISABLE P2K_LPT_PARPORT
   P2K_LPT_IOPORT P2K_LPT_TRACE_FILE P2K_DCS_PRELOAD P2K_CABINET_PURIST
 EOF
 }
@@ -526,6 +533,7 @@ while [[ $# -gt 0 ]]; do
       DISPLAY_MODE="$2"; shift 2 ;;
     --headless)        HEADLESS=1; shift ;;
     --fullscreen)      FULLSCREEN=1; shift ;;
+    --framebuffer)     export P2K_FRAMEBUFFER_THREAD=1; shift ;;
     --bpp)
       case "$2" in
         32) ;;  # default ARGB8888 path
@@ -785,6 +793,15 @@ if [[ $VERBOSITY -lt 1 ]]; then
 fi
 
 # --- display defaults -------------------------------------------------------
+if [[ "${P2K_FRAMEBUFFER_THREAD:-}" == "1" ]]; then
+  if [[ $HEADLESS -eq 1 ]]; then
+    echo "[run-qemu] --framebuffer and --headless are mutually exclusive" >&2
+    exit 2
+  fi
+  [[ $FULLSCREEN -eq 1 ]] && export P2K_FRAMEBUFFER_FULLSCREEN=1
+  DISPLAY_MODE=none
+  FULLSCREEN=0
+fi
 if [[ -z "$DISPLAY_MODE" ]]; then
   if [[ $HEADLESS -eq 1 ]]; then
     DISPLAY_MODE=none

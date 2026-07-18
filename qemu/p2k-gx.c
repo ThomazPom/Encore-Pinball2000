@@ -42,6 +42,13 @@
 
 #define GX_FB_RAM_MIRROR     0x00800000u    /* system-RAM offset of FB */
 
+static void *s_gx_regs1_host;
+
+void *p2k_gx_regs_host(void)
+{
+    return s_gx_regs1_host;
+}
+
 void p2k_install_gx_stub(void)
 {
     MachineState *ms = MACHINE(qdev_get_machine());
@@ -59,6 +66,7 @@ void p2k_install_gx_stub(void)
     /* Pre-seed BC_DRAM_TOP = 8 MiB - 1.  The guest BIOS reads this to
      * discover installed RAM size. */
     host = memory_region_get_ram_ptr(regs1);
+    s_gx_regs1_host = host;
     *(uint32_t *)((uint8_t *)host + GX_BC_DRAM_TOP_OFF) = GX_BC_DRAM_TOP_VAL;
 
     /* Framebuffer (4 MiB) — alias into system RAM at 0x800000.  Both GP

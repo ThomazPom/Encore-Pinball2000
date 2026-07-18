@@ -10,12 +10,13 @@
  *     DC_FB_ST_OFFSET lands on a non-zero multiple of 0x78000 (the size of
  *     a single 240×2048 buffer).
  *   - DC_FB_ST_OFFSET (GX_BASE + 0x8310) is the start offset within the FB.
- *   - Output is 640×480 ARGB8888, line-doubled and Y-flipped (boot validator
- *     and game both render upside-down relative to QEMU's top-left origin).
+ *   - The QEMU-console path produces 640×480, line-doubled output.
+ *   - The direct SDL path uploads native 640×240 RGB555 with its real pitch;
+ *     SDL performs the Y flip and scales it into a 640×480 window.
  *
- * No GP BLT / DC vsync semantics here — those still belong in their own
- * future files.  This is the smallest thing that turns "QEMU runs the game"
- * into "you can see the game".
+ * The default path uses QEMU's graphics console. P2K_FRAMEBUFFER_THREAD=1
+ * instead gives an SDL-owned host thread direct pointers to the RAM-backed
+ * DC registers and framebuffer; QEMU then runs with -display none.
  */
 
 #include "qemu/osdep.h"
@@ -24,8 +25,14 @@
 #include "qapi/error.h"
 #include "p2k-qemu-compat.h"
 #include "hw/boards.h"
+#include "qemu/notify.h"
+#include "qemu/main-loop.h"
+#include "qemu/thread.h"
+#include "system/system.h"
 #include "ui/console.h"
+#include "ui/input.h"
 #include "ui/surface.h"
+#include <SDL2/SDL.h>
 
 #include "p2k-internal.h"
 
@@ -41,6 +48,18 @@
 
 typedef struct P2KDisplayState {
     QemuConsole   *con;
+    uint8_t       *ram;
+    uint8_t       *gx_regs;
+    QemuMutex      frame_lock;
+    QemuThread     worker;
+    Notifier       exit_notifier;
+    SDL_Window    *window;
+    SDL_Renderer  *renderer;
+    SDL_Texture   *texture;
+    bool           worker_run;
+    bool           worker_started;
+    bool           threaded;
+    bool           bpp16;
     bool           game_pitch;       /* false: stride 1280 (boot), true: 2048 */
     uint32_t       last_fb_off;
 } P2KDisplayState;
@@ -59,7 +78,7 @@ void p2k_display_set_status(const char *status)
 
 void p2k_display_refresh_status(void)
 {
-    /* Status is painted by the display's normal refresh timer. */
+    /* Status is painted by the next QEMU or direct-SDL refresh. */
 }
 
 /* Compact 5x7 font for the generation banner. */
@@ -85,7 +104,7 @@ static const uint8_t *status_glyph(char c)
 #undef GLYPH
 }
 
-static void draw_status(void *dst_raw, bool bpp16)
+static void draw_status_pixels(void *dst_raw, bool bpp16)
 {
     char text[sizeof(s_status)];
     qemu_mutex_lock(&s_status_lock);
@@ -113,20 +132,40 @@ static void draw_status(void *dst_raw, bool bpp16)
     }
 }
 
-/* Read a dword from system memory by physical address — used for both
- * the DC register at GX_BASE+0x8310 and the framebuffer pixels.  The
- * GX register space and FB are both ordinary RAM-backed regions, so
- * address_space_ldl_le is direct (no MMIO callbacks). */
-static uint32_t p2k_phys_ldl(hwaddr pa)
+static void draw_status_sdl(P2KDisplayState *s)
 {
-    return address_space_ldl_le(&address_space_memory, pa,
-                                MEMTXATTRS_UNSPECIFIED, NULL);
-}
+    char text[sizeof(s_status)];
 
-static void p2k_phys_read(hwaddr pa, void *buf, uint32_t len)
-{
-    address_space_read(&address_space_memory, pa, MEMTXATTRS_UNSPECIFIED,
-                       buf, len);
+    qemu_mutex_lock(&s_status_lock);
+    memcpy(text, s_status, sizeof(text));
+    qemu_mutex_unlock(&s_status_lock);
+    if (!text[0]) {
+        return;
+    }
+
+    SDL_SetRenderDrawColor(s->renderer, 0, 0, 0, 255);
+    SDL_Rect background = {
+        .x = 8, .y = 8,
+        .w = MIN(SCREEN_W, 16 + (int)strlen(text) * 12) - 8,
+        .h = 26,
+    };
+    SDL_RenderFillRect(s->renderer, &background);
+    SDL_SetRenderDrawColor(s->renderer, 255, 255, 255, 255);
+    for (int n = 0; text[n] && 12 + n * 12 + 10 < SCREEN_W; n++) {
+        const uint8_t *rows = status_glyph(g_ascii_toupper(text[n]));
+        for (int gy = 0; gy < 7; gy++) {
+            for (int gx = 0; gx < 5; gx++) {
+                if (rows[gy] & (1 << (4 - gx))) {
+                    SDL_Rect pixel = {
+                        .x = 12 + n * 12 + gx * 2,
+                        .y = 12 + gy * 2,
+                        .w = 2, .h = 2,
+                    };
+                    SDL_RenderFillRect(s->renderer, &pixel);
+                }
+            }
+        }
+    }
 }
 
 /* RGB555 pixel -> ARGB8888.  Replicate top bits to lower bits for proper
@@ -142,6 +181,18 @@ static inline uint32_t rgb555_to_argb(uint16_t px)
     return 0xFF000000u | (r8 << 16) | (g8 << 8) | b8;
 }
 
+static uint32_t p2k_phys_ldl(hwaddr pa)
+{
+    return address_space_ldl_le(&address_space_memory, pa,
+                                MEMTXATTRS_UNSPECIFIED, NULL);
+}
+
+static void p2k_phys_read(hwaddr pa, void *buf, uint32_t len)
+{
+    address_space_read(&address_space_memory, pa, MEMTXATTRS_UNSPECIFIED,
+                       buf, len);
+}
+
 static void p2k_display_invalidate(void *opaque)
 {
     /* Force-refresh on next update — nothing to clear here, our pixel
@@ -154,7 +205,9 @@ static bool s_flip_y = true;
 
 void p2k_display_toggle_flip_y(void)
 {
+    qemu_mutex_lock(&s_disp.frame_lock);
     s_flip_y = !s_flip_y;
+    qemu_mutex_unlock(&s_disp.frame_lock);
     fprintf(stderr, "[display] F2 → flip-Y %s\n",
             s_flip_y ? "ON (default)" : "OFF (raw orientation)");
 }
@@ -166,68 +219,267 @@ static uint64_t s_disp_frames;
 
 uint64_t p2k_display_get_frames(void) { return s_disp_frames; }
 
+typedef struct P2KHostKey {
+    int qcode;
+    bool down;
+} P2KHostKey;
+
+static void p2k_host_key_bh(void *opaque)
+{
+    P2KHostKey *key = opaque;
+    p2k_lpt_host_key(key->qcode, key->down);
+    g_free(key);
+}
+
+static void p2k_queue_host_key(int qcode, bool down)
+{
+    P2KHostKey *key;
+    if (qcode == Q_KEY_CODE_UNMAPPED) {
+        return;
+    }
+    key = g_new(P2KHostKey, 1);
+    key->qcode = qcode;
+    key->down = down;
+    aio_bh_schedule_oneshot(qemu_get_aio_context(), p2k_host_key_bh, key);
+}
+
+static int p2k_sdl_qcode(SDL_Keycode sym)
+{
+    switch (sym) {
+    case SDLK_F1: return Q_KEY_CODE_F1;
+    case SDLK_F2: return Q_KEY_CODE_F2;
+    case SDLK_F3: return Q_KEY_CODE_F3;
+    case SDLK_F4: return Q_KEY_CODE_F4;
+    case SDLK_F5: return Q_KEY_CODE_F5;
+    case SDLK_F6: return Q_KEY_CODE_F6;
+    case SDLK_F7: return Q_KEY_CODE_F7;
+    case SDLK_F8: return Q_KEY_CODE_F8;
+    case SDLK_F9: return Q_KEY_CODE_F9;
+    case SDLK_F10: return Q_KEY_CODE_F10;
+    case SDLK_F12: return Q_KEY_CODE_F12;
+    case SDLK_RETURN: return Q_KEY_CODE_RET;
+    case SDLK_KP_ENTER: return Q_KEY_CODE_KP_ENTER;
+    case SDLK_ESCAPE: return Q_KEY_CODE_ESC;
+    case SDLK_LEFT: return Q_KEY_CODE_LEFT;
+    case SDLK_RIGHT: return Q_KEY_CODE_RIGHT;
+    case SDLK_UP: return Q_KEY_CODE_UP;
+    case SDLK_DOWN: return Q_KEY_CODE_DOWN;
+    case SDLK_KP_MINUS: return Q_KEY_CODE_KP_SUBTRACT;
+    case SDLK_KP_PLUS: return Q_KEY_CODE_KP_ADD;
+    case SDLK_EQUALS: return Q_KEY_CODE_EQUAL;
+    case SDLK_SPACE: return Q_KEY_CODE_SPC;
+    case SDLK_s: return Q_KEY_CODE_S;
+    case SDLK_c: return Q_KEY_CODE_C;
+    default: return Q_KEY_CODE_UNMAPPED;
+    }
+}
+
+static void p2k_sdl_screenshot(P2KDisplayState *s)
+{
+    const char *dir = getenv("P2K_SCREENSHOT_DIR");
+    char path[PATH_MAX];
+    struct tm tm;
+    time_t now = time(NULL);
+    SDL_Surface *shot;
+
+    if (!dir || !dir[0]) {
+        dir = "/tmp";
+    }
+    localtime_r(&now, &tm);
+    snprintf(path, sizeof(path),
+             "%s/p2k_screen_%04d%02d%02d_%02d%02d%02d.bmp", dir,
+             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+             tm.tm_hour, tm.tm_min, tm.tm_sec);
+    shot = SDL_CreateRGBSurfaceWithFormat(0, SCREEN_W, SCREEN_H, 32,
+                                          SDL_PIXELFORMAT_ARGB8888);
+    if (!shot || SDL_RenderReadPixels(s->renderer, NULL,
+                                      SDL_PIXELFORMAT_ARGB8888,
+                                      shot->pixels, shot->pitch) < 0 ||
+        SDL_SaveBMP(shot, path) < 0) {
+        warn_report("pinball2000: --framebuffer screenshot failed: %s",
+                    SDL_GetError());
+    } else {
+        info_report("pinball2000: screenshot written to %s", path);
+    }
+    if (shot) {
+        SDL_FreeSurface(shot);
+    }
+}
+
+static void p2k_sdl_events(P2KDisplayState *s)
+{
+    SDL_Event ev;
+    while (SDL_PollEvent(&ev)) {
+        if (ev.type == SDL_QUIT) {
+            p2k_queue_host_key(Q_KEY_CODE_F1, true);
+        } else if (ev.type == SDL_KEYDOWN || ev.type == SDL_KEYUP) {
+            bool down = ev.type == SDL_KEYDOWN;
+            SDL_Keycode sym = ev.key.keysym.sym;
+            if (down && ev.key.repeat) {
+                continue;
+            }
+            if (down && (sym == SDLK_F11 ||
+                         (sym == SDLK_RETURN &&
+                          (ev.key.keysym.mod & KMOD_ALT)))) {
+                Uint32 flags = SDL_GetWindowFlags(s->window);
+                SDL_SetWindowFullscreen(s->window,
+                    (flags & SDL_WINDOW_FULLSCREEN_DESKTOP) ? 0 :
+                    SDL_WINDOW_FULLSCREEN_DESKTOP);
+                continue;
+            }
+            if (down && sym == SDLK_F3) {
+                p2k_sdl_screenshot(s);
+                continue;
+            }
+            p2k_queue_host_key(p2k_sdl_qcode(sym), down);
+        }
+    }
+}
+
+/* Build frames away from QEMU's vCPU/UI path.  Both source regions are
+ * RAM-backed host pointers: no address-space transaction, BQL acquisition,
+ * TLB flush, or display-backend call occurs on this worker. */
+static void *p2k_display_worker(void *opaque)
+{
+    P2KDisplayState *s = opaque;
+    if (SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_EVENTS) < 0) {
+        error_report("pinball2000: --framebuffer SDL init failed: %s",
+                     SDL_GetError());
+        return NULL;
+    }
+    Uint32 window_flags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
+    if (getenv("P2K_FRAMEBUFFER_FULLSCREEN")) {
+        window_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+    }
+    s->window = SDL_CreateWindow("Encore Pinball 2000 emulator",
+                                 SDL_WINDOWPOS_CENTERED,
+                                 SDL_WINDOWPOS_CENTERED,
+                                 SCREEN_W, SCREEN_H,
+                                 window_flags);
+    if (!s->window) {
+        error_report("pinball2000: --framebuffer window failed: %s",
+                     SDL_GetError());
+        SDL_QuitSubSystem(SDL_INIT_VIDEO);
+        return NULL;
+    }
+    s->renderer = SDL_CreateRenderer(s->window, -1, SDL_RENDERER_ACCELERATED);
+    if (!s->renderer) {
+        s->renderer = SDL_CreateRenderer(s->window, -1, SDL_RENDERER_SOFTWARE);
+    }
+    s->texture = s->renderer ? SDL_CreateTexture(s->renderer,
+                                                  SDL_PIXELFORMAT_RGB555,
+                                                  SDL_TEXTUREACCESS_STREAMING,
+                                                  FB_W, FB_H) : NULL;
+    if (!s->renderer || !s->texture) {
+        error_report("pinball2000: --framebuffer renderer failed: %s",
+                     SDL_GetError());
+        goto out;
+    }
+
+    while (qatomic_read(&s->worker_run)) {
+        uint32_t fb_off = ldl_le_p(s->gx_regs + GX_DC_FB_ST_OFFSET);
+        bool flip_y;
+
+        qemu_mutex_lock(&s->frame_lock);
+        flip_y = s_flip_y;
+        qemu_mutex_unlock(&s->frame_lock);
+
+        if (!s->game_pitch && fb_off != 0 && (fb_off % GAME_BUF_SIZE) == 0) {
+            s->game_pitch = true;
+        }
+        int src_pitch = s->game_pitch ? 2048 : 1280;
+        s->last_fb_off = fb_off;
+        if (fb_off > 0x300000u) {
+            fb_off = 0;
+        }
+
+        uint8_t *guest_fb = s->ram + GX_FB_RAM_MIRROR + fb_off;
+        p2k_sdl_events(s);
+        SDL_UpdateTexture(s->texture, NULL, guest_fb, src_pitch);
+        SDL_SetRenderDrawColor(s->renderer, 0, 0, 0, 255);
+        SDL_RenderClear(s->renderer);
+        SDL_RenderCopyEx(s->renderer, s->texture, NULL, NULL, 0.0, NULL,
+                         flip_y ? SDL_FLIP_VERTICAL : SDL_FLIP_NONE);
+        draw_status_sdl(s);
+        SDL_RenderPresent(s->renderer);
+        qatomic_inc(&s_disp_frames);
+        g_usleep(16000);
+    }
+
+out:
+    if (s->texture) SDL_DestroyTexture(s->texture);
+    if (s->renderer) SDL_DestroyRenderer(s->renderer);
+    if (s->window) SDL_DestroyWindow(s->window);
+    s->texture = NULL;
+    s->renderer = NULL;
+    s->window = NULL;
+    SDL_QuitSubSystem(SDL_INIT_VIDEO);
+    return NULL;
+}
+
 static void p2k_display_update(void *opaque)
 {
     P2KDisplayState *s = opaque;
-    DisplaySurface  *surf = qemu_console_surface(s->con);
-    void            *dst_raw;
-    uint32_t         fb_off;
-    int              src_pitch;
-    uint16_t         row_buf[FB_W];
-    bool             bpp16;
+    DisplaySurface *surf = qemu_console_surface(s->con);
 
     if (!surf) {
         return;
     }
-    dst_raw = surface_data(surf);
-    bpp16   = (surface_format(surf) == PIXMAN_x1r5g5b5);
+    if (!s->threaded) {
+        void *dst_raw = surface_data(surf);
+        bool bpp16 = surface_format(surf) == PIXMAN_x1r5g5b5;
+        uint32_t fb_off = p2k_phys_ldl(GX_BASE + GX_DC_FB_ST_OFFSET);
+        uint16_t row_buf[FB_W];
 
-    /* Latest DC_FB_ST_OFFSET — the game writes it to switch buffers. */
-    fb_off = p2k_phys_ldl(GX_BASE + GX_DC_FB_ST_OFFSET);
-
-    /* Latch into 2048-byte stride the first time a non-zero offset lands
-     * on a 0x78000 boundary. */
-    if (!s->game_pitch && fb_off != 0 && (fb_off % GAME_BUF_SIZE) == 0) {
-        s->game_pitch = true;
-    }
-    src_pitch = s->game_pitch ? 2048 : 1280;
-    s->last_fb_off = fb_off;
-
-    /* Bounds-check: if fb_off looks bogus, fall back to 0. */
-    if (fb_off > 0x300000u) {
-        fb_off = 0;
-    }
-
-    for (int src_y = 0; src_y < FB_H; src_y++) {
-        int dst_y = (s_flip_y ? (FB_H - 1 - src_y) : src_y) * 2;
-        hwaddr row_pa = GX_FB_RAM_MIRROR + fb_off + src_y * src_pitch;
-
-        p2k_phys_read(row_pa, row_buf, FB_W * sizeof(uint16_t));
-
-        if (bpp16) {
-            uint16_t *r1 = &((uint16_t *)dst_raw)[dst_y       * SCREEN_W];
-            uint16_t *r2 = &((uint16_t *)dst_raw)[(dst_y + 1) * SCREEN_W];
-            for (int x = 0; x < FB_W; x++) {
-                uint16_t px = row_buf[x] & 0x7FFFu;
-                r1[x] = px;
-                r2[x] = px;
-            }
-        } else {
-            uint32_t *dst = (uint32_t *)dst_raw;
-            uint32_t *r1 = &dst[dst_y       * SCREEN_W];
-            uint32_t *r2 = &dst[(dst_y + 1) * SCREEN_W];
-            for (int x = 0; x < FB_W; x++) {
-                uint32_t argb = rgb555_to_argb(row_buf[x] & 0x7FFFu);
-                r1[x] = argb;
-                r2[x] = argb;
+        if (!s->game_pitch && fb_off != 0 && (fb_off % GAME_BUF_SIZE) == 0) {
+            s->game_pitch = true;
+        }
+        int src_pitch = s->game_pitch ? 2048 : 1280;
+        s->last_fb_off = fb_off;
+        if (fb_off > 0x300000u) {
+            fb_off = 0;
+        }
+        for (int src_y = 0; src_y < FB_H; src_y++) {
+            int dst_y = (s_flip_y ? (FB_H - 1 - src_y) : src_y) * 2;
+            hwaddr row_pa = GX_FB_RAM_MIRROR + fb_off + src_y * src_pitch;
+            p2k_phys_read(row_pa, row_buf, sizeof(row_buf));
+            if (bpp16) {
+                uint16_t *r1 = &((uint16_t *)dst_raw)[dst_y * SCREEN_W];
+                uint16_t *r2 = &((uint16_t *)dst_raw)[(dst_y + 1) * SCREEN_W];
+                for (int x = 0; x < FB_W; x++) {
+                    uint16_t px = row_buf[x] & 0x7fffu;
+                    r1[x] = px;
+                    r2[x] = px;
+                }
+            } else {
+                uint32_t *dst = dst_raw;
+                uint32_t *r1 = &dst[dst_y * SCREEN_W];
+                uint32_t *r2 = &dst[(dst_y + 1) * SCREEN_W];
+                for (int x = 0; x < FB_W; x++) {
+                    uint32_t argb = rgb555_to_argb(row_buf[x] & 0x7fffu);
+                    r1[x] = argb;
+                    r2[x] = argb;
+                }
             }
         }
+        draw_status_pixels(dst_raw, bpp16);
+        dpy_gfx_update_full(s->con);
+        s_disp_frames++;
+        return;
     }
+    /* The host SDL path owns presentation and never installs a QEMU console,
+     * so a threaded instance cannot reach this callback. */
+}
 
-    draw_status(dst_raw, bpp16);
-
-    dpy_gfx_update_full(s->con);
-    s_disp_frames++;
+static void p2k_display_shutdown(Notifier *notifier, void *data)
+{
+    P2KDisplayState *s = container_of(notifier, P2KDisplayState,
+                                      exit_notifier);
+    qatomic_set(&s->worker_run, false);
+    if (s->worker_started) {
+        qemu_thread_join(&s->worker);
+        s->worker_started = false;
+    }
 }
 
 static const GraphicHwOps p2k_display_ops = {
@@ -239,9 +491,26 @@ void p2k_install_display(void)
 {
     DisplaySurface *surf;
     const char     *bpp_env = getenv("P2K_DISPLAY_BPP");
+    const char     *thread_env = getenv("P2K_FRAMEBUFFER_THREAD");
     bool            bpp16   = bpp_env && !strcmp(bpp_env, "16");
 
     qemu_mutex_init(&s_status_lock);
+    qemu_mutex_init(&s_disp.frame_lock);
+    s_disp.threaded = thread_env && thread_env[0] == '1';
+    s_disp.bpp16 = bpp16;
+    if (s_disp.threaded) {
+        s_disp.ram = memory_region_get_ram_ptr(MACHINE(qdev_get_machine())->ram);
+        s_disp.gx_regs = p2k_gx_regs_host();
+        s_disp.worker_run = true;
+        s_disp.worker_started = true;
+        s_disp.exit_notifier.notify = p2k_display_shutdown;
+        qemu_thread_create(&s_disp.worker, "p2k-sdl-render",
+                           p2k_display_worker, &s_disp, QEMU_THREAD_JOINABLE);
+        qemu_add_exit_notifier(&s_disp.exit_notifier);
+        info_report("pinball2000: --framebuffer direct SDL renderer started");
+        return;
+    }
+
     s_disp.con = graphic_console_init(NULL, 0, &p2k_display_ops, &s_disp);
     qemu_console_resize(s_disp.con, SCREEN_W, SCREEN_H);
 
@@ -259,4 +528,5 @@ void p2k_install_display(void)
         surf = qemu_create_displaysurface(SCREEN_W, SCREEN_H);
     }
     dpy_gfx_replace_surface(s_disp.con, surf);
+
 }

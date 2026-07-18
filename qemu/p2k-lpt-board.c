@@ -471,13 +471,8 @@ static void p2k_lpt_screenshot(void)
             ppm_path, w, h);
 }
 
-static void p2k_lpt_key_event(DeviceState *dev, QemuConsole *src,
-                              InputEvent *evt)
+void p2k_lpt_host_key(int qcode, bool down)
 {
-    InputKeyEvent *key = evt->u.key.data;
-    int qcode = qemu_input_key_value_to_qcode(key->key);
-    bool down = key->down;
-
     switch (qcode) {
     case Q_KEY_CODE_F1:                              /* quit */
         if (down) {
@@ -574,6 +569,13 @@ static void p2k_lpt_key_event(DeviceState *dev, QemuConsole *src,
         }
         break;
     }
+}
+
+static void p2k_lpt_key_event(DeviceState *dev, QemuConsole *src,
+                              InputEvent *evt)
+{
+    InputKeyEvent *key = evt->u.key.data;
+    p2k_lpt_host_key(qemu_input_key_value_to_qcode(key->key), key->down);
 }
 
 static const QemuInputHandler p2k_lpt_input_handler = {
