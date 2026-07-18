@@ -24,7 +24,7 @@
 #define P2K_DCS_U109_WORD_OFFSET 0x200000
 #define P2K_DCS_U110_WORD_OFFSET 0x400000
 #define ADSP_PCM_RING_FRAMES 8192
-#define ADSP_PCM_BLOCK_FRAMES 512
+#define ADSP_PCM_BLOCK_FRAMES 64
 
 static uint8_t *s_sound_flash;
 static char s_sound_flash_path[1024];
@@ -678,7 +678,14 @@ void p2k_dcs_adsp_write_cmd(uint16_t command)
                     command);
     }
     qemu_mutex_unlock(&s_adsp.lock);
+
+    /* The mailbox worker executes the ADSP core concurrently. IRQ line state
+     * is part of that core and must not be changed underneath execute().
+     * Keeping this critical section short also lets a queued command preempt
+     * the worker between bounded PCM render slices. */
+    qemu_mutex_lock(&s_adsp.core_lock);
     p2k_adsp2105_set_irq_line(P2K_ADSP_IRQ2, 1);
+    qemu_mutex_unlock(&s_adsp.core_lock);
     bool synchronous_diag = command == 0x003a || command == 0x001b ||
                             command == 0x00aa;
     bool start_worker = s_adsp.threaded_engine &&
