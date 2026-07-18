@@ -42,16 +42,19 @@ submits the DCS track IDs, and stores every valid decoded track as 44.1 kHz PCM
 under `~/.cache/encore-pb2k/pb2kslib-adsp/`. The SHA-256 cache key covers the
 interleaved U109/U110 data and the selected sound flash, so renamed updates
 reuse identical audio while changed sound data generates a new cache. The game window shows generation
-progress when using one worker. By default, six isolated headless QEMU/DSP
-workers split the ID range, merge their PCM atomically, and then launch the
-game. Parallel generation reports its aggregate percentage in the terminal.
+progress when using one worker. By default, six concurrent headless QEMU/DSP
+slots process short fresh-DSP jobs, merge their PCM atomically, and then launch
+the game. Job boundaries limit accumulated firmware state to six known tracks;
+large spans without known tracks remain grouped to avoid unnecessary boots.
+Parallel generation reports its aggregate percentage in the terminal.
 Later launches load that cache directly and do not run the DSP.
 Use `--clear-pb2kslib-cache` to regenerate it, including after replacing an
 explicit `--dcs-sound-flash` file.
 
 Set `--pb2kslib-cache-workers 1` for the original single-window generator, or
-choose `2..32` according to available host CPU and memory. Each process owns
-its firmware, SRAM and decoder state; DSP state is never shared between tracks.
+choose `2..32` concurrent slots according to available host CPU and memory.
+Each job owns its firmware, SRAM and decoder state; DSP state is never shared
+between jobs.
 
 The serial command `dcs <id>` uses the same track-ID interface. It does not
 provide a directory: the DSP firmware determines whether an ID is valid and
