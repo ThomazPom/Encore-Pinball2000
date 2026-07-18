@@ -64,6 +64,7 @@ void p2k_install_plx_bars(Pinball2000MachineState *s);
 
 /* p2k-gx.c: 16 MiB Cyrix MediaGX MMIO + framebuffer stub at 0x40000000. */
 void p2k_install_gx_stub(void);
+void *p2k_gx_regs_host(void);
 void p2k_install_gp_blt(void);
 void p2k_install_gfxlist_watch(Pinball2000MachineState *s);
 
@@ -128,6 +129,7 @@ extern void (*p2k_dcs_core_audio_raw_cmd)(uint16_t cmd);
 /* p2k-lpt-board.c: minimal LPT driver-board protocol on 0x378-0x37A
  * (STATUS=0x87 signature + edge-detect dispatch, all inputs idle). */
 void p2k_install_lpt_board(void);
+void p2k_lpt_host_key(int qcode, bool down);
 
 /* p2k-bar3-flash.c: BAR3 update flash @ 0x12000000 seeded from
  * savedata/<game>.flash (4 MiB). */

@@ -26,8 +26,23 @@ native x1r5g5b5 surface. SDL is the normal desktop backend; GTK is available
 only when the QEMU build was configured with it. `--display none` disables the
 window and desktop input.
 
+`--framebuffer` is an experimental independent display path. The wrapper gives
+QEMU display `none`; a dedicated SDL thread reads the RAM-backed controller
+offset and native 640×240 RGB555 framebuffer through direct pointers. SDL
+uploads it with the guest pitch, flips and scales it to 640×480, presents the
+window and forwards its keyboard events to the cabinet-input handler. It does
+not create a QEMU graphics console or call QEMU display APIs. Without the option,
+the established synchronous QEMU console path remains unchanged.
+
+> [!NOTE]
+> Host conversion and QEMU presentation are separate costs. Use `--bench` on
+> the target computer to compare the two paths; the worker is intentionally
+> not the default until its tail latency proves consistently better.
+
 The source framebuffer is bottom-up, so vertical flip starts enabled. Press
-`F2` to toggle it. `F3` writes a screenshot under `--screenshot-dir`.
+`F2` to toggle it. `F3` writes a screenshot under `--screenshot-dir`; the
+direct SDL path writes BMP while the QEMU console path prefers JPEG and falls
+back to PPM.
 
 ## VSync
 
