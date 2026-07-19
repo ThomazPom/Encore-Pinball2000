@@ -30,7 +30,8 @@
  * Cadence:
  *   - one initial line ~3 s after machine arm (gives PIT ch0 + IDT[0x20]
  *     time to be programmed)
- *   - if `P2K_DIAG=1` (or `run-qemu.sh -v`): one line every 5 s after that
+ *   - if `P2K_DIAG=1` (or `run-qemu.sh -v`): a full report every 3 s
+ *   - if `P2K_TIMING_SNAPSHOTS=1`: a lightweight benchmark report every 3 s
  *   - one final line at machine exit / QEMU shutdown
  *
  * Disable entirely with `P2K_NO_TIMING_AUDIT=1`.
@@ -86,6 +87,7 @@ static void p2k_pit_deadline_arm(int64_t now_v);
 static int64_t  p2k_audit_arm_wall_ns;     /* QEMU_CLOCK_REALTIME at arm */
 static int64_t  p2k_audit_arm_vtime_ns;    /* QEMU_CLOCK_VIRTUAL  at arm */
 static bool     p2k_audit_periodic;        /* true => arm follow-up */
+static bool     p2k_audit_light_snapshots; /* benchmark-safe periodic subset */
 static uint64_t p2k_audit_seq;
 
 static uint64_t p2k_audit_irq0_raised;
@@ -199,6 +201,19 @@ static P2KDwell p2k_dw_pdb05_vtime_delta;
  * next gap through stderr I/O. Thread/process CPU clocks distinguish a vCPU
  * that was executing from one that was descheduled or blocked. */
 #define P2K_PDB_GAP_EVENTS 64u
+#define P2K_PDB_GAP_TB_BUCKETS 32u
+#define P2K_PDB_GAP_TB_TOP 3u
+#define P2K_PDB_GAP_TB_TAIL 64u
+typedef struct P2KPdbGapTbBucket {
+    uint32_t eip;
+    uint32_t count;
+} P2KPdbGapTbBucket;
+
+typedef struct P2KPdbGapTbDuration {
+    uint32_t eip;
+    uint32_t wall_us;
+} P2KPdbGapTbDuration;
+
 typedef struct P2KPdbGapEvent {
     uint64_t at_wall_us;
     uint64_t wall_us;
@@ -220,6 +235,11 @@ typedef struct P2KPdbGapEvent {
     uint8_t isr;
     bool halted;
     bool in_clkint;
+    uint64_t tb_count;
+    P2KPdbGapTbBucket tb_top[P2K_PDB_GAP_TB_TOP];
+    P2KPdbGapTbDuration tb_slowest[P2K_PDB_GAP_TB_TOP];
+    uint32_t tb_tail[P2K_PDB_GAP_TB_TAIL];
+    uint8_t tb_tail_count;
     P2KDcsProfileSnapshot dcs;
 } P2KPdbGapEvent;
 
@@ -237,6 +257,139 @@ static uint64_t p2k_pdb_gap_frames_last;
 static P2KPdbGapEvent p2k_pdb_gap_events[P2K_PDB_GAP_EVENTS];
 static unsigned p2k_pdb_gap_event_count;
 static uint64_t p2k_pdb_gap_observed;
+static uint64_t p2k_pdb_gap_tb_count;
+static P2KPdbGapTbBucket p2k_pdb_gap_tb_buckets[P2K_PDB_GAP_TB_BUCKETS];
+static uint32_t p2k_pdb_gap_tb_tail[P2K_PDB_GAP_TB_TAIL];
+static unsigned p2k_pdb_gap_tb_tail_count;
+static unsigned p2k_pdb_gap_tb_tail_next;
+static P2KPdbGapTbDuration p2k_pdb_gap_tb_slowest[P2K_PDB_GAP_TB_TOP];
+static int64_t p2k_pdb_gap_tb_last_wall_ns;
+static uint32_t p2k_pdb_gap_tb_last_eip;
+
+static void p2k_pdb_gap_add_tb_duration(uint32_t eip, uint64_t wall_us)
+{
+    uint32_t bounded = wall_us > UINT32_MAX ? UINT32_MAX : wall_us;
+    for (unsigned i = 0; i < P2K_PDB_GAP_TB_TOP; i++) {
+        if (bounded > p2k_pdb_gap_tb_slowest[i].wall_us) {
+            for (unsigned j = P2K_PDB_GAP_TB_TOP - 1; j > i; j--) {
+                p2k_pdb_gap_tb_slowest[j] = p2k_pdb_gap_tb_slowest[j - 1];
+            }
+            p2k_pdb_gap_tb_slowest[i] = (P2KPdbGapTbDuration) {
+                .eip = eip,
+                .wall_us = bounded,
+            };
+            break;
+        }
+    }
+}
+
+/* Opt-in only: retain the guest path between two PDB completions. Recording
+ * one EIP and timestamp per TB avoids timers, logging, and locks on the vCPU
+ * path. The state is discarded every normal ~250 us interval and copied to
+ * an event only when that interval later proves to be unusually long. The
+ * clock-read cost is why this profiler must not supply headline benchmarks. */
+static void p2k_pdb_gap_note_tb(void)
+{
+    if (!p2k_pdb_gap_profile_enabled || !first_cpu) {
+        return;
+    }
+    int64_t now_w = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+    uint32_t eip = X86_CPU(first_cpu)->env.eip;
+    if (p2k_pdb_gap_tb_last_wall_ns &&
+        now_w > p2k_pdb_gap_tb_last_wall_ns) {
+        p2k_pdb_gap_add_tb_duration(
+            p2k_pdb_gap_tb_last_eip,
+            (uint64_t)(now_w - p2k_pdb_gap_tb_last_wall_ns) / 1000ull);
+    }
+    p2k_pdb_gap_tb_last_wall_ns = now_w;
+    p2k_pdb_gap_tb_last_eip = eip;
+    p2k_pdb_gap_tb_count++;
+    p2k_pdb_gap_tb_tail[p2k_pdb_gap_tb_tail_next] = eip;
+    p2k_pdb_gap_tb_tail_next =
+        (p2k_pdb_gap_tb_tail_next + 1) % P2K_PDB_GAP_TB_TAIL;
+    if (p2k_pdb_gap_tb_tail_count < P2K_PDB_GAP_TB_TAIL) {
+        p2k_pdb_gap_tb_tail_count++;
+    }
+
+    unsigned weakest = 0;
+    uint32_t weakest_count = UINT32_MAX;
+    for (unsigned i = 0; i < P2K_PDB_GAP_TB_BUCKETS; i++) {
+        P2KPdbGapTbBucket *bucket = &p2k_pdb_gap_tb_buckets[i];
+        if (bucket->count && bucket->eip == eip) {
+            bucket->count++;
+            return;
+        }
+        if (!bucket->count) {
+            bucket->eip = eip;
+            bucket->count = 1;
+            return;
+        }
+        if (bucket->count < weakest_count) {
+            weakest = i;
+            weakest_count = bucket->count;
+        }
+    }
+    p2k_pdb_gap_tb_buckets[weakest] = (P2KPdbGapTbBucket) {
+        .eip = eip,
+        .count = 1,
+    };
+}
+
+static void p2k_pdb_gap_reset_tb(void)
+{
+    p2k_pdb_gap_tb_count = 0;
+    memset(p2k_pdb_gap_tb_buckets, 0, sizeof(p2k_pdb_gap_tb_buckets));
+    p2k_pdb_gap_tb_tail_count = 0;
+    p2k_pdb_gap_tb_tail_next = 0;
+    memset(p2k_pdb_gap_tb_slowest, 0, sizeof(p2k_pdb_gap_tb_slowest));
+}
+
+/* PDB completion can occur inside the current translated block's MMIO OUT
+ * helper, before the next TB lookup. Close that partial block here so the
+ * helper's elapsed time belongs to the interval that actually contained it.
+ * Move the origin to completion to avoid counting the same time twice at the
+ * next TB boundary. */
+static void p2k_pdb_gap_close_tb(int64_t now_w)
+{
+    if (!p2k_pdb_gap_profile_enabled || !p2k_pdb_gap_tb_last_wall_ns ||
+        now_w <= p2k_pdb_gap_tb_last_wall_ns) {
+        return;
+    }
+    p2k_pdb_gap_add_tb_duration(
+        p2k_pdb_gap_tb_last_eip,
+        (uint64_t)(now_w - p2k_pdb_gap_tb_last_wall_ns) / 1000ull);
+    p2k_pdb_gap_tb_last_wall_ns = now_w;
+}
+
+static void p2k_pdb_gap_copy_tb(P2KPdbGapEvent *event)
+{
+    P2KPdbGapTbBucket sorted[P2K_PDB_GAP_TB_BUCKETS];
+    memcpy(sorted, p2k_pdb_gap_tb_buckets, sizeof(sorted));
+    for (unsigned i = 0; i < P2K_PDB_GAP_TB_TOP; i++) {
+        unsigned best = i;
+        for (unsigned j = i + 1; j < P2K_PDB_GAP_TB_BUCKETS; j++) {
+            if (sorted[j].count > sorted[best].count) {
+                best = j;
+            }
+        }
+        if (best != i) {
+            P2KPdbGapTbBucket tmp = sorted[i];
+            sorted[i] = sorted[best];
+            sorted[best] = tmp;
+        }
+        event->tb_top[i] = sorted[i];
+    }
+    event->tb_count = p2k_pdb_gap_tb_count;
+    memcpy(event->tb_slowest, p2k_pdb_gap_tb_slowest,
+           sizeof(event->tb_slowest));
+    event->tb_tail_count = p2k_pdb_gap_tb_tail_count;
+    unsigned oldest = p2k_pdb_gap_tb_tail_count < P2K_PDB_GAP_TB_TAIL
+        ? 0 : p2k_pdb_gap_tb_tail_next;
+    for (unsigned i = 0; i < p2k_pdb_gap_tb_tail_count; i++) {
+        event->tb_tail[i] =
+            p2k_pdb_gap_tb_tail[(oldest + i) % P2K_PDB_GAP_TB_TAIL];
+    }
+}
 
 static uint64_t p2k_cpu_clock_us(clockid_t clock_id)
 {
@@ -288,6 +441,7 @@ static void p2k_pdb_gap_record(uint64_t wall_us, uint64_t vtime_us,
             event->dispatches = dispatches - p2k_pdb_gap_dispatch_last;
             event->frames = frames - p2k_pdb_gap_frames_last;
             event->in_clkint = p2k_in_clkint;
+            p2k_pdb_gap_copy_tb(event);
 
             CPUState *cs = qemu_get_cpu(0);
             if (cs) {
@@ -362,6 +516,38 @@ static void p2k_pdb_gap_profile_dump(void)
                     e->dcs.ring_frames, e->dcs.output_rate,
                     (unsigned long long)e->dcs.cycles,
                     (unsigned long long)e->dcs.pcm_frames);
+        char trace[2048];
+        size_t off = 0;
+        off += snprintf(trace + off, sizeof(trace) - off,
+                        "p2k-pdb-gap-trace #%u tb=%llu top=",
+                        i, (unsigned long long)e->tb_count);
+        for (unsigned j = 0; j < P2K_PDB_GAP_TB_TOP &&
+                             off < sizeof(trace); j++) {
+            if (!e->tb_top[j].count) {
+                continue;
+            }
+            off += snprintf(trace + off, sizeof(trace) - off,
+                            "%s%08x:%u", j ? "," : "",
+                            e->tb_top[j].eip, e->tb_top[j].count);
+        }
+        off += snprintf(trace + off, sizeof(trace) - off, " slow=");
+        for (unsigned j = 0; j < P2K_PDB_GAP_TB_TOP &&
+                             off < sizeof(trace); j++) {
+            if (!e->tb_slowest[j].wall_us) {
+                continue;
+            }
+            off += snprintf(trace + off, sizeof(trace) - off,
+                            "%s%08x:%uus", j ? "," : "",
+                            e->tb_slowest[j].eip,
+                            e->tb_slowest[j].wall_us);
+        }
+        off += snprintf(trace + off, sizeof(trace) - off, " tail=");
+        for (unsigned j = 0; j < e->tb_tail_count &&
+                             off < sizeof(trace); j++) {
+            off += snprintf(trace + off, sizeof(trace) - off,
+                            "%s%08x", j ? "," : "", e->tb_tail[j]);
+        }
+        info_report("%s", trace);
     }
 }
 
@@ -621,6 +807,9 @@ void p2k_timing_audit_note_iret(uint32_t eip)
 uint32_t p2k_tcg_cflags_override(uint32_t base);
 uint32_t p2k_tcg_cflags_override(uint32_t base)
 {
+    if (unlikely(p2k_pdb_gap_profile_enabled)) {
+        p2k_pdb_gap_note_tb();
+    }
     /* iret_raise sub-segment: capture the timestamp of the first TB
      * lookup performed after IRET. Cheap: one boolean test on the
      * fast path, one timestamp + push when pending. */
@@ -678,7 +867,11 @@ void p2k_timing_audit_note_pdb05(void)
         p2k_dwell_push(&p2k_dw_pdb05_wall_delta, gap_w_us);
     }
     if (p2k_pdb_gap_profile_enabled && gap_w_us) {
+        p2k_pdb_gap_close_tb(now_w);
         p2k_pdb_gap_record(gap_w_us, gap_v_us, now_w);
+    }
+    if (p2k_pdb_gap_profile_enabled) {
+        p2k_pdb_gap_reset_tb();
     }
     p2k_audit_pdb05_last_vtime_ns = now_v;
     p2k_audit_pdb05_last_wall_ns  = now_w;
@@ -1008,6 +1201,75 @@ static void p2k_audit_emit(const char *tag)
                 wall_s, vtime_s, scale, host_slow ? "yes" : "no",
                 base);
 
+    /* The full diagnostic report sorts twelve 4096-entry timing rings and
+     * emits many log lines. That is useful interactively, but doing it on
+     * the emulator thread every three seconds creates the very PDB tail a
+     * benchmark is trying to measure. P2K_TIMING_SNAPSHOTS keeps only the
+     * five fields consumed by the comparison tool and sorts one ring.
+     * Exit still takes the complete report, after timing has stopped being
+     * performance-sensitive. */
+    if (p2k_audit_light_snapshots && strcmp(tag, "snap") == 0) {
+        uint32_t s50, s95, s99, smax;
+        p2k_dwell_percentiles(&p2k_dw_pdb05_wall_delta,
+                              &s50, &s95, &s99, &smax);
+        info_report("p2k-latency %s | pdb05 count=%llu",
+                    tag, (unsigned long long)p2k_audit_pdb05_count);
+        info_report("p2k-pdb05 %s | %-18s p50=%uus p95=%uus p99=%uus "
+                    "max=%uus max_total=%uus n=%u",
+                    tag, "pdb05_wall_delta", s50, s95, s99, smax,
+                    p2k_dw_pdb05_wall_delta.max_total,
+                    p2k_dw_pdb05_wall_delta.n);
+        p2k_dwell_reset(&p2k_dw_pdb05_wall_delta);
+
+        double clkint_period_ms = 1000.0 / 4003.966443;
+        double wall_ms_delta = 0.0;
+        double vtime_ms_delta = 0.0;
+        double xinu_ms_delta = 0.0;
+        double drift_delta = 0.0;
+        if (p2k_audit_prev_wall_ns) {
+            wall_ms_delta = (now_w - p2k_audit_prev_wall_ns) / 1.0e6;
+            vtime_ms_delta = (now_v - p2k_audit_prev_vtime_ns) / 1.0e6;
+            uint64_t clkint_delta = p2k_audit_clkint_entered -
+                                    p2k_audit_prev_clkint_entered;
+            xinu_ms_delta = (double)clkint_delta * clkint_period_ms;
+            drift_delta = wall_ms_delta > 0.001
+                ? xinu_ms_delta / wall_ms_delta : 0.0;
+        }
+        p2k_audit_prev_wall_ns = now_w;
+        p2k_audit_prev_vtime_ns = now_v;
+        p2k_audit_prev_clkint_entered = p2k_audit_clkint_entered;
+        info_report("p2k-xinu-drift %s | period_ms=%.3f | "
+                    "delta: wall=%.1fms vtime=%.1fms xinu=%.1fms "
+                    "drift=%.3f",
+                    tag, clkint_period_ms, wall_ms_delta, vtime_ms_delta,
+                    xinu_ms_delta, drift_delta);
+
+        static uint64_t light_prev_data;
+        static uint64_t light_prev_ctrl;
+        static uint64_t light_prev_disp;
+        uint64_t data = p2k_lpt_get_data_writes();
+        uint64_t ctrl = p2k_lpt_get_ctrl_writes();
+        uint64_t disp = p2k_lpt_get_dispatches();
+        double dt_s = wall_ms_delta / 1000.0;
+        double data_hz = dt_s > 0.001
+            ? (data - light_prev_data) / dt_s : 0.0;
+        double ctrl_hz = dt_s > 0.001
+            ? (ctrl - light_prev_ctrl) / dt_s : 0.0;
+        double disp_hz = dt_s > 0.001
+            ? (disp - light_prev_disp) / dt_s : 0.0;
+        info_report("p2k-lpt-hz %s | data=%llu (+%.0f/s) "
+                    "ctrl=%llu (+%.0f/s) dispatch=%llu (+%.0f/s) "
+                    "target_driverboard_hz=16000",
+                    tag, (unsigned long long)data, data_hz,
+                    (unsigned long long)ctrl, ctrl_hz,
+                    (unsigned long long)disp, disp_hz);
+        light_prev_data = data;
+        light_prev_ctrl = ctrl;
+        light_prev_disp = disp;
+        p2k_audit_seq++;
+        return;
+    }
+
     /* Latency histogram + PDB05 multi-axis percentiles. The pdb05 lines
      * are the cabinet-safety figure-of-merit: real lamps and solenoids
      * see WALL TIME, not vtime. */
@@ -1316,7 +1578,10 @@ void p2k_install_timing_audit(Pinball2000MachineState *s)
     p2k_audit_state      = s;
     p2k_audit_arm_wall_ns  = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
     p2k_audit_arm_vtime_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    p2k_audit_periodic     = p2k_audit_env_truthy("P2K_DIAG");
+    p2k_audit_light_snapshots =
+        p2k_audit_env_truthy("P2K_TIMING_SNAPSHOTS");
+    p2k_audit_periodic = p2k_audit_env_truthy("P2K_DIAG") ||
+                         p2k_audit_light_snapshots;
     p2k_pdb_gap_profile_enabled =
         p2k_audit_env_truthy("P2K_PROFILE_PDB_GAPS");
     if (p2k_pdb_gap_profile_enabled) {
@@ -1349,5 +1614,8 @@ void p2k_install_timing_audit(Pinball2000MachineState *s)
     p2k_stall_profile_init();
     info_report("pinball2000: timing-audit armed (initial @3s, %s; "
                 "disable with P2K_NO_TIMING_AUDIT=1)",
-                p2k_audit_periodic ? "every 5s with P2K_DIAG=1" : "exit only");
+                p2k_audit_light_snapshots ?
+                    "light snapshots every 3s" :
+                p2k_audit_periodic ?
+                    "full snapshots every 3s" : "exit only");
 }

@@ -457,6 +457,10 @@ CONSOLE / DIAGNOSTICS
                             renderer status (P2K_DCS_AUDIO_TRACE=1).
   --trace-timing            Alias for --diag (no separate timing trace
                             module exists today).
+  --timing-snapshots        Emit the lightweight three-second timing subset
+                            used by automated benchmarks. Unlike -v/--diag,
+                            this does not run the 100 ms diagnostic sampler
+                            or sort every detailed timing ring.
   -v                        Verbose level 1: re-enable UART stderr
                             mirror + --diag. Default (no -v) is QUIET
                             — UART output suppressed so the terminal
@@ -532,7 +536,7 @@ ENV PASSTHROUGH (advanced; see qemu/README.md for the full table)
   P2K_NO_UART_STDERR
   P2K_FRESH_SAVEDATA P2K_MEM_DETECT_PATCH P2K_DCS_AUDIO P2K_NO_DCS_AUDIO
   P2K_DCS_AUDIO_TRACE P2K_DCS_BYTE_TRACE P2K_DCS_NO_BYTE_PAIR
-  P2K_DCS_RAW_55_PAIR P2K_DIAG P2K_NO_AUTO_UPDATE
+  P2K_DCS_RAW_55_PAIR P2K_DIAG P2K_TIMING_SNAPSHOTS P2K_NO_AUTO_UPDATE
   P2K_PB2KSLIB P2K_DCS_ENGINE P2K_DCS_PCM_CPU P2K_DCS_MODE P2K_SCREENSHOT_DIR
   P2K_DISPLAY_BPP P2K_FRAMEBUFFER_THREAD P2K_QEMU_FRAMEBUFFER
   P2K_LPT_DISABLE P2K_LPT_PARPORT
@@ -673,6 +677,7 @@ while [[ $# -gt 0 ]]; do
     --trace-dcs)       export P2K_DCS_BYTE_TRACE=1; shift ;;
     --trace-audio)     export P2K_DCS_AUDIO_TRACE=1; shift ;;
     --trace-timing)    export P2K_DIAG=1; shift ;;
+    --timing-snapshots) export P2K_TIMING_SNAPSHOTS=1; shift ;;
     -v)                VERBOSITY=1; shift ;;
     -vv)               VERBOSITY=2; shift ;;
     -vvv)              VERBOSITY=3; shift ;;
@@ -827,8 +832,10 @@ if [[ $VERBOSITY -ge 3 ]]; then export P2K_DCS_BYTE_TRACE=1; fi
 # Quiet default: filter info/warning lines from QEMU's stderr (the
 # `pinball2000: loaded ...`, `mapped ... @ 0x...`, etc. noise from
 # info_report / warn_report inside the machine setup). Errors and
-# our own [run-qemu] lines pass through. Bypassed only by -v.
-if [[ $VERBOSITY -lt 1 ]]; then
+# our own [run-qemu] lines pass through. Lightweight timing snapshots must
+# retain QEMU info lines for their machine-readable report without enabling
+# the heavier -v diagnostic path.
+if [[ $VERBOSITY -lt 1 && "${P2K_TIMING_SNAPSHOTS:-0}" != "1" ]]; then
   exec 2> >(grep -v --line-buffered -E \
     '^qemu-system-i386: (info|warning):' >&2)
 fi
