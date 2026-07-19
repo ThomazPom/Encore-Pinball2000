@@ -318,10 +318,20 @@ static void p2k_sdl_screenshot(P2KDisplayState *s)
     char path[PATH_MAX];
     struct tm tm;
     time_t now = time(NULL);
-    SDL_Surface *shot;
+    SDL_Surface *shot = NULL;
+    SDL_Surface *readback = NULL;
+    int output_w;
+    int output_h;
+    bool ok = false;
 
     if (!dir || !dir[0]) {
         dir = "/tmp";
+    }
+    if (SDL_GetRendererOutputSize(s->renderer, &output_w, &output_h) < 0 ||
+        output_w <= 0 || output_h <= 0) {
+        warn_report("pinball2000: cannot determine screenshot size: %s",
+                    SDL_GetError());
+        return;
     }
     localtime_r(&now, &tm);
     snprintf(path, sizeof(path),
@@ -330,14 +340,45 @@ static void p2k_sdl_screenshot(P2KDisplayState *s)
              tm.tm_hour, tm.tm_min, tm.tm_sec);
     shot = SDL_CreateRGBSurfaceWithFormat(0, SCREEN_W, SCREEN_H, 32,
                                           SDL_PIXELFORMAT_ARGB8888);
-    if (!shot || SDL_RenderReadPixels(s->renderer, NULL,
-                                      SDL_PIXELFORMAT_ARGB8888,
-                                      shot->pixels, shot->pitch) < 0 ||
-        SDL_SaveBMP(shot, path) < 0) {
+    if (!shot) {
+        goto done;
+    }
+
+    /* SDL_RenderReadPixels() does not scale: a NULL rectangle writes the
+     * complete renderer output.  Read fullscreen/resized/HiDPI windows into
+     * a correctly sized surface first, then scale the complete image back to
+     * the normal 640x480 presentation size. */
+    if (output_w == SCREEN_W && output_h == SCREEN_H) {
+        readback = shot;
+    } else {
+        readback = SDL_CreateRGBSurfaceWithFormat(0, output_w, output_h, 32,
+                                                  SDL_PIXELFORMAT_ARGB8888);
+        if (!readback) {
+            goto done;
+        }
+    }
+    if (SDL_RenderReadPixels(s->renderer, NULL, SDL_PIXELFORMAT_ARGB8888,
+                             readback->pixels, readback->pitch) < 0) {
+        goto done;
+    }
+    if (readback != shot && SDL_BlitScaled(readback, NULL, shot, NULL) < 0) {
+        goto done;
+    }
+    if (SDL_SaveBMP(shot, path) < 0) {
+        goto done;
+    }
+    ok = true;
+
+done:
+    if (!ok) {
         warn_report("pinball2000: --framebuffer screenshot failed: %s",
                     SDL_GetError());
     } else {
-        info_report("pinball2000: screenshot written to %s", path);
+        info_report("pinball2000: screenshot written to %s (%dx%d)", path,
+                    SCREEN_W, SCREEN_H);
+    }
+    if (readback && readback != shot) {
+        SDL_FreeSurface(readback);
     }
     if (shot) {
         SDL_FreeSurface(shot);
