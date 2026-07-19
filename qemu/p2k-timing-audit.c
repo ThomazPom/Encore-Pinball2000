@@ -1266,6 +1266,15 @@ static void p2k_audit_emit(const char *tag)
         light_prev_data = data;
         light_prev_ctrl = ctrl;
         light_prev_disp = disp;
+        if (p2k_clkint_hotloop_enabled()) {
+            info_report("p2k-clkint-hotloop %s | jitter: n=%llu "
+                        "max_us=%lld",
+                        tag,
+                        (unsigned long long)
+                            p2k_clkint_hotloop_jitter_count(),
+                        (long long)
+                            (p2k_clkint_hotloop_jitter_max_ns() / 1000));
+        }
         p2k_audit_seq++;
         return;
     }

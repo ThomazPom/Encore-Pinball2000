@@ -467,7 +467,12 @@ def run_lpt_pass(forwarded: list[str], artifact: Path,
     monitor = artifact / "monitor.sock"
     log_path = artifact / "encore.log"
     gdb_port = pick_port()
-    extra = ["-v"]
+    # The detailed -v diagnostic report sorts every timing ring and writes a
+    # large log burst on the emulator thread every three seconds.  That work
+    # is useful interactively but can manufacture the PDB tail this pass is
+    # measuring.  Keep only the machine-readable, lightweight fields used by
+    # this collector.
+    extra = ["--timing-snapshots"]
     if guest_load:
         extra += ["--", "-gdb", f"tcp:127.0.0.1:{gdb_port}"]
     command = launch_command(forwarded, port, monitor, extra)
@@ -545,7 +550,9 @@ def parse_boot(lines: list[str]) -> dict[str, str]:
             value = field(line, "max_us", "")
             if value.isdigit():
                 hotloop_worst.append(int(value))
-        if "p2k-pdb05 snap" in line and "pdb05_wall_total" in line:
+        if ("p2k-pdb05 snap" in line and
+                ("pdb05_wall_total" in line or
+                 "pdb05_wall_delta" in line)):
             try:
                 pdb_worst.append(int(numeric_field(line, "max_total")))
             except ValueError:
