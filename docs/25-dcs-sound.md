@@ -1,6 +1,6 @@
 # 25 — DCS sound
 
-Encore has one DCS command/protocol core and five selectable content engines.
+Encore has one DCS command/protocol core and six selectable content engines.
 
 ## Protocol path
 
@@ -77,58 +77,59 @@ Sound flash is selected in this order:
 3. `<roms>/<game>_28f800.rom`;
 4. `<roms>/<game>/28f800.rom`.
 
-`adsp-hybrid-thread` is the default. It keeps original firmware sound behavior
-while refilling its PCM queue between low/high-water marks. The fixed-slice
-`adsp-clock-thread` and condition-driven `adsp-thread` remain available for
-comparison. If original-format assets are incomplete, Encore reports that and
-falls back to `pb2kslib`.
+If original-format assets are incomplete, Encore reports that and falls back
+to `pb2kslib`.
 
-## Timing candidates
+## Why the hybrid engine is the default
 
-Five configurations were selected for a matched rerun. Three passed the
-steady-state gates of IRQ standard deviation below 10 microseconds and PDB05
-worst gap no greater than 2 milliseconds. These are one-host SWE1 2.00 results,
-not portable guarantees. The driver-board reference describes blanking after
-about 2.5 milliseconds without a PDB05 watchdog pulse, so cabinet validation
-should prioritize repeatable worst gaps over small percentile differences.
+Native sound has two separate scheduling jobs: the DSP must react promptly to
+game commands, while PCM must reach the host at the audio device's steady
+clock. `adsp-hybrid-thread` separates those jobs with a 4,096-frame stereo
+ring buffer:
 
-| Configuration | Delivery | IRQ σ | IRQ worst | PDB p99 | PDB worst | Result |
-|---|---:|---:|---:|---:|---:|---|
-| HOTLOOP `pb2kslib-adsp` | 100.07% | 7 µs | 474 µs | 274 µs | 410 µs | Pass |
-| HOTLOOP `adsp-thread` | 100.10% | 7 µs | 362 µs | 275 µs | 407 µs | Pass |
-| HOTLOOP+PIT `pb2kslib-adsp` | 100.16% | 16 µs | 681 µs | 285 µs | 2.63 ms | Fail |
-| HOTLOOP+PIT `adsp-thread` | 100.60% | 53 µs | 1.47 ms | 274 µs | 537 µs | Fail |
-| HOTLOOP `adsp-thread --dcs-pcm-cpu 2` | 100.11% | 7 µs | 392 µs | 276 µs | 830 µs | Pass |
+1. The host-audio callback consumes PCM at the requested output rate.
+2. The DSP worker sleeps on a condition variable while no command is pending
+   and the ring contains more than 512 frames.
+3. A mailbox command or the 512-frame low-water mark wakes the worker.
+4. The worker executes the original DSP firmware in eight-frame slices,
+   yielding between slices, until pending commands are handled and the ring
+   reaches the 1,024-frame high-water mark.
+5. The worker sleeps again; the audio callback continues draining the ring.
 
-How to interpret the candidates:
+> [!IMPORTANT]
+> “Hybrid” does not mean that two DSP clocks run concurrently. One DSP state is
+> serialized by a core lock, and normal runtime production occurs on one
+> worker. Event-driven wake-up controls when it runs; the host-audio clock
+> controls when buffered PCM is presented.
 
-- HOTLOOP `pb2kslib-adsp` has the strongest measured gaps and lightweight
-  playback after generation. It requires preprocessing and plays PCM derived
-  from the selected update rather than emulating the sound hardware live.
-- HOTLOOP `adsp-thread` is the strongest live-hardware result in the refreshed
-  run. It needs neither the natural PIT nor a host-specific affinity choice,
-  and every measured PDB gap remained below 407 microseconds.
-- Adding PIT to `pb2kslib-adsp` did not repeat its earlier result: IRQ sigma
-  rose to 16 microseconds and PDB worst to 2.63 milliseconds. It fails both
-  selection gates and currently demonstrates no reason to prefer dual-source
-  timing.
-- Adding PIT to live `adsp-thread` also failed to repeat: delivery overshot to
-  100.60% and IRQ sigma rose to 53 microseconds. The earlier tail improvement
-  was not stable enough to justify the added timing interaction.
-- Pinning only `dcs-pcm` works through the public runtime option, but did not
-  improve this rerun: IRQ sigma tied unpinned HOTLOOP, IRQ worst was slightly
-  higher and PDB worst roughly doubled while remaining safe. Affinity depends
-  on CPU topology, power state and competing host load, so it stays optional.
+This avoids placing DSP execution in the audio callback, as `adsp-thread`
+does for SPORT output. It also avoids the continuous two-frame production and
+scheduler wake-ups used by `adsp-clock-thread`. Eight-frame batches amortize
+locking and scheduling overhead, while the low/high-water window leaves enough
+audio ready for short host scheduling delays without keeping the worker busy.
 
-Run the pinned candidate with:
+A matched AC-powered SWE1 2.00 run used a 30-second warmup followed by a
+60-second measurement with the framebuffer display and live audio:
 
-```sh
-scripts/run-qemu.sh --dcs-engine adsp-thread --dcs-pcm-cpu 2
-```
+| Engine | Delivery | IRQ σ | IRQ worst | PDB p99 | PDB worst |
+|---|---:|---:|---:|---:|---:|
+| `adsp-clock-thread` | 100.03% | 64 µs | 5.31 ms | 298 µs | 1.98 ms |
+| `adsp-hybrid-thread` | 100.04% | 12 µs | 604 µs | 304 µs | 1.74 ms |
 
-Do not pin the entire QEMU process: the vCPU, main loop and audio work require
-concurrent host scheduling. Re-run the full forensic benchmark before choosing
-a default for a different host.
+The central cadence was effectively tied. The hybrid was selected because it
+greatly reduced IRQ variance and the worst IRQ interval, while also slightly
+improving the worst PDB gap. It does not require CPU affinity.
+
+> [!NOTE]
+> These measurements explain the default; they are not portable timing
+> guarantees. Power policy, host load, audio backend and hardware can change
+> tail latency. Physical-cabinet validation should prioritize repeatable worst
+> PDB gaps over small percentile differences.
+
+`adsp-thread` and `adsp-clock-thread` remain available for comparison. Pinning
+the DSP worker with `--dcs-pcm-cpu` remains an optional, host-specific
+experiment; do not pin the entire QEMU process because its vCPU, main loop and
+audio work require concurrent scheduling.
 
 ## Host output
 
