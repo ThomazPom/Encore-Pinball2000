@@ -20,7 +20,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Preserve explicit environment selection; the CLI can replace it below.
-export P2K_DCS_ENGINE="${P2K_DCS_ENGINE:-adsp-clock-thread}"
+export P2K_DCS_ENGINE="${P2K_DCS_ENGINE:-adsp-hybrid-thread}"
 
 # --bench is an orchestration mode, not a QEMU machine option.  Dispatch it
 # before normal argument parsing and forward every other option (game, update,
@@ -43,6 +43,15 @@ UPDATE_TOKEN="auto"
 DISPLAY_MODE=""
 HEADLESS=0
 FULLSCREEN=0
+FRAMEBUFFER_REQUEST="${P2K_FRAMEBUFFER_THREAD:-auto}"
+case "$FRAMEBUFFER_REQUEST" in
+  auto|0|1) ;;
+  *)
+    echo "[run-qemu] P2K_FRAMEBUFFER_THREAD: expected auto, 0, or 1" >&2
+    exit 2
+    ;;
+esac
+unset P2K_FRAMEBUFFER_THREAD
 NO_SAVEDATA=0
 FRESH_SAVEDATA=0
 CLEAR_PB2K_ADSP_CACHE=0
@@ -62,6 +71,7 @@ CONSOLE_SCRIPT=""
 AUTOMATION_DIR=""
 SPEED_TARGET="${P2K_SPEED_TARGET_PERCENT:-100}"
 EXTRA=()
+QEMU_FB_ASYNC_DRIVER="${P2K_QEMU_FB_ASYNC_DRIVER:-auto}"
 
 # --- QEMU binary lookup -----------------------------------------------------
 QEMU_BIN="${QEMU_BIN:-$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386}"
@@ -252,12 +262,26 @@ DISPLAY / UX
                             x1r5g5b5 — the source format the GX framebuffer
                             already uses, so pixels are copied without
                             conversion (P2K_DISPLAY_BPP=16).
-  --framebuffer             Experimental direct host renderer. QEMU runs with
+  --framebuffer             Direct host renderer (desktop default). QEMU runs with
                             display none while a dedicated SDL thread reads
                             native guest RGB555 RAM and lets SDL scale and
                             present it without host pixel conversion.
-                            Without it the established QEMU display path is
-                            unchanged.
+                            Use --display <backend> to select QEMU's display
+                            path explicitly.
+  --qemu-framebuffer        Experimental fast QEMU-console renderer. Keeps the
+                            selected QEMU display backend and its input/window
+                            handling, but reads RGB555 directly from guest RAM
+                            and expands it through a lookup table into QEMU's
+                            preferred ARGB surface, without address-space reads.
+  --qemu-framebuffer-async  Additionally move QEMU surface submission to an
+                            experimental worker. Uses QEMU's SDL display via
+                            accelerated X11 by default. Native Wayland uses an
+                            explicit OpenGL-context handoff; software SDL is the
+                            compatibility fallback.
+  --qemu-framebuffer-async-driver auto|wayland|x11|software
+                            Select the SDL presentation path for async display
+                            A/B measurements. Default: auto (accelerated X11
+                            when available, otherwise software).
 
 AUDIO
   --audio auto|none|pa|alsa|sdl|oss|sndio|dbus|wav|<qemu-driver>
@@ -295,17 +319,17 @@ AUDIO
   --dcs-sound-flash <path>  Explicit 1 MiB ADSP 28F800/sf.rom image.
                             Useful with update bundles such as SWE1 2.00
                             that contain game code but omit *_sf.rom.
-  --dcs-engine pb2kslib|pb2kslib-adsp|adsp|adsp-thread|adsp-clock-thread
-                            Audio content engine. adsp-clock-thread is the
-                            default: original firmware/assets with a fixed-
-                            slice DSP producer and lightweight host-audio
-                            consumer. adsp-thread retains the condition-driven
-                            mailbox worker; adsp runs the same firmware
-                            synchronously. pb2kslib uses extracted samples.
-                            pb2kslib-adsp generates/uses a persistent PCM
-                            cache rendered by the update's native DSP.
-  --dcs-pcm-cpu <cpu>       Pin the ADSP worker used by adsp-thread or
-                            adsp-clock-thread to this
+  --dcs-engine pb2kslib|pb2kslib-adsp|adsp|adsp-thread|adsp-clock-thread|adsp-hybrid-thread
+                            Audio content engine. adsp-hybrid-thread is the
+                            default: original firmware/assets with an event-
+                            gated low/high-water DSP producer. adsp-clock-thread
+                            retains the fixed-slice producer; adsp-thread the
+                            condition-driven mailbox worker; adsp runs the same
+                            firmware synchronously. pb2kslib uses extracted
+                            samples. pb2kslib-adsp generates/uses a persistent
+                            PCM cache rendered by the update's native DSP.
+  --dcs-pcm-cpu <cpu>       Pin the ADSP worker used by adsp-thread,
+                            adsp-clock-thread or adsp-hybrid-thread to this
                             Linux logical CPU. Experimental; host topology and
                             workload determine whether affinity helps.
   --clear-pb2kslib-cache   Delete the generated ADSP PCM cache before launch.
@@ -332,7 +356,9 @@ AUDIO
     scripts/run-qemu.sh --dcs-engine adsp-thread --dcs-pcm-cpu 2
                             Host-clock HOTLOOP with the dcs-pcm worker pinned.
     scripts/run-qemu.sh --dcs-engine adsp-clock-thread --dcs-pcm-cpu 3
-                            Default fixed-slice DSP clock with optional pinning.
+                            Fixed-slice DSP clock with optional pinning.
+    scripts/run-qemu.sh --dcs-engine adsp-hybrid-thread
+                            Default event-gated eight-frame producer.
 
     Plain pb2kslib is excluded because a fixed library can omit sounds added
     by newer updates. Strict real-ADSP modes currently fail the IRQ-jitter gate.
@@ -357,13 +383,16 @@ CONSOLE / DIAGNOSTICS
                             entry, settles after GDB, measures IRQ intervals and
                             restores the six original bytes. Pass 2 starts a new,
                             unpatched guest for LPT/PDB05 measurement. Both run
-                            the cabinet-input workload before 30 s guest warmup;
+                            the cabinet-input workload before 10 s guest warmup;
                             a wall-timed XINU `sleep 10` checks absolute speed.
                             Other options such as --game, --update and --strict
                             are forwarded. Pass `--display none --no-audio` for
                             headless testing. Requires gdb, as, ld and objcopy.
                             Returns 2 for unhealthy speed, IRQ delivery or a
                             steady PDB05 gap above 2.5 ms.
+  --bench-long              With --bench, restore the 30 s guest warmup used
+                            for final validation. The measured window remains
+                            the same; only post-workload settling is longer.
   --bench-guest-load        With --bench, create a temporary low-priority XINU
                             worker in guest RAM. It keeps the guest scheduler
                             busy while yielding cooperatively, without touching
@@ -501,11 +530,12 @@ KEY BINDINGS (delivered by the QEMU machine, not by this wrapper)
 
 ENV PASSTHROUGH (advanced; see qemu/README.md for the full table)
   P2K_NO_UART_STDERR
-  P2K_FRESH_SAVEDATA P2K_NO_MEM_DETECT_PATCH P2K_DCS_AUDIO P2K_NO_DCS_AUDIO
+  P2K_FRESH_SAVEDATA P2K_MEM_DETECT_PATCH P2K_DCS_AUDIO P2K_NO_DCS_AUDIO
   P2K_DCS_AUDIO_TRACE P2K_DCS_BYTE_TRACE P2K_DCS_NO_BYTE_PAIR
   P2K_DCS_RAW_55_PAIR P2K_DIAG P2K_NO_AUTO_UPDATE
   P2K_PB2KSLIB P2K_DCS_ENGINE P2K_DCS_PCM_CPU P2K_DCS_MODE P2K_SCREENSHOT_DIR
-  P2K_DISPLAY_BPP P2K_FRAMEBUFFER_THREAD P2K_LPT_DISABLE P2K_LPT_PARPORT
+  P2K_DISPLAY_BPP P2K_FRAMEBUFFER_THREAD P2K_QEMU_FRAMEBUFFER
+  P2K_LPT_DISABLE P2K_LPT_PARPORT
   P2K_LPT_IOPORT P2K_LPT_TRACE_FILE P2K_DCS_PRELOAD P2K_CABINET_PURIST
 EOF
 }
@@ -538,7 +568,16 @@ while [[ $# -gt 0 ]]; do
       DISPLAY_MODE="$2"; shift 2 ;;
     --headless)        HEADLESS=1; shift ;;
     --fullscreen)      FULLSCREEN=1; shift ;;
-    --framebuffer)     export P2K_FRAMEBUFFER_THREAD=1; shift ;;
+    --framebuffer)     FRAMEBUFFER_REQUEST=1; shift ;;
+    --qemu-framebuffer) export P2K_QEMU_FRAMEBUFFER=1; shift ;;
+    --qemu-framebuffer-async)
+      export P2K_QEMU_FRAMEBUFFER=1 P2K_QEMU_FB_ASYNC=1; shift ;;
+    --qemu-framebuffer-async-driver)
+      case "${2:-}" in
+        auto|wayland|x11|software) QEMU_FB_ASYNC_DRIVER="$2" ;;
+        *) echo "[run-qemu] $1: expected auto, wayland, x11, or software" >&2; exit 2 ;;
+      esac
+      shift 2 ;;
     --bpp)
       case "$2" in
         32) ;;  # default ARGB8888 path
@@ -612,8 +651,8 @@ while [[ $# -gt 0 ]]; do
       export P2K_DCS_SOUND_FLASH="$(realpath "$2")"; shift 2 ;;
     --dcs-engine)
       case "$2" in
-        pb2kslib|pb2kslib-adsp|adsp|adsp-thread|adsp-clock-thread) export P2K_DCS_ENGINE="$2" ;;
-        *) echo "[run-qemu] --dcs-engine: expected pb2kslib|pb2kslib-adsp|adsp|adsp-thread|adsp-clock-thread, got '$2'" >&2; exit 2 ;;
+        pb2kslib|pb2kslib-adsp|adsp|adsp-thread|adsp-clock-thread|adsp-hybrid-thread) export P2K_DCS_ENGINE="$2" ;;
+        *) echo "[run-qemu] --dcs-engine: expected pb2kslib|pb2kslib-adsp|adsp|adsp-thread|adsp-clock-thread|adsp-hybrid-thread, got '$2'" >&2; exit 2 ;;
       esac
       shift 2 ;;
     --dcs-pcm-cpu)
@@ -714,12 +753,9 @@ if [[ "$SPEED_TARGET" != "100" && "$SPEED_TARGET" != "100.0" &&
 fi
 
 # --- HOTLOOP initial gap ---------------------------------------------------
-# The former display/mode-specific table (145/250/300/700 µs) was calibrated
-# against boots where the mem_detect scanner ran too late. The resulting
-# 4 MiB heap Fatal entered XINA's monitor and looked like an IRQ0 wedge when
-# UART output was suppressed. With mem_detect patched before heap init, 145 µs
-# passed the full sequential matrix, including 10/10 RFM headless + --with-pit.
-# Explicit P2K_TCG_CLKINT_HOTLOOP_MIN_GAP_NS wins.
+# One 145 µs starting gap passed the sequential timing matrix, including
+# repeated RFM headless + --with-pit boots. The adaptive controller then owns
+# steady-state pacing. Explicit P2K_TCG_CLKINT_HOTLOOP_MIN_GAP_NS wins.
 if [[ -z "${P2K_TCG_CLKINT_HOTLOOP_MIN_GAP_NS:-}" && "${P2K_TCG_CLKINT_HOTLOOP:-1}" != "0" ]]; then
   export P2K_TCG_CLKINT_HOTLOOP_MIN_GAP_NS="$(
     awk -v percent="$SPEED_TARGET" 'BEGIN { printf "%.0f", 14500000.0 / percent }'
@@ -798,6 +834,28 @@ if [[ $VERBOSITY -lt 1 ]]; then
 fi
 
 # --- display defaults -------------------------------------------------------
+# Direct framebuffer presentation is the desktop default. Explicit headless,
+# QEMU display, or QEMU-framebuffer selections retain their requested path.
+if [[ "$FRAMEBUFFER_REQUEST" == "auto" ]]; then
+  if [[ $HEADLESS -eq 1 || -n "$DISPLAY_MODE" ||
+        "${P2K_QEMU_FRAMEBUFFER:-}" == "1" ||
+        -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+    FRAMEBUFFER_REQUEST=0
+  else
+    FRAMEBUFFER_REQUEST=1
+  fi
+fi
+if [[ "$FRAMEBUFFER_REQUEST" == "1" ]]; then
+  export P2K_FRAMEBUFFER_THREAD=1
+else
+  unset P2K_FRAMEBUFFER_THREAD
+fi
+
+if [[ "${P2K_FRAMEBUFFER_THREAD:-}" == "1" &&
+      "${P2K_QEMU_FRAMEBUFFER:-}" == "1" ]]; then
+  echo "[run-qemu] --framebuffer and --qemu-framebuffer are mutually exclusive" >&2
+  exit 2
+fi
 if [[ "${P2K_FRAMEBUFFER_THREAD:-}" == "1" ]]; then
   if [[ $HEADLESS -eq 1 ]]; then
     echo "[run-qemu] --framebuffer and --headless are mutually exclusive" >&2
@@ -807,6 +865,10 @@ if [[ "${P2K_FRAMEBUFFER_THREAD:-}" == "1" ]]; then
   DISPLAY_MODE=none
   FULLSCREEN=0
 fi
+if [[ "${P2K_QEMU_FRAMEBUFFER:-}" == "1" && $HEADLESS -eq 1 ]]; then
+  echo "[run-qemu] --qemu-framebuffer and --headless are mutually exclusive" >&2
+  exit 2
+fi
 if [[ -z "$DISPLAY_MODE" ]]; then
   if [[ $HEADLESS -eq 1 ]]; then
     DISPLAY_MODE=none
@@ -815,6 +877,40 @@ if [[ -z "$DISPLAY_MODE" ]]; then
   else
     DISPLAY_MODE=none
   fi
+fi
+if [[ "${P2K_QEMU_FB_ASYNC:-}" == "1" ]]; then
+  if [[ "${DISPLAY_MODE%%,*}" != "sdl" ]]; then
+    echo "[run-qemu] --qemu-framebuffer-async requires QEMU's SDL display backend" >&2
+    exit 2
+  fi
+  case "$QEMU_FB_ASYNC_DRIVER" in
+    auto)
+      if [[ -n "${DISPLAY:-}" ]]; then
+        export SDL_VIDEODRIVER=x11
+        unset SDL_RENDER_DRIVER
+        echo "[run-qemu] async framebuffer: accelerated SDL/X11 presentation"
+      else
+        unset SDL_VIDEODRIVER
+        export SDL_RENDER_DRIVER=software
+        echo "[run-qemu] async framebuffer: software SDL presentation (no X11 DISPLAY)"
+      fi ;;
+    wayland)
+      [[ -n "${WAYLAND_DISPLAY:-}" ]] || {
+        echo "[run-qemu] async framebuffer: no WAYLAND_DISPLAY" >&2; exit 2; }
+      export SDL_VIDEODRIVER=wayland
+      unset SDL_RENDER_DRIVER
+      echo "[run-qemu] async framebuffer: accelerated SDL/Wayland presentation" ;;
+    x11)
+      [[ -n "${DISPLAY:-}" ]] || {
+        echo "[run-qemu] async framebuffer: no X11 DISPLAY" >&2; exit 2; }
+      export SDL_VIDEODRIVER=x11
+      unset SDL_RENDER_DRIVER
+      echo "[run-qemu] async framebuffer: accelerated SDL/X11 presentation" ;;
+    software)
+      unset SDL_VIDEODRIVER
+      export SDL_RENDER_DRIVER=software
+      echo "[run-qemu] async framebuffer: software SDL presentation" ;;
+  esac
 fi
 if [[ "$DISPLAY_MODE" == "none" && $FULLSCREEN -eq 1 ]]; then
   echo "[run-qemu] --fullscreen ignored with --display none / --headless" >&2
@@ -954,7 +1050,7 @@ fi
 # a separate QEMU process with an independent DSP, so mutable firmware/SRAM
 # state is never shared across tracks. A single worker retains the interactive
 # in-window generator for diagnostics.
-if [[ "${P2K_DCS_ENGINE:-adsp-clock-thread}" == "pb2kslib-adsp" &&
+if [[ "${P2K_DCS_ENGINE:-adsp-hybrid-thread}" == "pb2kslib-adsp" &&
       "$PB2K_ADSP_CACHE_WORKERS" -gt 1 &&
       -z "${P2K_PB2K_ADSP_WORKER:-}" ]]; then
   __cache_update="$UPDATE_DIR_ABS"

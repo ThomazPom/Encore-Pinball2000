@@ -50,6 +50,24 @@ void p2k_load_extra_banks(Pinball2000MachineState *s);
 void p2k_load_dcs_rom(Pinball2000MachineState *s);
 bool p2k_dcs_adsp_source_key(Pinball2000MachineState *s, char key[65]);
 
+typedef struct P2KDcsProfileSnapshot {
+    bool available;
+    bool state_lock_busy;
+    bool core_lock_busy;
+    bool worker_started;
+    bool worker_run;
+    bool host_boot;
+    bool hybrid_engine;
+    unsigned command_count;
+    unsigned ring_frames;
+    int output_rate;
+    uint64_t cycles;
+    uint64_t pcm_frames;
+} P2KDcsProfileSnapshot;
+
+/* Non-blocking snapshot used only by the opt-in rare-gap profiler. */
+void p2k_dcs_adsp_profile_snapshot(P2KDcsProfileSnapshot *snapshot);
+
 /* p2k-boot.c: post-reset PM-entry recipe (option ROM copy + GDT + CPU regs). */
 void p2k_post_reset(void *opaque);
 
@@ -158,8 +176,7 @@ void p2k_install_vsync(void);
 /* p2k-plx-regs.c: PLX 9050 BAR0 register file + 93C46 SEEPROM model. */
 void p2k_install_plx_regs(Pinball2000MachineState *s);
 
-/* p2k-mem-detect.c: BT-130 — patch XINU mem_detect() prologue to
- * return 14 MiB instead of the 4 MiB the stub controller reports. */
+/* p2k-mem-detect.c: opt-in XINU sizmem() 4 MiB -> 14 MiB override. */
 void p2k_install_mem_detect(void);
 
 /* p2k-nic-dseg.c: BT-131 — seed SMC8216T LAN-ROM shadow at 0xD0008. */

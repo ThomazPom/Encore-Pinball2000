@@ -10,13 +10,17 @@
  *     DC_FB_ST_OFFSET lands on a non-zero multiple of 0x78000 (the size of
  *     a single 240×2048 buffer).
  *   - DC_FB_ST_OFFSET (GX_BASE + 0x8310) is the start offset within the FB.
- *   - The QEMU-console path produces 640×480, line-doubled output.
+ *   - The QEMU-console paths produce 640×480, line-doubled output.
  *   - The direct SDL path uploads native 640×240 RGB555 with its real pitch;
  *     SDL performs the Y flip and scales it into a 640×480 window.
  *
- * The default path uses QEMU's graphics console. P2K_FRAMEBUFFER_THREAD=1
- * instead gives an SDL-owned host thread direct pointers to the RAM-backed
- * DC registers and framebuffer; QEMU then runs with -display none.
+ * The default path uses QEMU's graphics console and address-space reads.
+ * P2K_QEMU_FRAMEBUFFER=1 keeps that console/backend but reads native RGB555
+ * through direct RAM pointers and uses a lookup table for ARGB expansion,
+ * avoiding address-space reads and per-pixel color arithmetic.
+ * P2K_FRAMEBUFFER_THREAD=1 instead gives an SDL-owned host thread direct
+ * pointers to the RAM-backed DC registers and framebuffer; QEMU then runs
+ * with -display none.
  */
 
 #include "qemu/osdep.h"
@@ -52,6 +56,9 @@ typedef struct P2KDisplayState {
     uint8_t       *gx_regs;
     QemuMutex      frame_lock;
     QemuThread     worker;
+    QemuThread     submit_worker;
+    QemuMutex      submit_lock;
+    QemuCond       submit_cond;
     Notifier       exit_notifier;
     SDL_Window    *window;
     SDL_Renderer  *renderer;
@@ -59,9 +66,27 @@ typedef struct P2KDisplayState {
     bool           worker_run;
     bool           worker_started;
     bool           threaded;
+    bool           qemu_framebuffer;
+    bool           qemu_rgb565;
     bool           bpp16;
+    bool           profile;
+    bool           submit_run;
+    bool           submit_started;
+    bool           submit_pending;
+    bool           submit_context_checked;
+    bool           submit_context_handoff;
+    uint8_t       *submit_staging;
+    size_t         submit_bytes;
+    SDL_Window    *submit_window;
+    SDL_GLContext  submit_gl_context;
     bool           game_pitch;       /* false: stride 1280 (boot), true: 2048 */
     uint32_t       last_fb_off;
+    uint64_t       profile_frames;
+    uint64_t       profile_prepare_ns;
+    uint64_t       profile_submit_ns;
+    uint64_t       profile_submit_frames;
+    uint64_t       profile_prepare_max_ns;
+    uint64_t       profile_submit_max_ns;
 } P2KDisplayState;
 
 static P2KDisplayState s_disp;
@@ -104,7 +129,7 @@ static const uint8_t *status_glyph(char c)
 #undef GLYPH
 }
 
-static void draw_status_pixels(void *dst_raw, bool bpp16)
+static void draw_status_pixels(void *dst_raw, bool bpp16, uint16_t white16)
 {
     char text[sizeof(s_status)];
     qemu_mutex_lock(&s_status_lock);
@@ -125,7 +150,7 @@ static void draw_status_pixels(void *dst_raw, bool bpp16)
             if (!(rows[gy] & (1 << (4 - gx)))) continue;
             for (int sy = 0; sy < 2; sy++) for (int sx = 0; sx < 2; sx++) {
                 int x = 12 + n * 12 + gx * 2 + sx, y = 12 + gy * 2 + sy;
-                if (bpp16) ((uint16_t *)dst_raw)[y * SCREEN_W + x] = 0x7fff;
+                if (bpp16) ((uint16_t *)dst_raw)[y * SCREEN_W + x] = white16;
                 else ((uint32_t *)dst_raw)[y * SCREEN_W + x] = 0xffffffff;
             }
         }
@@ -179,6 +204,19 @@ static inline uint32_t rgb555_to_argb(uint16_t px)
     uint32_t g8 = (g5 << 3) | (g5 >> 2);
     uint32_t b8 = (b5 << 3) | (b5 >> 2);
     return 0xFF000000u | (r8 << 16) | (g8 << 8) | b8;
+}
+
+static uint32_t s_rgb555_lut[1 << 15];
+static uint16_t s_rgb565_lut[1 << 15];
+
+static inline uint16_t rgb555_to_rgb565(uint16_t px)
+{
+    uint16_t r5 = (px >> 10) & 0x1f;
+    uint16_t g5 = (px >> 5) & 0x1f;
+    uint16_t b5 = px & 0x1f;
+    uint16_t g6 = (g5 << 1) | (g5 >> 4);
+
+    return (r5 << 11) | (g6 << 5) | b5;
 }
 
 static uint32_t p2k_phys_ldl(hwaddr pa)
@@ -417,18 +455,102 @@ out:
     return NULL;
 }
 
+/* Experimental QEMU-backend async submit. QEMU still owns the console,
+ * DisplaySurface, DisplayChangeListener, window and input. An OpenGL-backed
+ * SDL renderer transfers its context from QEMU's refresh thread to this worker
+ * on the first real refresh; software renderers need no context handoff. */
+static void *p2k_qemu_submit_worker(void *opaque)
+{
+    P2KDisplayState *s = opaque;
+    bool context_acquired = false;
+
+    while (qatomic_read(&s->submit_run)) {
+        qemu_mutex_lock(&s->submit_lock);
+        while (!s->submit_pending && qatomic_read(&s->submit_run)) {
+            qemu_cond_wait(&s->submit_cond, &s->submit_lock);
+        }
+        if (!qatomic_read(&s->submit_run)) {
+            qemu_mutex_unlock(&s->submit_lock);
+            break;
+        }
+        if (s->submit_context_handoff && !context_acquired) {
+            if (SDL_GL_MakeCurrent(s->submit_window,
+                                   s->submit_gl_context) < 0) {
+                error_report("pinball2000: async display context acquire "
+                             "failed: %s", SDL_GetError());
+                qatomic_set(&s->submit_run, false);
+                qemu_mutex_unlock(&s->submit_lock);
+                break;
+            }
+            context_acquired = true;
+            info_report("pinball2000: async submit worker acquired QEMU "
+                        "SDL OpenGL context");
+        }
+
+        DisplaySurface *surf = qemu_console_surface(s->con);
+        memcpy(surface_data(surf), s->submit_staging, s->submit_bytes);
+        s->submit_pending = false;
+        qemu_mutex_unlock(&s->submit_lock);
+
+        int64_t submit_start = s->profile ?
+            qemu_clock_get_ns(QEMU_CLOCK_REALTIME) : 0;
+        dpy_gfx_update_full(s->con);
+        if (s->profile) {
+            uint64_t submit_ns = qemu_clock_get_ns(QEMU_CLOCK_REALTIME) -
+                                 submit_start;
+            qemu_mutex_lock(&s->submit_lock);
+            s->profile_submit_frames++;
+            s->profile_submit_ns += submit_ns;
+            s->profile_submit_max_ns = MAX(s->profile_submit_max_ns,
+                                           submit_ns);
+            qemu_mutex_unlock(&s->submit_lock);
+        }
+        qatomic_inc(&s_disp_frames);
+    }
+    if (context_acquired && (SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO) &&
+        SDL_GL_MakeCurrent(s->submit_window, NULL) < 0) {
+        warn_report("pinball2000: async display context release failed: %s",
+                    SDL_GetError());
+    }
+    return NULL;
+}
+
 static void p2k_display_update(void *opaque)
 {
     P2KDisplayState *s = opaque;
     DisplaySurface *surf = qemu_console_surface(s->con);
+    int64_t profile_start = s->profile ?
+        qemu_clock_get_ns(QEMU_CLOCK_REALTIME) : 0;
 
     if (!surf) {
         return;
     }
     if (!s->threaded) {
-        void *dst_raw = surface_data(surf);
-        bool bpp16 = surface_format(surf) == PIXMAN_x1r5g5b5;
-        uint32_t fb_off = p2k_phys_ldl(GX_BASE + GX_DC_FB_ST_OFFSET);
+        if (s->submit_started) {
+            qemu_mutex_lock(&s->submit_lock);
+            if (!s->submit_context_checked) {
+                s->submit_context_checked = true;
+                s->submit_window = SDL_GL_GetCurrentWindow();
+                s->submit_gl_context = SDL_GL_GetCurrentContext();
+                if (s->submit_window && s->submit_gl_context) {
+                    if (SDL_GL_MakeCurrent(s->submit_window, NULL) < 0) {
+                        warn_report("pinball2000: async display context "
+                                    "release failed; using backend-native "
+                                    "ownership: %s", SDL_GetError());
+                    } else {
+                        s->submit_context_handoff = true;
+                        info_report("pinball2000: QEMU SDL OpenGL context "
+                                    "released for async submit worker");
+                    }
+                }
+            }
+        }
+        void *dst_raw = s->submit_started ? s->submit_staging :
+                                            surface_data(surf);
+        bool bpp16 = surface_bytes_per_pixel(surf) == 2;
+        uint32_t fb_off = s->qemu_framebuffer ?
+            ldl_le_p(s->gx_regs + GX_DC_FB_ST_OFFSET) :
+            p2k_phys_ldl(GX_BASE + GX_DC_FB_ST_OFFSET);
         uint16_t row_buf[FB_W];
 
         if (!s->game_pitch && fb_off != 0 && (fb_off % GAME_BUF_SIZE) == 0) {
@@ -441,29 +563,81 @@ static void p2k_display_update(void *opaque)
         }
         for (int src_y = 0; src_y < FB_H; src_y++) {
             int dst_y = (s_flip_y ? (FB_H - 1 - src_y) : src_y) * 2;
-            hwaddr row_pa = GX_FB_RAM_MIRROR + fb_off + src_y * src_pitch;
-            p2k_phys_read(row_pa, row_buf, sizeof(row_buf));
+            const uint16_t *src;
+
+            if (s->qemu_framebuffer) {
+                src = (const uint16_t *)(s->ram + GX_FB_RAM_MIRROR + fb_off +
+                                         src_y * src_pitch);
+            } else {
+                hwaddr row_pa = GX_FB_RAM_MIRROR + fb_off + src_y * src_pitch;
+                p2k_phys_read(row_pa, row_buf, sizeof(row_buf));
+                src = row_buf;
+            }
             if (bpp16) {
                 uint16_t *r1 = &((uint16_t *)dst_raw)[dst_y * SCREEN_W];
                 uint16_t *r2 = &((uint16_t *)dst_raw)[(dst_y + 1) * SCREEN_W];
-                for (int x = 0; x < FB_W; x++) {
-                    uint16_t px = row_buf[x] & 0x7fffu;
-                    r1[x] = px;
-                    r2[x] = px;
+                if (s->qemu_framebuffer) {
+                    if (s->qemu_rgb565) {
+                        for (int x = 0; x < FB_W; x++) {
+                            r1[x] = s_rgb565_lut[src[x] & 0x7fffu];
+                        }
+                        memcpy(r2, r1, FB_W * sizeof(*r1));
+                    } else {
+                        memcpy(r1, src, FB_W * sizeof(*src));
+                        memcpy(r2, src, FB_W * sizeof(*src));
+                    }
+                } else {
+                    for (int x = 0; x < FB_W; x++) {
+                        uint16_t px = src[x] & 0x7fffu;
+                        r1[x] = px;
+                        r2[x] = px;
+                    }
                 }
             } else {
                 uint32_t *dst = dst_raw;
                 uint32_t *r1 = &dst[dst_y * SCREEN_W];
                 uint32_t *r2 = &dst[(dst_y + 1) * SCREEN_W];
-                for (int x = 0; x < FB_W; x++) {
-                    uint32_t argb = rgb555_to_argb(row_buf[x] & 0x7fffu);
-                    r1[x] = argb;
-                    r2[x] = argb;
+                if (s->qemu_framebuffer) {
+                    for (int x = 0; x < FB_W; x++) {
+                        r1[x] = s_rgb555_lut[src[x] & 0x7fffu];
+                    }
+                    memcpy(r2, r1, FB_W * sizeof(*r1));
+                } else {
+                    for (int x = 0; x < FB_W; x++) {
+                        uint32_t argb = rgb555_to_argb(src[x] & 0x7fffu);
+                        r1[x] = argb;
+                        r2[x] = argb;
+                    }
                 }
             }
         }
-        draw_status_pixels(dst_raw, bpp16);
+        draw_status_pixels(dst_raw, bpp16,
+                           surface_format(surf) == PIXMAN_r5g6b5 ?
+                           0xffff : 0x7fff);
+        int64_t profile_submit = s->profile ?
+            qemu_clock_get_ns(QEMU_CLOCK_REALTIME) : 0;
+        if (s->profile) {
+            uint64_t prepare_ns = profile_submit - profile_start;
+            s->profile_frames++;
+            s->profile_prepare_ns += prepare_ns;
+            s->profile_prepare_max_ns = MAX(s->profile_prepare_max_ns,
+                                            prepare_ns);
+        }
+        if (s->submit_started) {
+            s->submit_pending = true;
+            qemu_cond_signal(&s->submit_cond);
+            qemu_mutex_unlock(&s->submit_lock);
+            return;
+        }
         dpy_gfx_update_full(s->con);
+        if (s->profile) {
+            uint64_t submit_ns = qemu_clock_get_ns(QEMU_CLOCK_REALTIME) -
+                                 profile_submit;
+            s->profile_submit_frames++;
+            s->profile_submit_ns += submit_ns;
+            s->profile_submit_max_ns = MAX(s->profile_submit_max_ns,
+                                           submit_ns);
+        }
         s_disp_frames++;
         return;
     }
@@ -480,6 +654,34 @@ static void p2k_display_shutdown(Notifier *notifier, void *data)
         qemu_thread_join(&s->worker);
         s->worker_started = false;
     }
+    if (s->submit_started) {
+        qatomic_set(&s->submit_run, false);
+        qemu_mutex_lock(&s->submit_lock);
+        qemu_cond_signal(&s->submit_cond);
+        qemu_mutex_unlock(&s->submit_lock);
+        qemu_thread_join(&s->submit_worker);
+        s->submit_started = false;
+        if (s->submit_context_handoff &&
+            (SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO) &&
+            SDL_GL_MakeCurrent(s->submit_window,
+                               s->submit_gl_context) < 0) {
+            warn_report("pinball2000: display context restore failed: %s",
+                        SDL_GetError());
+        }
+        g_clear_pointer(&s->submit_staging, g_free);
+    }
+    if (s->profile && s->profile_frames) {
+        info_report("pinball2000: QEMU display profile frames=%llu "
+                    "prepare_avg=%.1fus prepare_max=%.1fus "
+                    "submit_avg=%.1fus submit_max=%.1fus",
+                    (unsigned long long)s->profile_frames,
+                    (double)s->profile_prepare_ns / s->profile_frames / 1000.0,
+                    (double)s->profile_prepare_max_ns / 1000.0,
+                    s->profile_submit_frames ?
+                    (double)s->profile_submit_ns /
+                    s->profile_submit_frames / 1000.0 : 0.0,
+                    (double)s->profile_submit_max_ns / 1000.0);
+    }
 }
 
 static const GraphicHwOps p2k_display_ops = {
@@ -492,21 +694,47 @@ void p2k_install_display(void)
     DisplaySurface *surf;
     const char     *bpp_env = getenv("P2K_DISPLAY_BPP");
     const char     *thread_env = getenv("P2K_FRAMEBUFFER_THREAD");
+    const char     *qemu_fb_env = getenv("P2K_QEMU_FRAMEBUFFER");
+    const char     *qemu_fb_format = getenv("P2K_QEMU_FB_FORMAT");
+    const char     *qemu_fb_async = getenv("P2K_QEMU_FB_ASYNC");
+    const char     *profile_env = getenv("P2K_DISPLAY_PROFILE");
     bool            bpp16   = bpp_env && !strcmp(bpp_env, "16");
 
     qemu_mutex_init(&s_status_lock);
     qemu_mutex_init(&s_disp.frame_lock);
+    qemu_mutex_init(&s_disp.submit_lock);
+    qemu_cond_init(&s_disp.submit_cond);
     s_disp.threaded = thread_env && thread_env[0] == '1';
+    s_disp.qemu_framebuffer = qemu_fb_env && qemu_fb_env[0] == '1';
+    s_disp.qemu_rgb565 = s_disp.qemu_framebuffer && qemu_fb_format &&
+        !strcmp(qemu_fb_format, "565");
+    s_disp.profile = profile_env && profile_env[0] == '1';
+    if (s_disp.qemu_framebuffer && bpp16 && !s_disp.qemu_rgb565) {
+        warn_report("pinball2000: fast QEMU framebuffer ignores 16 bpp; "
+                    "QEMU SDL presents its ARGB surface more efficiently");
+        bpp16 = false;
+    }
+    if (s_disp.qemu_rgb565) {
+        bpp16 = true;
+    }
     s_disp.bpp16 = bpp16;
-    if (s_disp.threaded) {
+    if (s_disp.threaded || s_disp.qemu_framebuffer) {
         s_disp.ram = memory_region_get_ram_ptr(MACHINE(qdev_get_machine())->ram);
         s_disp.gx_regs = p2k_gx_regs_host();
+    }
+    s_disp.exit_notifier.notify = p2k_display_shutdown;
+    qemu_add_exit_notifier(&s_disp.exit_notifier);
+    if (s_disp.qemu_framebuffer) {
+        for (unsigned px = 0; px < G_N_ELEMENTS(s_rgb555_lut); px++) {
+            s_rgb555_lut[px] = rgb555_to_argb(px);
+            s_rgb565_lut[px] = rgb555_to_rgb565(px);
+        }
+    }
+    if (s_disp.threaded) {
         s_disp.worker_run = true;
         s_disp.worker_started = true;
-        s_disp.exit_notifier.notify = p2k_display_shutdown;
         qemu_thread_create(&s_disp.worker, "p2k-sdl-render",
                            p2k_display_worker, &s_disp, QEMU_THREAD_JOINABLE);
-        qemu_add_exit_notifier(&s_disp.exit_notifier);
         info_report("pinball2000: --framebuffer direct SDL renderer started");
         return;
     }
@@ -520,13 +748,32 @@ void p2k_install_display(void)
         size_t   stride = SCREEN_W * sizeof(uint16_t);
         uint8_t *buf    = g_malloc0(stride * SCREEN_H);
         surf = qemu_create_displaysurface_from(SCREEN_W, SCREEN_H,
-                                               PIXMAN_x1r5g5b5,
+                                               s_disp.qemu_rgb565 ?
+                                               PIXMAN_r5g6b5 : PIXMAN_x1r5g5b5,
                                                stride, buf);
-        info_report("pinball2000: display surface = 16 bpp (x1r5g5b5, "
-                    "native source format, no ARGB conversion)");
+        info_report("pinball2000: display surface = 16 bpp (%s%s)",
+                    s_disp.qemu_rgb565 ? "r5g6b5, RGB555 lookup" :
+                    "x1r5g5b5, native source format",
+                    s_disp.qemu_framebuffer ? ", direct RAM copy" : "");
     } else {
         surf = qemu_create_displaysurface(SCREEN_W, SCREEN_H);
+        if (s_disp.qemu_framebuffer) {
+            info_report("pinball2000: fast QEMU framebuffer = direct RAM "
+                        "RGB555 lookup into native ARGB display surface");
+        }
     }
     dpy_gfx_replace_surface(s_disp.con, surf);
+
+    if (s_disp.qemu_framebuffer && qemu_fb_async &&
+        qemu_fb_async[0] == '1') {
+        s_disp.submit_bytes = surface_stride(surf) * surface_height(surf);
+        s_disp.submit_staging = g_malloc0(s_disp.submit_bytes);
+        s_disp.submit_run = true;
+        s_disp.submit_started = true;
+        qemu_thread_create(&s_disp.submit_worker, "p2k-qemu-display",
+                           p2k_qemu_submit_worker, &s_disp,
+                           QEMU_THREAD_JOINABLE);
+        info_report("pinball2000: experimental QEMU async submit started");
+    }
 
 }

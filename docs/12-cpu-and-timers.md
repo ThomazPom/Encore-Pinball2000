@@ -98,7 +98,8 @@ contaminate one another:
    measures host-side DATA traffic and completed PDB05 frames independently.
 
 Both passes apply the same coin-door, credit and volume-button workload before
-30 seconds of guest-time warmup. The benchmark then reports:
+10 seconds of guest-time warmup. Use `--bench-long` to retain 30 seconds of
+post-workload settling for final validation. The benchmark then reports:
 
 - wall time for the guest command `sleep 10`;
 - guest-side IRQ0 delivery, rate and interval distribution;
@@ -109,6 +110,13 @@ Probe code and counters live only in unused guest RAM for the duration of the
 IRQ pass. Update ROMs, saved data and guest files are never changed. Raw logs,
 the assembled probe, memory discovery data and JSON results are retained in the
 printed `/tmp/p2k-bench-*` artifact directory.
+
+The IRQ report includes both raw sigma and `core_sigma`. Raw sigma includes
+every sampled interval and therefore reacts strongly to a single host stall.
+`core_sigma` removes only the slowest 0.1% before calculating sigma; use it
+with p99 for steady jitter, while `worst` retains the excluded tail. At the end
+of the window the monitor stops the vCPU before GDB reads the counters, so GDB
+startup time cannot inflate IRQ delivery.
 
 For normal 100% operation, the most direct check is that XINU `sleep 10` takes
 approximately ten wall seconds after warmup. Boot-time cumulative delivery can

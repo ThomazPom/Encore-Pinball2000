@@ -21,23 +21,31 @@ the `0x40000000` MediaGX windows. The blitter's semantic MMIO overlay begins at
 
 ## Host display
 
-The default 32-bit surface converts guest RGB555 to ARGB8888. `--bpp 16` uses a
-native x1r5g5b5 surface. SDL is the normal desktop backend; GTK is available
-only when the QEMU build was configured with it. `--display none` disables the
-window and desktop input.
+The default desktop path is the direct framebuffer renderer described below.
+The QEMU console's default 32-bit surface converts guest RGB555 to ARGB8888;
+`--bpp 16` uses a native x1r5g5b5 surface. Select QEMU's SDL path explicitly
+with `--display sdl`; GTK is available only when the QEMU build was configured
+with it. `--display none` disables the window and desktop input.
 
-`--framebuffer` is an experimental independent display path. The wrapper gives
-QEMU display `none`; a dedicated SDL thread reads the RAM-backed controller
+`--framebuffer` selects the default independent desktop display path. The
+wrapper gives QEMU display `none`; a dedicated SDL thread reads the RAM-backed controller
 offset and native 640×240 RGB555 framebuffer through direct pointers. SDL
 uploads it with the guest pitch, flips and scales it to 640×480, presents the
 window and forwards its keyboard events to the cabinet-input handler. It does
-not create a QEMU graphics console or call QEMU display APIs. Without the option,
-the established synchronous QEMU console path remains unchanged.
+not create a QEMU graphics console or call QEMU display APIs. An explicit
+`--display <backend>` uses QEMU's synchronous console path instead.
+
+`--qemu-framebuffer` keeps QEMU's console, window and input handling, but reads
+the framebuffer through its RAM pointer and uses a lookup table for RGB555 to
+ARGB conversion. `--qemu-framebuffer-async` additionally submits that surface
+from a worker. The async option requires QEMU's SDL backend; the launcher uses
+accelerated X11 by default. Native Wayland transfers the OpenGL renderer context
+from QEMU's refresh thread to the worker on the first frame; SDL software is the
+compatibility fallback.
 
 > [!NOTE]
 > Host conversion and QEMU presentation are separate costs. Use `--bench` on
-> the target computer to compare the two paths; the worker is intentionally
-> not the default until its tail latency proves consistently better.
+> the target computer to compare the two paths.
 
 The source framebuffer is bottom-up, so vertical flip starts enabled. Press
 `F2` to toggle it. `F3` writes a screenshot under `--screenshot-dir`; the

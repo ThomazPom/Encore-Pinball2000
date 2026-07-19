@@ -196,6 +196,7 @@ def main():
         # likewise turn a bounded conversion into an I/O-heavy job.
         for name in (
             "P2K_FRAMEBUFFER_THREAD", "P2K_FRAMEBUFFER_FULLSCREEN",
+            "P2K_QEMU_FRAMEBUFFER",
             "P2K_DISPLAY_BPP", "P2K_SCREENSHOT_DIR", "P2K_DIAG",
             "P2K_DCS_AUDIO_TRACE", "P2K_DCS_BYTE_TRACE",
             "P2K_DCS_ADSP_TRACE", "P2K_DCS_AUDIO_DUMP",
