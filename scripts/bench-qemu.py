@@ -29,11 +29,16 @@ RING_ENTRIES = 8192
 CLKINT_SIGNATURE = bytes.fromhex("fa60b020e620")
 WARMUP_MARKER = b"__P2K_BENCH_WARM__"
 DONE_MARKER = b"__P2K_BENCH_DONE__"
+QUICK_WARMUP_SECONDS = 10
+LONG_WARMUP_SECONDS = 30
 
 
-def take_internal_options(arguments: list[str]) -> tuple[list[str], bool]:
+def take_internal_options(arguments: list[str]) -> tuple[list[str], bool, int]:
     guest_load = "--bench-guest-load" in arguments
-    return [arg for arg in arguments if arg != "--bench-guest-load"], guest_load
+    long_run = "--bench-long" in arguments
+    internal = {"--bench-guest-load", "--bench-long"}
+    return ([arg for arg in arguments if arg not in internal], guest_load,
+            LONG_WARMUP_SECONDS if long_run else QUICK_WARMUP_SECONDS)
 
 
 def field(line: str, name: str, default: str = "n/a") -> str:
@@ -320,11 +325,13 @@ def probe_stats(start_count: int, end_count: int, elapsed: float,
 
     def percentile(q: float) -> float:
         return scaled[int((len(scaled) - 1) * q)]
+    core_end = max(2, int(len(scaled) * 0.999))
 
     return {
         "samples": delivered, "ring_samples": len(scaled), "rate": rate,
         "delivery": 100.0 * rate / (EXPECTED_IRQ_HZ * target_speed / 100.0),
         "mean": mean_us, "stddev": statistics.pstdev(scaled),
+        "core_stddev": statistics.pstdev(scaled[:core_end]),
         "p50": percentile(0.50), "p95": percentile(0.95),
         "p99": percentile(0.99), "worst": scaled[-1], "elapsed": elapsed,
     }
@@ -350,6 +357,24 @@ def monitor_workload(path: Path) -> None:
             time.sleep(0.5 if index == 0 else 0.3 if index <= 3 else 0.1)
 
 
+def stop_vm(path: Path) -> float:
+    """Stop the vCPU before timestamping the end of an IRQ sample window."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.settimeout(2.0)
+        sock.connect(str(path))
+        try:
+            sock.recv(4096)
+        except socket.timeout:
+            pass
+        sent = time.monotonic()
+        sock.sendall(b"stop\n")
+        response = bytearray()
+        while b"(qemu)" not in response:
+            response.extend(sock.recv(4096))
+        acknowledged = time.monotonic()
+    return (sent + acknowledged) / 2.0
+
+
 def stop_process(process: subprocess.Popen) -> None:
     if process.poll() is not None:
         return
@@ -370,18 +395,21 @@ def launch_command(forwarded: list[str], port: int, monitor: Path,
     ]
 
 
-def warm_guest(console: socket.socket, target_speed: float, monitor: Path) -> None:
+def warm_guest(console: socket.socket, target_speed: float, monitor: Path,
+               warmup_seconds: int) -> None:
     wait_for(console, b"%", 45.0, wake=True)
     # Apply the cabinet workload before warmup. Its key sequence deliberately
     # creates short scheduling/audio disturbances; the measured phase must
     # begin only after those have drained, not in a snapshot crossing them.
     monitor_workload(monitor)
-    console.sendall(b"sleep 30\recho __P2K_BENCH_WARM__\r")
-    wait_for(console, WARMUP_MARKER, max(120.0, 45.0 * 100.0 / target_speed))
+    console.sendall(f"sleep {warmup_seconds}\recho __P2K_BENCH_WARM__\r".encode())
+    wait_for(console, WARMUP_MARKER,
+             max(60.0, (warmup_seconds + 15.0) * 100.0 / target_speed))
 
 
 def run_irq_pass(forwarded: list[str], artifact: Path, template: bytes,
-                 target_speed: float, guest_load: bool) -> tuple[dict, float]:
+                 target_speed: float, guest_load: bool,
+                 warmup_seconds: int) -> tuple[dict, float]:
     port, gdb_port = pick_port(), pick_port()
     monitor = artifact / "monitor.sock"
     log_path = artifact / "encore.log"
@@ -402,7 +430,7 @@ def run_irq_pass(forwarded: list[str], artifact: Path, template: bytes,
             # is explicitly resumed and the probe's later pauses are known.
             gdb(gdb_port, ["detach"])
             with connect_console(port, process, 30.0) as console:
-                warm_guest(console, target_speed, monitor)
+                warm_guest(console, target_speed, monitor, warmup_seconds)
                 if guest_load:
                     build_guest_load(artifact, forwarded, gdb_port)
                     time.sleep(1.0)
@@ -416,7 +444,7 @@ def run_irq_pass(forwarded: list[str], artifact: Path, template: bytes,
                 console.sendall(b"sleep 10\recho __P2K_BENCH_DONE__\r")
                 wait_for(console, DONE_MARKER,
                          max(45.0, 15.0 * 100.0 / target_speed))
-                stopped = time.monotonic()
+                stopped = stop_vm(monitor)
                 end_count, cycles = finish_probe(gdb_port, artifact, handler, original)
                 handler = None
                 elapsed = stopped - started
@@ -433,7 +461,8 @@ def run_irq_pass(forwarded: list[str], artifact: Path, template: bytes,
 
 
 def run_lpt_pass(forwarded: list[str], artifact: Path,
-                 target_speed: float, guest_load: bool) -> tuple[list[str], list[str], float]:
+                 target_speed: float, guest_load: bool,
+                 warmup_seconds: int) -> tuple[list[str], list[str], float]:
     port = pick_port()
     monitor = artifact / "monitor.sock"
     log_path = artifact / "encore.log"
@@ -453,7 +482,7 @@ def run_lpt_pass(forwarded: list[str], artifact: Path,
                 wait_port(gdb_port, process)
                 gdb(gdb_port, ["detach"])
             with connect_console(port, process, 30.0) as console:
-                warm_guest(console, target_speed, monitor)
+                warm_guest(console, target_speed, monitor, warmup_seconds)
                 if guest_load:
                     build_guest_load(artifact, forwarded, gdb_port)
                     time.sleep(1.0)
@@ -462,7 +491,7 @@ def run_lpt_pass(forwarded: list[str], artifact: Path,
                 console.sendall(b"sleep 10\recho __P2K_BENCH_DONE__\r")
                 wait_for(console, DONE_MARKER,
                          max(45.0, 15.0 * 100.0 / target_speed))
-                time.sleep(6.2)
+                time.sleep(3.2)
                 lines = log_path.read_text(errors="replace").splitlines()
                 return boot_lines, lines[len(boot_lines):], boot_wall
         finally:
@@ -547,7 +576,9 @@ def print_irq_preview(irq: dict, sleep_wall: float) -> None:
     print(f"  Guest IRQ rate:        {irq['rate']:.1f}/s "
           f"({irq['samples']} entries)", flush=True)
     print(f"  Guest IRQ intervals:   mean={fmt_us(irq['mean'])} "
-          f"sigma={fmt_us(irq['stddev'])} p50={fmt_us(irq['p50'])} "
+          f"sigma={fmt_us(irq['stddev'])} "
+          f"core_sigma={fmt_us(irq['core_stddev'])} "
+          f"p50={fmt_us(irq['p50'])} "
           f"p95={fmt_us(irq['p95'])} p99={fmt_us(irq['p99'])} "
           f"worst={fmt_us(irq['worst'])}", flush=True)
 
@@ -564,13 +595,14 @@ def write_report(artifact: Path, result: dict) -> None:
         ("cooperative low-priority worker." if result["guest_load"]
          else "normal game workload."),
         "",
-        "| Phase | Speed/delivery | IRQ rate | IRQ sigma | IRQ p99 | IRQ worst | DATA/s | PDB05/s | PDB p99 | PDB worst |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
-        f"| Boot/warmup | {boot['current_delivery']} | — | — | — | "
+        "| Phase | Speed/delivery | IRQ rate | IRQ sigma | IRQ core sigma | IRQ p99 | IRQ worst | DATA/s | PDB05/s | PDB p99 | PDB worst |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        f"| Boot/warmup | {boot['current_delivery']} | — | — | — | — | "
         f"{with_unit(boot['irq_worst'], 'us')} | {boot['data_rate']} | — | — | "
         f"{with_unit(boot['pdb_worst'], 'us')} |",
         f"| Steady state | {irq['delivery']:.2f}% | {irq['rate']:.1f} | "
-        f"{fmt_us(irq['stddev'])} | {fmt_us(irq['p99'])} | "
+        f"{fmt_us(irq['stddev'])} | {fmt_us(irq['core_stddev'])} | "
+        f"{fmt_us(irq['p99'])} | "
         f"{fmt_us(irq['worst'])} | {lpt['data_rate']:.0f} | {lpt['rate']:.0f} | "
         f"{fmt_us(lpt['p99'])} | {fmt_us(lpt['worst'])} |",
         "",
@@ -581,7 +613,7 @@ def write_report(artifact: Path, result: dict) -> None:
 
 
 def main() -> int:
-    forwarded, guest_load = take_internal_options(sys.argv[1:])
+    forwarded, guest_load, warmup_seconds = take_internal_options(sys.argv[1:])
     target_speed = requested_speed(forwarded)
     artifact = Path(tempfile.mkdtemp(prefix="p2k-bench-"))
     irq_dir, lpt_dir = artifact / "irq", artifact / "lpt"
@@ -598,11 +630,11 @@ def main() -> int:
     try:
         template = build_probe(irq_dir)
         irq, sleep_wall = run_irq_pass(forwarded, irq_dir, template, target_speed,
-                                       guest_load)
+                                       guest_load, warmup_seconds)
         print_irq_preview(irq, sleep_wall)
         print("[bench] pass 2/2: unpatched LPT/PDB measurement", flush=True)
         boot_lines, steady_lines, boot_wall = run_lpt_pass(
-            forwarded, lpt_dir, target_speed, guest_load)
+            forwarded, lpt_dir, target_speed, guest_load, warmup_seconds)
         lpt = parse_lpt(steady_lines)
         boot = parse_boot(boot_lines)
     except Exception as error:
@@ -613,6 +645,7 @@ def main() -> int:
     effective = 1000.0 / sleep_wall
     result = {
         "requested_speed": target_speed, "guest_load": guest_load,
+        "warmup_seconds": warmup_seconds,
         "sleep_wall": sleep_wall,
         "effective_speed": effective, "boot_wall": boot_wall,
         "irq": irq, "lpt": lpt, "boot": boot,
@@ -637,12 +670,14 @@ def main() -> int:
     print(f"    LPT DATA rate end:     {boot['data_rate']}/s")
     print(f"    PDB05 worst:           {with_unit(boot['pdb_worst'], 'us')}")
     print("  Steady-state phase:")
-    print("    Warmup completed:      30.000s guest time")
+    print(f"    Warmup completed:      {warmup_seconds:.3f}s guest time")
     print(f"    XINU sleep 10 wall:    {sleep_wall:.3f}s ({effective:.2f}% real-time)")
     print(f"    Guest IRQ delivery:    {irq['delivery']:.2f}%")
     print(f"    Guest IRQ rate:        {irq['rate']:.1f}/s ({irq['samples']} entries)")
     print(f"    Guest IRQ intervals:   mean={fmt_us(irq['mean'])} "
-          f"sigma={fmt_us(irq['stddev'])} p50={fmt_us(irq['p50'])} "
+          f"sigma={fmt_us(irq['stddev'])} "
+          f"core_sigma={fmt_us(irq['core_stddev'])} "
+          f"p50={fmt_us(irq['p50'])} "
           f"p95={fmt_us(irq['p95'])} p99={fmt_us(irq['p99'])} "
           f"worst={fmt_us(irq['worst'])}")
     print(f"    LPT DATA rate:         {lpt['data_rate']:.0f}/s")

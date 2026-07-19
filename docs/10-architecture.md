@@ -55,10 +55,10 @@ and real-mode option-ROM discovery.
 
 ## Compatibility support
 
-The fixed PCI responder supplies the board topology read by the software. A
-signature-gated correction changes the known 4 MiB `mem_detect` result to the
-usable memory size. In base-ROM mode, a probe-cell helper supplies the staged
-values used during DCS detection.
+The fixed PCI responder supplies the board topology read by the software. An
+opt-in compatibility override can expand XINU's native 4 MiB memory ceiling
+when diagnosing an older update. In base-ROM mode, a probe-cell helper supplies
+the staged values used during DCS detection.
 
 Details: [compatibility support](30-compatibility-support.md),
 [`qemu/` source map](../qemu/README.md), and

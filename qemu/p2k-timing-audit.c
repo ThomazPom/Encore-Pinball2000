@@ -194,6 +194,177 @@ static P2KDwell p2k_dw_pdb05_wall_delta;
 static P2KDwell p2k_dw_pdb05_vtime_total;
 static P2KDwell p2k_dw_pdb05_vtime_delta;
 
+/* Opt-in rare PDB-gap recorder. No event is printed on the hot path: the
+ * fixed ring is dumped only at exit, so profiling cannot manufacture the
+ * next gap through stderr I/O. Thread/process CPU clocks distinguish a vCPU
+ * that was executing from one that was descheduled or blocked. */
+#define P2K_PDB_GAP_EVENTS 64u
+typedef struct P2KPdbGapEvent {
+    uint64_t at_wall_us;
+    uint64_t wall_us;
+    uint64_t vtime_us;
+    uint64_t thread_cpu_us;
+    uint64_t process_cpu_us;
+    uint64_t irq_raised;
+    uint64_t irq_serviced;
+    uint64_t eoi_seen;
+    uint64_t data_writes;
+    uint64_t dispatches;
+    uint64_t frames;
+    uint32_t eip;
+    uint32_t esp;
+    uint32_t eflags;
+    uint32_t interrupt_request;
+    uint8_t imr;
+    uint8_t irr;
+    uint8_t isr;
+    bool halted;
+    bool in_clkint;
+    P2KDcsProfileSnapshot dcs;
+} P2KPdbGapEvent;
+
+static bool p2k_pdb_gap_profile_enabled;
+static uint64_t p2k_pdb_gap_threshold_us = 1000;
+static uint64_t p2k_pdb_gap_after_us;
+static uint64_t p2k_pdb_gap_thread_cpu_last_us;
+static uint64_t p2k_pdb_gap_process_cpu_last_us;
+static uint64_t p2k_pdb_gap_irq_raised_last;
+static uint64_t p2k_pdb_gap_irq_serviced_last;
+static uint64_t p2k_pdb_gap_eoi_last;
+static uint64_t p2k_pdb_gap_data_last;
+static uint64_t p2k_pdb_gap_dispatch_last;
+static uint64_t p2k_pdb_gap_frames_last;
+static P2KPdbGapEvent p2k_pdb_gap_events[P2K_PDB_GAP_EVENTS];
+static unsigned p2k_pdb_gap_event_count;
+static uint64_t p2k_pdb_gap_observed;
+
+static uint64_t p2k_cpu_clock_us(clockid_t clock_id)
+{
+    struct timespec ts;
+    if (clock_gettime(clock_id, &ts) != 0) {
+        return 0;
+    }
+    return (uint64_t)ts.tv_sec * 1000000ull +
+           (uint64_t)ts.tv_nsec / 1000ull;
+}
+
+static void p2k_pdb_gap_record(uint64_t wall_us, uint64_t vtime_us,
+                               int64_t now_w)
+{
+    uint64_t thread_cpu_us = 0;
+    uint64_t process_cpu_us = 0;
+#ifdef CLOCK_THREAD_CPUTIME_ID
+    thread_cpu_us = p2k_cpu_clock_us(CLOCK_THREAD_CPUTIME_ID);
+#endif
+#ifdef CLOCK_PROCESS_CPUTIME_ID
+    process_cpu_us = p2k_cpu_clock_us(CLOCK_PROCESS_CPUTIME_ID);
+#endif
+
+    uint64_t irq_raised = p2k_audit_irq0_raised;
+    uint64_t irq_serviced = p2k_audit_clkint_entered;
+    uint64_t eoi_seen = p2k_audit_eoi_seen;
+    uint64_t data_writes = p2k_lpt_get_data_writes();
+    uint64_t dispatches = p2k_lpt_get_dispatches();
+    uint64_t frames = p2k_display_get_frames();
+
+    bool eligible = p2k_audit_arm_wall_ns &&
+        (uint64_t)(now_w - p2k_audit_arm_wall_ns) >= p2k_pdb_gap_after_us * 1000ull;
+    if (eligible && wall_us >= p2k_pdb_gap_threshold_us) {
+        p2k_pdb_gap_observed++;
+        if (p2k_pdb_gap_event_count < P2K_PDB_GAP_EVENTS) {
+            P2KPdbGapEvent *event =
+                &p2k_pdb_gap_events[p2k_pdb_gap_event_count++];
+            event->at_wall_us = (now_w - p2k_audit_arm_wall_ns) / 1000ull;
+            event->wall_us = wall_us;
+            event->vtime_us = vtime_us;
+            event->thread_cpu_us = p2k_pdb_gap_thread_cpu_last_us
+                ? thread_cpu_us - p2k_pdb_gap_thread_cpu_last_us : 0;
+            event->process_cpu_us = p2k_pdb_gap_process_cpu_last_us
+                ? process_cpu_us - p2k_pdb_gap_process_cpu_last_us : 0;
+            event->irq_raised = irq_raised - p2k_pdb_gap_irq_raised_last;
+            event->irq_serviced = irq_serviced - p2k_pdb_gap_irq_serviced_last;
+            event->eoi_seen = eoi_seen - p2k_pdb_gap_eoi_last;
+            event->data_writes = data_writes - p2k_pdb_gap_data_last;
+            event->dispatches = dispatches - p2k_pdb_gap_dispatch_last;
+            event->frames = frames - p2k_pdb_gap_frames_last;
+            event->in_clkint = p2k_in_clkint;
+
+            CPUState *cs = qemu_get_cpu(0);
+            if (cs) {
+                CPUX86State *env = &X86_CPU(cs)->env;
+                event->eip = env->eip;
+                event->esp = env->regs[R_ESP];
+                event->eflags = env->eflags;
+                event->interrupt_request = cs->interrupt_request;
+                event->halted = cs->halted != 0;
+            }
+            if (isa_pic) {
+                PICCommonState *m = (PICCommonState *)isa_pic;
+                event->imr = m->imr;
+                event->irr = m->irr;
+                event->isr = m->isr;
+            }
+            p2k_dcs_adsp_profile_snapshot(&event->dcs);
+        }
+    }
+
+    p2k_pdb_gap_thread_cpu_last_us = thread_cpu_us;
+    p2k_pdb_gap_process_cpu_last_us = process_cpu_us;
+    p2k_pdb_gap_irq_raised_last = irq_raised;
+    p2k_pdb_gap_irq_serviced_last = irq_serviced;
+    p2k_pdb_gap_eoi_last = eoi_seen;
+    p2k_pdb_gap_data_last = data_writes;
+    p2k_pdb_gap_dispatch_last = dispatches;
+    p2k_pdb_gap_frames_last = frames;
+}
+
+static void p2k_pdb_gap_profile_dump(void)
+{
+    if (!p2k_pdb_gap_profile_enabled) {
+        return;
+    }
+    info_report("p2k-pdb-gap-profile threshold=%lluus after=%lluus "
+                "observed=%llu stored=%u",
+                (unsigned long long)p2k_pdb_gap_threshold_us,
+                (unsigned long long)p2k_pdb_gap_after_us,
+                (unsigned long long)p2k_pdb_gap_observed,
+                p2k_pdb_gap_event_count);
+    for (unsigned i = 0; i < p2k_pdb_gap_event_count; i++) {
+        const P2KPdbGapEvent *e = &p2k_pdb_gap_events[i];
+        int64_t host_wait_us = (int64_t)e->wall_us -
+                               (int64_t)e->thread_cpu_us;
+        info_report("p2k-pdb-gap #%u at=%.3fms wall=%lluus vtime=%lluus "
+                    "vcpu=%lluus process=%lluus host_wait=%lldus "
+                    "irq=%llu/%llu eoi=%llu data=%llu dispatch=%llu frames=%llu "
+                    "eip=%08x esp=%08x flags=%08x halted=%d in_clkint=%d "
+                    "imr=%02x irr=%02x isr=%02x ireq=%08x "
+                    "dcs=%d state_busy=%d core_busy=%d worker=%d/%d "
+                    "host_boot=%d hybrid=%d commands=%u ring=%u rate=%d "
+                    "cycles=%llu pcm=%llu",
+                    i, e->at_wall_us / 1000.0,
+                    (unsigned long long)e->wall_us,
+                    (unsigned long long)e->vtime_us,
+                    (unsigned long long)e->thread_cpu_us,
+                    (unsigned long long)e->process_cpu_us,
+                    (long long)host_wait_us,
+                    (unsigned long long)e->irq_raised,
+                    (unsigned long long)e->irq_serviced,
+                    (unsigned long long)e->eoi_seen,
+                    (unsigned long long)e->data_writes,
+                    (unsigned long long)e->dispatches,
+                    (unsigned long long)e->frames,
+                    e->eip, e->esp, e->eflags, e->halted, e->in_clkint,
+                    e->imr, e->irr, e->isr, e->interrupt_request,
+                    e->dcs.available, e->dcs.state_lock_busy,
+                    e->dcs.core_lock_busy, e->dcs.worker_started,
+                    e->dcs.worker_run, e->dcs.host_boot,
+                    e->dcs.hybrid_engine, e->dcs.command_count,
+                    e->dcs.ring_frames, e->dcs.output_rate,
+                    (unsigned long long)e->dcs.cycles,
+                    (unsigned long long)e->dcs.pcm_frames);
+    }
+}
+
 /* XINU time-advance / drift tracking (synthetic).
  *
  * The guest's tick count is incremented once per IRQ0 service, i.e.
@@ -494,15 +665,20 @@ void p2k_timing_audit_note_pdb05(void)
 {
     int64_t now_v = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     int64_t now_w = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+    uint64_t gap_v_us = 0;
+    uint64_t gap_w_us = 0;
     if (p2k_audit_pdb05_last_vtime_ns != 0 && now_v > p2k_audit_pdb05_last_vtime_ns) {
-        uint64_t gap_v_us = (uint64_t)(now_v - p2k_audit_pdb05_last_vtime_ns) / 1000ull;
+        gap_v_us = (uint64_t)(now_v - p2k_audit_pdb05_last_vtime_ns) / 1000ull;
         p2k_dwell_push(&p2k_dw_pdb05_vtime_total, gap_v_us);
         p2k_dwell_push(&p2k_dw_pdb05_vtime_delta, gap_v_us);
     }
     if (p2k_audit_pdb05_last_wall_ns != 0 && now_w > p2k_audit_pdb05_last_wall_ns) {
-        uint64_t gap_w_us = (uint64_t)(now_w - p2k_audit_pdb05_last_wall_ns) / 1000ull;
+        gap_w_us = (uint64_t)(now_w - p2k_audit_pdb05_last_wall_ns) / 1000ull;
         p2k_dwell_push(&p2k_dw_pdb05_wall_total, gap_w_us);
         p2k_dwell_push(&p2k_dw_pdb05_wall_delta, gap_w_us);
+    }
+    if (p2k_pdb_gap_profile_enabled && gap_w_us) {
+        p2k_pdb_gap_record(gap_w_us, gap_v_us, now_w);
     }
     p2k_audit_pdb05_last_vtime_ns = now_v;
     p2k_audit_pdb05_last_wall_ns  = now_w;
@@ -1104,6 +1280,9 @@ static void p2k_audit_emit(const char *tag)
 
     p2k_audit_seq++;
     p2k_stall_profile_dump();
+    if (strcmp(tag, "exit") == 0) {
+        p2k_pdb_gap_profile_dump();
+    }
 }
 
 static void p2k_audit_tick(void *opaque)
@@ -1138,6 +1317,28 @@ void p2k_install_timing_audit(Pinball2000MachineState *s)
     p2k_audit_arm_wall_ns  = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
     p2k_audit_arm_vtime_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     p2k_audit_periodic     = p2k_audit_env_truthy("P2K_DIAG");
+    p2k_pdb_gap_profile_enabled =
+        p2k_audit_env_truthy("P2K_PROFILE_PDB_GAPS");
+    if (p2k_pdb_gap_profile_enabled) {
+        const char *threshold = getenv("P2K_PROFILE_PDB_GAP_US");
+        const char *after = getenv("P2K_PROFILE_PDB_AFTER_MS");
+        if (threshold && *threshold) {
+            uint64_t value = strtoull(threshold, NULL, 0);
+            if (value >= 250 && value <= 1000000) {
+                p2k_pdb_gap_threshold_us = value;
+            }
+        }
+        if (after && *after) {
+            uint64_t value = strtoull(after, NULL, 0);
+            if (value <= 3600000) {
+                p2k_pdb_gap_after_us = value * 1000ull;
+            }
+        }
+        info_report("pinball2000: PDB-gap profiler armed "
+                    "(threshold=%lluus after=%llums, exit-only dump)",
+                    (unsigned long long)p2k_pdb_gap_threshold_us,
+                    (unsigned long long)(p2k_pdb_gap_after_us / 1000ull));
+    }
     p2k_audit_timer        = timer_new_ns(QEMU_CLOCK_VIRTUAL,
                                           p2k_audit_tick, NULL);
     p2k_pit_deadline_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,

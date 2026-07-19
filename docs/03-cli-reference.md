@@ -25,21 +25,25 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--no-savedata` | — | off | Exports `P2K_NO_SAVEDATA=1` and runs from a fresh throwaway cwd with no `savedata/` subdir; savedata seeds are skipped and exit writes are discarded. | `scripts/run-qemu.sh --no-savedata` |
 | `--fresh` | — | off | Ignores existing saved device files for this boot, then replaces them with the newly initialized state on clean exit. | `scripts/run-qemu.sh --fresh` |
 | `--update` | spec | `auto` | Selects update bundle: `auto`, `latest`, `none`, version token, or explicit inner bundle dir. | `scripts/run-qemu.sh --update 0210` |
-| `--display` | backend | `sdl` if desktop, else `none` | Validates against `qemu-system-i386 -display help` and passes QEMU `-display`. | `scripts/run-qemu.sh --display gtk` |
+| `--display` | backend | direct framebuffer on desktop, else `none` | Explicitly selects a QEMU display backend, validates it against `qemu-system-i386 -display help`, and disables the default direct renderer. | `scripts/run-qemu.sh --display gtk` |
 | `--headless` | — | off | Shortcut for display `none` plus serial stdio unless `--uart-quiet` is used. Promotes verbosity to at least `-v`. | `scripts/run-qemu.sh --headless --game swe1` |
 | `--fullscreen` | — | off | Adds QEMU `-full-screen`; ignored with `--display none`. | `scripts/run-qemu.sh --fullscreen` |
 | `--bpp` | `16` \| `32` | `32` | `16` exports `P2K_DISPLAY_BPP=16` for native x1r5g5b5; `32` keeps ARGB8888 path. | `scripts/run-qemu.sh --bpp 16` |
-| `--framebuffer` | — | off | Runs QEMU with display `none` and gives a dedicated SDL thread direct access to the native 640×240 RGB555 framebuffer. SDL scales it to the window; presentation and input bypass QEMU's display backend. Experimental A/B option. | `scripts/run-qemu.sh --framebuffer` |
+| `--framebuffer` | — | on for desktop auto-selection | Runs QEMU with display `none` and gives a dedicated SDL thread direct access to the native 640×240 RGB555 framebuffer. SDL scales it to the window; presentation and input bypass QEMU's display backend. | `scripts/run-qemu.sh --framebuffer` |
+| `--qemu-framebuffer` | — | off | Keeps the selected QEMU display backend, but reads RGB555 directly from guest RAM and expands it through a lookup table into QEMU's preferred ARGB surface instead of using address-space reads. Experimental A/B option. | `scripts/run-qemu.sh --qemu-framebuffer` |
+| `--qemu-framebuffer-async` | — | off | Adds worker-thread QEMU-surface submission to `--qemu-framebuffer`. It requires QEMU's SDL display. OpenGL-backed renderers transfer their context to the worker on the first refresh. Experimental A/B option. | `scripts/run-qemu.sh --qemu-framebuffer-async` |
+| `--qemu-framebuffer-async-driver` | `auto` \| `wayland` \| `x11` \| `software` | `auto` | Selects the SDL presentation path used by `--qemu-framebuffer-async`. `auto` prefers accelerated X11 and otherwise uses software SDL; `wayland` exercises the native accelerated context-handoff path. | `scripts/run-qemu.sh --qemu-framebuffer-async --qemu-framebuffer-async-driver wayland` |
 | `--audio` | `auto` \| `none` \| QEMU audio driver | `auto` | Autodetects the first QEMU-supported/host-available backend in order: `sdl`, `pa`, `alsa`, `oss`, `sndio`, `dbus`; falls back to `none` with a warning. Explicit backends are validated against QEMU `-audio help`. | `scripts/run-qemu.sh --audio alsa` |
 | `--no-audio` | — | off | Forces DCS audio off; overrides `--audio`. | `scripts/run-qemu.sh --no-audio` |
 | `--speed-target` | percent | `100` | Deliberate XINU game-clock speed from 25 through 300. Scales PIT and/or HOTLOOP according to timing mode. | `scripts/run-qemu.sh --speed-target 75` |
 | `--strict` | — | off | Disables HOTLOOP and uses the natural i8254/i8259 IRQ0 path. Intended for diagnostic comparison. | `scripts/run-qemu.sh --strict` |
 | `--with-pit` | — | off | Runs adaptive HOTLOOP together with the natural PIT. | `scripts/run-qemu.sh --with-pit` |
-| `--bench` | — | off | Runs isolated guest-IRQ and LPT/PDB passes after cabinet input and 30 seconds of guest warmup. The first pass temporarily probes XINU's live `clkint` entry in RAM; the second is completely unpatched. Requires `gdb`, `as`, `ld`, and `objcopy`. | `scripts/run-qemu.sh --bench` |
+| `--bench` | — | off | Runs isolated guest-IRQ and LPT/PDB passes after cabinet input and 10 seconds of guest warmup. The first pass temporarily probes XINU's live `clkint` entry in RAM; the second is completely unpatched. Requires `gdb`, `as`, `ld`, and `objcopy`. | `scripts/run-qemu.sh --bench` |
+| `--bench-long` | — | off | With `--bench`, uses the former 30-second warmup for final validation. It does not change the measured window. | `scripts/run-qemu.sh --bench --bench-long` |
 
 | `--pb2kslib` | path | `<roms>/<game>_sound.bin` lookup in machine | Exports `P2K_PB2KSLIB` to override the pb2kslib container. | `scripts/run-qemu.sh --pb2kslib ./roms/swe1_sound.bin` |
-| `--dcs-engine` | `pb2kslib` \| `pb2kslib-adsp` \| `adsp` \| `adsp-thread` \| `adsp-clock-thread` | `adsp-clock-thread` | Selects extracted samples, persistent PCM generated by the native DSP, synchronous native ADSP, the condition-driven native ADSP worker, or the fixed-slice native ADSP producer. Missing native assets fall back to `pb2kslib`. | `scripts/run-qemu.sh --dcs-engine adsp-thread` |
-| `--dcs-pcm-cpu` | logical CPU | unset | Pins the native ADSP worker used by `adsp-thread` or `adsp-clock-thread`. Experimental and Linux-only; validate on the target host. | `scripts/run-qemu.sh --dcs-pcm-cpu 2` |
+| `--dcs-engine` | `pb2kslib` \| `pb2kslib-adsp` \| `adsp` \| `adsp-thread` \| `adsp-clock-thread` \| `adsp-hybrid-thread` | `adsp-hybrid-thread` | Selects extracted samples, persistent PCM generated by the native DSP, synchronous native ADSP, the condition-driven worker, the fixed-slice producer, or the event-gated hybrid. Missing native assets fall back to `pb2kslib`. | `scripts/run-qemu.sh --dcs-engine adsp-thread` |
+| `--dcs-pcm-cpu` | logical CPU | unset | Pins the native ADSP worker used by `adsp-thread`, `adsp-clock-thread`, or `adsp-hybrid-thread`. Experimental and Linux-only; validate on the target host. | `scripts/run-qemu.sh --dcs-pcm-cpu 2` |
 | `--clear-pb2kslib-cache` | flag | off | Deletes the persistent `pb2kslib-adsp` PCM cache before launch so it is generated again. | `scripts/run-qemu.sh --dcs-engine pb2kslib-adsp --clear-pb2kslib-cache` |
 | `--pb2kslib-cache-workers` | `1..32` | `6` | Sets the number of concurrent headless QEMU/DSP slots. Each slot consumes short fresh-DSP jobs; their PCM is merged before launch. `1` keeps generation in the game window. | `scripts/run-qemu.sh --dcs-engine pb2kslib-adsp --pb2kslib-cache-workers 8` |
 | `--dcs-sound-flash` | path | auto from selected update or ROM directory | Selects the 1 MiB sound-flash image used by a native ADSP engine. | `scripts/run-qemu.sh --dcs-engine adsp --dcs-sound-flash ./roms/swe1_28f800.rom` |
@@ -106,7 +110,8 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 
 | Mode | When to use | Notes |
 |---|---|---|
-| `sdl` | Normal desktop play/testing | Default when `DISPLAY` or `WAYLAND_DISPLAY` exists. Wrapper adds `show-cursor=on,grab-on-hover=off` unless already specified. |
+| direct framebuffer | Normal desktop play/testing | Default when `DISPLAY` or `WAYLAND_DISPLAY` exists. A dedicated SDL thread presents guest RGB555 RAM directly. |
+| `sdl` | Explicit QEMU display path | Select with `--display sdl`; wrapper adds `show-cursor=on,grab-on-hover=off` unless already specified. |
 | `gtk` | Desktop testing with GTK UI | Only if QEMU was built with GTK; install `libgtk-3-dev` before `scripts/build-qemu.sh`. |
 | `none` | CI, serial-only, or diagnostics | No graphics window. Combine with `--uart-tcp`, `--serial-tcp`, or `--headless` for observability. |
 | other QEMU backends | Advanced QEMU use | Accepted only if listed by `qemu-system-i386 -display help`. |

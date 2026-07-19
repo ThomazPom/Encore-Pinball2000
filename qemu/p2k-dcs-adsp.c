@@ -25,6 +25,9 @@
 #define P2K_DCS_U110_WORD_OFFSET 0x400000
 #define ADSP_CLOCK_RING_FRAMES   4096
 #define ADSP_CLOCK_SLICE_FRAMES  2
+#define ADSP_HYBRID_SLICE_FRAMES 8
+#define ADSP_HYBRID_LOW_FRAMES   512
+#define ADSP_HYBRID_HIGH_FRAMES  1024
 
 static uint8_t *s_sound_flash;
 static char s_sound_flash_path[1024];
@@ -80,6 +83,7 @@ typedef struct {
     bool worker_run;
     bool threaded_engine;
     bool clock_thread_engine;
+    bool hybrid_thread_engine;
     int16_t clock_ring[ADSP_CLOCK_RING_FRAMES * 2];
     unsigned clock_ring_head;
     unsigned clock_ring_count;
@@ -96,6 +100,36 @@ static void adsp_render_direct(int16_t *samples, int frames, int output_rate);
 static Notifier adsp_exit_notifier = {
     .notify = adsp_worker_shutdown,
 };
+
+void p2k_dcs_adsp_profile_snapshot(P2KDcsProfileSnapshot *snapshot)
+{
+    memset(snapshot, 0, sizeof(*snapshot));
+    snapshot->available = s_adsp.initialized;
+    if (!snapshot->available) {
+        return;
+    }
+
+    if (qemu_mutex_trylock(&s_adsp.lock) != 0) {
+        snapshot->state_lock_busy = true;
+        return;
+    }
+    snapshot->worker_started = s_adsp.worker_started;
+    snapshot->worker_run = s_adsp.worker_run;
+    snapshot->host_boot = s_adsp.host_boot;
+    snapshot->hybrid_engine = s_adsp.hybrid_thread_engine;
+    snapshot->command_count = s_adsp.command_count;
+    snapshot->ring_frames = s_adsp.clock_ring_count;
+    snapshot->output_rate = s_adsp.clock_output_rate;
+
+    if (qemu_mutex_trylock(&s_adsp.core_lock) != 0) {
+        snapshot->core_lock_busy = true;
+    } else {
+        snapshot->cycles = s_adsp.cycles;
+        snapshot->pcm_frames = s_adsp.pcm_frames;
+        qemu_mutex_unlock(&s_adsp.core_lock);
+    }
+    qemu_mutex_unlock(&s_adsp.lock);
+}
 
 /* Caller holds s_adsp.lock. Diagnostic commands retain their established
  * synchronous response loop and must never be stolen by the worker. */
@@ -575,12 +609,17 @@ bool p2k_dcs_adsp_prepare(Pinball2000MachineState *s)
     p2k_adsp2105_reset();
     s_adsp.initialized = true;
     const char *engine = getenv("P2K_DCS_ENGINE");
-    s_adsp.threaded_engine = !engine || !*engine ||
-                             !strcmp(engine, "adsp-thread") ||
+    if (!engine || !*engine) {
+        engine = "adsp-hybrid-thread";
+    }
+    s_adsp.threaded_engine = !strcmp(engine, "adsp-thread") ||
                              !strcmp(engine, "adsp-clock-thread") ||
+                             !strcmp(engine, "adsp-hybrid-thread") ||
                              !strcmp(engine, "pb2kslib-adsp");
     s_adsp.clock_thread_engine = engine &&
                                  !strcmp(engine, "adsp-clock-thread");
+    s_adsp.hybrid_thread_engine = engine &&
+                                  !strcmp(engine, "adsp-hybrid-thread");
     snprintf(s_sound_flash_path, sizeof(s_sound_flash_path), "%s", path);
     info_report("dcs-adsp: original assets ready (u109/u110=%u MiB, "
                 "sound-flash=%s, %u KiB)",
@@ -756,6 +795,65 @@ static void *adsp_mailbox_worker(void *opaque)
         }
     }
 #endif
+    if (s_adsp.hybrid_thread_engine) {
+        const struct timespec refill_yield = { .tv_sec = 0, .tv_nsec = 250 };
+        for (;;) {
+            qemu_mutex_lock(&s_adsp.lock);
+            while (s_adsp.worker_run &&
+                   !adsp_worker_has_command() &&
+                   (s_adsp.clock_output_rate <= 0 ||
+                    s_adsp.clock_ring_count > ADSP_HYBRID_LOW_FRAMES)) {
+                qemu_cond_wait(&s_adsp.worker_cond, &s_adsp.lock);
+            }
+            bool run = s_adsp.worker_run;
+            int output_rate = s_adsp.clock_output_rate;
+            qemu_mutex_unlock(&s_adsp.lock);
+            if (!run) {
+                break;
+            }
+
+            if (output_rate > 0) {
+                for (;;) {
+                    int16_t slice[ADSP_HYBRID_SLICE_FRAMES * 2];
+                    adsp_render_direct(slice, ADSP_HYBRID_SLICE_FRAMES,
+                                       output_rate);
+                    qemu_mutex_lock(&s_adsp.lock);
+                    if (!s_adsp.host_boot && s_adsp.clock_ring_count <=
+                        ADSP_CLOCK_RING_FRAMES - ADSP_HYBRID_SLICE_FRAMES) {
+                        unsigned tail = (s_adsp.clock_ring_head +
+                                         s_adsp.clock_ring_count) %
+                                        ADSP_CLOCK_RING_FRAMES;
+                        for (unsigned i = 0;
+                             i < ADSP_HYBRID_SLICE_FRAMES; i++) {
+                            unsigned dst = (tail + i) %
+                                           ADSP_CLOCK_RING_FRAMES;
+                            s_adsp.clock_ring[dst * 2] = slice[i * 2];
+                            s_adsp.clock_ring[dst * 2 + 1] =
+                                slice[i * 2 + 1];
+                        }
+                        s_adsp.clock_ring_count += ADSP_HYBRID_SLICE_FRAMES;
+                    }
+                    bool keep_running = s_adsp.worker_run;
+                    bool mailbox_pending = adsp_worker_has_command();
+                    bool needs_pcm = s_adsp.clock_ring_count <
+                                     ADSP_HYBRID_HIGH_FRAMES;
+                    output_rate = s_adsp.clock_output_rate;
+                    qemu_mutex_unlock(&s_adsp.lock);
+                    if (!keep_running || output_rate <= 0 ||
+                        (!mailbox_pending && !needs_pcm)) {
+                        break;
+                    }
+                    nanosleep(&refill_yield, NULL);
+                }
+            } else {
+                qemu_mutex_lock(&s_adsp.core_lock);
+                p2k_adsp2105_execute(500);
+                s_adsp.cycles += 500;
+                qemu_mutex_unlock(&s_adsp.core_lock);
+            }
+        }
+        return NULL;
+    }
     if (s_adsp.clock_thread_engine) {
         const struct timespec yield_time = { .tv_sec = 0, .tv_nsec = 250 };
         for (;;) {
@@ -1052,7 +1150,8 @@ static void adsp_render_direct(int16_t *samples, int frames, int output_rate)
 
 void p2k_dcs_adsp_render(int16_t *samples, int frames, int output_rate)
 {
-    if (!s_adsp.clock_thread_engine || !s_adsp.worker_started) {
+    if ((!s_adsp.clock_thread_engine && !s_adsp.hybrid_thread_engine) ||
+        !s_adsp.worker_started) {
         adsp_render_direct(samples, frames, output_rate);
         return;
     }

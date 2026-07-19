@@ -97,8 +97,8 @@ Not every file in this directory is a complete chip model:
 - `p2k-pci.c` provides the fixed configuration-space topology the software
   uses to find already mapped devices. Replacing it with QEMU PCI devices is a
   large structural change and currently offers no cabinet or runtime benefit.
-- `p2k-mem-detect.c` performs one signature-matched memory-size correction for
-  affected software versions.
+- `p2k-mem-detect.c` retains an opt-in, signature-matched XINU memory-size
+  override (`P2K_MEM_DETECT_PATCH=1`) for diagnosing older updates.
 - `p2k-probe-cell-shim.c` performs a bounded base-ROM-only compatibility
   update; normal update boots do not activate it.
 - `p2k-plx-regs.c` and the ISA, SuperIO and GX files model the behavior used by
