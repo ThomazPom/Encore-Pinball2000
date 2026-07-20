@@ -75,6 +75,7 @@ typedef struct P2KDisplayState {
     bool           submit_pending;
     bool           submit_context_checked;
     bool           submit_context_handoff;
+    int            screenshot_pending;
     uint8_t       *submit_staging;
     size_t         submit_bytes;
     SDL_Window    *submit_window;
@@ -304,6 +305,31 @@ static int p2k_sdl_qcode(SDL_Keycode sym)
     case SDLK_DOWN: return Q_KEY_CODE_DOWN;
     case SDLK_KP_MINUS: return Q_KEY_CODE_KP_SUBTRACT;
     case SDLK_KP_PLUS: return Q_KEY_CODE_KP_ADD;
+    case SDLK_KP_0: return Q_KEY_CODE_KP_0;
+    case SDLK_KP_1: return Q_KEY_CODE_KP_1;
+    case SDLK_KP_2: return Q_KEY_CODE_KP_2;
+    case SDLK_KP_3: return Q_KEY_CODE_KP_3;
+    case SDLK_KP_4: return Q_KEY_CODE_KP_4;
+    case SDLK_KP_5: return Q_KEY_CODE_KP_5;
+    case SDLK_KP_6: return Q_KEY_CODE_KP_6;
+    case SDLK_KP_7: return Q_KEY_CODE_KP_7;
+    case SDLK_KP_8: return Q_KEY_CODE_KP_8;
+    case SDLK_KP_9: return Q_KEY_CODE_KP_9;
+    case SDLK_0: return Q_KEY_CODE_0;
+    case SDLK_1: return Q_KEY_CODE_1;
+    case SDLK_2: return Q_KEY_CODE_2;
+    case SDLK_3: return Q_KEY_CODE_3;
+    case SDLK_4: return Q_KEY_CODE_4;
+    case SDLK_5: return Q_KEY_CODE_5;
+    case SDLK_6: return Q_KEY_CODE_6;
+    case SDLK_7: return Q_KEY_CODE_7;
+    case SDLK_8: return Q_KEY_CODE_8;
+    case SDLK_9: return Q_KEY_CODE_9;
+    case SDLK_LCTRL: return Q_KEY_CODE_CTRL;
+    case SDLK_RCTRL: return Q_KEY_CODE_CTRL_R;
+    case SDLK_LALT: return Q_KEY_CODE_ALT;
+    case SDLK_RALT: return Q_KEY_CODE_ALT_R;
+    case SDLK_f: return Q_KEY_CODE_F;
     case SDLK_EQUALS: return Q_KEY_CODE_EQUAL;
     case SDLK_SPACE: return Q_KEY_CODE_SPC;
     case SDLK_s: return Q_KEY_CODE_S;
@@ -383,6 +409,15 @@ done:
     if (shot) {
         SDL_FreeSurface(shot);
     }
+}
+
+bool p2k_display_request_screenshot(void)
+{
+    if (!s_disp.threaded || !qatomic_read(&s_disp.worker_run)) {
+        return false;
+    }
+    qatomic_set(&s_disp.screenshot_pending, 1);
+    return true;
 }
 
 static void p2k_sdl_events(P2KDisplayState *s)
@@ -481,6 +516,9 @@ static void *p2k_display_worker(void *opaque)
                          flip_y ? SDL_FLIP_VERTICAL : SDL_FLIP_NONE);
         draw_status_sdl(s);
         SDL_RenderPresent(s->renderer);
+        if (qatomic_xchg(&s->screenshot_pending, 0)) {
+            p2k_sdl_screenshot(s);
+        }
         qatomic_inc(&s_disp_frames);
         g_usleep(16000);
     }

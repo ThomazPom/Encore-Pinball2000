@@ -19,6 +19,21 @@ to XINA.
 | `F1` | Request a clean shutdown |
 | `Ctrl+Alt+F` | Toggle SDL fullscreen through QEMU |
 
+## Any matrix switch
+
+Encore accepts standard two-digit matrix switch numbers. The first digit is
+the column and the second is the row; both range from 1 through 8.
+
+1. Type the two-digit switch number on the number row or keypad.
+2. Press and hold `Ctrl` to close that switch.
+3. Release `Ctrl` to open it again.
+
+The switch remains closed for the real duration of the Ctrl press. The number
+stays selected, so another Ctrl hold repeats the same switch. For example, type
+`13`, hold Ctrl for three seconds, release it, then hold Ctrl again whenever
+Start should be pressed again. Typing another two-digit number replaces the
+selection; digits must be from 1 through 8.
+
 ## Coin-door service panel
 
 Open the coin door with `F4` before using service volume and menu controls.

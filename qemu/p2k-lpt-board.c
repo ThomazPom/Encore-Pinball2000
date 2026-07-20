@@ -22,6 +22,7 @@
  *   Space / S       Start button              (col 0 bit 2 of opcode 0x04)
  *   F10 / C         coin slot 1               (Physical[8] bit 0)
  *   F12             dump LPT state to stderr
+ *   NN, hold Ctrl   select matrix switch NN, hold it while Ctrl is held
  *
  * Hooked through QEMU's input subsystem (`qemu_input_handler_register`)
  * so it works with -display sdl / gtk and the QEMU monitor `sendkey`
@@ -36,6 +37,7 @@
 #include "ui/console.h"
 #include "ui/surface.h"
 #include "system/runstate.h"
+#include "qemu/timer.h"
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -190,6 +192,13 @@ static uint8_t s_phys8_coin_slots;   /* Physical[8]  bits 0-3 (coin slots) */
 static int     s_enter_pulse;        /* F5 short-press: ~60 LPT frames high */
 static int     s_coin1_pulse;        /* C/F10: guaranteed scan-visible pulse */
 
+/* Digits select a standard matrix switch (column, row).  The last complete
+ * number stays selected; every Ctrl hold closes it for that exact duration. */
+static unsigned s_numeric_switch_code;
+static unsigned s_numeric_switch_digits;
+static bool s_numeric_switch_active;
+static int64_t s_numeric_switch_pressed_at;
+
 static int calc_bitwise_sum(uint8_t val)
 {
     int has_bit = 0, sum = 0, pos = 0;
@@ -198,6 +207,99 @@ static int calc_bitwise_sum(uint8_t val)
         if (v & 1) sum += pos;
     }
     return has_bit + sum;
+}
+
+static bool p2k_set_matrix_switch(unsigned number, bool down)
+{
+    unsigned column = number / 10;
+    unsigned row = number % 10;
+
+    if (column < 1 || column > 8 || row < 1 || row > 8) {
+        return false;
+    }
+    unsigned slot = column & 7;
+    uint8_t mask = 1u << (row - 1);
+    bool previous = (s_switch_matrix[slot] & mask) != 0;
+    if (down) {
+        s_switch_matrix[slot] |= mask;
+    } else {
+        s_switch_matrix[slot] &= ~mask;
+    }
+    if (previous != down) {
+        fprintf(stderr, "[lpt] matrix switch %02u %s (column=%u row=%u%s)\n",
+                number, down ? "PRESSED" : "released", column, row,
+                number == 13 ? ", Start" : "");
+    }
+    return true;
+}
+
+static bool p2k_is_ctrl_key(int qcode)
+{
+    return qcode == Q_KEY_CODE_CTRL || qcode == Q_KEY_CODE_CTRL_R;
+}
+
+static int p2k_numeric_key_digit(int qcode)
+{
+    if (qcode >= Q_KEY_CODE_1 && qcode <= Q_KEY_CODE_9) {
+        return qcode - Q_KEY_CODE_1 + 1;
+    }
+    if (qcode == Q_KEY_CODE_0) {
+        return 0;
+    }
+    if (qcode >= Q_KEY_CODE_KP_0 && qcode <= Q_KEY_CODE_KP_9) {
+        return qcode - Q_KEY_CODE_KP_0;
+    }
+    return -1;
+}
+
+/* Returns true when the event is a digit or Ctrl used by this selector. */
+static bool p2k_handle_numeric_switch_key(int qcode, bool down)
+{
+    int64_t now = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+    bool ctrl = p2k_is_ctrl_key(qcode);
+    int digit = p2k_numeric_key_digit(qcode);
+
+    if (ctrl) {
+        if (down && !s_numeric_switch_active && s_numeric_switch_digits == 2) {
+            p2k_set_matrix_switch(s_numeric_switch_code, true);
+            s_numeric_switch_active = true;
+            s_numeric_switch_pressed_at = now;
+        } else if (!down && s_numeric_switch_active) {
+            p2k_set_matrix_switch(s_numeric_switch_code, false);
+            fprintf(stderr, "[lpt] numeric switch %02u held %.3f s\n",
+                    s_numeric_switch_code,
+                    (now - s_numeric_switch_pressed_at) / 1000000000.0);
+            s_numeric_switch_active = false;
+        }
+        return true;
+    }
+
+    if (digit >= 0) {
+        if (!down || s_numeric_switch_active) {
+            return true;
+        }
+        if (digit < 1 || digit > 8) {
+            s_numeric_switch_code = 0;
+            s_numeric_switch_digits = 0;
+            fprintf(stderr, "[lpt] matrix switch selection cleared; "
+                    "digits must be 1 through 8\n");
+            return true;
+        }
+        if (s_numeric_switch_digits == 2) {
+            s_numeric_switch_code = 0;
+            s_numeric_switch_digits = 0;
+        }
+        s_numeric_switch_code = s_numeric_switch_code * 10 + digit;
+        s_numeric_switch_digits++;
+        if (s_numeric_switch_digits == 2) {
+            fprintf(stderr, "[lpt] matrix switch %02u selected; hold Ctrl "
+                    "to press, Ctrl again repeats\n", s_numeric_switch_code);
+        } else {
+            fprintf(stderr, "[lpt] matrix switch selection: %u_\n", digit);
+        }
+        return true;
+    }
+    return false;
 }
 
 static uint8_t retrieve_rendering_status(uint8_t opcode)
@@ -412,6 +514,9 @@ static bool p2k_lpt_try_jpeg_pipe(const char *jpg_path, int w, int h,
 
 static void p2k_lpt_screenshot(void)
 {
+    if (p2k_display_request_screenshot()) {
+        return;
+    }
     QemuConsole *con = qemu_console_lookup_by_index(0);
     DisplaySurface *s = con ? qemu_console_surface(con) : NULL;
     if (!s) {
@@ -473,6 +578,9 @@ static void p2k_lpt_screenshot(void)
 
 void p2k_lpt_host_key(int qcode, bool down)
 {
+    if (p2k_handle_numeric_switch_key(qcode, down)) {
+        return;
+    }
     switch (qcode) {
     case Q_KEY_CODE_F1:                              /* quit */
         if (down) {
@@ -534,16 +642,7 @@ void p2k_lpt_host_key(int qcode, bool down)
         break;
     case Q_KEY_CODE_SPC:
     case Q_KEY_CODE_S: {                             /* Start button (sw=2) */
-        bool prev = s_switch_matrix[1] & (1u << 2);
-        if (down) {
-            s_switch_matrix[1] |= (1u << 2);
-        } else {
-            s_switch_matrix[1] &= ~(1u << 2);
-        }
-        if (prev != down) {
-            fprintf(stderr, "[lpt] Start Button %s (sw=2, c0 b2)\n",
-                    down ? "PRESSED" : "released");
-        }
+        p2k_set_matrix_switch(13, down);
         break;
     }
     case Q_KEY_CODE_F10:
@@ -553,6 +652,9 @@ void p2k_lpt_host_key(int qcode, bool down)
             fprintf(stderr, "[lpt] coin slot 1 pulse fired (~60 frames, "
                     "door=%s)\n", s_coin_door_closed ? "CLOSED" : "OPEN");
         }
+        break;
+    case Q_KEY_CODE_F11:                             /* scripted PCM capture */
+        p2k_dcs_audio_capture_set(down);
         break;
     case Q_KEY_CODE_F3:                              /* screenshot to PPM */
         if (down) p2k_lpt_screenshot();
@@ -690,5 +792,5 @@ void p2k_install_lpt_board(void)
                 "F4 door | F5/Enter pulse | F6/F9 actions | "
                 "F7/F8 flippers | Space/S start | F10/C coin | "
                 "F12 dump | Esc/Left service | Up/Down volume | "
-                "Right enter");
+                "Right enter | NN then Ctrl matrix switch");
 }

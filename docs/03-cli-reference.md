@@ -49,7 +49,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--dcs-sound-flash` | path | auto from selected update or ROM directory | Selects the 1 MiB sound-flash image used by a native ADSP engine. | `scripts/run-qemu.sh --dcs-engine adsp --dcs-sound-flash ./roms/swe1_28f800.rom` |
 | `--sound-loading` | `lazy` \| `preload` | `lazy` | Lazy decodes samples on first use; preload exports `P2K_DCS_PRELOAD=1`. | `scripts/run-qemu.sh --sound-loading preload` |
 | `--serial` | — | off | Interactive COM1 in current terminal via temporary TCP UART plus foreground `nc`; requires `nc`; mutually exclusive with `--serial-tcp`, `--uart-tcp`, `--headless`. | `scripts/run-qemu.sh --serial` |
-| `--script` | file | off | Waits for XINU, executes ordinary lines as console commands, supports `@wait SECONDS` and `@key KEY`, then leaves the emulator running. It manages a private TCP UART and QEMU monitor. `--console-script` is an alias. | `scripts/run-qemu.sh --script scripts/demos/start-game.p2k` |
+| `--script` | file | off | Validates the file, waits for XINU, then runs console commands and automation directives. Supports timed keys and matrix switches, repeats, assertions, polling, screenshots and timed audio capture. It manages a private TCP UART and QEMU monitor, then leaves the emulator running. `--console-script` is an alias. | `scripts/run-qemu.sh --script scripts/demos/start-game.p2k` |
 | `--uart-quiet` | — | off | Silences COM1/UART stderr mirror and uses `-serial null` in headless mode. Wins over `-v`. | `scripts/run-qemu.sh --uart-quiet` |
 
 | `--uart-drop` | substring | drops `swd Debug:` by default | Repeatable line filter for UART output before stdout/TCP/stderr. | `scripts/run-qemu.sh --uart-drop NonFatal` |
@@ -84,7 +84,8 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 > [!NOTE]
 > `scripts/demos/start-game.p2k` sends real emulated coin and Start switches.
 > Coin pulses become credits according to the game's saved pricing adjustments;
-> edit or repeat the `@key c` lines when that configuration requires it.
+> edit the repeat count when that configuration requires it. Details:
+> [console scripting](42-console-scripting.md).
 
 > [!WARNING]
 > `--serial` occupies the current terminal. Use `--serial-tcp` for a separate
@@ -150,6 +151,7 @@ Delivered by the QEMU machine, not the wrapper:
 | `Up`, `=`, `KP+` | Volume up |
 | `Right arrow` | Begin test |
 | `F12` | State dump |
+| Type `11..88`, hold `Ctrl` | Hold the selected matrix switch until `Ctrl` is released; another Ctrl hold repeats it; switch `13` is Start |
 | `Ctrl+Alt+F` | SDL fullscreen toggle |
 
 ## `scripts/build-qemu.sh` synopsis

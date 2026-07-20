@@ -1,22 +1,12 @@
 # Wait for full game initialization, then use only ordinary emulated
-# cabinet/LPT inputs. Change the number of C pulses if saved pricing differs.
+# cabinet/LPT inputs. Change the repeat count if saved pricing differs.
 @wait 15
-@key c
-@wait 1
-@key c
-@wait 1
-@key c
-@wait 1
-@key c
-@wait 1
-@key c
-@wait 1
-@key c
-@wait 1
-@key c
-@wait 1
-@key c
+@repeat 8
+  @key c
+  @wait 1
+@end
 @wait 10
-@key spc
+@switch 13 0.2
 @wait 2
 game info
+@screenshot game-start-result

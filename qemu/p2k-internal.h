@@ -90,6 +90,9 @@ void p2k_install_gfxlist_watch(Pinball2000MachineState *s);
 void p2k_install_display(void);
 /* F2 Y-flip toggle. Default on (matches the default framebuffer orientation). */
 void p2k_display_toggle_flip_y(void);
+/* Queue a screenshot on the direct SDL renderer. False means use QEMU's
+ * ordinary console surface instead. */
+bool p2k_display_request_screenshot(void);
 void p2k_display_set_status(const char *status);
 void p2k_display_refresh_status(void);
 
@@ -124,6 +127,9 @@ void p2k_install_dcs_uart(void);
  * playback (8-voice software mixer). The wrapper enables it when it
  * auto-detects a host backend; P2K_NO_DCS_AUDIO forces it off. */
 void p2k_install_dcs_audio(Pinball2000MachineState *s);
+/* Script-only capture gate. P2K_DCS_AUDIO_CAPTURE supplies the raw PCM file;
+ * an injected F11 press controls whether callbacks append to it. */
+bool p2k_dcs_audio_capture_set(bool active);
 bool p2k_dcs_adsp_prepare(Pinball2000MachineState *s);
 void p2k_dcs_adsp_write_cmd(uint16_t command);
 void p2k_dcs_adsp_host_reset(void);
