@@ -585,6 +585,7 @@ void p2k_lpt_host_key(int qcode, bool down)
     case Q_KEY_CODE_F1:                              /* quit */
         if (down) {
             fprintf(stderr, "[lpt] F1 → shutdown request\n");
+            p2k_dcs_adsp_health_report();
             qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_UI);
         }
         break;

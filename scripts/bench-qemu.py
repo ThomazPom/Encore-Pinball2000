@@ -31,6 +31,14 @@ WARMUP_MARKER = b"__P2K_BENCH_WARM__"
 DONE_MARKER = b"__P2K_BENCH_DONE__"
 QUICK_WARMUP_SECONDS = 10
 LONG_WARMUP_SECONDS = 30
+DCS_HEALTH_RE = re.compile(
+    r"^\[p2k-dcs-health\] queued=(?P<queued>\d+) "
+    r"runtime_resets=(?P<runtime_resets>\d+) host_boots=(?P<host_boots>\d+) "
+    r"enqueued=(?P<enqueued>\d+) consumed=(?P<consumed>\d+) "
+    r"dropped=(?P<dropped>\d+) pcm_frames=(?P<pcm_frames>\d+) "
+    r"pcm_nonzero=(?P<pcm_nonzero>\d+) cycles=(?P<cycles>\d+)$",
+    re.MULTILINE,
+)
 
 
 def take_internal_options(arguments: list[str]) -> tuple[list[str], bool, int]:
@@ -65,6 +73,29 @@ def requested_speed(arguments: list[str]) -> float:
         if argument == "--speed-target" and index + 1 < len(arguments):
             return float(arguments[index + 1])
     return 100.0
+
+
+def uses_live_adsp(arguments: list[str]) -> bool:
+    engine = "adsp-hybrid-thread"
+    for index, argument in enumerate(arguments):
+        if argument == "--dcs-engine" and index + 1 < len(arguments):
+            engine = arguments[index + 1]
+    return engine in {"adsp", "adsp-thread", "adsp-clock-thread",
+                      "adsp-hybrid-thread"}
+
+
+def parse_dcs_health(path: Path) -> dict[str, int | str]:
+    matches = list(DCS_HEALTH_RE.finditer(path.read_text(errors="replace")))
+    if not matches:
+        raise RuntimeError("DCS health report missing")
+    values = {key: int(value) for key, value in matches[-1].groupdict().items()}
+    healthy = (values["queued"] == 0 and values["runtime_resets"] == 0 and
+               values["dropped"] == 0 and
+               values["enqueued"] == values["consumed"] and
+               values["pcm_frames"] > 0 and values["pcm_nonzero"] > 0)
+    if not healthy:
+        raise RuntimeError(f"DCS health check failed: {values}")
+    return {"status": "PASS", **values}
 
 
 def connect_console(port: int, process: subprocess.Popen, timeout: float) -> socket.socket:
@@ -375,9 +406,36 @@ def stop_vm(path: Path) -> float:
     return (sent + acknowledged) / 2.0
 
 
-def stop_process(process: subprocess.Popen) -> None:
+def request_shutdown(path: Path, resume: bool) -> None:
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.settimeout(2.0)
+            sock.connect(str(path))
+            try:
+                sock.recv(4096)
+            except socket.timeout:
+                pass
+            if resume:
+                sock.sendall(b"cont\n")
+                try:
+                    sock.recv(4096)
+                except socket.timeout:
+                    pass
+            sock.sendall(b"sendkey f1\n")
+    except OSError:
+        pass
+
+
+def stop_process(process: subprocess.Popen, monitor: Path,
+                 resume: bool = False) -> None:
     if process.poll() is not None:
         return
+    request_shutdown(monitor, resume)
+    try:
+        process.wait(timeout=5)
+        return
+    except subprocess.TimeoutExpired:
+        pass
     os.killpg(process.pid, signal.SIGTERM)
     try:
         process.wait(timeout=8)
@@ -417,9 +475,12 @@ def run_irq_pass(forwarded: list[str], artifact: Path, template: bytes,
                              ["--", "-gdb", f"tcp:127.0.0.1:{gdb_port}"])
     (artifact / "command.json").write_text(json.dumps(command, indent=2) + "\n")
     with log_path.open("wb") as log:
+        env = os.environ.copy()
+        if uses_live_adsp(forwarded):
+            env["P2K_DCS_HEALTH_REPORT"] = "1"
         process = subprocess.Popen(command, cwd=ROOT, stdin=subprocess.DEVNULL,
                                    stdout=log, stderr=subprocess.STDOUT,
-                                   start_new_session=True)
+                                   start_new_session=True, env=env)
         handler = None
         original = b""
         try:
@@ -456,7 +517,7 @@ def run_irq_pass(forwarded: list[str], artifact: Path, template: bytes,
                     finish_probe(gdb_port, artifact, handler, original)
                 except Exception:
                     pass
-            stop_process(process)
+            stop_process(process, monitor, resume=True)
             monitor.unlink(missing_ok=True)
 
 
@@ -479,9 +540,12 @@ def run_lpt_pass(forwarded: list[str], artifact: Path,
     (artifact / "command.json").write_text(json.dumps(command, indent=2) + "\n")
     with log_path.open("wb") as log:
         launched = time.monotonic()
+        env = os.environ.copy()
+        if uses_live_adsp(forwarded):
+            env["P2K_DCS_HEALTH_REPORT"] = "1"
         process = subprocess.Popen(command, cwd=ROOT, stdin=subprocess.DEVNULL,
                                    stdout=log, stderr=subprocess.STDOUT,
-                                   start_new_session=True)
+                                   start_new_session=True, env=env)
         try:
             if guest_load:
                 wait_port(gdb_port, process)
@@ -500,7 +564,7 @@ def run_lpt_pass(forwarded: list[str], artifact: Path,
                 lines = log_path.read_text(errors="replace").splitlines()
                 return boot_lines, lines[len(boot_lines):], boot_wall
         finally:
-            stop_process(process)
+            stop_process(process, monitor)
             monitor.unlink(missing_ok=True)
 
 
@@ -601,6 +665,8 @@ def write_report(artifact: Path, result: dict) -> None:
         "> Guest CPU load: " +
         ("cooperative low-priority worker." if result["guest_load"]
          else "normal game workload."),
+        f"> DCS health IRQ/LPT: {result['dcs_health']['irq']['status']}/"
+        f"{result['dcs_health']['lpt']['status']}.",
         "",
         "| Phase | Speed/delivery | IRQ rate | IRQ sigma | IRQ core sigma | IRQ p99 | IRQ worst | DATA/s | PDB05/s | PDB p99 | PDB worst |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
@@ -638,10 +704,14 @@ def main() -> int:
         template = build_probe(irq_dir)
         irq, sleep_wall = run_irq_pass(forwarded, irq_dir, template, target_speed,
                                        guest_load, warmup_seconds)
+        irq_health = (parse_dcs_health(irq_dir / "encore.log")
+                      if uses_live_adsp(forwarded) else {"status": "n/a"})
         print_irq_preview(irq, sleep_wall)
         print("[bench] pass 2/2: unpatched LPT/PDB measurement", flush=True)
         boot_lines, steady_lines, boot_wall = run_lpt_pass(
             forwarded, lpt_dir, target_speed, guest_load, warmup_seconds)
+        lpt_health = (parse_dcs_health(lpt_dir / "encore.log")
+                      if uses_live_adsp(forwarded) else {"status": "n/a"})
         lpt = parse_lpt(steady_lines)
         boot = parse_boot(boot_lines)
     except Exception as error:
@@ -656,6 +726,7 @@ def main() -> int:
         "sleep_wall": sleep_wall,
         "effective_speed": effective, "boot_wall": boot_wall,
         "irq": irq, "lpt": lpt, "boot": boot,
+        "dcs_health": {"irq": irq_health, "lpt": lpt_health},
     }
     (artifact / "results.json").write_text(json.dumps(result, indent=2) + "\n")
     (artifact / "metadata.json").write_text(json.dumps({
@@ -677,6 +748,7 @@ def main() -> int:
     print(f"    LPT DATA rate end:     {boot['data_rate']}/s")
     print(f"    PDB05 worst:           {with_unit(boot['pdb_worst'], 'us')}")
     print("  Steady-state phase:")
+    print(f"    DCS health IRQ/LPT:   {irq_health['status']}/{lpt_health['status']}")
     print(f"    Warmup completed:      {warmup_seconds:.3f}s guest time")
     print(f"    XINU sleep 10 wall:    {sleep_wall:.3f}s ({effective:.2f}% real-time)")
     print(f"    Guest IRQ delivery:    {irq['delivery']:.2f}%")
