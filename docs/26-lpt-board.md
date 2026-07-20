@@ -22,6 +22,11 @@ service controls include the coin-door switch, volume down, volume up and enter.
 They update the emulated switch matrix; they are not PS/2 keys delivered to the
 guest.
 
+Any matrix position can also be held by typing its standard two-digit
+column/row number, then holding `Ctrl`. Releasing Ctrl opens the switch; holding
+Ctrl again repeats the last selection. `13` selects Start. This path updates
+the same `s_switch_matrix` state as the dedicated desktop bindings.
+
 ## Start input and game-start checks
 
 The desktop Start key is mapped to Williams switch `0x02`: logical column 0,

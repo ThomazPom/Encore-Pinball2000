@@ -35,6 +35,7 @@
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
+#include "qemu/thread.h"
 #include "qemu/timer.h"
 #include "qapi/error.h"
 #if __has_include("qemu/audio.h")
@@ -149,12 +150,13 @@ typedef struct DcsAudio {
     uint64_t      voice_frames[DCS_VOICES]; /* frames mixed in since last status */
     uint64_t      frames_rendered;    /* total frames produced */
 
-    /* Optional raw-PCM dump for diagnosis. Set P2K_DCS_AUDIO_DUMP=path.
-     * Writes whatever we hand to AUD_write(), so a wav header
-     * (44.1k mono S16) over the saved file lets you hear exactly
-     * what the host backend received. */
+    /* Optional raw-PCM dump. P2K_DCS_AUDIO_DUMP records continuously;
+     * P2K_DCS_AUDIO_CAPTURE is gated by scripted F11 input. */
     FILE         *wav_dump;
     uint64_t      wav_dump_bytes;
+    QemuMutex     wav_dump_lock;
+    bool          wav_dump_active;
+    bool          wav_dump_scripted;
 
     /* Per-second status timer + source-tag attribution (raw cmd
      * histogram by source) — diagnostic only. */
@@ -180,6 +182,40 @@ typedef struct DcsAudio {
 
 static DcsAudio s_dcs_audio;
 static void dcs_audio_callback(void *opaque, int avail_bytes);
+
+static void dcs_audio_dump_pcm(DcsAudio *a, const void *data, size_t bytes)
+{
+    if (!a->wav_dump) {
+        return;
+    }
+    qemu_mutex_lock(&a->wav_dump_lock);
+    if (a->wav_dump_active) {
+        fwrite(data, 1, bytes, a->wav_dump);
+        a->wav_dump_bytes += bytes;
+    }
+    qemu_mutex_unlock(&a->wav_dump_lock);
+}
+
+bool p2k_dcs_audio_capture_set(bool active)
+{
+    DcsAudio *a = &s_dcs_audio;
+
+    if (!a->wav_dump || !a->wav_dump_scripted) {
+        return false;
+    }
+    qemu_mutex_lock(&a->wav_dump_lock);
+    if (a->wav_dump_active != active) {
+        /* Flush both boundaries so the script can use file offsets without
+         * guessing around stdio buffering. */
+        fflush(a->wav_dump);
+        a->wav_dump_active = active;
+        info_report("dcs-audio: scripted PCM capture %s at byte %llu",
+                    active ? "started" : "stopped",
+                    (unsigned long long)a->wav_dump_bytes);
+    }
+    qemu_mutex_unlock(&a->wav_dump_lock);
+    return true;
+}
 
 /* ------------------------------------------------------------------ */
 /* pb2kslib loader                                                     */
@@ -978,10 +1014,7 @@ static void dcs_audio_callback(void *opaque, int avail_bytes)
         size_t w = AUD_write(a->voice, buf, buffer_bytes);
         a->aud_write_calls++;
         a->aud_write_bytes += (uint64_t)w;
-        if (a->wav_dump) {
-            fwrite(buf, 1, buffer_bytes, a->wav_dump);
-            a->wav_dump_bytes += buffer_bytes;
-        }
+        dcs_audio_dump_pcm(a, buf, buffer_bytes);
         if (w == 0) { a->aud_write_zero++; break; }
         avail_bytes -= (int)w;
     }
@@ -996,10 +1029,7 @@ static void dcs_audio_callback(void *opaque, int avail_bytes)
         size_t w = AUD_write(a->voice, buf, bytes);
         a->aud_write_calls++;
         a->aud_write_bytes += (uint64_t)w;
-        if (a->wav_dump) {
-            fwrite(buf, 1, bytes, a->wav_dump);
-            a->wav_dump_bytes += bytes;
-        }
+        dcs_audio_dump_pcm(a, buf, bytes);
         if (w == 0) a->aud_write_zero++;
     }
 }
@@ -1298,6 +1328,7 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
     if (!getenv("P2K_DCS_AUDIO")) {
         return;                          /* off by default; wrapper opts in */
     }
+    qemu_mutex_init(&a->wav_dump_lock);
 
     const char *engine_env = getenv("P2K_DCS_ENGINE");
     const char *engine = (engine_env && *engine_env) ? engine_env :
@@ -1375,20 +1406,35 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
 #endif
         return;
     }
-    AUD_set_active_out(a->voice, 1);
-
-    const char *dump = getenv("P2K_DCS_AUDIO_DUMP");
+    const char *capture = getenv("P2K_DCS_AUDIO_CAPTURE");
+    const char *dump = (capture && *capture) ? capture :
+                       getenv("P2K_DCS_AUDIO_DUMP");
     if (dump && *dump) {
         a->wav_dump = fopen(dump, "wb");
         if (a->wav_dump) {
-            info_report("dcs-audio: dumping raw PCM (%d-channel S16 LE @ %d Hz, "
-                        "no wav header) to %s", a->output_channels,
-                        a->output_rate, dump);
+            a->wav_dump_scripted = capture && *capture;
+            a->wav_dump_active = !a->wav_dump_scripted;
+            info_report("dcs-audio: %s raw PCM (%d-channel S16 LE @ %d Hz, "
+                        "no wav header) to %s",
+                        a->wav_dump_scripted ? "prepared scripted" : "dumping",
+                        a->output_channels, a->output_rate, dump);
+            if (a->wav_dump_scripted) {
+                g_autofree char *format = g_strdup_printf("%s.format", dump);
+                FILE *meta = fopen(format, "w");
+                if (meta) {
+                    fprintf(meta, "%d %d\n", a->output_rate,
+                            a->output_channels);
+                    fclose(meta);
+                } else {
+                    warn_report("dcs-audio: could not write capture format %s",
+                                format);
+                }
+            }
         } else {
-            warn_report("dcs-audio: could not open P2K_DCS_AUDIO_DUMP=%s",
-                        dump);
+            warn_report("dcs-audio: could not open PCM output %s", dump);
         }
     }
+    AUD_set_active_out(a->voice, 1);
     a->enabled = true;
     a->opened  = true;
     a->bong_idx = -1;

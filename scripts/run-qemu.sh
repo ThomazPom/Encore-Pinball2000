@@ -410,10 +410,11 @@ CONSOLE / DIAGNOSTICS
                             --serial-tcp / --uart-tcp / --headless.
                             Implies --uart-quiet.
   --script <file>           After XINU is ready, execute each non-comment line
-                            as a console command. `@wait SECONDS` pauses and
-                            `@key KEY` sends a normal QEMU keyboard event
-                            through the emulated LPT board. The emulator stays
-                            open when the file completes. Example:
+                            as a console command. Directives provide waits,
+                            keys, matrix switches, repeat blocks, assertions,
+                            state polling, screenshots and timed audio capture.
+                            Syntax is checked before QEMU starts. The emulator
+                            stays open when the file completes. Example:
                             `--script scripts/demos/start-game.p2k`.
   --console-script <file>   Compatibility alias for --script.
   --uart-quiet              Silence ALL COM1/UART output (stderr mirror
@@ -521,6 +522,10 @@ KEY BINDINGS (delivered by the QEMU machine, not by this wrapper)
   Up / = / KP+              Volume up
   Right arrow               Begin test
   F12                       State dump
+  NN, hold Ctrl             Type a matrix switch number 11..88, then hold Ctrl
+                            for the desired switch duration. Releasing Ctrl
+                            releases it; holding Ctrl again repeats the same
+                            switch. Example: 13, hold Ctrl for 3 s holds Start.
   F2                        Toggle vertical-flip of the framebuffer
                             (default ON: bottom-up source → top-down
                              display).
@@ -789,10 +794,14 @@ if [[ -n "$CONSOLE_SCRIPT" ]]; then
     exit 2
   fi
   AUTOMATION_DIR="$(mktemp -d /tmp/p2k-console-script.XXXXXX)"
+  python3 "$ROOT/scripts/run-console-script.py" "$CONSOLE_SCRIPT" --check
   SERIAL_PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')"
   UART_TCP="127.0.0.1:$SERIAL_PORT"
   MONITOR="unix:$AUTOMATION_DIR/monitor.sock,server=on,wait=off"
   UART_QUIET=1
+  if grep -Eq '^[[:space:]]*@record-audio([[:space:]]|$)' "$CONSOLE_SCRIPT"; then
+    export P2K_DCS_AUDIO_CAPTURE="$AUTOMATION_DIR/audio.raw"
+  fi
 fi
 if [[ $HEADLESS -eq 1 && $VERBOSITY -lt 1 ]]; then
   VERBOSITY=1
@@ -938,6 +947,10 @@ fi
 # the host-side service check is acceptable for that backend.
 if [[ -z "$AUDIO" ]]; then
   audio_pick_auto
+fi
+if [[ -n "${P2K_DCS_AUDIO_CAPTURE:-}" && "$AUDIO" == "none" ]]; then
+  echo "[run-qemu] --script uses @record-audio but no audio backend is available" >&2
+  exit 2
 fi
 
 # --- update token resolution ------------------------------------------------
@@ -1233,8 +1246,16 @@ fi
 QEMU_PID=$!
 trap 'status=$?; if [[ -n "${QEMU_PID:-}" ]]; then kill "$QEMU_PID" 2>/dev/null; wait "$QEMU_PID" 2>/dev/null || true; fi; [[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"; [[ -n "$AUTOMATION_DIR" ]] && rm -rf "$AUTOMATION_DIR"; exit "$status"' EXIT INT TERM
 if [[ -n "$CONSOLE_SCRIPT" ]]; then
-  python3 "$ROOT/scripts/run-console-script.py" "$CONSOLE_SCRIPT" \
-    --port "$SERIAL_PORT" --monitor "$AUTOMATION_DIR/monitor.sock"
+  __script_args=(
+    "$ROOT/scripts/run-console-script.py" "$CONSOLE_SCRIPT"
+    --port "$SERIAL_PORT"
+    --monitor "$AUTOMATION_DIR/monitor.sock"
+    --screenshot-dir "${P2K_SCREENSHOT_DIR:-/tmp}"
+  )
+  if [[ -n "${P2K_DCS_AUDIO_CAPTURE:-}" ]]; then
+    __script_args+=(--audio-capture "$P2K_DCS_AUDIO_CAPTURE")
+  fi
+  python3 "${__script_args[@]}"
 fi
 wait "$QEMU_PID"
 QEMU_STATUS=$?

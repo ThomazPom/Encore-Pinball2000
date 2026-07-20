@@ -80,6 +80,7 @@ an unchanged build is normally a sub-second Ninja check.
 > terminal until the emulator exits.
 
 All options: [command-line reference](03-cli-reference.md).
+Script syntax: [console scripting](42-console-scripting.md).
 
 ## First diagnostic
 
