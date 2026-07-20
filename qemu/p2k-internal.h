@@ -134,6 +134,7 @@ bool p2k_dcs_adsp_prepare(Pinball2000MachineState *s);
 void p2k_dcs_adsp_write_cmd(uint16_t command);
 void p2k_dcs_adsp_host_reset(void);
 void p2k_dcs_adsp_render(int16_t *samples, int frames, int output_rate);
+void p2k_dcs_adsp_health_report(void);
 bool p2k_dcs_adsp_generate_track(uint16_t command, size_t hint_frames_44100,
                                  int16_t **pcm_44100, size_t *frames_44100,
                                  bool *loop);
