@@ -37,6 +37,11 @@ result, or test a cabinet.
 - [Roadmap](36-roadmap.md)
 - [Real LPT passthrough](46-real-lpt-passthrough.md)
 
+## Non-roadmap notes
+
+- [AI-generated future ideas](37-ai-generated-future-ideas.md) — speculative
+  brainstorming that may never be implemented.
+
 Reference material under `references/` is evidence, not current Encore
 documentation. Read it only when a current source or physical trace requires
 hardware background.
