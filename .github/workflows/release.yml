@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: qemu-release-${{ github.ref_name }}
+  group: qemu-release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -40,6 +40,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Resolve and validate release tag
         id: version
