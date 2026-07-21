@@ -37,10 +37,11 @@ static const char s_default_keymap[] =
     "switches:\n"
     "  x: 28\n"
     "  f: 58\n"
-    "  g: 53\n"
-    "  l: 52\n"
+    "  d: 53\n"
+    "  g: 54\n"
     "  e: 55\n"
-    "  t: 56\n";
+    "  t: 56\n"
+    "  l: 52\n";
 
 static bool p2k_env_enabled(const char *name)
 {
