@@ -1,0 +1,85 @@
+name: Apply assets bootstrap patch
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-assets-bootstrap.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Patch run wrapper
+        shell: bash
+        run: |
+          cat > scripts/fetch-assets-if-missing.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          ROOT="$1"
+          ROMS_DIR="$2"
+          UPDATES_DIR="$3"
+          REPO_URL="${P2K_ASSETS_REPO:-https://github.com/ThomazPom/Encore-Pinball2000.git}"
+
+          need_roms=0
+          need_updates=0
+          [[ -d "$ROMS_DIR" ]] || need_roms=1
+          [[ -d "$UPDATES_DIR" ]] || need_updates=1
+          (( need_roms || need_updates )) || exit 0
+
+          command -v git >/dev/null 2>&1 || {
+            echo "[run-qemu] git is required to download missing ROMs/updates" >&2
+            exit 1
+          }
+
+          tmp="$(mktemp -d /tmp/encore-assets.XXXXXX)"
+          cleanup() { rm -rf "$tmp"; }
+          trap cleanup EXIT INT TERM
+
+          echo "[run-qemu] ROMs or updates missing; downloading complete offline assets..." >&2
+          git clone --depth 1 --filter=blob:none "$REPO_URL" "$tmp/repo" >/dev/null 2>&1 || {
+            echo "[run-qemu] failed to clone assets from $REPO_URL" >&2
+            exit 1
+          }
+
+          install_tree() {
+            local name="$1" destination="$2" source="$tmp/repo/$1"
+            local partial="${destination}.partial.$$"
+            [[ -d "$source" ]] || {
+              echo "[run-qemu] cloned repository does not contain '$name/'" >&2
+              exit 1
+            }
+            rm -rf "$partial"
+            mkdir -p "$(dirname "$destination")"
+            cp -a "$source" "$partial"
+            mv "$partial" "$destination"
+            echo "[run-qemu] installed $name/ for offline use" >&2
+          }
+
+          (( need_roms )) && install_tree roms "$ROMS_DIR"
+          (( need_updates )) && install_tree updates "$UPDATES_DIR"
+          EOF
+          chmod +x scripts/fetch-assets-if-missing.sh
+
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/run-qemu.sh')
+          text = path.read_text()
+          marker = 'export P2K_SPEED_TARGET_PERCENT="$SPEED_TARGET"\n'
+          block = '''\n# Download complete ROM and update trees only when their directories are absent.\n# Existing directories are never inspected, modified, or refreshed.\n"$ROOT/scripts/fetch-assets-if-missing.sh" "$ROOT" "$ROMS_DIR" "$ROOT/updates"\n\n'''
+          if block not in text:
+              if marker not in text:
+                  raise SystemExit('insertion marker not found')
+              text = text.replace(marker, block + marker, 1)
+              path.write_text(text)
+          PY
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/run-qemu.sh scripts/fetch-assets-if-missing.sh
+          git commit -m "Fetch ROMs and updates when directories are absent"
+          git push
