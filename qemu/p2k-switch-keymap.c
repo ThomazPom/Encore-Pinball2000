@@ -19,7 +19,6 @@
 #include "qemu/module.h"
 #include "ui/input.h"
 #include "ui/console.h"
-#include "qemu/thread.h"
 
 #include <SDL2/SDL.h>
 
@@ -29,7 +28,7 @@ static unsigned s_switch_bindings[Q_KEY_CODE__MAX];
 static bool s_bound_key_down[Q_KEY_CODE__MAX];
 static int s_active_bound_key = Q_KEY_CODE_UNMAPPED;
 static char *s_keymap_path;
-static bool s_sdl_watch_installed;
+static bool s_sdl_filter_installed;
 
 static const char s_default_keymap[] =
     "# Encore desktop letter-to-switch bindings.\n"
@@ -244,7 +243,12 @@ static void p2k_switch_key_event(DeviceState *dev, QemuConsole *src,
     InputKeyEvent *key = event->u.key.data;
     int qcode = qemu_input_key_value_to_qcode(key->key);
 
-    p2k_handle_bound_key(qcode, key->down);
+    /* QEMU selects only the first matching keyboard handler.  This handler is
+     * deliberately registered first, so every unbound key must be delegated
+     * to the original cabinet handler to preserve all existing controls. */
+    if (!p2k_handle_bound_key(qcode, key->down)) {
+        p2k_lpt_host_key(qcode, key->down);
+    }
 }
 
 static const QemuInputHandler p2k_switch_key_input_handler = {
@@ -265,7 +269,7 @@ static void p2k_bound_key_bh(void *opaque)
     g_free(event);
 }
 
-static int p2k_sdl_event_watch(void *opaque, SDL_Event *event)
+static int p2k_sdl_event_filter(void *opaque, SDL_Event *event)
 {
     P2KBoundKeyEvent *queued;
     int qcode;
@@ -274,7 +278,7 @@ static int p2k_sdl_event_watch(void *opaque, SDL_Event *event)
         return 1;
     }
     if (event->type == SDL_KEYDOWN && event->key.repeat) {
-        return 1;
+        return 0;
     }
 
     qcode = p2k_sdl_letter_qcode(event->key.keysym.sym);
@@ -286,7 +290,10 @@ static int p2k_sdl_event_watch(void *opaque, SDL_Event *event)
     queued->qcode = qcode;
     queued->down = event->type == SDL_KEYDOWN;
     aio_bh_schedule_oneshot(qemu_get_aio_context(), p2k_bound_key_bh, queued);
-    return 1;
+
+    /* Remove configured letters from the direct renderer's queue.  This makes
+     * YAML bindings override the built-in S (Start) and C (coin) shortcuts. */
+    return 0;
 }
 
 static gboolean p2k_wait_for_direct_sdl(gpointer opaque)
@@ -294,9 +301,9 @@ static gboolean p2k_wait_for_direct_sdl(gpointer opaque)
     if (!SDL_WasInit(SDL_INIT_EVENTS)) {
         return G_SOURCE_CONTINUE;
     }
-    if (!s_sdl_watch_installed) {
-        SDL_AddEventWatch(p2k_sdl_event_watch, NULL);
-        s_sdl_watch_installed = true;
+    if (!s_sdl_filter_installed) {
+        SDL_SetEventFilter(p2k_sdl_event_filter, NULL);
+        s_sdl_filter_installed = true;
         info_report("pinball2000: switch keymap attached to direct SDL input");
     }
     return G_SOURCE_REMOVE;
