@@ -1,19 +1,20 @@
 name: Apply YAML switch keymap feature
 
 on:
-  push:
-    branches: [feature/yaml-switch-keymap]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: feature/yaml-switch-keymap
           fetch-depth: 0
       - name: Apply feature patch
         shell: bash
@@ -80,7 +81,9 @@ static void p2k_load_switch_keymap(const char *path)
             continue;
         }
         qcode = p2k_letter_qcode(key);
-        if (qcode == Q_KEY_CODE_UNMAPPED || !p2k_set_matrix_switch(number, false)) {
+        if (qcode == Q_KEY_CODE_UNMAPPED ||
+            number / 10 < 1 || number / 10 > 8 ||
+            number % 10 < 1 || number % 10 > 8) {
             warn_report("pinball2000: invalid switch keymap entry '%c: %u'", key,
                         number);
             continue;
@@ -200,9 +203,10 @@ switches:
 """)
           PY
 
+          bash -n scripts/run-qemu.sh
           rm .github/workflows/apply-yaml-switch-keymap.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add qemu/p2k-lpt-board.c qemu/p2k-display.c scripts/run-qemu.sh docs/41-cli-keyboard-guide.md config/switch-keymap.example.yaml .github/workflows/apply-yaml-switch-keymap.yml
+          git add -A
           git commit -m "Add YAML keyboard bindings for matrix switches"
-          git push
+          git push origin HEAD:feature/yaml-switch-keymap
