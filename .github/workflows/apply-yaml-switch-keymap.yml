@@ -2,8 +2,7 @@ name: Apply YAML switch keymap feature
 
 on:
   push:
-    branches:
-      - feature/yaml-switch-keymap
+    branches: [feature/yaml-switch-keymap]
 
 permissions:
   contents: write
@@ -16,11 +15,194 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Apply feature patch
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          def replace_once(path, old
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"missing patch anchor in {path}: {old[:80]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          lpt = "qemu/p2k-lpt-board.c"
+          replace_once(lpt,
+          "static int64_t s_numeric_switch_pressed_at;\n",
+          """static int64_t s_numeric_switch_pressed_at;
+
+/* Optional host-key to matrix-switch bindings loaded from a small YAML file. */
+static unsigned s_key_switch_map[Q_KEY_CODE__MAX];
+static bool s_key_switch_down[Q_KEY_CODE__MAX];
+
+static int p2k_letter_qcode(char key)
+{
+    if (key >= 'A' && key <= 'Z') {
+        key = key - 'A' + 'a';
+    }
+    if (key < 'a' || key > 'z') {
+        return Q_KEY_CODE_UNMAPPED;
+    }
+    return Q_KEY_CODE_A + (key - 'a');
+}
+
+static void p2k_load_switch_keymap(const char *path)
+{
+    FILE *fp;
+    char line[256];
+    unsigned loaded = 0;
+
+    if (!path || !*path) {
+        return;
+    }
+    fp = fopen(path, "r");
+    if (!fp) {
+        error_report("pinball2000: cannot open switch keymap '%s' (%s)",
+                     path, strerror(errno));
+        return;
+    }
+    while (fgets(line, sizeof(line), fp)) {
+        char *p = line;
+        char key;
+        unsigned number;
+        int qcode;
+
+        while (g_ascii_isspace(*p)) p++;
+        if (!*p || *p == '#' || !strncmp(p, "switches:", 9)) {
+            continue;
+        }
+        if (sscanf(p, " %c : %u", &key, &number) != 2 &&
+            sscanf(p, " '%c' : %u", &key, &number) != 2 &&
+            sscanf(p, " \"%c\" : %u", &key, &number) != 2) {
+            warn_report("pinball2000: ignoring malformed keymap line: %s", p);
+            continue;
+        }
+        qcode = p2k_letter_qcode(key);
+        if (qcode == Q_KEY_CODE_UNMAPPED || !p2k_set_matrix_switch(number, false)) {
+            warn_report("pinball2000: invalid switch keymap entry '%c: %u'", key,
+                        number);
+            continue;
+        }
+        s_key_switch_map[qcode] = number;
+        loaded++;
+    }
+    fclose(fp);
+    info_report("pinball2000: loaded %u switch key binding%s from %s",
+                loaded, loaded == 1 ? "" : "s", path);
+}
+
+static bool p2k_handle_bound_switch_key(int qcode, bool down)
+{
+    unsigned number;
+
+    if (qcode < 0 || qcode >= Q_KEY_CODE__MAX) {
+        return false;
+    }
+    number = s_key_switch_map[qcode];
+    if (!number) {
+        return false;
+    }
+    if (s_key_switch_down[qcode] == down) {
+        return true;
+    }
+    s_key_switch_down[qcode] = down;
+    p2k_set_matrix_switch(number, down);
+    return true;
+}
+""")
+
+          replace_once(lpt,
+          "void p2k_lpt_host_key(int qcode, bool down)\n{\n    if (p2k_handle_numeric_switch_key(qcode, down)) {",
+          "void p2k_lpt_host_key(int qcode, bool down)\n{\n    if (p2k_handle_bound_switch_key(qcode, down)) {\n        return;\n    }\n    if (p2k_handle_numeric_switch_key(qcode, down)) {")
+
+          replace_once(lpt,
+          "    const char *status_s = getenv(\"P2K_LPT_STATUS\");\n",
+          "    const char *status_s = getenv(\"P2K_LPT_STATUS\");\n    const char *keymap = getenv(\"P2K_SWITCH_KEYMAP\");\n")
+
+          replace_once(lpt,
+          "    if (!purist_on) {\n        qemu_input_handler_register(NULL, &p2k_lpt_input_handler);",
+          "    if (!purist_on) {\n        p2k_load_switch_keymap(keymap);\n        qemu_input_handler_register(NULL, &p2k_lpt_input_handler);")
+
+          display = "qemu/p2k-display.c"
+          replace_once(display,
+          "    case SDLK_s: return Q_KEY_CODE_S;\n    case SDLK_c: return Q_KEY_CODE_C;\n",
+          """    case SDLK_a: return Q_KEY_CODE_A;
+    case SDLK_b: return Q_KEY_CODE_B;
+    case SDLK_c: return Q_KEY_CODE_C;
+    case SDLK_d: return Q_KEY_CODE_D;
+    case SDLK_e: return Q_KEY_CODE_E;
+    case SDLK_f: return Q_KEY_CODE_F;
+    case SDLK_g: return Q_KEY_CODE_G;
+    case SDLK_h: return Q_KEY_CODE_H;
+    case SDLK_i: return Q_KEY_CODE_I;
+    case SDLK_j: return Q_KEY_CODE_J;
+    case SDLK_k: return Q_KEY_CODE_K;
+    case SDLK_l: return Q_KEY_CODE_L;
+    case SDLK_m: return Q_KEY_CODE_M;
+    case SDLK_n: return Q_KEY_CODE_N;
+    case SDLK_o: return Q_KEY_CODE_O;
+    case SDLK_p: return Q_KEY_CODE_P;
+    case SDLK_q: return Q_KEY_CODE_Q;
+    case SDLK_r: return Q_KEY_CODE_R;
+    case SDLK_s: return Q_KEY_CODE_S;
+    case SDLK_t: return Q_KEY_CODE_T;
+    case SDLK_u: return Q_KEY_CODE_U;
+    case SDLK_v: return Q_KEY_CODE_V;
+    case SDLK_w: return Q_KEY_CODE_W;
+    case SDLK_x: return Q_KEY_CODE_X;
+    case SDLK_y: return Q_KEY_CODE_Y;
+    case SDLK_z: return Q_KEY_CODE_Z;
+""")
+
+          run = "scripts/run-qemu.sh"
+          replace_once(run,
+          "  --screenshot-dir <dir>    Where F3 writes screenshots",
+          "  --switch-keymap <yaml>    Bind letters a-z to matrix switches 11..88.\n                            The switch stays closed for the exact key hold.\n  --screenshot-dir <dir>    Where F3 writes screenshots")
+          replace_once(run,
+          "    --screenshot-dir)\n",
+          "    --switch-keymap)\n      [[ -f \"${2:-}\" ]] || { echo \"[run-qemu] --switch-keymap: '${2:-}' is not a file\" >&2; exit 2; }\n      export P2K_SWITCH_KEYMAP=\"$(realpath \"$2\")\"; shift 2 ;;\n    --screenshot-dir)\n")
+          replace_once(run,
+          "  P2K_LPT_IOPORT P2K_LPT_TRACE_FILE P2K_DCS_PRELOAD P2K_CABINET_PURIST\n",
+          "  P2K_LPT_IOPORT P2K_LPT_TRACE_FILE P2K_SWITCH_KEYMAP P2K_DCS_PRELOAD P2K_CABINET_PURIST\n")
+
+          docs = "docs/41-cli-keyboard-guide.md"
+          replace_once(docs,
+          "## Coin-door service panel\n",
+          """## YAML letter bindings
+
+Pass `--switch-keymap <file.yaml>` to bind any letters from `a` through `z`
+directly to matrix switches. Pressing the letter closes the configured switch;
+releasing it opens the switch, so the duration is exactly the key-hold duration.
+
+```yaml
+switches:
+  a: 28
+  b: 37
+  x: 13
+```
+
+Bindings are case-insensitive. Switch numbers must have a column and row from 1
+through 8. A configured `s` or `c` binding replaces the built-in Start or coin
+shortcut for that session. Numeric selection followed by Ctrl remains available.
+
+## Coin-door service panel
+""")
+
+          Path("config/switch-keymap.example.yaml").parent.mkdir(exist_ok=True)
+          Path("config/switch-keymap.example.yaml").write_text("""# Letter-to-switch bindings for desktop play.
+# Hold the letter for exactly as long as the cabinet switch should remain closed.
+switches:
+  a: 28
+  b: 37
+  x: 13
+""")
+          PY
+
+          rm .github/workflows/apply-yaml-switch-keymap.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add qemu/p2k-lpt-board.c qemu/p2k-display.c scripts/run-qemu.sh docs/41-cli-keyboard-guide.md config/switch-keymap.example.yaml .github/workflows/apply-yaml-switch-keymap.yml
+          git commit -m "Add YAML keyboard bindings for matrix switches"
+          git push
