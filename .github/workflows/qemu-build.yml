@@ -1,0 +1,50 @@
+name: QEMU container build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-qemu:
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git xz-utils \
+            build-essential ninja-build meson pkg-config python3 \
+            libglib2.0-dev libpixman-1-dev libsdl2-dev \
+            libvorbis-dev libogg-dev libgtk-3-dev zlib1g-dev
+
+      - uses: actions/checkout@v4
+
+      - name: Build QEMU
+        run: scripts/build-qemu.sh
+
+      - name: Verify pinball2000 machine registration
+        run: |
+          BIN="$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
+          "$BIN" -M help | tee /tmp/qemu-machines.txt
+          grep -q pinball2000 /tmp/qemu-machines.txt
+
+      - name: Upload QEMU binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-system-i386-${{ github.sha }}
+          path: |
+            /github/home/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386
+            /tmp/qemu-machines.txt
+          if-no-files-found: error
+          retention-days: 7
