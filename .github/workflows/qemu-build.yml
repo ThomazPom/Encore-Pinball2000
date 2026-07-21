@@ -33,7 +33,7 @@ jobs:
 
       - name: Build QEMU
         run: |
-          if ! scripts/build-qemu.sh >/tmp/build-qemu.log 2>&1; then
+          if ! bash scripts/build-qemu.sh >/tmp/build-qemu.log 2>&1; then
             echo "QEMU build failed. Relevant compiler output:"
             grep -nE 'FAILED:|fatal error:|error:|undefined reference|ninja: build stopped|meson.build' \
               /tmp/build-qemu.log | tail -n 100 || true
