@@ -1,14 +1,15 @@
-name: QEMU container build
+name: QEMU CI
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: qemu-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-qemu:
@@ -29,7 +30,7 @@ jobs:
             libvorbis-dev libogg-dev libgtk-3-dev zlib1g-dev \
             >>/tmp/apt.log 2>&1 || { tail -n 80 /tmp/apt.log; exit 1; }
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build QEMU
         run: |
@@ -48,15 +49,3 @@ jobs:
           BIN="$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
           "$BIN" -M help | tee /tmp/qemu-machines.txt
           grep -q pinball2000 /tmp/qemu-machines.txt
-
-      - name: Upload build diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: qemu-build-${{ github.sha }}
-          path: |
-            /tmp/build-qemu.log
-            /tmp/qemu-machines.txt
-            /github/home/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386
-          if-no-files-found: warn
-          retention-days: 7
