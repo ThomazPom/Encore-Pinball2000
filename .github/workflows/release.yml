@@ -69,10 +69,30 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           BIN="$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
+          PACKAGE="dist/Encore-Pinball2000-$TAG"
+
           "$BIN" -M help | grep -q pinball2000
-          mkdir -p dist/Encore-Pinball2000-$TAG
-          install -m 0755 "$BIN" "dist/Encore-Pinball2000-$TAG/qemu-system-i386"
-          cp README.md "dist/Encore-Pinball2000-$TAG/" 2>/dev/null || true
+          mkdir -p "$PACKAGE"
+          install -m 0755 "$BIN" "$PACKAGE/qemu-system-i386"
+          cp -a scripts "$PACKAGE/scripts"
+          cp README.md "$PACKAGE/" 2>/dev/null || true
+
+          cat > "$PACKAGE/run-qemu.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          ROOT="$(cd "$(dirname "$0")" && pwd)"
+          export QEMU_BIN="$ROOT/qemu-system-i386"
+          exec "$ROOT/scripts/run-qemu.sh" "$@"
+          EOF
+          chmod 0755 "$PACKAGE/run-qemu.sh"
+
+          # ROMs and updates deliberately stay out of the release archive.
+          # run-qemu.sh downloads both complete trees on first launch whenever
+          # their destination directories are absent, then works offline.
+          test ! -e "$PACKAGE/roms"
+          test ! -e "$PACKAGE/updates"
+          test -x "$PACKAGE/scripts/fetch-assets-if-missing.sh"
+
           tar -C dist -czf "dist/Encore-Pinball2000-$TAG-linux-x86_64.tar.gz" \
             "Encore-Pinball2000-$TAG"
           sha256sum "dist/Encore-Pinball2000-$TAG-linux-x86_64.tar.gz" \
