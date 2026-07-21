@@ -732,6 +732,11 @@ if [[ ! "$SPEED_TARGET" =~ ^[0-9]+([.][0-9]+)?$ ]] ||
   echo "[run-qemu] --speed-target: expected a number from 25 through 300, got '$SPEED_TARGET'" >&2
   exit 2
 fi
+
+# Download complete ROM and update trees only when their directories are absent.
+# Existing directories are never inspected, modified, or refreshed.
+"$ROOT/scripts/fetch-assets-if-missing.sh" "$ROOT" "$ROMS_DIR" "$ROOT/updates"
+
 export P2K_SPEED_TARGET_PERCENT="$SPEED_TARGET"
 export P2K_TCG_CLKINT_HOTLOOP_TARGET_HZ="$(
   awk -v percent="$SPEED_TARGET" 'BEGIN { printf "%.6f", 4003.966443 * percent / 100.0 }'
