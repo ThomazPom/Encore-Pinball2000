@@ -17,6 +17,7 @@
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
 #include "qemu/module.h"
+#include "system/system.h"
 #include "ui/input.h"
 #include "ui/console.h"
 
@@ -244,8 +245,8 @@ static void p2k_switch_key_event(DeviceState *dev, QemuConsole *src,
     int qcode = qemu_input_key_value_to_qcode(key->key);
 
     /* QEMU selects only the first matching keyboard handler.  This handler is
-     * deliberately registered first, so every unbound key must be delegated
-     * to the original cabinet handler to preserve all existing controls. */
+     * activated after machine construction, so every unbound key must be
+     * delegated to the original cabinet handler to preserve existing controls. */
     if (!p2k_handle_bound_key(qcode, key->down)) {
         p2k_lpt_host_key(qcode, key->down);
     }
@@ -309,8 +310,9 @@ static gboolean p2k_wait_for_direct_sdl(gpointer opaque)
     return G_SOURCE_REMOVE;
 }
 
-static void p2k_switch_keymap_init(void)
+static void p2k_switch_keymap_machine_ready(Notifier *notifier, void *data)
 {
+    QemuInputHandlerState *handler;
     unsigned loaded;
 
     if (p2k_env_enabled("P2K_CABINET_PURIST") ||
@@ -330,7 +332,8 @@ static void p2k_switch_keymap_init(void)
         return;
     }
 
-    qemu_input_handler_register(NULL, &p2k_switch_key_input_handler);
+    handler = qemu_input_handler_register(NULL, &p2k_switch_key_input_handler);
+    qemu_input_handler_activate(handler);
     info_report("pinball2000: loaded %u switch key binding%s from %s",
                 loaded, loaded == 1 ? "" : "s", s_keymap_path);
 
@@ -339,4 +342,16 @@ static void p2k_switch_keymap_init(void)
     }
 }
 
-type_init(p2k_switch_keymap_init)
+static Notifier s_machine_ready_notifier = {
+    .notify = p2k_switch_keymap_machine_ready,
+};
+
+static void p2k_switch_keymap_register(void)
+{
+    /* type_init runs while `-M help` is still constructing QEMU's global
+     * infrastructure.  Register only a lightweight notifier here; touching
+     * input handlers at this stage reaches uninitialized QEMU mutexes. */
+    qemu_add_machine_init_done_notifier(&s_machine_ready_notifier);
+}
+
+type_init(p2k_switch_keymap_register)
