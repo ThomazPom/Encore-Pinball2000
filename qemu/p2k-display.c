@@ -209,6 +209,8 @@ static inline uint32_t rgb555_to_argb(uint16_t px)
 
 static uint32_t s_rgb555_lut[1 << 15];
 static uint16_t s_rgb565_lut[1 << 15];
+/* The guest framebuffer is bottom-up, so display/capture flip by default. */
+static bool s_flip_y = true;
 
 static inline uint16_t rgb555_to_rgb565(uint16_t px)
 {
@@ -232,15 +234,52 @@ static void p2k_phys_read(hwaddr pa, void *buf, uint32_t len)
                        buf, len);
 }
 
+static uint32_t p2k_display_latch_source(P2KDisplayState *s,
+                                         uint32_t fb_off,
+                                         int *src_pitch,
+                                         bool *flip_y)
+{
+    qemu_mutex_lock(&s->frame_lock);
+    if (!s->game_pitch && fb_off != 0 && (fb_off % GAME_BUF_SIZE) == 0) {
+        s->game_pitch = true;
+    }
+    *src_pitch = s->game_pitch ? 2048 : 1280;
+    *flip_y = s_flip_y;
+    s->last_fb_off = fb_off;
+    qemu_mutex_unlock(&s->frame_lock);
+
+    return fb_off <= 0x300000u ? fb_off : 0;
+}
+
+bool p2k_display_copy_rgb555_frame(uint16_t *pixels, size_t pixel_count)
+{
+    uint32_t fb_off;
+    int src_pitch;
+    bool flip_y;
+    const uint8_t *guest_fb;
+
+    if (!pixels || pixel_count < FB_W * FB_H ||
+        !s_disp.ram || !s_disp.gx_regs) {
+        return false;
+    }
+
+    fb_off = ldl_le_p(s_disp.gx_regs + GX_DC_FB_ST_OFFSET);
+    fb_off = p2k_display_latch_source(&s_disp, fb_off, &src_pitch, &flip_y);
+    guest_fb = s_disp.ram + GX_FB_RAM_MIRROR + fb_off;
+
+    for (int src_y = 0; src_y < FB_H; src_y++) {
+        int dst_y = flip_y ? FB_H - 1 - src_y : src_y;
+        memcpy(pixels + dst_y * FB_W, guest_fb + src_y * src_pitch,
+               FB_W * sizeof(*pixels));
+    }
+    return true;
+}
+
 static void p2k_display_invalidate(void *opaque)
 {
     /* Force-refresh on next update — nothing to clear here, our pixel
      * buffer is regenerated from guest RAM every gfx_update call. */
 }
-
-/* F2 toggles vertical flip. Default = true because the framebuffer
- * lives bottom-up so we flip on the way out). */
-static bool s_flip_y = true;
 
 void p2k_display_toggle_flip_y(void)
 {
@@ -492,20 +531,10 @@ static void *p2k_display_worker(void *opaque)
 
     while (qatomic_read(&s->worker_run)) {
         uint32_t fb_off = ldl_le_p(s->gx_regs + GX_DC_FB_ST_OFFSET);
+        int src_pitch;
         bool flip_y;
 
-        qemu_mutex_lock(&s->frame_lock);
-        flip_y = s_flip_y;
-        qemu_mutex_unlock(&s->frame_lock);
-
-        if (!s->game_pitch && fb_off != 0 && (fb_off % GAME_BUF_SIZE) == 0) {
-            s->game_pitch = true;
-        }
-        int src_pitch = s->game_pitch ? 2048 : 1280;
-        s->last_fb_off = fb_off;
-        if (fb_off > 0x300000u) {
-            fb_off = 0;
-        }
+        fb_off = p2k_display_latch_source(s, fb_off, &src_pitch, &flip_y);
 
         uint8_t *guest_fb = s->ram + GX_FB_RAM_MIRROR + fb_off;
         p2k_sdl_events(s);
@@ -631,17 +660,12 @@ static void p2k_display_update(void *opaque)
             ldl_le_p(s->gx_regs + GX_DC_FB_ST_OFFSET) :
             p2k_phys_ldl(GX_BASE + GX_DC_FB_ST_OFFSET);
         uint16_t row_buf[FB_W];
+        int src_pitch;
+        bool flip_y;
 
-        if (!s->game_pitch && fb_off != 0 && (fb_off % GAME_BUF_SIZE) == 0) {
-            s->game_pitch = true;
-        }
-        int src_pitch = s->game_pitch ? 2048 : 1280;
-        s->last_fb_off = fb_off;
-        if (fb_off > 0x300000u) {
-            fb_off = 0;
-        }
+        fb_off = p2k_display_latch_source(s, fb_off, &src_pitch, &flip_y);
         for (int src_y = 0; src_y < FB_H; src_y++) {
-            int dst_y = (s_flip_y ? (FB_H - 1 - src_y) : src_y) * 2;
+            int dst_y = (flip_y ? (FB_H - 1 - src_y) : src_y) * 2;
             const uint16_t *src;
 
             if (s->qemu_framebuffer) {
@@ -783,6 +807,8 @@ void p2k_install_display(void)
     qemu_mutex_init(&s_disp.frame_lock);
     qemu_mutex_init(&s_disp.submit_lock);
     qemu_cond_init(&s_disp.submit_cond);
+    s_disp.ram = memory_region_get_ram_ptr(MACHINE(qdev_get_machine())->ram);
+    s_disp.gx_regs = p2k_gx_regs_host();
     s_disp.threaded = thread_env && thread_env[0] == '1';
     s_disp.qemu_framebuffer = qemu_fb_env && qemu_fb_env[0] == '1';
     s_disp.qemu_rgb565 = s_disp.qemu_framebuffer && qemu_fb_format &&
@@ -797,10 +823,6 @@ void p2k_install_display(void)
         bpp16 = true;
     }
     s_disp.bpp16 = bpp16;
-    if (s_disp.threaded || s_disp.qemu_framebuffer) {
-        s_disp.ram = memory_region_get_ram_ptr(MACHINE(qdev_get_machine())->ram);
-        s_disp.gx_regs = p2k_gx_regs_host();
-    }
     s_disp.exit_notifier.notify = p2k_display_shutdown;
     qemu_add_exit_notifier(&s_disp.exit_notifier);
     if (s_disp.qemu_framebuffer) {

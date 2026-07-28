@@ -286,6 +286,7 @@ static void pinball2000_init(MachineState *machine)
     p2k_install_gx_stub();
     p2k_install_gp_blt();
     p2k_install_display();
+    p2k_install_video_capture();
     p2k_install_vsync();
     p2k_install_mem_detect();
     p2k_install_diag(s);

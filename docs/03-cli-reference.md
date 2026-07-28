@@ -60,6 +60,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--monitor` | QEMU spec | off | Adds QEMU `-monitor <spec>`. | `scripts/run-qemu.sh --monitor stdio` |
 | `--debug` | QEMU `-d` opts | off | Adds `-d <opts> -D /tmp/p2k_qemu.log`. | `scripts/run-qemu.sh --debug int,cpu_reset` |
 | `--screenshot-dir` | existing directory | `/tmp` inside QEMU machine | Exports `P2K_SCREENSHOT_DIR`; F3 writes screenshots there. | `scripts/run-qemu.sh --screenshot-dir ./screens` |
+| `--record-video` | new `.mp4` path | off | Records the complete run at 640×480/60 fps as H.264 CRF 20. Requires FFmpeg with `libx264`; RGB555 frames use an anonymous pipe and no raw video file is written. Refuses to overwrite an existing file. Video-only. | `scripts/run-qemu.sh --record-video ./gameplay.mp4` |
 | `--diag` | — | off | Exports `P2K_DIAG=1` for PIT/PIC/IDT/XINU change-only sampler. | `scripts/run-qemu.sh --diag` |
 | `--trace-dcs` | — | off | Exports `P2K_DCS_BYTE_TRACE=1` for per-byte DCS UART tracing. | `scripts/run-qemu.sh --trace-dcs` |
 | `--trace-audio` | — | off | Exports `P2K_DCS_AUDIO_TRACE=1` for DCS audio event/status tracing. | `scripts/run-qemu.sh --trace-audio` |

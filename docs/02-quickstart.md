@@ -11,10 +11,10 @@ sudo apt install -y build-essential pkg-config git curl patch ninja-build \
   zlib1g-dev libslirp-dev libvorbis-dev
 ```
 
-Optional GTK display and interactive serial-console helpers:
+Optional GTK display, interactive serial-console helpers and H.264 capture:
 
 ```sh
-sudo apt install -y libgtk-3-dev netcat-openbsd rlwrap
+sudo apt install -y libgtk-3-dev netcat-openbsd rlwrap ffmpeg
 ```
 
 > [!IMPORTANT]
@@ -70,6 +70,7 @@ an unchanged build is normally a sub-second Ninja check.
 | Extracted-sample compatibility audio | `scripts/run-qemu.sh --dcs-engine pb2kslib` |
 | Timing self-diagnostic | `scripts/run-qemu.sh --bench` |
 | Run at 75% game speed | `scripts/run-qemu.sh --speed-target 75` |
+| Record H.264 video | `scripts/run-qemu.sh --record-video ./gameplay.mp4` |
 
 > [!NOTE]
 > `--bench` uses normal graphics and audio by default, separates boot from a
