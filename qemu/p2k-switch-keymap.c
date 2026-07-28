@@ -1,39 +1,34 @@
 /*
- * Configurable desktop letter bindings for Pinball 2000 matrix switches.
+ * Configurable A-Z bindings for Pinball 2000 matrix switches.
  *
- * A tiny YAML subset is intentionally parsed here to avoid adding a YAML
- * dependency to QEMU.  The file is created automatically on first launch at:
+ * The configuration is a deliberately strict YAML subset:
  *
- *   $P2K_SWITCH_KEYMAP, when explicitly set; otherwise
- *   $XDG_CONFIG_HOME/encore/switch-keymap.yaml
- *   (normally ~/.config/encore/switch-keymap.yaml)
+ *   switches:
+ *     a: 11
+ *     z: 88
  *
- * Holding a configured letter holds the selected matrix switch for the same
- * real duration.  The existing NN + Ctrl implementation remains the single
- * source of switch timing semantics.
+ * No YAML dependency is added to QEMU.  Rejecting the complete file on a
+ * malformed line is safer than silently accepting a configuration the user
+ * did not mean.  Input still follows the normal display -> LPT key path;
+ * this module only translates configured letter qcodes into switch state.
  */
 
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
-#include "qemu/main-loop.h"
-#include "qemu/module.h"
-#include "system/system.h"
 #include "ui/input.h"
-#include "ui/console.h"
-
-#include <SDL2/SDL.h>
 
 #include "p2k-internal.h"
 
 static unsigned s_switch_bindings[Q_KEY_CODE__MAX];
 static bool s_bound_key_down[Q_KEY_CODE__MAX];
-static int s_active_bound_key = Q_KEY_CODE_UNMAPPED;
+static uint8_t s_switch_hold_count[89];
 static char *s_keymap_path;
-static bool s_sdl_filter_installed;
+static bool s_keymap_installed;
 
 static const char s_default_keymap[] =
-    "# Encore desktop letter-to-switch bindings.\n"
-    "# Hold a letter for exactly as long as the switch should stay closed.\n"
+    "# Encore A-Z matrix-switch bindings.\n"
+    "# Strict format: one indented letter: NN entry per line; NN is 11..88.\n"
+    "# Holding a letter keeps that switch closed for the same duration.\n"
     "switches:\n"
     "  x: 28\n"
     "  f: 58\n"
@@ -49,7 +44,7 @@ static bool p2k_env_enabled(const char *name)
     return value && *value && strcmp(value, "0") != 0;
 }
 
-static int p2k_letter_qcode(char key)
+int p2k_switch_keymap_letter_qcode(char key)
 {
     switch (g_ascii_tolower(key)) {
     case 'a': return Q_KEY_CODE_A;
@@ -82,29 +77,6 @@ static int p2k_letter_qcode(char key)
     }
 }
 
-static int p2k_sdl_letter_qcode(SDL_Keycode key)
-{
-    if (key < SDLK_a || key > SDLK_z) {
-        return Q_KEY_CODE_UNMAPPED;
-    }
-    return p2k_letter_qcode((char)('a' + key - SDLK_a));
-}
-
-static int p2k_digit_qcode(unsigned digit)
-{
-    switch (digit) {
-    case 1: return Q_KEY_CODE_1;
-    case 2: return Q_KEY_CODE_2;
-    case 3: return Q_KEY_CODE_3;
-    case 4: return Q_KEY_CODE_4;
-    case 5: return Q_KEY_CODE_5;
-    case 6: return Q_KEY_CODE_6;
-    case 7: return Q_KEY_CODE_7;
-    case 8: return Q_KEY_CODE_8;
-    default: return Q_KEY_CODE_UNMAPPED;
-    }
-}
-
 static bool p2k_valid_matrix_switch(unsigned number)
 {
     unsigned column = number / 10;
@@ -133,8 +105,8 @@ static bool p2k_initialize_keymap_file(const char *path)
 
     directory = g_path_get_dirname(path);
     if (g_mkdir_with_parents(directory, 0700) < 0) {
-        error_report("pinball2000: cannot create switch-keymap directory '%s' (%s)",
-                     directory, strerror(errno));
+        error_report("pinball2000: cannot create switch-keymap directory "
+                     "'%s' (%s)", directory, strerror(errno));
         g_free(directory);
         return false;
     }
@@ -151,11 +123,55 @@ static bool p2k_initialize_keymap_file(const char *path)
     return true;
 }
 
+static bool p2k_parse_binding(char *text, int *qcode, unsigned *number)
+{
+    char *cursor = text;
+    char *end;
+    char key;
+    unsigned long parsed;
+
+    if (!g_ascii_isalpha(*cursor)) {
+        return false;
+    }
+    key = *cursor++;
+    while (g_ascii_isspace(*cursor)) {
+        cursor++;
+    }
+    if (*cursor++ != ':') {
+        return false;
+    }
+    while (g_ascii_isspace(*cursor)) {
+        cursor++;
+    }
+    if (!g_ascii_isdigit(*cursor)) {
+        return false;
+    }
+
+    errno = 0;
+    parsed = strtoul(cursor, &end, 10);
+    if (errno || end == cursor || parsed > UINT_MAX) {
+        return false;
+    }
+    while (g_ascii_isspace(*end)) {
+        end++;
+    }
+    if (*end) {
+        return false;
+    }
+
+    *qcode = p2k_switch_keymap_letter_qcode(key);
+    *number = parsed;
+    return *qcode != Q_KEY_CODE_UNMAPPED;
+}
+
 static unsigned p2k_load_keymap(const char *path)
 {
+    unsigned parsed_bindings[Q_KEY_CODE__MAX] = { 0 };
     char *contents = NULL;
     char **lines = NULL;
     GError *error = NULL;
+    bool saw_switches = false;
+    bool invalid = false;
     unsigned loaded = 0;
 
     if (!g_file_get_contents(path, &contents, NULL, &error)) {
@@ -167,44 +183,93 @@ static unsigned p2k_load_keymap(const char *path)
 
     lines = g_strsplit(contents, "\n", -1);
     for (size_t index = 0; lines[index]; index++) {
-        char *line = g_strstrip(lines[index]);
-        char key = 0;
-        unsigned number = 0;
+        char *line = lines[index];
+        char *comment;
+        size_t indent = 0;
         int qcode;
+        unsigned number;
 
-        if (!*line || *line == '#' || g_str_has_prefix(line, "switches:")) {
+        g_strchomp(line);
+        comment = strchr(line, '#');
+        if (comment) {
+            *comment = '\0';
+            g_strchomp(line);
+        }
+        if (!*line) {
             continue;
         }
-        if (sscanf(line, " %c : %u", &key, &number) != 2) {
-            warn_report("pinball2000: ignoring malformed switch-keymap line: %s",
-                        line);
+        if (strchr(line, '\t')) {
+            warn_report("%s:%zu: tabs are not accepted in switch keymap",
+                        path, index + 1);
+            invalid = true;
             continue;
         }
 
-        qcode = p2k_letter_qcode(key);
-        if (qcode == Q_KEY_CODE_UNMAPPED || !p2k_valid_matrix_switch(number)) {
-            warn_report("pinball2000: invalid switch-keymap entry '%c: %u'",
-                        key, number);
+        while (line[indent] == ' ') {
+            indent++;
+        }
+        if (!saw_switches) {
+            if (indent == 0 && !strcmp(line, "switches:")) {
+                saw_switches = true;
+            } else {
+                warn_report("%s:%zu: expected top-level 'switches:'",
+                            path, index + 1);
+                invalid = true;
+            }
             continue;
         }
-
-        s_switch_bindings[qcode] = number;
+        if (indent == 0) {
+            warn_report("%s:%zu: switch entries must be indented under "
+                        "'switches:'", path, index + 1);
+            invalid = true;
+            continue;
+        }
+        if (!p2k_parse_binding(line + indent, &qcode, &number)) {
+            warn_report("%s:%zu: expected one A-Z key and switch number, "
+                        "for example '  a: 13'", path, index + 1);
+            invalid = true;
+            continue;
+        }
+        if (!p2k_valid_matrix_switch(number)) {
+            warn_report("%s:%zu: switch %u is outside 11..88 "
+                        "(both digits must be 1..8)", path, index + 1,
+                        number);
+            invalid = true;
+            continue;
+        }
+        if (parsed_bindings[qcode]) {
+            warn_report("%s:%zu: duplicate binding for '%c'", path,
+                        index + 1, g_ascii_tolower(line[indent]));
+            invalid = true;
+            continue;
+        }
+        parsed_bindings[qcode] = number;
         loaded++;
     }
 
+    if (!saw_switches) {
+        warn_report("%s: missing top-level 'switches:'", path);
+        invalid = true;
+    } else if (!loaded) {
+        warn_report("%s: 'switches:' contains no usable bindings", path);
+        invalid = true;
+    }
+
+    if (invalid) {
+        error_report("pinball2000: invalid switch keymap %s; "
+                     "custom A-Z bindings disabled (use -v for details)",
+                     path);
+        loaded = 0;
+    } else {
+        memcpy(s_switch_bindings, parsed_bindings,
+               sizeof(s_switch_bindings));
+    }
     g_strfreev(lines);
     g_free(contents);
     return loaded;
 }
 
-static void p2k_inject_numeric_digit(unsigned digit)
-{
-    int qcode = p2k_digit_qcode(digit);
-    p2k_lpt_host_key(qcode, true);
-    p2k_lpt_host_key(qcode, false);
-}
-
-static bool p2k_handle_bound_key(int qcode, bool down)
+bool p2k_switch_keymap_handle_key(int qcode, bool down)
 {
     unsigned number;
 
@@ -215,144 +280,41 @@ static bool p2k_handle_bound_key(int qcode, bool down)
     if (!number) {
         return false;
     }
-
     if (s_bound_key_down[qcode] == down) {
         return true;
     }
     s_bound_key_down[qcode] = down;
 
     if (down) {
-        /* The legacy selector supports one held Ctrl-driven switch at a time.
-         * Ignore overlapping custom keys rather than releasing the first one. */
-        if (s_active_bound_key != Q_KEY_CODE_UNMAPPED) {
-            return true;
+        if (s_switch_hold_count[number]++ == 0) {
+            p2k_lpt_set_keymap_switch(number, true);
         }
-        p2k_inject_numeric_digit(number / 10);
-        p2k_inject_numeric_digit(number % 10);
-        p2k_lpt_host_key(Q_KEY_CODE_CTRL, true);
-        s_active_bound_key = qcode;
-    } else if (s_active_bound_key == qcode) {
-        p2k_lpt_host_key(Q_KEY_CODE_CTRL, false);
-        s_active_bound_key = Q_KEY_CODE_UNMAPPED;
+    } else if (s_switch_hold_count[number] > 0 &&
+               --s_switch_hold_count[number] == 0) {
+        p2k_lpt_set_keymap_switch(number, false);
     }
-
     return true;
 }
 
-static void p2k_switch_key_event(DeviceState *dev, QemuConsole *src,
-                                 InputEvent *event)
+void p2k_install_switch_keymap(void)
 {
-    InputKeyEvent *key = event->u.key.data;
-    int qcode = qemu_input_key_value_to_qcode(key->key);
-
-    /* QEMU selects only the first matching keyboard handler.  This handler is
-     * activated after machine construction, so every unbound key must be
-     * delegated to the original cabinet handler to preserve existing controls. */
-    if (!p2k_handle_bound_key(qcode, key->down)) {
-        p2k_lpt_host_key(qcode, key->down);
-    }
-}
-
-static const QemuInputHandler p2k_switch_key_input_handler = {
-    .name = "pinball2000 YAML switch keymap",
-    .mask = INPUT_EVENT_MASK_KEY,
-    .event = p2k_switch_key_event,
-};
-
-typedef struct P2KBoundKeyEvent {
-    int qcode;
-    bool down;
-} P2KBoundKeyEvent;
-
-static void p2k_bound_key_bh(void *opaque)
-{
-    P2KBoundKeyEvent *event = opaque;
-    p2k_handle_bound_key(event->qcode, event->down);
-    g_free(event);
-}
-
-static int p2k_sdl_event_filter(void *opaque, SDL_Event *event)
-{
-    P2KBoundKeyEvent *queued;
-    int qcode;
-
-    if (event->type != SDL_KEYDOWN && event->type != SDL_KEYUP) {
-        return 1;
-    }
-    if (event->type == SDL_KEYDOWN && event->key.repeat) {
-        return 0;
-    }
-
-    qcode = p2k_sdl_letter_qcode(event->key.keysym.sym);
-    if (qcode == Q_KEY_CODE_UNMAPPED || !s_switch_bindings[qcode]) {
-        return 1;
-    }
-
-    queued = g_new(P2KBoundKeyEvent, 1);
-    queued->qcode = qcode;
-    queued->down = event->type == SDL_KEYDOWN;
-    aio_bh_schedule_oneshot(qemu_get_aio_context(), p2k_bound_key_bh, queued);
-
-    /* Remove configured letters from the direct renderer's queue.  This makes
-     * YAML bindings override the built-in S (Start) and C (coin) shortcuts. */
-    return 0;
-}
-
-static gboolean p2k_wait_for_direct_sdl(gpointer opaque)
-{
-    if (!SDL_WasInit(SDL_INIT_EVENTS)) {
-        return G_SOURCE_CONTINUE;
-    }
-    if (!s_sdl_filter_installed) {
-        SDL_SetEventFilter(p2k_sdl_event_filter, NULL);
-        s_sdl_filter_installed = true;
-        info_report("pinball2000: switch keymap attached to direct SDL input");
-    }
-    return G_SOURCE_REMOVE;
-}
-
-static void p2k_switch_keymap_machine_ready(Notifier *notifier, void *data)
-{
-    QemuInputHandlerState *handler;
     unsigned loaded;
 
-    if (p2k_env_enabled("P2K_CABINET_PURIST") ||
+    if (s_keymap_installed || p2k_env_enabled("P2K_CABINET_PURIST") ||
         p2k_env_enabled("P2K_LPT_DISABLE")) {
         return;
     }
+    s_keymap_installed = true;
 
     s_keymap_path = p2k_default_keymap_path();
     if (!p2k_initialize_keymap_file(s_keymap_path)) {
         return;
     }
-
     loaded = p2k_load_keymap(s_keymap_path);
     if (!loaded) {
-        warn_report("pinball2000: no usable switch bindings in %s",
-                    s_keymap_path);
         return;
     }
 
-    handler = qemu_input_handler_register(NULL, &p2k_switch_key_input_handler);
-    qemu_input_handler_activate(handler);
     info_report("pinball2000: loaded %u switch key binding%s from %s",
                 loaded, loaded == 1 ? "" : "s", s_keymap_path);
-
-    if (p2k_env_enabled("P2K_FRAMEBUFFER_THREAD")) {
-        g_timeout_add(25, p2k_wait_for_direct_sdl, NULL);
-    }
 }
-
-static Notifier s_machine_ready_notifier = {
-    .notify = p2k_switch_keymap_machine_ready,
-};
-
-static void p2k_switch_keymap_register(void)
-{
-    /* type_init runs while `-M help` is still constructing QEMU's global
-     * infrastructure.  Register only a lightweight notifier here; touching
-     * input handlers at this stage reaches uninitialized QEMU mutexes. */
-    qemu_add_machine_init_done_notifier(&s_machine_ready_notifier);
-}
-
-type_init(p2k_switch_keymap_register)

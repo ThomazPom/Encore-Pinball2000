@@ -24,8 +24,14 @@ guest.
 
 Any matrix position can also be held by typing its standard two-digit
 column/row number, then holding `Ctrl`. Releasing Ctrl opens the switch; holding
-Ctrl again repeats the last selection. `13` selects Start. This path updates
-the same `s_switch_matrix` state as the dedicated desktop bindings.
+Ctrl again repeats the last selection. `13` selects Start.
+
+Optional A-Z mappings are loaded by `p2k-switch-keymap.c` and enter through the
+same `p2k_lpt_host_key()` path as every other desktop key. Their bits are kept
+in a separate input layer and ORed with the numeric/built-in matrix state. This
+allows simultaneous switches and prevents one input source from releasing a
+switch still held by another. Details:
+[desktop controls](41-cli-keyboard-guide.md).
 
 ## Start input and game-start checks
 

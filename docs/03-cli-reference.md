@@ -30,6 +30,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--fullscreen` | — | off | Adds QEMU `-full-screen`; ignored with `--display none`. | `scripts/run-qemu.sh --fullscreen` |
 | `--bpp` | `16` \| `32` | `32` | `16` exports `P2K_DISPLAY_BPP=16` for native x1r5g5b5; `32` keeps ARGB8888 path. | `scripts/run-qemu.sh --bpp 16` |
 | `--framebuffer` | — | on for desktop auto-selection | Runs QEMU with display `none` and gives a dedicated SDL thread direct access to the native 640×240 RGB555 framebuffer. SDL scales it to the window; presentation and input bypass QEMU's display backend. | `scripts/run-qemu.sh --framebuffer` |
+| `--switch-keymap` | YAML file | `$XDG_CONFIG_HOME/encore/switch-keymap.yaml`, else `~/.config/encore/switch-keymap.yaml` | Maps A-Z keys directly to matrix switches. A missing file is initialized with an editable starter map. | `scripts/run-qemu.sh --switch-keymap ./my-switches.yaml` |
 | `--qemu-framebuffer` | — | off | Keeps the selected QEMU display backend, but reads RGB555 directly from guest RAM and expands it through a lookup table into QEMU's preferred ARGB surface instead of using address-space reads. Experimental A/B option. | `scripts/run-qemu.sh --qemu-framebuffer` |
 | `--qemu-framebuffer-async` | — | off | Adds worker-thread QEMU-surface submission to `--qemu-framebuffer`. It requires QEMU's SDL display. OpenGL-backed renderers transfer their context to the worker on the first refresh. Experimental A/B option. | `scripts/run-qemu.sh --qemu-framebuffer-async` |
 | `--qemu-framebuffer-async-driver` | `auto` \| `wayland` \| `x11` \| `software` | `auto` | Selects the SDL presentation path used by `--qemu-framebuffer-async`. `auto` prefers accelerated X11 and otherwise uses software SDL; `wayland` exercises the native accelerated context-handoff path. | `scripts/run-qemu.sh --qemu-framebuffer-async --qemu-framebuffer-async-driver wayland` |
@@ -152,7 +153,11 @@ Delivered by the QEMU machine, not the wrapper:
 | `Right arrow` | Begin test |
 | `F12` | State dump |
 | Type `11..88`, hold `Ctrl` | Hold the selected matrix switch until `Ctrl` is released; another Ctrl hold repeats it; switch `13` is Start |
+| Configured A-Z key | Hold its switch for the duration of the key press; simultaneous mappings are supported |
 | `Ctrl+Alt+F` | SDL fullscreen toggle |
+
+The A-Z file format and override rules are documented in
+[desktop controls](41-cli-keyboard-guide.md).
 
 ## `scripts/build-qemu.sh` synopsis
 

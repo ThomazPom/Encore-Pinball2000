@@ -159,6 +159,7 @@ static uint8_t s_rendering_data_val;
  * here fed illuminated lamps back into XINA as phantom closed switches. */
 static uint8_t s_lamp_rows[8];
 static uint8_t s_switch_matrix[8];
+static uint8_t s_keymap_switch_matrix[8];
 static uint8_t s_data_val2;
 static int     s_access_mode4_prev;
 static int     s_access_mode1_prev;
@@ -209,7 +210,12 @@ static int calc_bitwise_sum(uint8_t val)
     return has_bit + sum;
 }
 
-static bool p2k_set_matrix_switch(unsigned number, bool down)
+static uint8_t p2k_matrix_slot(unsigned slot)
+{
+    return s_switch_matrix[slot & 7] | s_keymap_switch_matrix[slot & 7];
+}
+
+static bool p2k_set_switch_layer(uint8_t matrix[8], unsigned number, bool down)
 {
     unsigned column = number / 10;
     unsigned row = number % 10;
@@ -219,18 +225,29 @@ static bool p2k_set_matrix_switch(unsigned number, bool down)
     }
     unsigned slot = column & 7;
     uint8_t mask = 1u << (row - 1);
-    bool previous = (s_switch_matrix[slot] & mask) != 0;
+    bool previous = (p2k_matrix_slot(slot) & mask) != 0;
     if (down) {
-        s_switch_matrix[slot] |= mask;
+        matrix[slot] |= mask;
     } else {
-        s_switch_matrix[slot] &= ~mask;
+        matrix[slot] &= ~mask;
     }
-    if (previous != down) {
+    bool current = (p2k_matrix_slot(slot) & mask) != 0;
+    if (previous != current) {
         fprintf(stderr, "[lpt] matrix switch %02u %s (column=%u row=%u%s)\n",
-                number, down ? "PRESSED" : "released", column, row,
+                number, current ? "PRESSED" : "released", column, row,
                 number == 13 ? ", Start" : "");
     }
     return true;
+}
+
+static bool p2k_set_matrix_switch(unsigned number, bool down)
+{
+    return p2k_set_switch_layer(s_switch_matrix, number, down);
+}
+
+bool p2k_lpt_set_keymap_switch(unsigned number, bool down)
+{
+    return p2k_set_switch_layer(s_keymap_switch_matrix, number, down);
 }
 
 static bool p2k_is_ctrl_key(int qcode)
@@ -327,7 +344,7 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
     case 0x04: {
         int sel  = calc_bitwise_sum(s_rendering_data_val);   /* 1..8 if one-hot */
         int slot = (sel >= 1 && sel <= 8) ? sel : 1;
-        return s_switch_matrix[slot & 7];
+        return p2k_matrix_slot(slot);
     }
     case 0x0F:
         return (uint8_t)((s_data_flag1 << 6) | (s_data_bit6 << 7));
@@ -466,9 +483,9 @@ static void p2k_lpt_dump_state(void)
         "ctrl=0x%02x data=0x%02x op=0x%02x lamp1=0x%02x switch1=0x%02x\n",
         s_coin_door_closed ? "CLOSED" : "OPEN",
         s_phys10_buttons, s_phys8_coin_slots,
-        !!(s_switch_matrix[1] & (1u << 2)),
+        !!(p2k_matrix_slot(1) & (1u << 2)),
         s_rendering_flags, s_lpt_data, s_data_for_rendering,
-        s_lamp_rows[1], s_switch_matrix[1]);
+        s_lamp_rows[1], p2k_matrix_slot(1));
 }
 
 /* Pipe RGB to a JPEG-producing helper (cjpeg / magick / convert).
@@ -578,6 +595,9 @@ static void p2k_lpt_screenshot(void)
 
 void p2k_lpt_host_key(int qcode, bool down)
 {
+    if (p2k_switch_keymap_handle_key(qcode, down)) {
+        return;
+    }
     if (p2k_handle_numeric_switch_key(qcode, down)) {
         return;
     }

@@ -19,6 +19,53 @@ to XINA.
 | `F1` | Request a clean shutdown |
 | `Ctrl+Alt+F` | Toggle SDL fullscreen through QEMU |
 
+## Custom A-Z switch bindings
+
+Hold a configured letter to close its matrix switch; release the letter to
+open it. Multiple mapped letters can be held together. They use an independent
+input layer, so a mapped key cannot release a switch still held through the
+numeric Ctrl selector.
+
+The default file is created on first launch:
+
+```text
+${XDG_CONFIG_HOME}/encore/switch-keymap.yaml
+```
+
+When `XDG_CONFIG_HOME` is unset, this is
+`~/.config/encore/switch-keymap.yaml`. Select another file with:
+
+```sh
+scripts/run-qemu.sh --switch-keymap ./my-switches.yaml
+```
+
+The file uses a strict, dependency-free YAML subset:
+
+```yaml
+switches:
+  a: 13
+  x: 28
+  f: 58
+```
+
+- Keys are single letters from A through Z, matched without case sensitivity.
+- Values are matrix numbers `11` through `88`; both digits must be `1..8`.
+- Blank lines and `#` comments are accepted.
+- Entries must be indented beneath one top-level `switches:` mapping.
+- Duplicate letters, tabs, trailing text, extra sections and other YAML
+  features reject the complete file. Built-in controls remain available.
+
+A binding overrides that letter's built-in action. For example, binding `c`
+replaces the `C` coin shortcut; `F10` still pulses the coin switch. The file is
+read once at launch.
+
+With ROMs and update 2.10 installed, exercise parsing, simultaneous holds,
+same-switch reference counts and built-in fallback with:
+
+```sh
+python3 scripts/tests/smoke-switch-keymap.py
+```
+
 ## Any matrix switch
 
 Encore accepts standard two-digit matrix switch numbers. The first digit is

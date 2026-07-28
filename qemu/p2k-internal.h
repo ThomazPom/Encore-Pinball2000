@@ -155,6 +155,12 @@ extern void (*p2k_dcs_core_audio_raw_cmd)(uint16_t cmd);
  * (STATUS=0x87 signature + edge-detect dispatch, all inputs idle). */
 void p2k_install_lpt_board(void);
 void p2k_lpt_host_key(int qcode, bool down);
+bool p2k_lpt_set_keymap_switch(unsigned number, bool down);
+
+/* p2k-switch-keymap.c: optional A-Z -> matrix-switch configuration. */
+void p2k_install_switch_keymap(void);
+bool p2k_switch_keymap_handle_key(int qcode, bool down);
+int p2k_switch_keymap_letter_qcode(char key);
 
 /* p2k-bar3-flash.c: BAR3 update flash @ 0x12000000 seeded from
  * savedata/<game>.flash (4 MiB). */

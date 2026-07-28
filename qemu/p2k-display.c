@@ -284,6 +284,9 @@ static void p2k_queue_host_key(int qcode, bool down)
 
 static int p2k_sdl_qcode(SDL_Keycode sym)
 {
+    if (sym >= SDLK_a && sym <= SDLK_z) {
+        return p2k_switch_keymap_letter_qcode('a' + sym - SDLK_a);
+    }
     switch (sym) {
     case SDLK_F1: return Q_KEY_CODE_F1;
     case SDLK_F2: return Q_KEY_CODE_F2;
@@ -329,11 +332,8 @@ static int p2k_sdl_qcode(SDL_Keycode sym)
     case SDLK_RCTRL: return Q_KEY_CODE_CTRL_R;
     case SDLK_LALT: return Q_KEY_CODE_ALT;
     case SDLK_RALT: return Q_KEY_CODE_ALT_R;
-    case SDLK_f: return Q_KEY_CODE_F;
     case SDLK_EQUALS: return Q_KEY_CODE_EQUAL;
     case SDLK_SPACE: return Q_KEY_CODE_SPC;
-    case SDLK_s: return Q_KEY_CODE_S;
-    case SDLK_c: return Q_KEY_CODE_C;
     default: return Q_KEY_CODE_UNMAPPED;
     }
 }
