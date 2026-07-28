@@ -8,6 +8,9 @@ copies these files into the pinned QEMU source tree and compiles a custom
 > These files define the guest-visible machine. Verify device claims here
 > before copying them into user documentation.
 
+Development rules, hook placement and validation requirements:
+[development guidelines](../docs/05-development-guidelines.md).
+
 ## Source map
 
 | Files | Responsibility |
