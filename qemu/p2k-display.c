@@ -32,6 +32,7 @@
 #include "qemu/notify.h"
 #include "qemu/main-loop.h"
 #include "qemu/thread.h"
+#include "system/runstate.h"
 #include "system/system.h"
 #include "ui/console.h"
 #include "ui/input.h"
@@ -59,6 +60,7 @@ typedef struct P2KDisplayState {
     QemuThread     submit_worker;
     QemuMutex      submit_lock;
     QemuCond       submit_cond;
+    Notifier       shutdown_notifier;
     Notifier       exit_notifier;
     SDL_Window    *window;
     SDL_Renderer  *renderer;
@@ -795,6 +797,14 @@ static void p2k_display_shutdown(Notifier *notifier, void *data)
     }
 }
 
+static void p2k_display_quiesce(Notifier *notifier, void *data)
+{
+    (void)notifier;
+    (void)data;
+
+    p2k_display_stop_presentation();
+}
+
 static const GraphicHwOps p2k_display_ops = {
     .invalidate = p2k_display_invalidate,
     .gfx_update = p2k_display_update,
@@ -831,6 +841,8 @@ void p2k_install_display(void)
         bpp16 = true;
     }
     s_disp.bpp16 = bpp16;
+    s_disp.shutdown_notifier.notify = p2k_display_quiesce;
+    qemu_register_shutdown_notifier(&s_disp.shutdown_notifier);
     s_disp.exit_notifier.notify = p2k_display_shutdown;
     qemu_add_exit_notifier(&s_disp.exit_notifier);
     if (s_disp.qemu_framebuffer) {

@@ -11,6 +11,7 @@
 #include "qemu/error-report.h"
 #include "qemu/notify.h"
 #include "qemu/thread.h"
+#include "system/runstate.h"
 #include "system/system.h"
 
 #include <poll.h>
@@ -27,12 +28,14 @@
 
 typedef struct P2KVideoCapture {
     QemuThread worker;
+    Notifier shutdown_notifier;
     Notifier exit_notifier;
     char *path;
     int input_fd;
     GPid encoder_pid;
     bool worker_run;
     bool worker_started;
+    bool shutdown_complete;
     uint64_t frames;
 } P2KVideoCapture;
 
@@ -169,11 +172,15 @@ static void p2k_video_shutdown(Notifier *notifier, void *data)
     (void)notifier;
     (void)data;
 
+    if (s_video.shutdown_complete) {
+        return;
+    }
+    s_video.shutdown_complete = true;
+
     /*
-     * Exit notifiers run newest-first.  Capture is installed after display,
-     * so stop SDL/QEMU presentation explicitly before waiting for FFmpeg.
-     * Otherwise the renderer can remain in SDL_RenderPresent while QEMU's
-     * process teardown is already in progress.
+     * Shutdown notifiers run newest-first. Capture is installed after
+     * display, so stop presentation explicitly before waiting for FFmpeg.
+     * The exit notifier calls this again as an idempotent fallback.
      */
     p2k_display_stop_presentation();
 
@@ -266,6 +273,8 @@ void p2k_install_video_capture(void)
     s_video.path = g_strdup(path);
     s_video.worker_run = true;
     s_video.worker_started = true;
+    s_video.shutdown_notifier.notify = p2k_video_shutdown;
+    qemu_register_shutdown_notifier(&s_video.shutdown_notifier);
     s_video.exit_notifier.notify = p2k_video_shutdown;
     qemu_add_exit_notifier(&s_video.exit_notifier);
     qemu_thread_create(&s_video.worker, "p2k-video-capture",
