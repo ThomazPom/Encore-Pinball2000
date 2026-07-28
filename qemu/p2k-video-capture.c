@@ -169,6 +169,14 @@ static void p2k_video_shutdown(Notifier *notifier, void *data)
     (void)notifier;
     (void)data;
 
+    /*
+     * Exit notifiers run newest-first.  Capture is installed after display,
+     * so stop SDL/QEMU presentation explicitly before waiting for FFmpeg.
+     * Otherwise the renderer can remain in SDL_RenderPresent while QEMU's
+     * process teardown is already in progress.
+     */
+    p2k_display_stop_presentation();
+
     qatomic_set(&s_video.worker_run, false);
     if (s_video.worker_started) {
         qemu_thread_join(&s_video.worker);

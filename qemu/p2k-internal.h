@@ -96,6 +96,8 @@ bool p2k_display_request_screenshot(void);
 void p2k_display_set_status(const char *status);
 void p2k_display_refresh_status(void);
 bool p2k_display_copy_rgb555_frame(uint16_t *pixels, size_t pixel_count);
+/* Idempotently join host presentation workers before process teardown. */
+void p2k_display_stop_presentation(void);
 
 /* p2k-video-capture.c: optional FFmpeg encoder fed from display frames. */
 void p2k_install_video_capture(void);
