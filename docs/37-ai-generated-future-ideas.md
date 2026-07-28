@@ -26,7 +26,6 @@ eventual use in a physical cabinet.
 | Failure bundle | One command packages logs, configuration, hashes, timing, recent inputs and screenshots while excluding ROM data. | Makes issue reports useful without distributing protected assets. |
 | Cabinet kiosk mode | Controlled autostart, safe output shutdown, health monitoring, crash recovery and rotated diagnostics. | Supports unattended cabinet operation after physical validation. |
 | Configurable desktop controls | Keyboard and controller mappings stored per user or profile. | Replaces hard-coded desktop keys without affecting real-cabinet input. |
-| Native video capture | Record the direct framebuffer and synchronized audio without routing frames through a heavier display backend. | Produces demonstrations and visual regression evidence with controlled overhead. |
 | Modern cabinet bridge | A dedicated USB microcontroller presents the cabinet protocol and handles time-sensitive signaling outside the host scheduler. | Could make cabinet use practical on computers without suitable parallel ports. |
 
 ## Strongest concept: a session artifact

@@ -95,6 +95,10 @@ void p2k_display_toggle_flip_y(void);
 bool p2k_display_request_screenshot(void);
 void p2k_display_set_status(const char *status);
 void p2k_display_refresh_status(void);
+bool p2k_display_copy_rgb555_frame(uint16_t *pixels, size_t pixel_count);
+
+/* p2k-video-capture.c: optional H.264/MP4 encoder fed from display frames. */
+void p2k_install_video_capture(void);
 
 /* p2k-dcs-core.c: single shared DCS-2 state machine.  Both p2k-dcs.c
  * (BAR4 MMIO) and p2k-dcs-uart.c (I/O 0x138-0x13F) MUST be thin views
