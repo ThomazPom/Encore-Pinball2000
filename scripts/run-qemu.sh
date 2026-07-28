@@ -268,6 +268,12 @@ DISPLAY / UX
                             present it without host pixel conversion.
                             Use --display <backend> to select QEMU's display
                             path explicitly.
+  --switch-keymap <yaml>    A-Z to matrix-switch bindings. Missing files are
+                            initialized with an editable starter map. Default:
+                            $XDG_CONFIG_HOME/encore/switch-keymap.yaml, or
+                            ~/.config/encore/switch-keymap.yaml when unset.
+                            The strict YAML subset is documented in the
+                            desktop-controls guide.
   --qemu-framebuffer        Experimental fast QEMU-console renderer. Keeps the
                             selected QEMU display backend and its input/window
                             handling, but reads RGB555 directly from guest RAM
@@ -526,6 +532,8 @@ KEY BINDINGS (delivered by the QEMU machine, not by this wrapper)
                             for the desired switch duration. Releasing Ctrl
                             releases it; holding Ctrl again repeats the same
                             switch. Example: 13, hold Ctrl for 3 s holds Start.
+  Configured A-Z            Hold mapped letters to hold their matrix switches.
+                            See --switch-keymap and docs/41-cli-keyboard-guide.md.
   F2                        Toggle vertical-flip of the framebuffer
                             (default ON: bottom-up source → top-down
                              display).
@@ -546,6 +554,7 @@ ENV PASSTHROUGH (advanced; see qemu/README.md for the full table)
   P2K_DISPLAY_BPP P2K_FRAMEBUFFER_THREAD P2K_QEMU_FRAMEBUFFER
   P2K_LPT_DISABLE P2K_LPT_PARPORT
   P2K_LPT_IOPORT P2K_LPT_TRACE_FILE P2K_DCS_PRELOAD P2K_CABINET_PURIST
+  P2K_SWITCH_KEYMAP
 EOF
 }
 
@@ -578,6 +587,13 @@ while [[ $# -gt 0 ]]; do
     --headless)        HEADLESS=1; shift ;;
     --fullscreen)      FULLSCREEN=1; shift ;;
     --framebuffer)     FRAMEBUFFER_REQUEST=1; shift ;;
+    --switch-keymap)
+      [[ -n "${2:-}" ]] || {
+        echo "[run-qemu] --switch-keymap: expected a YAML file path" >&2
+        exit 2
+      }
+      export P2K_SWITCH_KEYMAP="$(realpath -m "$2")"
+      shift 2 ;;
     --qemu-framebuffer) export P2K_QEMU_FRAMEBUFFER=1; shift ;;
     --qemu-framebuffer-async)
       export P2K_QEMU_FRAMEBUFFER=1 P2K_QEMU_FB_ASYNC=1; shift ;;

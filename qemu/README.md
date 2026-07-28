@@ -18,7 +18,7 @@ copies these files into the pinned QEMU source tree and compiles a custom
 | `p2k-pci.c`, `p2k-plx-regs.c` | Fixed PCI topology and PLX registers |
 | `p2k-bars.c`, `p2k-bar3-flash.c` | SRAM and update flash |
 | `p2k-dcs*.c` | DCS protocol and audio engines |
-| `p2k-lpt-board.c` | Emulated and real driver-board connection |
+| `p2k-lpt-board.c`, `p2k-switch-keymap.c` | Emulated/real driver-board connection and configurable desktop switches |
 | `p2k-gx.c`, `p2k-gp-blt.c`, `p2k-display.c`, `p2k-vsync.c` | Graphics and display timing |
 | `p2k-isa-stubs.c`, `p2k-superio.c`, `p2k-cyrix-ccr.c` | Board-specific I/O surfaces |
 | `p2k-mem-detect.c`, `p2k-probe-cell-shim.c` | Narrow software compatibility support |
