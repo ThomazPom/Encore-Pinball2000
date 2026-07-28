@@ -1,0 +1,111 @@
+name: Release QEMU build
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing semantic-version tag to release (for example v1.2.3)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qemu-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Install build and release dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get -qq update >/tmp/apt.log 2>&1
+          apt-get -qq install -y --no-install-recommends \
+            ca-certificates curl git gh xz-utils \
+            build-essential ninja-build meson pkg-config python3 python3-venv \
+            libglib2.0-dev libpixman-1-dev libsdl2-dev \
+            libvorbis-dev libogg-dev libgtk-3-dev zlib1g-dev \
+            >>/tmp/apt.log 2>&1 || { tail -n 80 /tmp/apt.log; exit 1; }
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Resolve and validate release tag
+        id: version
+        env:
+          MANUAL_TAG: ${{ inputs.tag }}
+        run: |
+          TAG="${MANUAL_TAG:-$GITHUB_REF_NAME}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: $TAG (expected vX.Y.Z)" >&2
+            exit 1
+          fi
+          git rev-parse "$TAG^{commit}" >/dev/null
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build QEMU
+        run: |
+          if ! bash scripts/build-qemu.sh >/tmp/build-qemu.log 2>&1; then
+            grep -nE 'FAILED:|fatal error:|error:|undefined reference|ninja: build stopped|meson.build|ERROR:' \
+              /tmp/build-qemu.log | tail -n 100 || true
+            tail -n 60 /tmp/build-qemu.log
+            exit 1
+          fi
+
+      - name: Verify and package
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          BIN="$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
+          PACKAGE="dist/Encore-Pinball2000-$TAG"
+
+          "$BIN" -M help | grep -q pinball2000
+          mkdir -p "$PACKAGE"
+          install -m 0755 "$BIN" "$PACKAGE/qemu-system-i386"
+          cp -a scripts "$PACKAGE/scripts"
+          cp README.md "$PACKAGE/" 2>/dev/null || true
+
+          cat > "$PACKAGE/run-qemu.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          ROOT="$(cd "$(dirname "$0")" && pwd)"
+          export QEMU_BIN="$ROOT/qemu-system-i386"
+          exec "$ROOT/scripts/run-qemu.sh" "$@"
+          EOF
+          chmod 0755 "$PACKAGE/run-qemu.sh"
+
+          # ROMs and updates deliberately stay out of the release archive.
+          # run-qemu.sh downloads both complete trees on first launch whenever
+          # their destination directories are absent, then works offline.
+          test ! -e "$PACKAGE/roms"
+          test ! -e "$PACKAGE/updates"
+          test -x "$PACKAGE/scripts/fetch-assets-if-missing.sh"
+
+          tar -C dist -czf "dist/Encore-Pinball2000-$TAG-linux-x86_64.tar.gz" \
+            "Encore-Pinball2000-$TAG"
+          sha256sum "dist/Encore-Pinball2000-$TAG-linux-x86_64.tar.gz" \
+            > "dist/Encore-Pinball2000-$TAG-linux-x86_64.tar.gz.sha256"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release create "$TAG" \
+            "dist/Encore-Pinball2000-$TAG-linux-x86_64.tar.gz" \
+            "dist/Encore-Pinball2000-$TAG-linux-x86_64.tar.gz.sha256" \
+            --verify-tag \
+            --generate-notes \
+            --title "Encore Pinball2000 $TAG"
