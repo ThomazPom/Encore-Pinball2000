@@ -20,6 +20,7 @@ result, or test a cabinet.
 
 ## Understand the implementation
 
+- [Development guidelines](05-development-guidelines.md)
 - [Architecture](10-architecture.md)
 - [CPU and timing](12-cpu-and-timers.md)
 - [Memory map](13-memory-map.md)
