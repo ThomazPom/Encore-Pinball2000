@@ -52,23 +52,24 @@ The source framebuffer is bottom-up, so vertical flip starts enabled. Press
 direct SDL path writes BMP while the QEMU console path prefers JPEG and falls
 back to PPM.
 
-## H.264 capture
+## Video capture
 
-`--record-video <file.mp4>` records the complete run from machine startup until
+`--record-video <file>` records the complete run from machine startup until
 clean shutdown. Capture reads the same native RGB555 source through
 `p2k-display.c`, independently of the selected display backend, then streams
-packed frames through an anonymous pipe to FFmpeg. Only the final H.264 MP4 is
-written; there is no raw intermediate video.
+packed frames through an anonymous pipe to FFmpeg. Only the final compressed
+container is written; there is no raw intermediate video.
 
 ```sh
-scripts/run-qemu.sh --record-video ./gameplay.mp4
+scripts/run-qemu.sh --record-video ./gameplay.mkv
 ```
 
-The encoder uses 640×480 at 60 fps, `libx264`, CRF 20, the `veryfast` preset
-and two encoder threads. The result is video-only. The wrapper requires an
-installed FFmpeg with `libx264`, validates the `.mp4` destination and refuses
-to overwrite an existing file. The capture follows the current vertical-flip
-state but excludes host-only window scaling and overlays.
+The encoder receives 640×480 frames at 60 fps. The result is video-only. The
+wrapper requires an installed FFmpeg and refuses to overwrite an existing
+file. FFmpeg selects both the container and its default video codec from the
+filename extension; MP4/MOV-family outputs also enable fast-start. The capture
+follows the current vertical-flip state but excludes host-only window scaling
+and overlays.
 
 ## VSync
 
