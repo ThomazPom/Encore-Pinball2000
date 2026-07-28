@@ -748,10 +748,10 @@ static void p2k_display_update(void *opaque)
      * so a threaded instance cannot reach this callback. */
 }
 
-static void p2k_display_shutdown(Notifier *notifier, void *data)
+void p2k_display_stop_presentation(void)
 {
-    P2KDisplayState *s = container_of(notifier, P2KDisplayState,
-                                      exit_notifier);
+    P2KDisplayState *s = &s_disp;
+
     qatomic_set(&s->worker_run, false);
     if (s->worker_started) {
         qemu_thread_join(&s->worker);
@@ -773,6 +773,14 @@ static void p2k_display_shutdown(Notifier *notifier, void *data)
         }
         g_clear_pointer(&s->submit_staging, g_free);
     }
+}
+
+static void p2k_display_shutdown(Notifier *notifier, void *data)
+{
+    P2KDisplayState *s = container_of(notifier, P2KDisplayState,
+                                      exit_notifier);
+
+    p2k_display_stop_presentation();
     if (s->profile && s->profile_frames) {
         info_report("pinball2000: QEMU display profile frames=%llu "
                     "prepare_avg=%.1fus prepare_max=%.1fus "
