@@ -457,11 +457,11 @@ CONSOLE / DIAGNOSTICS
                             Output goes to /tmp/p2k_qemu.log.
   --screenshot-dir <dir>    Where F3 writes screenshots (defaults to
                             /tmp). Exported as P2K_SCREENSHOT_DIR.
-  --record-video <file.mp4> Record the complete run as H.264 in an MP4
-                            container. Requires FFmpeg with libx264. Native
-                            RGB555 frames are piped directly to the encoder;
-                            no raw video file is written. Existing output is
-                            never overwritten.
+  --record-video <file>     Record the complete run. FFmpeg selects the
+                            container and its default codec from the filename
+                            extension. Native RGB555 frames are piped directly
+                            to the encoder; no raw video file is written.
+                            Existing output is never overwritten.
   --diag                    Enable the read-only PIT/PIC/IDT/XINU
                             change-only sampler (P2K_DIAG=1).
   --trace-dcs               Per-byte DCS UART trace (P2K_DCS_BYTE_TRACE=1).
@@ -650,16 +650,9 @@ while [[ $# -gt 0 ]]; do
       export P2K_SCREENSHOT_DIR="$(cd "$2" && pwd)"; shift 2 ;;
     --record-video)
       [[ -n "${2:-}" ]] || {
-        echo "[run-qemu] --record-video: expected a .mp4 output path" >&2
+        echo "[run-qemu] --record-video: expected an output path" >&2
         exit 2
       }
-      case "$2" in
-        *.[mM][pP]4) ;;
-        *)
-          echo "[run-qemu] --record-video: output must end in .mp4" >&2
-          exit 2
-          ;;
-      esac
       [[ ! -e "$2" ]] || {
         echo "[run-qemu] --record-video: refusing to overwrite '$2'" >&2
         exit 2
@@ -673,11 +666,6 @@ while [[ $# -gt 0 ]]; do
         echo "[run-qemu] --record-video: ffmpeg is required (install package 'ffmpeg')" >&2
         exit 2
       }
-      "$__ffmpeg" -hide_banner -encoders 2>/dev/null |
-        grep -E '(^|[[:space:]])libx264([[:space:]]|$)' >/dev/null || {
-          echo "[run-qemu] --record-video: ffmpeg has no libx264 encoder" >&2
-          exit 2
-        }
       export P2K_VIDEO_CAPTURE="$__video_dir/$(basename "$2")"
       export P2K_FFMPEG_BIN="$__ffmpeg"
       shift 2 ;;
