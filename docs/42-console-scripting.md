@@ -45,15 +45,17 @@ error before boot if none can be selected.
 ```text
 # Wait until the game exposes its state command.
 @wait-for 30 game info => m_game_over True
+# The shell precedes completion of the trough/device startup audit.
+@wait 5
 
 @repeat 8
   @key c
   @wait 1
 @end
 
-@switch 13 0.2
-@wait-for 30 game info => m_game_over False
-@assert-regex m_game_over\s+False
+@switch 13 0.38
+@wait-for 30 game info => m_players 1
+@assert-regex m_players\s+1
 @screenshot game-started
 @record-audio 2 game-started
 ```
@@ -71,6 +73,8 @@ python3 scripts/run-console-script.py my-session.p2k --check
 > [!NOTE]
 > Matrix switches are inputs, not forced game state. A valid Start pulse can
 > still be rejected because of pricing, door, ball-trough or game conditions.
+> SWE1 may keep `m_game_over True` after accepting Start while it waits for the
+> shooter-lane/serve transition. `m_players 1` is the reliable acceptance test.
 
 Details: [desktop controls](41-cli-keyboard-guide.md),
 [LPT board](26-lpt-board.md) and [CLI reference](03-cli-reference.md).
