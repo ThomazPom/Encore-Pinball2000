@@ -1,12 +1,19 @@
 # Wait for full game initialization, then use only ordinary emulated
 # cabinet/LPT inputs. Change the repeat count if saved pricing differs.
-@wait 15
+@wait-for 45 game info => m_game_over True
+# The XINU shell appears before the remaining device startup work settles.
+# Waiting here reproduces the timing of a successful manual Start without
+# key mashing or forced game state.
+@wait 5
+
 @repeat 8
   @key c
   @wait 1
 @end
-@wait 10
-@switch 13 0.2
 @wait 2
-game info
+
+@switch 13 0.38
+@wait-for 20 game info => m_players 1
+@wait 0.5
 @screenshot game-start-result
+game info
