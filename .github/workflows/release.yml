@@ -82,7 +82,7 @@ jobs:
           set -euo pipefail
           ROOT="$(cd "$(dirname "$0")" && pwd)"
           export QEMU_BIN="$ROOT/qemu-system-i386"
-          exec "$ROOT/scripts/run-qemu.sh" "$@"
+          exec bash "$ROOT/scripts/run-qemu.sh" "$@"
           EOF
           chmod 0755 "$PACKAGE/run-qemu.sh"
 
@@ -91,7 +91,6 @@ jobs:
           # their destination directories are absent, then works offline.
           test ! -e "$PACKAGE/roms"
           test ! -e "$PACKAGE/updates"
-          test -x "$PACKAGE/scripts/fetch-assets-if-missing.sh"
 
           tar -C dist -czf "dist/Encore-Pinball2000-$TAG-linux-x86_64.tar.gz" \
             "Encore-Pinball2000-$TAG"

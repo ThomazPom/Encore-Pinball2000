@@ -775,9 +775,20 @@ if [[ ! "$SPEED_TARGET" =~ ^[0-9]+([.][0-9]+)?$ ]] ||
   exit 2
 fi
 
-# Download complete ROM and update trees only when their directories are absent.
-# Existing directories are never inspected, modified, or refreshed.
-"$ROOT/scripts/fetch-assets-if-missing.sh" "$ROOT" "$ROMS_DIR" "$ROOT/updates"
+# A release archive does not contain ROMs or updates. Fetch each complete tree
+# once when its directory is absent; existing installations stay untouched.
+if [[ ! -d "$ROMS_DIR" || ! -d "$ROOT/updates" ]]; then
+  ASSET_TMP="$(mktemp -d)"
+  trap 'rm -rf -- "$ASSET_TMP"' EXIT
+  ASSET_REPO="${P2K_ASSETS_REPO:-https://github.com/ThomazPom/Encore-Pinball2000.git}"
+  echo "[run-qemu] ROMs or updates missing; downloading them..." >&2
+  git clone -q --depth 1 --filter=blob:none --sparse "$ASSET_REPO" "$ASSET_TMP"
+  git -C "$ASSET_TMP" sparse-checkout set roms updates
+  [[ -d "$ROMS_DIR" ]] || { mkdir -p "$(dirname "$ROMS_DIR")"; cp -a "$ASSET_TMP/roms" "$ROMS_DIR"; }
+  [[ -d "$ROOT/updates" ]] || cp -a "$ASSET_TMP/updates" "$ROOT/updates"
+  rm -rf -- "$ASSET_TMP"
+  trap - EXIT
+fi
 
 export P2K_SPEED_TARGET_PERCENT="$SPEED_TARGET"
 export P2K_TCG_CLKINT_HOTLOOP_TARGET_HZ="$(
