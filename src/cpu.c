@@ -155,17 +155,30 @@ static struct sched_state {
     uint64_t w_pic_edges_latched_base;
     uint64_t w_pic_edges_collapsed_base;
 
-    /* Anti-burst pacing (ported from main's p2k-clkint-hotloop.c).
-     * Main raises at most ONE IRQ0 edge per drain: it gates the raise
-     * on "one in flight" (IRR/ISR bit0 clear) and an optional min_gap
-     * rate-limit, then resyncs the deadline when behind instead of
-     * emitting a catch-up burst of edges that only collapse in IRR and
-     * deliver nothing. We mirror that here so the drain never spams the
-     * PIC with edges the guest can't consume. */
-    uint64_t last_irq0_raise_ns;      /* wall-ns of last real edge emitted */
-    int64_t  hotloop_min_gap_ns;      /* -1 uninit, 0 = off, >0 = min ns between edges */
+    /* Anti-burst pacing + adaptive rate control (ported from main's
+     * p2k-clkint-hotloop.c). Main has NO deadline/burst: it re-raises
+     * IRQ0 continuously at every TB boundary, gated only by (a) one in
+     * flight (IRR/ISR bit0 clear) and (b) a min_gap throttle in VIRTUAL
+     * time, then an adaptive PI controller retunes min_gap every 500 ms
+     * to hold nominal 4003.97 Hz. Because the raw min_gap sits BELOW the
+     * nominal period, the mechanism can over-SUPPLY IRQ0 and so pins
+     * delivery at ~100% and recovers lost ticks instead of being capped
+     * at exactly nominal by a deadline. We port that model verbatim,
+     * measuring/gapping in vticks (unicorn's virtual clock). */
+    uint64_t last_irq0_raise_ns;      /* wall-ns of last real edge (diag only) */
+    int64_t  hotloop_min_gap_ns;      /* legacy env override (ns); 0 = use vtick model */
     uint64_t irq0_skip_in_flight;     /* edges suppressed: IRQ0 already IRR/ISR */
     uint64_t irq0_skip_min_gap;       /* edges suppressed: within min_gap window */
+
+    bool     pi_adaptive;             /* adaptive min_gap retune on */
+    uint64_t min_gap_vticks;          /* current throttle: min virtual ticks between raises */
+    uint64_t last_raise_vticks;       /* vticks at last real edge emitted */
+    uint64_t pi_gap_low_vt;           /* clamp floor (fastest rate) */
+    uint64_t pi_gap_high_vt;          /* clamp ceil (slowest rate) */
+    uint64_t pi_last_sample_ns;       /* wall-ns of last PI sample */
+    uint64_t pi_last_inject;          /* irq0_inject at last PI sample */
+    uint64_t pi_last_vticks;          /* vticks_total at last PI sample */
+    double   pi_last_measured_hz;     /* last measured delivery rate (diag) */
 } s_sched;
 
 /* Injection ring buffer — captures the last N interrupt injections so
@@ -1170,73 +1183,131 @@ void cpu_run(void)
             s_sched.next_irq0_at_ns     = now_wall_ns + pit_period_ns;
             s_sched.w_vticks_base = s_sched.vticks_total;
 
-            /* One-time min_gap init (ported from main). Default OFF: the
-             * one-in-flight gate alone already suppresses burst edges
-             * without changing delivery cadence. Set
-             * P2K_HOTLOOP_MIN_GAP_NS>0 to also rate-limit like main
-             * (main's boot pace is 145000). */
+            /* One-time init of main's adaptive min_gap model. Main
+             * boots at 145 µs (0.58× the 250 µs nominal period), clamps
+             * to [50 µs, 300 µs], and lets the PI controller settle it
+             * to nominal. We express the fractions of the current PIT
+             * period in vticks so it tracks --cpu-target-mhz / PIT.
+             *
+             * SAFETY CLAMP: we measured that XINU tolerates at most
+             * ~147% IRQ0 over-delivery relative to guest progress; above
+             * that the guest clock races and interval_0_25ms hangs. We
+             * clamp the fastest-rate floor (gap_low) at period / 1.40 —
+             * a ~7% safety margin under the 147% hang threshold — so
+             * transient recovery tops out at 140% and never hangs the
+             * guest. Steady state is held at 100% by the PI controller,
+             * so this floor only bounds recovery bursts.
+             * Adaptive on by default (P2K_HOTLOOP_ADAPTIVE=0 disables);
+             * P2K_HOTLOOP_MIN_GAP_NS pins a fixed gap like main's env.
+             * P2K_HOTLOOP_MAX_DELIVERY_PCT overrides the 140% ceiling
+             * (integer percent) for headroom experiments. */
+            unsigned max_deliv_pct = 140;
+            const char *mdp = getenv("P2K_HOTLOOP_MAX_DELIVERY_PCT");
+            if (mdp && *mdp) {
+                unsigned v = (unsigned)strtoul(mdp, NULL, 10);
+                if (v >= 100 && v <= 300) max_deliv_pct = v;
+            }
+            s_sched.pi_gap_low_vt  = (pit_period_insns * 100) / max_deliv_pct; /* ≤max_deliv_pct rate; XINU hangs >~147% */
+            s_sched.pi_gap_high_vt = (pit_period_insns * 6) / 5;       /* 1.2× → floor on rate */
+            if (s_sched.pi_gap_low_vt < 50) s_sched.pi_gap_low_vt = 50;
+            const char *a = getenv("P2K_HOTLOOP_ADAPTIVE");
+            s_sched.pi_adaptive = !(a && a[0] == '0');
             const char *g = getenv("P2K_HOTLOOP_MIN_GAP_NS");
-            s_sched.hotloop_min_gap_ns = g ? strtoll(g, NULL, 10) : 0;
-            if (s_sched.hotloop_min_gap_ns < 0) s_sched.hotloop_min_gap_ns = 0;
+            if (g) {
+                /* Fixed gap in virtual ns → vticks (target_ips per s). */
+                int64_t gns = strtoll(g, NULL, 10);
+                if (gns < 0) gns = 0;
+                s_sched.min_gap_vticks = (uint64_t)((double)gns * (double)target_ips / 1e9);
+                s_sched.pi_adaptive = false;
+            } else {
+                s_sched.min_gap_vticks = pit_period_insns; /* start at nominal; PI shrinks to recover */
+            }
+            if (s_sched.min_gap_vticks < 1) s_sched.min_gap_vticks = 1;
+            s_sched.last_raise_vticks = s_sched.vticks_total;
+            s_sched.pi_last_sample_ns = now_wall_ns;
+            s_sched.pi_last_inject    = s_sched.irq0_inject;
+            s_sched.pi_last_vticks    = s_sched.vticks_total;
+            s_sched.hotloop_min_gap_ns = 0;
         }
 
-        /* Fire IRQ0 only when BOTH virtual-time AND wall-time deadlines
-         * have passed. Virtual-time gate keeps slow hosts from over-
-         * firing relative to executed guest progress; wall-time gate
-         * keeps fast hosts from over-firing relative to real time and
-         * thereby compressing XINU's tick-based scheduler watchdog. */
-        /* Drain ALL elapsed PIT periods per outer-loop iteration.
-         * Previously we incremented due by 1 per check even if the batch
-         * had advanced wall-time/vticks across multiple periods, then
-         * reset the deadline to now+period when lag_n >= 4*period — so
-         * we silently dropped ticks. That makes "delivered = inject/due"
-         * look healthier than reality and starves the guest of cadence
-         * when vt-scale runs ahead. Real PIT generates one rising edge
-         * per period; PIC IRR collapses repeated edges within one ISR
-         * span, so multiple due++ inside one window is correct: most
-         * collapse into IRR/ISR, but the count tells us the true cadence
-         * the guest should have seen. Cap the catch-up at 1024 periods
-         * per check to bound CPU spent in the gate after a long stall. */
+        /* ---- Main's IRQ0 delivery model (p2k-clkint-hotloop.c) ----
+         * NO deadline, NO burst. Expected-edge ("due") accounting is
+         * decoupled from the raise: due counts how many PIT periods of
+         * VIRTUAL time elapsed (for the delivered% health metric only).
+         * The raise itself is main's continuous re-raise: emit at most
+         * one edge per drain when (a) no IRQ0 is in flight (IRR/ISR bit0
+         * clear) and (b) at least min_gap_vticks of virtual time passed
+         * since the last edge. An adaptive PI controller retunes
+         * min_gap every 500 ms to hold nominal. Because the raw gap sits
+         * below the nominal period, the model over-supplies IRQ0 and so
+         * pins delivery at ~100% and recovers lost ticks, instead of
+         * being capped at exactly nominal by a per-period deadline. */
         if (s_sched.next_irq0_at_vticks) {
-            int catchup_budget = 1024;
-            while (catchup_budget-- > 0 &&
-                   s_sched.vticks_total >= s_sched.next_irq0_at_vticks &&
-                   now_wall_ns           >= s_sched.next_irq0_at_ns) {
+            /* (1) due accounting — advance one period at a time. */
+            int due_budget = 4096;
+            while (due_budget-- > 0 &&
+                   s_sched.vticks_total >= s_sched.next_irq0_at_vticks) {
                 s_sched.irq0_due++;
                 s_sched.pit_edges_due++;
                 s_sched.next_irq0_at_vticks += pit_period_insns;
-                s_sched.next_irq0_at_ns     += pit_period_ns;
-                if (g_emu.xinu_ready) {
-                    /* Anti-burst gate (main parity): only emit a real
-                     * PIT edge when no IRQ0 is already in flight (IRR or
-                     * ISR bit0 clear) and the optional min_gap has
-                     * elapsed. Edges emitted while one is in flight only
-                     * collapse in IRR and deliver nothing, so suppress
-                     * them and let the deadline resync advance cadence.
-                     * This turns the old 1024-edge catch-up burst into
-                     * at most one real edge per drain, matching main. */
-                    bool in_flight = (g_emu.pic[0].irr & 0x01) ||
-                                     (g_emu.pic[0].isr & 0x01);
-                    bool gap_ok = (s_sched.hotloop_min_gap_ns <= 0) ||
-                                  (s_sched.last_irq0_raise_ns == 0) ||
-                                  ((now_wall_ns - s_sched.last_irq0_raise_ns) >=
-                                   (uint64_t)s_sched.hotloop_min_gap_ns);
-                    if (in_flight) {
-                        s_sched.irq0_skip_in_flight++;
-                        s_sched.irq0_collapsed++;
-                        s_sched.irq0_coll_irr++;
-                    } else if (!gap_ok) {
-                        s_sched.irq0_skip_min_gap++;
-                    } else {
-                    /* QEMU-style: PIT OUT0 mode-2 pulse — drop LOW
-                     * then back HIGH. The PIC owns edge detection and
-                     * IRR latching; ISR/IMR/IF live in the CPU
-                     * acknowledge stage (check_and_inject_irq). */
-                    uint64_t latched_before  = g_emu.pic[0].edges_latched;
+            }
+            if (due_budget < 0) {
+                /* Long stall (debugger/host hiccup): resync due deadline
+                 * without inflating the metric with spurious periods. */
+                s_sched.next_irq0_at_vticks = s_sched.vticks_total + pit_period_insns;
+            }
+
+            /* (2) adaptive PI retune — hold measured delivery at nominal
+             * IN VIRTUAL TIME (guest progress), not wall time. Unicorn is
+             * host-slow and vtime-decoupled: targeting wall-nominal drives
+             * over-supply relative to guest progress → the guest clock
+             * races and interval watchdogs hang. Measuring inject rate per
+             * guest-second and targeting nominal holds delivery at ~100%
+             * of what the guest should see, while a sub-period gap floor
+             * still lets it transiently overspeed to RECOVER lost ticks. */
+            if (s_sched.pi_adaptive &&
+                now_wall_ns - s_sched.pi_last_sample_ns >= 500000000ULL) {
+                uint64_t d_inj    = s_sched.irq0_inject - s_sched.pi_last_inject;
+                uint64_t d_vticks = s_sched.vticks_total - s_sched.pi_last_vticks;
+                double dv_s = d_vticks > 0 ? (double)d_vticks / (double)target_ips : 0.0;
+                double measured_hz = dv_s > 0 ? (double)d_inj / dv_s : 0.0;
+                double target_hz = 1193182.0 / (double)pit_div;
+                s_sched.pi_last_measured_hz = measured_hz;
+                if (measured_hz > 1.0 && target_hz > 1.0) {
+                    double ratio = measured_hz / target_hz;
+                    int64_t new_gap = (int64_t)((double)s_sched.min_gap_vticks * ratio);
+                    if (new_gap < (int64_t)s_sched.pi_gap_low_vt)  new_gap = s_sched.pi_gap_low_vt;
+                    if (new_gap > (int64_t)s_sched.pi_gap_high_vt) new_gap = s_sched.pi_gap_high_vt;
+                    s_sched.min_gap_vticks = (uint64_t)new_gap;
+                }
+                s_sched.pi_last_sample_ns = now_wall_ns;
+                s_sched.pi_last_inject    = s_sched.irq0_inject;
+                s_sched.pi_last_vticks    = s_sched.vticks_total;
+            }
+
+            /* (3) raise — main's one-in-flight + min_gap gate. */
+            if (g_emu.xinu_ready) {
+                bool in_flight = (g_emu.pic[0].irr & 0x01) ||
+                                 (g_emu.pic[0].isr & 0x01);
+                bool masked    = (g_emu.pic[0].imr & 0x01);
+                bool gap_ok    = (s_sched.vticks_total - s_sched.last_raise_vticks)
+                                     >= s_sched.min_gap_vticks;
+                if (in_flight) {
+                    s_sched.irq0_skip_in_flight++;
+                } else if (masked) {
+                    /* IRQ0 masked in IMR: raising would never deliver. */
+                } else if (!gap_ok) {
+                    s_sched.irq0_skip_min_gap++;
+                } else {
+                    /* QEMU-style PIT OUT0 mode-2 pulse: drop LOW then
+                     * back HIGH. The PIC latches the rising edge; ISR/
+                     * IMR/IF live in the CPU acknowledge stage. */
+                    uint64_t latched_before   = g_emu.pic[0].edges_latched;
                     uint64_t collapsed_before = g_emu.pic[0].edges_collapsed_irr;
                     pic_set_irq(0, 0, 0);
                     pic_set_irq(0, 0, 1);
                     s_sched.pit_edges_emitted++;
+                    s_sched.last_raise_vticks  = s_sched.vticks_total;
                     s_sched.last_irq0_raise_ns = now_wall_ns;
                     if (g_emu.pic[0].edges_latched > latched_before) {
                         s_sched.irq0_fired++;
@@ -1244,29 +1315,11 @@ void cpu_run(void)
                         s_sched.irq0_coll_irr++;
                         s_sched.irq0_collapsed++;
                     } else {
-                        /* Edge dropped because IRR was clear but ISR
-                         * still set (real PIC: edge in mode-2 still
-                         * latches IRR even when ISR is set; only EOI
-                         * lets it reach the CPU). Our approximation
-                         * keeps both counters honest: irq_level was 0
-                         * before, so any non-edge case here means a
-                         * coding bug. Account for ISR-collapse as a
-                         * fallback diagnostic. */
                         s_sched.irq0_coll_isr++;
                         s_sched.irq0_collapsed++;
                     }
                     (void)collapsed_before;
-                    }
                 }
-            }
-            /* Hard re-sync if the catch-up loop hit its budget — the
-             * guest was paused (debugger, host scheduler hiccup) and we
-             * should not spend the next 1000+ iterations chasing the
-             * wall clock. Drop the deadlines onto "now" without
-             * generating spurious due. */
-            if (catchup_budget < 0) {
-                s_sched.next_irq0_at_vticks = s_sched.vticks_total + pit_period_insns;
-                s_sched.next_irq0_at_ns     = now_wall_ns          + pit_period_ns;
             }
         }
 
@@ -1806,6 +1859,13 @@ void cpu_run(void)
             size_t min_batch = pit_period_insns / 4;
             if (min_batch > 1000) min_batch = 1000;
             if (min_batch < 100)  min_batch = 100;
+            /* Cap the batch at the current throttle so the drain runs at
+             * min_gap resolution — otherwise a batch longer than
+             * min_gap_vticks would skip past raise slots and defeat the
+             * over-supply / recovery the adaptive model relies on. */
+            if (s_sched.min_gap_vticks && min_batch > s_sched.min_gap_vticks)
+                min_batch = s_sched.min_gap_vticks;
+            if (min_batch < 64) min_batch = 64;
             const size_t max_batch = 4000;
             if (to_next <= 0)
                 batch = min_batch;
