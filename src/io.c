@@ -546,8 +546,24 @@ static void apply_sgc_patches(void)
      *   55 89 E5 B8 00 04 00 00 C9 C3
      *   ↑PUSH EBP ↑MOV EBP,ESP ↑MOV EAX,0x400 ↑LEAVE ↑RET
      * Patch: byte at +5 (low byte of imm32) → 0x0E (MOV EAX,0xE00 = 14MB pages)
-     * (BT-130) */
-    {
+     * (BT-130)
+     *
+     * NOTE (parity investigation, unicorn branch): main/QEMU ships the
+     * analogous patch OFF by default (P2K_MEM_DETECT_PATCH=1 opt-in) —
+     * its own comment states native 4 MiB boots every current SWE1/RFM
+     * bundle including 2.10 without changing sizmem(). We assumed the
+     * same held here and never tested it. It does not: measured with
+     * P2K_MEM_DETECT_PATCH=0 below, SWE1 2.10 hits a real, reproducible
+     * `*** Fatal: malloc(131072): getmem(131104) failed` guest OOM a few
+     * seconds into boot — i.e. unicorn's guest-visible memory pressure at
+     * this point in boot is measurably higher than main's, for reasons
+     * still to be root-caused (candidates: XINU process/stack accounting
+     * differences, or something in our switch/LPT/DCS emulation causing
+     * more allocation than main's). Until that root cause is found and
+     * fixed, this patch is REQUIRED for unicorn and defaults ON (opt-out
+     * via P2K_MEM_DETECT_PATCH=0, kept only for A/B regression testing —
+     * expect a boot-time Fatal OOM with it disabled, not a clean run). */
+    if (!getenv("P2K_MEM_DETECT_PATCH") || getenv("P2K_MEM_DETECT_PATCH")[0] != '0') {
         static const uint8_t mem_pat[] = {
             0x55, 0x89, 0xE5, 0xB8, 0x00, 0x04, 0x00, 0x00, 0xC9, 0xC3
         };

@@ -1213,6 +1213,27 @@ void cpu_run(void)
                         s_sched.irq0_collapsed++;
                     }
                     (void)collapsed_before;
+                    /* Drain the edge we just latched immediately, one
+                     * IRQ0 in flight at a time (mirrors main/QEMU's
+                     * hotloop model). Without this, a catch-up loop
+                     * that raises >1 edge per outer iteration (common
+                     * whenever a batch spans more than one PIT period)
+                     * collapses every edge after the first because
+                     * check_and_inject_irq() previously only ran ONCE,
+                     * after this whole while-loop finished — i.e. IRR
+                     * was never drained between successive raises.
+                     * Measured impact on SWE1 2.10 at default 20 MIPS:
+                     * delivered dropped to ~65-69% with ~31-35%
+                     * collapsed before this fix. */
+                    if (g_emu.xinu_ready) {
+                        uint8_t pending0 = g_emu.pic[0].irr & ~g_emu.pic[0].imr;
+                        uint8_t pending1 = g_emu.pic[1].irr & ~g_emu.pic[1].imr;
+                        if (pending0 || pending1) {
+                            int v = check_and_inject_irq();
+                            if (v >= 0 && (uint8_t)v == g_emu.pic[0].icw2)
+                                s_sched.irq0_inject++;
+                        }
+                    }
                 }
             }
             /* Hard re-sync if the catch-up loop hit its budget — the
