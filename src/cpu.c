@@ -1137,6 +1137,22 @@ void cpu_run(void)
          * scheduler watchdog at [0x30895c]. */
         uint16_t pit_div = g_emu.pit.count[0];
         if (pit_div == 0) pit_div = 0xFFFF;
+        /* --speed-target: scale the effective PIT divisor like main's
+         * p2k_pit_scale_count(). percent>100 shrinks the divisor →
+         * shorter period → faster game clock (more IRQ0/s); percent<100
+         * lengthens it. Env P2K_SPEED_TARGET_PERCENT overrides the flag,
+         * matching main's precedence. */
+        {
+            int sp = g_emu.speed_target_pct;
+            const char *spe = getenv("P2K_SPEED_TARGET_PERCENT");
+            if (spe && *spe) { int v = atoi(spe); if (v > 0) sp = v; }
+            if (sp > 0 && sp != 100) {
+                uint32_t scaled = ((uint32_t)pit_div * 100u + sp / 2) / (uint32_t)sp;
+                if (scaled < 1)      scaled = 1;
+                if (scaled > 0xFFFF) scaled = 0xFFFF;
+                pit_div = (uint16_t)scaled;
+            }
+        }
         /* PIT period in vticks:
          *   pit_period_s = pit_div / 1193182
          *   model_ips    = cpu_target_mhz * 1e6

@@ -313,6 +313,18 @@ static int apply_option(const char *key, const char *value)
         g_emu.cpu_target_mhz = (int)v;
         return 1;
     }
+    if (strcmp(key, "speed-target") == 0 && value) {
+        char *end = NULL;
+        long v = strtol(value, &end, 0);
+        if (end == value || v < 1 || v > 1000) {
+            fprintf(stderr,
+                "[main] --speed-target must be 1..1000 percent (got %s)\n",
+                value);
+            return 1;
+        }
+        g_emu.speed_target_pct = (int)v;
+        return 1;
+    }
     if (strcmp(key, "realtime") == 0) {
         g_emu.realtime = true;
         return 0;
@@ -724,6 +736,11 @@ print_help:
 "                         (try 233 to match an original Cyrix MediaGX) make\n"
 "                         the game advance more guest-time per IRQ0. Default\n"
 "                         20 is a livable compromise. Independent of --realtime.\n"
+"\n"
+"  --speed-target PCT     Scale the game clock by PCT percent (1..1000, def\n"
+"                         100). Ports main's --speed-target / P2K_SPEED_TARGET_\n"
+"                         PERCENT: shrinks the PIT divisor so 150 runs the\n"
+"                         guest 1.5× (more IRQ0/s), 50 runs it half-speed.\n"
 "\n"
 "  --realtime             Opt-in wall-clock throttle. When set, the cpu loop\n"
 "                         nanosleeps once per vblank cadence to keep guest\n"

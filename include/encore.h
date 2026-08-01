@@ -359,6 +359,12 @@ typedef struct {
      *   Default 20 is a livable compromise on commodity hosts (~10 MIPS
      *   effective). 0 means "use default". See docs/50-cpu-clock-mismatch.md. */
     int      cpu_target_mhz;
+    /* --speed-target PERCENT: scales the effective PIT channel-0
+     *   divisor like main's p2k_pit_scale_count() — 100 = nominal PIT
+     *   cadence, 150 = game clock runs 1.5× (more IRQ0/s), 50 = half
+     *   speed. Ported from main's P2K_SPEED_TARGET_PERCENT. 0/unset =
+     *   100. Bounded to [1,1000] on parse. */
+    int      speed_target_pct;
     /* --realtime: opt-in wall-clock throttle. When true, the cpu loop
      *   nanosleeps once per vblank cadence to keep guest virtual time
      *   from running ahead of wall time. Off by default — the emulator
