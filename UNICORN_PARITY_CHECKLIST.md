@@ -1,108 +1,124 @@
 # Unicorn ↔ QEMU Parity Checklist
 
 One page. Living document — edit it in the same commit as the work it
-tracks. Goal: bring the `unicorn` branch (clean-room Unicorn Engine
-emulator, `src/`) to the same level of performance, functionality, test
-rigor and honesty as the `main` branch (QEMU machine, `qemu/`), without
-becoming QEMU or losing Unicorn's advantages (single binary, no vendored
-CPU core to patch, fast build).
+tracks. Priority order when picking what to work on next: **stability
+> performance > functional parity > CLI/arg parity > test-tooling
+parity.** Do not spend a session polishing docs while a stability or
+performance gap sits open — verify/fix code first, document what you
+verified.
 
-Update this file whenever: a gap below is closed, a new gap is found, or
-a "don't" is violated and causes a regression. Keep it to one page —
-link out to `docs/` for detail, don't inline detail here.
+Every claim below has been checked against the actual code/docs on
+each branch as of this writing (not assumed from memory) — cite file
+and line when you update a row.
 
 ## How to use this file
 
-- Before starting work, scan **Do** for the relevant area and **Don't**
-  for known traps.
-- When closing a gap, move it from **Gaps vs main** to done (strike
-  through or delete) in the same PR, with a doc/test reference.
-- Never let this file describe a state the code doesn't currently have.
+- Before starting work, scan **Do**/**Don't**, then the gaps table,
+  ordered by priority.
+- When closing a gap, move it to "Closed" with the commit/PR and the
+  test that proves it, in the same change.
+- Never let this file describe a state the code doesn't currently
+  have — this branch was written while still discovering the
+  hardware, so treat every existing doc claim as unverified until you
+  check it against `src/` yourself.
 
 ## Do
 
-- **Match `main`'s honesty standard.** Every claim of "works" must cite
-  an automated test result, not a one-time manual boot. See `main`
-  `docs/26-testing-validation-matrix.md` for the bar.
-- **Throttle the guest to real hardware speed** before trusting any
-  timing-sensitive result (LPT, DCS handshake, watchdog). Unicorn JIT
-  with no rate limit is not representative of the ~233 MHz MediaGX.
-  Track in `docs/50-cpu-clock-mismatch.md`.
-- **Give every state exactly one owner** (DCS protocol, LPT switch
-  matrix, savedata) — same rule `main` enforces in
-  `docs/05-development-guidelines.md`. Port that document's 10 core
-  rules to this branch's own guidelines doc once `src/` stabilizes.
-- **Resolve guest addresses through `sym_lookup()`**, never hardcode.
-  A few remain in `src/cpu.c` / `src/io.c` — finish that migration
-  before adding new patch points.
-- **Build an ELF-based guest probe/benchmark harness** equivalent to
-  `main`'s `scripts/bench-qemu.py` + `scripts/guest-irq-probe.S` +
-  `scripts/guest-load.S`: a small `.S` → `.o` → `.elf` → raw-binary
-  pipeline injected into guest RAM to measure IRQ timing, guest IPS and
-  scheduler behavior in isolation, independent of full-game boot.
-- **Automate the bundle regression matrix.** Turn
-  `docs/26-testing-bundle-matrix.md`'s manual 11-bundle × 2-mode
-  procedure into a script (`--headless`, grep log for `dcs_wr`/`FPS:`,
-  exit 0/1) mirroring `main`'s
-  `docs/measurements/validation-matrix/run-matrix.py`. Wire it into CI.
-- **Add unit tests for pure-parsing code** (config YAML loader, keymap,
-  update-bundle detection) with no emulator boot required — mirror
-  `main`'s `scripts/tests/test_console_script.py` style: fast,
-  deterministic, no I/O side effects.
-- **Persist savedata atomically on exit** (NVRAM/flash/SEEPROM), same
-  guarantee `main` documents in `docs/09-savedata.md` — verify
-  `src/bar.c` matches on crash/kill paths, not just clean exit.
-- **Keep the single-binary/no-vendored-core advantage.** Prefer
-  Unicorn context save/restore (`uc_context_save`/`restore`) over
-  reinventing snapshotting; don't reach for a second CPU engine.
-- **Document every guest-behavior claim with the exact command,**
-  game, update, DCS mode and log excerpt — same discipline as `main`'s
-  known-limitations page.
+- **Verify, don't trust existing docs.** Several unicorn-branch docs
+  described features as "unprototyped hypothesis" that were already
+  shipped in code (`--realtime`/`--cpu-target-mhz`/`--cpu-stats` vs.
+  `docs/50-cpu-clock-mismatch.md`, fixed 2026-08). Assume other docs
+  have the same drift until you've read the owning `src/*.c`.
+- **Run the automated regression matrix before and after every
+  change**: `tools/run-bundle-matrix.py --all-updates`. Verified
+  2026-08 on this host: all 6 SWE1 bundles + all 7 RFM bundles + both
+  base-ROM configs pass (video + DCS audio activity, clean exit,
+  20-30s headless, `io-handled` mode). Use this as your stability
+  regression gate, not a one-off manual boot.
+- **Prefer the coarse throttle that already exists** (`--realtime` +
+  `--cpu-target-mhz`) for any cabinet-timing-sensitive work instead of
+  adding a new per-symptom pace knob next to `--lpt-bus-pace`.
+- **Resolve guest addresses through `sym_lookup()`**; a few hardcoded
+  addresses remain in `src/cpu.c`/`src/io.c` — don't add a new one.
+- **Keep the honesty discipline this branch already has**: every
+  known-limitations/future-work entry should read like
+  `docs/38-known-limitations.md`'s DCS/LPT sections — concrete
+  commands, concrete log lines, no unverified claims.
 
 ## Don't
 
-- **Don't claim cabinet-verified behavior.** Both branches are
-  emulator-only validated; LPT/PDB, switch polarity and coil timing are
-  unverified on real hardware on both sides. Don't let one branch's
-  docs imply more confidence than the other's.
-- **Don't hardcode a host action to simulate another** (e.g. faking a
-  digit+Ctrl combo to synthesize a mapped key). This is the exact bug
-  class `main` explicitly forbids in its input-handling rules.
-- **Don't add a second timing/rate-limit knob per symptom.** The
-  current `--lpt-bus-pace` band-aid must not multiply into more
-  per-feature pacing flags; fix guest-IPS throttling generically once
-  (see Do, above) and retire the band-aids.
-- **Don't ship a manual-only test result as "passing."** A human
-  running one boot once and eyeballing the screen is not a regression
-  test; it must be scriptable and re-runnable headless.
-- **Don't skip the `sym_lookup()` migration** when touching `src/cpu.c`
-  or `src/io.c` — don't add a fifth hardcoded address next to the four
-  that still need cleanup.
-- **Don't treat reference-only (below-chip-ROM-baseline) update
-  bundles as bugs.** SWE1 v1.3/v1.4 and RFM v1.2/v1.4/v1.5 are
-  historical-only per `docs/26-testing-bundle-matrix.md`; failures
-  there are not regressions.
-- **Don't merge `--keyboard-tcp` / E0-scancode / net-bridge feature
-  work without updating `docs/38-known-limitations.md` in the same
-  change** — these are explicitly flagged as experimental/incomplete;
-  don't let the docs drift stale the moment code changes.
-- **Don't add global filters ahead of the established input-owner
-  path** (PS/2, LPT) — extend the existing dispatch chain instead of
-  layering a second handler that must special-case unhandled events.
+- **Don't claim ADSP-equivalent audio fidelity.** Unicorn plays
+  pre-extracted WAV samples for DCS commands (`src/sound.c`,
+  `docs/12-sound-pipeline.md`: "Encore does not emulate the ADSP").
+  `main` runs the real ADSP-2105 DSP firmware natively
+  (`--dcs-engine adsp*`). This is architectural, not a quick fix —
+  don't describe unicorn's audio as "the same" as main's in any doc.
+- **Don't treat `timeout`'s exit code 124 as a hang.** `timeout N cmd`
+  returns 124 whenever it had to signal the command, even if the
+  child then shuts down cleanly on SIGTERM (verified: RFM v2.60 exits
+  124 but its log shows a normal `[save]`/`[exit]` sequence). Check
+  the log's own exit marker, not just the wrapper's exit code.
+- **Don't treat `*** NonFatal` UART lines as failures.** They are
+  common, often-benign guest chatter by design (the name says
+  non-fatal) — `tools/run-bundle-matrix.py` reports them as warnings,
+  not failures. Even `*** Fatal: interval_0_25ms: exec is hung` has
+  been observed on a bundle that still completed cleanly with normal
+  video/audio activity — investigate before assuming a hard failure.
+- **Don't add a second timing knob per symptom** — see Do, above.
+- **Don't build a full ADSP emulator or YAML keymap loader speculatively
+  without a concrete driving bug** — these are real gaps (below) but
+  large scope; confirm priority before starting.
 
-## Gaps vs `main` (update as closed)
+## Gaps vs `main`, in priority order
 
-| Area | `main` (QEMU) has it | `unicorn` status | Doc |
+### 1. Stability — verified, no open gap found this session
+
+Full regression matrix (13 update bundles + 2 base-ROM configs,
+`io-handled` mode, 20-30s headless each) passes with no crashes on
+this host (`tools/run-bundle-matrix.py --all-updates`, run 2026-08).
+Re-run after every non-trivial change; record any new failure here
+with the exact command and log excerpt.
+
+### 2. Performance / timing — partially closed
+
+| | `main` (QEMU) | `unicorn` |
+|---|---|---|
+| Guest-speed throttle | PIT-accurate virtual time, `--speed-target 25..300` | `--realtime` (opt-in, per-vblank nanosleep) + `--cpu-target-mhz` (PIT/IRQ0 math only, does not itself throttle) — coarser granularity, verified working |
+| Measurement | `--bench`, `--timing-snapshots` | `--cpu-stats[=N]` — verified working |
+| Per-boundary band-aid | n/a | `--lpt-bus-pace` for the LPT wire specifically |
+
+Open: no icount-style per-block throttle (main's PIT model is more
+accurate); `--realtime`'s per-vblank granularity is unverified against
+a real cabinet — see `docs/50-cpu-clock-mismatch.md` step 3.
+
+### 3. Functional parity — largest real gaps
+
+| Feature | `main` | `unicorn` | Impact |
 |---|---|---|---|
-| Guest-speed throttling | PIT-accurate virtual time | unthrottled JIT | `docs/50-cpu-clock-mismatch.md` |
-| ELF probe/benchmark harness | `scripts/bench-qemu.py` + `.S`→`.elf` probes | none | — |
-| Automated regression matrix | `run-matrix.py`, scripted pass/fail | manual procedure only | `docs/26-testing-bundle-matrix.md` |
-| Unit tests (parser/config) | `scripts/tests/*.py` | none found | — |
-| `make install` / packaging | n/a (QEMU build) | absent | `docs/28-build-system.md`, `docs/39-future-work.md` |
-| Symbol-based patch addresses | fully migrated | a few hardcoded left in `src/cpu.c`/`src/io.c` | `docs/39-future-work.md` |
-| Snapshot/restore | n/a | not implemented (Unicorn context API available) | `docs/39-future-work.md` |
-| Project license file | missing on `main` too | missing | `main` `docs/35-known-limitations.md` |
+| DCS audio | Native ADSP-2105 emulation (`--dcs-engine adsp*`, `pb2kslib` fallback) | Pre-extracted WAV sample playback only (`src/sound.c`) | Architectural; audio behavior/timing can diverge from real DSP under edge cases |
+| Switch mapping | `--switch-keymap FILE.yaml`, user-editable | Hardcoded in-code mapping, no config file | Cabinet integrators can't remap without a rebuild |
+| Scripted automation | `--script`/`--console-script`: timed input, assertions, screenshots | None | No scripted acceptance tests beyond boot/progress |
+| Video capture | `--record-video` (H.264/FFmpeg) | None | Can't produce an artifact for visual regression review |
+| E0-prefixed PS/2 scancodes | n/a (own KBC path) | Known incomplete (`docs/38-known-limitations.md`) | RCtrl/RAlt arrive as LCtrl/LAlt in `--keyboard-tcp` mode |
+
+### 4. CLI/arg parity — meaningful subset (excludes QEMU-only flags like `--qemu`, `--monitor`, `--tcg-only`)
+
+Missing on unicorn, present on main: `--dcs-engine`, `--switch-keymap`,
+`--script`/`--console-script`, `--record-video`, `--speed-target`,
+`--audio`/`--no-audio` (separate from `--headless`), `--diag`,
+`--legacy-hotloop`/`--with-pit` (alternate timing models for A/B).
+Present on unicorn only: `--realtime`, `--cpu-target-mhz`,
+`--cpu-stats`, `--cabinet-purist`/`--lpt-purist`, `--lpt-bus-pace`,
+`--lpt-managed-dir`, `--config` (YAML-ish config file — see
+`docs/04-config-yaml.md`).
+
+### 5. Test tooling — closed this session
+
+`tools/run-bundle-matrix.py` automates the bundle boot/progress check
+(`docs/26-testing-bundle-matrix.md`). No unit tests exist yet for
+pure-parsing code (config loader) — `main` has
+`scripts/tests/test_console_script.py` as the model to follow.
 
 ---
 Keep this file to one page. If it grows past that, split detail into
-`docs/` and leave only pointers here.
+`docs/` and leave only pointers + the priority list here.
