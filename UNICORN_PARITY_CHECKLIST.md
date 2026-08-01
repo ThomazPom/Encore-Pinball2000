@@ -24,6 +24,17 @@ and line when you update a row.
 
 ## Do
 
+- **Port from `main` verbatim, don't recode.** When a behavior diverges,
+  copy main's proven logic (`/tmp/encore-main` worktree: `git worktree
+  add /tmp/encore-main main`) rather than inventing a new approach. The
+  mem-patch, IRQ-burst, SuperIO and ADSP fixes below were all faithful
+  ports, not clean-room rewrites.
+- **A/B every timing/IRQ change with REAL pre/post binaries and
+  IDENTICAL flags.** Build the committed version (`git show HEAD:src/X.c`
+  → separate `.o` → separate binary) and compare against your change on
+  the same command line. Never compare across `-v` vs `-vv` (logging
+  overhead alone shifts delivery%). This is how the placebo IRQ "fix"
+  was caught and how the real anti-burst gate (59%→99%) was proven.
 - **Verify, don't trust existing docs.** Several unicorn-branch docs
   described features as "unprototyped hypothesis" that were already
   shipped in code (`--realtime`/`--cpu-target-mhz`/`--cpu-stats` vs.
@@ -47,12 +58,20 @@ and line when you update a row.
 
 ## Don't
 
-- **Don't claim ADSP-equivalent audio fidelity.** Unicorn plays
-  pre-extracted WAV samples for DCS commands (`src/sound.c`,
-  `docs/12-sound-pipeline.md`: "Encore does not emulate the ADSP").
-  `main` runs the real ADSP-2105 DSP firmware natively
-  (`--dcs-engine adsp*`). This is architectural, not a quick fix —
-  don't describe unicorn's audio as "the same" as main's in any doc.
+- **Don't re-add the PLX-0x50 `0x40789242` → host-reset trigger** to the
+  io-handled DCS path. `0x40789242` is the PLX CNTRL resting value AND
+  main's host-reset strobe (`p2k-plx-regs.c:478`); wiring it into
+  unicorn's io-handled path regresses the ADSP engine (cycles 1.3B→22k,
+  host_boots=0) because that path doesn't stream a full DSP boot image.
+  Proven regression — reverted. The DSP self-boots from flash to
+  ready-idle (pc≈0x3dc0); it does not need the host-reset strobe.
+- **ADSP silence in headless boot is NOT a defect.** A passive headless
+  boot sends only ~5 DCS handshake commands (0x0000/55aa/5800/5a00/609f)
+  — zero sound-play commands — for BOTH `--dcs-engine samples` and
+  `--dcs-engine adsp`. SPORT only enables when the guest plays a track.
+  To demonstrate non-silent PCM you must inject gameplay input
+  (`--keyboard-tcp`: coins + volume pulses), exactly like main's own
+  audio harness (`docs/measurements/dcs-engines/README.md`).
 - **Don't treat `timeout`'s exit code 124 as a hang.** `timeout N cmd`
   returns 124 whenever it had to signal the command, even if the
   child then shuts down cleanly on SIGTERM (verified: RFM v2.60 exits
@@ -65,11 +84,18 @@ and line when you update a row.
   been observed on a bundle that still completed cleanly with normal
   video/audio activity — investigate before assuming a hard failure.
 - **Don't add a second timing knob per symptom** — see Do, above.
-- **Don't build a full ADSP emulator or YAML keymap loader speculatively
-  without a concrete driving bug** — these are real gaps (below) but
-  large scope; confirm priority before starting.
 
 ## Gaps vs `main`, in priority order
+
+### Closed this session (with proof)
+
+| Gap | Fix | Commit | Proof |
+|---|---|---|---|
+| **mem-detect patch / 4 MiB OOM** — unicorn force-patched sizmem to 14 MiB; main runs native 4 MiB | LPT opcode 0x08 latched LAMP rows into the same array opcode 0x04 reads as SWITCHES → ~70% phantom closed switches → XINU over-allocated → 128 KB `price_init` OOM. Split `s_lamp_rows[]` from the switch matrix (main: `p2k-lpt-board.c:158-161`). Default `P2K_MEM_DETECT_PATCH` flipped OFF. | `9417e14` | phantom rate 70%→0.0% (0/62888); OOM gone at native 4 MiB; `[exit] Encore finished`, no Fatal |
+| **IRQ0 catch-up burst** — drain emitted up to 1024 edges/iter that collapsed in IRR and drove `resched: called from interrupt handler` storms | Ported main's one-in-flight + optional `min_gap` gate (`p2k-clkint-hotloop.c`): at most one real edge per drain, resync deadline instead of bursting | `55cb4bb` | A/B (real pre/post, identical flags): delivered 58.9%→98.9%, collapsed 41%→1.1%, resched storm 218→~0 |
+| **Native ADSP-2105 DCS engine** — main runs the real DSP firmware; unicorn only had WAV samples | Ported `src/adsp.c` (~4200 lines) + `include/adsp.h`; opt-in `--dcs-engine adsp` (default stays `samples`) | `4a5452f` | both engines boot clean, no Fatal; SPORT silent without gameplay input (by design — see Don't) |
+| **Switch keymap not configurable** — main has `--switch-keymap`; unicorn hardcoded | Added `--switch-keymap FILE` (fail-closed parse) | `1258912` | parses + boots clean |
+| **National PC97338 SuperIO (0x370/0x371)** — main models it; unicorn only had W83977EF + CC5530 | Ported PC97338 register file from `p2k-superio.c`; port 0x61 now stores full byte like main | `4a185b2`, `7661186` | boots clean, no Fatal |
 
 ### 1. Stability — verified, no open gap found this session
 
@@ -79,36 +105,40 @@ this host (`tools/run-bundle-matrix.py --all-updates`, run 2026-08).
 Re-run after every non-trivial change; record any new failure here
 with the exact command and log excerpt.
 
-### 2. Performance / timing — partially closed
+### 2. Performance / timing — largely closed
+
+IRQ0 delivery now ~99% (was ~59%) with the anti-burst gate (`55cb4bb`).
 
 | | `main` (QEMU) | `unicorn` |
 |---|---|---|
 | Guest-speed throttle | PIT-accurate virtual time, `--speed-target 25..300` | `--realtime` (opt-in, per-vblank nanosleep) + `--cpu-target-mhz` (PIT/IRQ0 math only, does not itself throttle) — coarser granularity, verified working |
+| IRQ0 pacing | one-in-flight + adaptive `min_gap` | one-in-flight (default) + opt-in `P2K_HOTLOOP_MIN_GAP_NS` (`55cb4bb`) |
 | Measurement | `--bench`, `--timing-snapshots` | `--cpu-stats[=N]` — verified working |
 | Per-boundary band-aid | n/a | `--lpt-bus-pace` for the LPT wire specifically |
 
 Open: no icount-style per-block throttle (main's PIT model is more
-accurate); `--realtime`'s per-vblank granularity is unverified against
-a real cabinet — see `docs/50-cpu-clock-mismatch.md` step 3.
+accurate); adaptive min_gap retune loop from main is not yet ported
+(unicorn's min_gap is fixed once set) — low priority while delivery is
+~99%.
 
-### 3. Functional parity — largest real gaps
+### 3. Functional parity — remaining real gaps
 
 | Feature | `main` | `unicorn` | Impact |
 |---|---|---|---|
-| DCS audio | Native ADSP-2105 emulation (`--dcs-engine adsp*`, `pb2kslib` fallback) | Pre-extracted WAV sample playback only (`src/sound.c`) | Architectural; audio behavior/timing can diverge from real DSP under edge cases |
-| Switch mapping | `--switch-keymap FILE.yaml`, user-editable | Hardcoded in-code mapping, no config file | Cabinet integrators can't remap without a rebuild |
+| DCS audio demo | Native ADSP-2105 + audio harness that injects coins/volume | Native ADSP-2105 ported (`--dcs-engine adsp`), but no scripted input harness to drive a track headless | Engine is faithful; needs `--keyboard-tcp`/script to demonstrate non-silent PCM |
 | Scripted automation | `--script`/`--console-script`: timed input, assertions, screenshots | None | No scripted acceptance tests beyond boot/progress |
 | Video capture | `--record-video` (H.264/FFmpeg) | None | Can't produce an artifact for visual regression review |
 | E0-prefixed PS/2 scancodes | n/a (own KBC path) | Known incomplete (`docs/38-known-limitations.md`) | RCtrl/RAlt arrive as LCtrl/LAlt in `--keyboard-tcp` mode |
 
 ### 4. CLI/arg parity — meaningful subset (excludes QEMU-only flags like `--qemu`, `--monitor`, `--tcg-only`)
 
-Missing on unicorn, present on main: `--dcs-engine`, `--switch-keymap`,
-`--script`/`--console-script`, `--record-video`, `--speed-target`,
-`--audio`/`--no-audio` (separate from `--headless`), `--diag`,
-`--legacy-hotloop`/`--with-pit` (alternate timing models for A/B).
-Present on unicorn only: `--realtime`, `--cpu-target-mhz`,
-`--cpu-stats`, `--cabinet-purist`/`--lpt-purist`, `--lpt-bus-pace`,
+Missing on unicorn, present on main: `--script`/`--console-script`,
+`--record-video`, `--speed-target`, `--audio`/`--no-audio` (separate
+from `--headless`), `--diag`, `--legacy-hotloop`/`--with-pit`
+(alternate timing models for A/B). Now present on unicorn:
+`--dcs-engine`, `--switch-keymap` (added this session). Present on
+unicorn only: `--realtime`, `--cpu-target-mhz`, `--cpu-stats`,
+`--cabinet-purist`/`--lpt-purist`, `--lpt-bus-pace`,
 `--lpt-managed-dir`, `--config` (YAML-ish config file — see
 `docs/04-config-yaml.md`).
 
