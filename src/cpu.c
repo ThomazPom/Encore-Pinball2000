@@ -66,6 +66,12 @@ static void hook_dcs_mode_write(uc_engine *uc, uc_mem_type type,
  * is reported as a sanity check (HLT-heavy periods diverge legitimately
  * because vticks credits idle time but bytes do not). */
 static uint64_t s_cpu_blocks_total   = 0;
+/* Free-run stop: when non-zero, uc_emu_start runs with count=0 (full TCG
+ * speed, no per-instruction counting) and the block hook stops it once the
+ * estimated executed-instruction count for this batch is reached. Mirrors
+ * main/QEMU running the CPU freely and stopping at a TB boundary. */
+static uint64_t s_freerun_insn_target = 0;
+static uint64_t s_freerun_bytes       = 0;
 static uint64_t s_cpu_bytes_total    = 0;
 static uint64_t s_cpu_blocks_window  = 0;
 static uint64_t s_cpu_bytes_window   = 0;
@@ -284,6 +290,13 @@ static void hook_block_count(uc_engine *uc, uint64_t addr,
 {
     (void)user_data;
     s_cpu_blocks_total++;
+    if (s_freerun_insn_target) {
+        s_freerun_bytes += size;
+        /* Stop at ~target insns. Measured ratio ≈3.5 bytes/insn for this
+         * 32-bit code, so insns ≈ bytes*2/7; stop when that reaches target. */
+        if (s_freerun_bytes * 2 >= s_freerun_insn_target * 7)
+            uc_emu_stop(uc);
+    }
     s_cpu_bytes_total += size;
     s_cpu_blocks_window++;
     s_cpu_bytes_window += size;
@@ -1941,7 +1954,7 @@ void cpu_run(void)
             if (s_sched.min_gap_vticks && min_batch > s_sched.min_gap_vticks)
                 min_batch = s_sched.min_gap_vticks;
             if (min_batch < 64) min_batch = 64;
-            const size_t max_batch = 4000;
+            const size_t max_batch = 100000;
             if (to_next <= 0)
                 batch = min_batch;
             else if ((uint64_t)to_next > max_batch)
@@ -1955,8 +1968,23 @@ void cpu_run(void)
         }
 
         /* Execute a batch of instructions.
-         * eip is carried from previous iteration (or initial read before loop). */
-        uc_err err = uc_emu_start(uc, eip, 0, 0, batch);
+         * eip is carried from previous iteration (or initial read before loop).
+         *
+         * Large batches run with count=0 (full TCG speed — passing a count
+         * makes Unicorn instrument every instruction, ~halving throughput).
+         * The block hook stops the free run at ~batch insns. Small
+         * near-IRQ0-deadline batches keep the exact instruction count so we
+         * don't overshoot a deadline at a big translation-block boundary and
+         * drop delivery. */
+        uc_err err;
+        if (batch >= 2000) {
+            s_freerun_bytes = 0;
+            s_freerun_insn_target = batch;
+            err = uc_emu_start(uc, eip, 0, 0, 0);
+            s_freerun_insn_target = 0;
+        } else {
+            err = uc_emu_start(uc, eip, 0, 0, batch);
+        }
 
         /* Refresh local eip from Unicorn — after uc_emu_start, the
          * authoritative stop point is in the engine's register file,
@@ -2224,7 +2252,11 @@ handle_display:
         if (eip_dirty)
             uc_reg_write(uc, UC_X86_REG_EIP, &eip);
 
-        /* Display + heartbeat — check wall clock every 128 iterations. */
+        /* Display + heartbeat — check wall clock every 128 iterations.
+         * (Checking more often, e.g. every 16, collapses host throughput
+         * to ~1 MIPS during the tiny-batch flash-write/factory-reset phase
+         * because clock_gettime then dominates — that caused a visible
+         * graphics hang. The 16 ms disp_ms gate already paces presentation.) */
         if ((g_emu.exec_count & 0x7F) == 0) {
             static struct timespec last_display = {0, 0};
             clock_gettime(CLOCK_MONOTONIC, &now);
