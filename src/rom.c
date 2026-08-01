@@ -406,11 +406,19 @@ int rom_load_all(void)
     /* Clear EMS */
     memset(g_emu.ems, 0, sizeof(g_emu.ems));
 
-    /* Load savedata if available (unless --no-savedata) */
-    if (!g_emu.no_savedata)
-        savedata_load();
-    else
+    /* Load savedata if available. Skipped by:
+     *   --no-savedata : never load, never save (read-only/ephemeral)
+     *   --fresh       : ignore existing savedata at load so the game boots
+     *                   factory-fresh (avoids the slow "Automatic Factory
+     *                   Reset" that stale/mismatched NVRAM triggers), but
+     *                   the clean state is still written back at exit.
+     * Mirrors main's p2k_no_savedata_enabled() / p2k_fresh_savedata_enabled(). */
+    if (g_emu.no_savedata)
         LOG("save", "--no-savedata: skipping NVRAM/SEEPROM load\n");
+    else if (g_emu.fresh_savedata)
+        LOG("save", "--fresh: ignoring saved NVRAM/SEEPROM — factory-fresh boot (will save on exit)\n");
+    else
+        savedata_load();
 
     /* Load update ROM files into flash (BAR3).
      * The .flash savedata is usually erased (all 0xFF at the beginning).

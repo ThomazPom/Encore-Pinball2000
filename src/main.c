@@ -176,6 +176,7 @@ static int apply_option(const char *key, const char *value)
         return 0;
     }
     if (strcmp(key, "no-savedata") == 0) { g_emu.no_savedata = true; return 0; }
+    if (strcmp(key, "fresh") == 0) { g_emu.fresh_savedata = true; return 0; }
     if (strcmp(key, "switch-keymap") == 0) {
         /* Configurable A-Z matrix-switch bindings (ported from main).
          * --switch-keymap PATH loads that YAML-subset file; bare
@@ -810,6 +811,10 @@ print_help:
 "════════════════════════════════════════════════════════════════════════\n"
 "  --no-savedata          Don't load NVRAM/SEEPROM at boot AND don't save\n"
 "                         on exit. Useful for fresh-state regression runs.\n"
+"  --fresh                Ignore existing savedata at boot (factory-fresh —\n"
+"                         avoids the slow Automatic Factory Reset that stale\n"
+"                         NVRAM triggers) but DO save the clean state on exit.\n"
+"                         Env P2K_FRESH_SAVEDATA=1 does the same.\n"
 "  --cabinet-purist       EXPERIMENTAL — when used together with an open\n"
 "                         LPT passthrough (--lpt-device 0xBASE or\n"
 "                         /dev/parportN), trust the real board + the\n"
@@ -1093,6 +1098,17 @@ int main(int argc, char **argv)
                     "engine choice\n", ee);
             }
         }
+    }
+
+    /* Savedata env overrides (main parity: p2k-internal.h reads
+     * getenv("P2K_FRESH_SAVEDATA") / getenv("P2K_NO_SAVEDATA")).
+     * "1"/any non-"0" value enables; must be evaluated before
+     * rom_load_all() runs the load gate. */
+    {
+        const char *nf = getenv("P2K_NO_SAVEDATA");
+        if (nf && *nf && strcmp(nf, "0") != 0) g_emu.no_savedata = true;
+        const char *fr = getenv("P2K_FRESH_SAVEDATA");
+        if (fr && *fr && strcmp(fr, "0") != 0) g_emu.fresh_savedata = true;
     }
 
     if (rom_load_all() != 0) {

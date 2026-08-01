@@ -461,6 +461,9 @@ typedef struct {
 
     /* User-visible toggles (CLI / yaml config). */
     bool          no_savedata;          /* --no-savedata: skip load and save */
+    bool          fresh_savedata;       /* --fresh: ignore saved data at load
+                                         * (factory-fresh) but still save at exit
+                                         * (main: P2K_FRESH_SAVEDATA) */
     bool          cabinet_purist;       /* --cabinet-purist: experimental — when LPT
                                          * passthrough is open, skip the optional
                                          * sgc fixups (watchdog suppression /
