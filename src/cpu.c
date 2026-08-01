@@ -1568,30 +1568,47 @@ void cpu_run(void)
          * to avoid clock_gettime / uc_mem_write overhead on every batch.
          * VSYNC, timer-pending drain, optional throttle and cpu-stats. */
         if (g_emu.xinu_ready && (g_emu.exec_count & 0x3F) == 0) {
-            /* VSYNC at ~57 Hz (wall-clock based, independent of PIT rate) */
-            static uint64_t last_vsync_ns = 0;
-            if (last_vsync_ns == 0) last_vsync_ns = now_ns;
-            if (now_ns - last_vsync_ns >= 17500000ULL) { /* ~57 Hz = 17.5ms */
-                last_vsync_ns += 17500000ULL;
-                g_emu.vsync_count++;
-                g_emu.bar2_sram[4] = 1;
-                g_emu.bar2_sram[5] = 0;
-                g_emu.bar2_sram[6] = 0;
-                g_emu.bar2_sram[7] = 0;
-                uint32_t one = 1;
-                uc_mem_write(uc, WMS_BAR2 + 4, &one, 4);
-
-                /* DC_TIMING2: simulate VBLANK pulse */
-                g_emu.dc_timing2 = 241;
-                uint32_t vbl = 241;
-                uc_mem_write(uc, GX_BASE + 0x8354, &vbl, 4);
-            } else {
-                /* Active lines — cycle through line numbers */
-                static uint32_t dc_timing2_counter = 0;
-                dc_timing2_counter += 8;
-                if (dc_timing2_counter > 240) dc_timing2_counter = 0;
-                g_emu.dc_timing2 = dc_timing2_counter;
-                uc_mem_write(uc, GX_BASE + 0x8354, &dc_timing2_counter, 4);
+            /* VSYNC driven off VIRTUAL time (mirrors main's p2k-vsync.c which
+             * arms its ticker on QEMU_CLOCK_VIRTUAL, NOT wall clock).  Main:
+             * 17.5ms frame period, 30 sub-tick DC_TIMING2 updates, scanline
+             * steps by 8 (0..240), end-of-frame pulses vsync flag + 241.
+             *
+             * WHY VIRTUAL, NOT WALL: on this host the guest virtual clock runs
+             * at ~0.3x wall (host-slow).  A wall-clock vsync cadence therefore
+             * arrives ~3x too fast relative to the guest scheduler tick, and
+             * the Display Manager(HD) render-pass watchdog — which measures
+             * render completion in guest-scheduler ticks — eventually expires
+             * ("Render pass watchdog has expired" Fatal).  Tying vsync to
+             * vticks keeps the vsync:IRQ0 ratio constant at any host speed. */
+            const uint64_t vsync_period_vt =
+                (uint64_t)(0.0175 * (double)target_ips);          /* 17.5ms   */
+            const uint64_t vsync_subtick_vt = vsync_period_vt / 30u ?: 1u;
+            static uint64_t last_vsync_subtick_vt = 0;
+            static uint32_t vsync_scanline = 0;
+            if (last_vsync_subtick_vt == 0)
+                last_vsync_subtick_vt = s_sched.vticks_total;
+            if (s_sched.vticks_total - last_vsync_subtick_vt >= vsync_subtick_vt) {
+                last_vsync_subtick_vt += vsync_subtick_vt;
+                vsync_scanline += 8;
+                if (vsync_scanline >= 241) {
+                    /* End-of-frame pulse: assert vsync flag + DC_TIMING2=241. */
+                    vsync_scanline = 0;
+                    g_emu.vsync_count++;
+                    g_emu.bar2_sram[4] = 1;
+                    g_emu.bar2_sram[5] = 0;
+                    g_emu.bar2_sram[6] = 0;
+                    g_emu.bar2_sram[7] = 0;
+                    uint32_t one = 1;
+                    uc_mem_write(uc, WMS_BAR2 + 4, &one, 4);
+                    g_emu.dc_timing2 = 241;
+                    uint32_t vbl = 241;
+                    uc_mem_write(uc, GX_BASE + 0x8354, &vbl, 4);
+                } else {
+                    /* Active line counter; vsync flag stays 0 so polling
+                     * loops only see the rising edge once per frame. */
+                    g_emu.dc_timing2 = vsync_scanline;
+                    uc_mem_write(uc, GX_BASE + 0x8354, &vsync_scanline, 4);
+                }
             }
 
             /* Drain SIGALRM timer_pending (used only for HLT wakeup) */
