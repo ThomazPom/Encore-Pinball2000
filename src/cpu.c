@@ -1267,7 +1267,9 @@ void cpu_run(void)
              * transient recovery tops out at 140% and never hangs the
              * guest. Steady state is held at 100% by the PI controller,
              * so this floor only bounds recovery bursts.
-             * Adaptive on by default (P2K_HOTLOOP_ADAPTIVE=0 disables);
+             * Adaptive is OPT-IN (P2K_HOTLOOP_ADAPTIVE=1 enables); the
+             * default pins main's boot gap (see below) because the
+             * adaptive push-to-nominal over-delivers on unicorn and nests.
              * P2K_HOTLOOP_MIN_GAP_NS pins a fixed gap like main's env.
              * P2K_HOTLOOP_MAX_DELIVERY_PCT overrides the 140% ceiling
              * (integer percent) for headroom experiments. */
@@ -1281,7 +1283,7 @@ void cpu_run(void)
             s_sched.pi_gap_high_vt = (pit_period_insns * 6) / 5;       /* 1.2× → floor on rate */
             if (s_sched.pi_gap_low_vt < 50) s_sched.pi_gap_low_vt = 50;
             const char *a = getenv("P2K_HOTLOOP_ADAPTIVE");
-            s_sched.pi_adaptive = !(a && a[0] == '0');
+            s_sched.pi_adaptive = (a && a[0] == '1');
             const char *g = getenv("P2K_HOTLOOP_MIN_GAP_NS");
             if (g) {
                 /* Fixed gap in virtual ns → vticks (target_ips per s). */
@@ -1290,7 +1292,22 @@ void cpu_run(void)
                 s_sched.min_gap_vticks = (uint64_t)((double)gns * (double)target_ips / 1e9);
                 s_sched.pi_adaptive = false;
             } else {
-                s_sched.min_gap_vticks = pit_period_insns; /* start at nominal; PI shrinks to recover */
+                /* DEFAULT = main-parity stable gap. Pin the gap exactly as
+                 * a manual P2K_HOTLOOP_MIN_GAP_NS=250000 (main's boot
+                 * min_gap) and leave adaptive OFF. The adaptive push-to-
+                 * nominal drives ~98% IRQ0 delivery, which on unicorn's
+                 * hand-injection over-supplies the clkint hot loop: a new
+                 * tick arrives before clkint (which EOIs early then runs
+                 * resched/ctxsw) reaches its IRET, so IRQ0 frames nest and
+                 * ESP walks ~0x180/tick down into the GDT → EIP-in-GDT
+                 * wedge / "resched: called from interrupt handler" storm →
+                 * frozen black screen. The fixed 250 us gap holds ~50%
+                 * delivery, giving each clkint time to return before the
+                 * next tick. A/B-verified: swe1 runs 90s+ (exec ~1.1M, zero
+                 * wedges) vs ~30s EIP-in-GDT freeze under adaptive.
+                 * Opt back into adaptive with P2K_HOTLOOP_ADAPTIVE=1. */
+                int64_t gns = 250000;
+                s_sched.min_gap_vticks = (uint64_t)((double)gns * (double)target_ips / 1e9);
             }
             if (s_sched.min_gap_vticks < 1) s_sched.min_gap_vticks = 1;
             s_sched.last_raise_vticks = s_sched.vticks_total;
