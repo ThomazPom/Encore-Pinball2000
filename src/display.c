@@ -7,6 +7,7 @@
  * Y-flip: GP blit Y=0 is bottom, SDL Y=0 is top
  */
 #include "encore.h"
+#include "keymap.h"
 #include "stb_image_write.h"
 
 static int  s_y_flip = 1;
@@ -471,6 +472,15 @@ void display_handle_events(void)
                 netcon_kbd_inject_scancode(is_down ? make : (uint8_t)(0x80 | make));
                 break;
             }
+
+            /* Configurable A-Z switch keymap (ported from main). Handles
+             * BOTH make and break so held letters keep their switch
+             * closed. Only consumes bound letters; unbound keys fall
+             * through to the normal gameplay handling below. Ignore SDL
+             * auto-repeat so the hold refcount stays balanced. */
+            if (!ev.key.repeat &&
+                keymap_handle_key(ev.key.keysym.sym, is_down))
+                break;
 
             /* Non-capture KEYUP not handled by gameplay logic. */
             if (!is_down) break;

@@ -10,6 +10,7 @@
  *   - Savedata persistence between sessions
  */
 #include "encore.h"
+#include "keymap.h"
 #include <dirent.h>
 #include <ctype.h>
 
@@ -175,6 +176,19 @@ static int apply_option(const char *key, const char *value)
         return 0;
     }
     if (strcmp(key, "no-savedata") == 0) { g_emu.no_savedata = true; return 0; }
+    if (strcmp(key, "switch-keymap") == 0) {
+        /* Configurable A-Z matrix-switch bindings (ported from main).
+         * --switch-keymap PATH loads that YAML-subset file; bare
+         * --switch-keymap uses the default location and auto-creates a
+         * starter file. */
+        g_emu.switch_keymap_enabled = true;
+        if (value && *value) {
+            strncpy(g_emu.switch_keymap, value, sizeof(g_emu.switch_keymap) - 1);
+            g_emu.switch_keymap[sizeof(g_emu.switch_keymap) - 1] = '\0';
+            return 1;
+        }
+        return 0;
+    }
     if (strcmp(key, "cabinet-purist") == 0) {
         g_emu.cabinet_purist = true;
         /* CTL forwarding is already verbatim by default — no LPT flag to set
@@ -191,6 +205,19 @@ static int apply_option(const char *key, const char *value)
                 "[main] --dcs-mode '%s' invalid; expected bar4-patch|io-handled "
                 "(falling back to io-handled)\n", value);
             g_emu.dcs_mode_choice = ENCORE_DCS_IO_HANDLED;
+        }
+        return 1;
+    }
+    if (strcmp(key, "dcs-engine") == 0 && value) {
+        if (strcmp(value, "samples") == 0) {
+            g_emu.dcs_engine_choice = ENCORE_DCS_ENGINE_SAMPLES;
+        } else if (strcmp(value, "adsp") == 0) {
+            g_emu.dcs_engine_choice = ENCORE_DCS_ENGINE_ADSP;
+        } else {
+            fprintf(stderr,
+                "[main] --dcs-engine '%s' invalid; expected samples|adsp "
+                "(falling back to samples)\n", value);
+            g_emu.dcs_engine_choice = ENCORE_DCS_ENGINE_SAMPLES;
         }
         return 1;
     }
@@ -538,6 +565,13 @@ print_help:
 "\n"
 "  --headless             Skip SDL window AND audio init — pure CPU.\n"
 "\n"
+"  --switch-keymap[=PATH] Bind keyboard letters A-Z to matrix switches\n"
+"                         (11..88) via a strict YAML-subset file. Bare\n"
+"                         flag uses ~/.config/encore/switch-keymap.yaml\n"
+"                         (auto-created with a starter file). Holding a\n"
+"                         bound letter keeps that switch closed. Ported\n"
+"                         from the main/QEMU build for input parity.\n"
+"\n"
 "      Use case: CI runners, regression burn-in, scripted XINA sessions,\n"
 "      or running encore on a server. Combine with --serial-tcp so you\n"
 "      still have a way to see what the guest is doing.\n"
@@ -799,6 +833,9 @@ print_help:
 "                              RFM --update none, SWE1 --update none).\n"
 "                              Use this if you need sound today; it is\n"
 "                              not the long-term path.\n"
+"  --dcs-engine ENGINE    Audio engine: samples (default) uses the existing\n"
+"                         SDL2_mixer WAV/pb2kslib sample player; adsp runs\n"
+"                         the native ADSP-2105 DCS program and SPORT1 PCM.\n"
 "  --config FILE.yaml     Load options from a yaml-ish file (one key:value\n"
 "                         per line; '#' starts a comment). CLI args override\n"
 "                         config; auto-loads ./encore.yaml when no CLI args.\n"
@@ -940,7 +977,10 @@ static void cleanup_and_save(void)
         LOG("save", "--no-savedata: skipping NVRAM/SEEPROM save\n");
 
     display_cleanup();
-    sound_cleanup();
+    if (g_emu.dcs_engine_choice == ENCORE_DCS_ENGINE_ADSP)
+        adsp_cleanup();
+    else
+        sound_cleanup();
 }
 
 int main(int argc, char **argv)
@@ -997,6 +1037,13 @@ int main(int argc, char **argv)
     if (rom_load_all() != 0) {
         fprintf(stderr, "Failed to load ROMs\n");
         return 1;
+    }
+
+    if (g_emu.dcs_engine_choice == ENCORE_DCS_ENGINE_ADSP) {
+        if (adsp_init() != 0) {
+            fprintf(stderr, "Failed to init native ADSP DCS engine\n");
+            return 1;
+        }
     }
 
     /* Build the XINU symbol-table index from the freshly-loaded update
@@ -1066,8 +1113,20 @@ int main(int argc, char **argv)
         if (display_init() != 0)
             LOG("warn", "Display init failed — running headless\n");
 
-        if (sound_init() != 0)
+        if (g_emu.dcs_engine_choice == ENCORE_DCS_ENGINE_SAMPLES &&
+            sound_init() != 0)
             LOG("warn", "Sound init failed — running silent\n");
+    }
+
+    /* Configurable A-Z switch keymap (ported from main). Only when the
+     * operator opted in via --switch-keymap; loads (and auto-creates) the
+     * YAML-subset bindings file. Harmless under --headless — the bindings
+     * simply never receive SDL key events. */
+    if (g_emu.switch_keymap_enabled) {
+        const char *kp = g_emu.switch_keymap[0] ? g_emu.switch_keymap : NULL;
+        unsigned n = keymap_install(kp);
+        if (n == 0)
+            LOG("warn", "switch keymap: no bindings active\n");
     }
 
     /* Network console bridges (no-ops if their --*-tcp ports were not given) */

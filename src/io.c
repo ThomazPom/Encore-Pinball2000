@@ -789,6 +789,14 @@ static uint8_t s_rendering_data_val  = 0;
 static uint8_t s_start_button_held   = 0;
 static uint8_t s_probe_held          = 0;   /* digit-key debug probe */
 static uint8_t s_probe_bit           = 0;   /* which bit of c0 to set  */
+
+/* Configurable A-Z keymap injections (ported from main's
+ * p2k-switch-keymap.c). One byte per matrix column 0..7; each set bit is
+ * a closed switch in that column's row. lpt_set_keymap_switch() takes a
+ * two-digit switch number NN (col 1..8, row 1..8, matching main's 11..88
+ * convention) and maps it to internal col=(NN/10)-1, bit=(NN%10)-1. The
+ * matrix scan (opcode 0x04) ORs the selected column in. */
+static uint8_t s_keymap_col_state[8] = {0};
 static uint8_t s_data_val2           = 0;
 static uint8_t s_data_val3           = 0;
 static uint8_t s_data_val4           = 0;
@@ -993,6 +1001,8 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
         if (s_start_button_held && col == 0) v |= (uint8_t)(1u << 2);   /* sw=2 */
         if (s_probe_held && col == g_probe_col)
             v |= (uint8_t)(1u << s_probe_bit);
+        if (col >= 0 && col < 8)
+            v |= s_keymap_col_state[col];   /* configurable A-Z bindings */
         result = v;
         break;
     }
@@ -1097,6 +1107,24 @@ void lpt_set_host_input(uint8_t buttons, uint8_t switches)
 {
     s_lpt_button_state = buttons;
     s_lpt_switch_state = switches;
+}
+
+/* Configurable A-Z keymap switch injection (ported from main's
+ * p2k-switch-keymap.c). number is the two-digit NN (col 1..8, row 1..8).
+ * Maps to internal matrix col=(NN/10)-1, bit=(NN%10)-1 and sets/clears
+ * that switch in the scan state consumed by opcode 0x04. */
+void lpt_set_keymap_switch(unsigned number, int on)
+{
+    unsigned column = number / 10;
+    unsigned row    = number % 10;
+    if (column < 1 || column > 8 || row < 1 || row > 8)
+        return;
+    int col = (int)column - 1;
+    uint8_t mask = (uint8_t)(1u << (row - 1));
+    if (on) s_keymap_col_state[col] |=  mask;
+    else    s_keymap_col_state[col] &= ~mask;
+    LOGV("lpt", "keymap switch %u (c%d b%u) %s\n",
+         number, col, row - 1, on ? "CLOSED" : "open");
 }
 
 void lpt_set_start_button(int held)
@@ -1823,6 +1851,8 @@ static uint32_t dcs2_port_read(uint16_t port, int size) {
 
     /* Port 0x13C (off=4): word=DCS data, byte=MCR */
     if (off == 4 && size >= 2) {
+        if (g_emu.dcs_engine_choice == ENCORE_DCS_ENGINE_ADSP)
+            return adsp_read_response();
         s_dcs_io.cnt_rd++;
         uint16_t val = dcs_io_pop();
         /* Log EIP + return address for first few data reads */
@@ -1840,6 +1870,12 @@ static uint32_t dcs2_port_read(uint16_t port, int size) {
 
     /* Port 0x13E (off=6): DCS flags (both byte and word) */
     if (off == 6) {
+        if (g_emu.dcs_engine_choice == ENCORE_DCS_ENGINE_ADSP) {
+            uint16_t f = adsp_flag_byte();
+            if (size == 1 && !(dcs2_mcr & 0x10))
+                return (dcs2_msr & 0x30) | (f & 0xC0);
+            return f;
+        }
         s_dcs_io.cnt_flag++;
         uint16_t f = 0x40;  /* always ready to accept */
         if (s_dcs_io.wr != s_dcs_io.rd)
@@ -1889,6 +1925,10 @@ static void dcs2_port_write(uint16_t port, uint32_t val, int size) {
      * State [0x34a674] in guest RAM tracks whether the next byte is
      * HIGH (0) or LOW (1) on the game side; we mirror that locally. */
     if (off == 4 && size >= 2) {
+        if (g_emu.dcs_engine_choice == ENCORE_DCS_ENGINE_ADSP) {
+            adsp_write_cmd(val & 0xFFFF);
+            return;
+        }
         s_dcs_io.cnt_wr++;
         s_dcs_io.cmd = val & 0xFFFF;
         dcs_io_execute();
@@ -1898,12 +1938,21 @@ static void dcs2_port_write(uint16_t port, uint32_t val, int size) {
         static uint16_t s_pair = 0;
         static int s_have_high = 0;
         s_dcs_io.cnt_byte_wr++;
+        if (g_emu.dcs_engine_choice == ENCORE_DCS_ENGINE_ADSP &&
+            adsp_accepts_boot_byte()) {
+            adsp_write_cmd(val & 0xFF);
+            return;
+        }
         if (!s_have_high) {
             s_pair = (uint16_t)((val & 0xFF) << 8);
             s_have_high = 1;
         } else {
             s_pair |= (uint16_t)(val & 0xFF);
             s_have_high = 0;
+            if (g_emu.dcs_engine_choice == ENCORE_DCS_ENGINE_ADSP) {
+                adsp_write_cmd(s_pair);
+                return;
+            }
             s_dcs_io.cnt_wr++;
             s_dcs_io.cmd = s_pair;
             dcs_io_execute();

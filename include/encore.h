@@ -67,6 +67,7 @@
 #include <unicorn/unicorn.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_mixer.h>
+#include "adsp.h"
 
 /* =========================================================================
  * Physical memory map — Cyrix MediaGX + WMS PRISM
@@ -368,6 +369,8 @@ typedef struct {
     bool     realtime;
     bool     update_explicit_none;    /* user gave --update none → skip auto-pick */
     char     update_file[512];        /* explicit update.bin path; empty → default search */
+    char     switch_keymap[512];      /* --switch-keymap path; empty → default location */
+    bool     switch_keymap_enabled;   /* set when --switch-keymap given */
 
     /* SuperIO / CC5530 */
     uint8_t  superio_idx;              /* W83977EF index register (0x2E) */
@@ -421,6 +424,13 @@ typedef struct {
         ENCORE_DCS_IO_HANDLED = 0,
         ENCORE_DCS_BAR4_PATCH = 1,
     } dcs_mode_choice;
+    /* --dcs-engine:
+     *   samples = legacy SDL2_mixer/pb2kslib sample player (default)
+     *   adsp    = native ADSP-2105 DCS interpreter and SPORT1 PCM path. */
+    enum {
+        ENCORE_DCS_ENGINE_SAMPLES = 0,
+        ENCORE_DCS_ENGINE_ADSP = 1,
+    } dcs_engine_choice;
     volatile int timer_pending;       /* count of unprocessed SIGALRM ticks */
     volatile int timer_tick_queue;    /* queued IRQ0 ticks waiting for EOI */
     uint32_t      idt_base;            /* cached IDT base address */
@@ -579,6 +589,7 @@ void     lpt_dump_guest_switch_state(void);
 void     lpt_inject_switch(int col, uint8_t data);
 void     lpt_set_start_button(int held);  /* SPACE/S → Start Button (sw=2, c0 b2 = visual C1R3); LPT col-gated, bundle-agnostic */
 void     lpt_set_probe_bit(int bit, int held);  /* digit keys 0-7 → Phys[c0]/Logical[c0] bit N */
+void     lpt_set_keymap_switch(unsigned number, int on);  /* configurable A-Z → matrix switch NN (11..88) */
 
 /* bar.c */
 void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int64_t value, void *user_data);
