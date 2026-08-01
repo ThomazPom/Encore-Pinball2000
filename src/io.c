@@ -965,18 +965,19 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
     uint8_t result = 0;
     switch (opcode) {
     case 0x00:
-        /* Physical[8] — coin slots only (bits 0-3). On a real cabinet
-         * the bus idles with the high nibble pulled high (active-low
-         * pull-ups on unused data lines), so the byte at rest looks
-         * like 0xF0, not 0x00. External lpt_emu bus traces from the
-         * comparison emulator confirm a high-nibble-F response when
-         * the guest opcode-0x00 probe runs. We forced 0x00 in earlier
-         * bring-up because no coin-slot key was bound; the boot path
-         * never inspects this byte's high nibble so the change is
-         * inert for the current game matrix, but it removes a
-         * "this looks like no board attached" foot-print on the bus.
-         * Coin-slot bits (low nibble) remain unwired. */
-        result = 0xF0;
+        /* Physical[8] — coin slots (bits 0-3 only). RAW PARITY WITH MAIN
+         * (qemu/p2k-lpt-board.c retrieve_rendering_status case 0x00):
+         *     v = s_phys8_coin_slots & 0x0f;   // high nibble is ZERO
+         * A prior unicorn tweak returned 0xF0 here to "look like a real
+         * board" (high nibble pulled high). That diverged from main and
+         * made XINU read bits 4-7 as FOUR phantom closed switches on
+         * Physical[8] every matrix scan — the driver spawned excess
+         * per-switch handling and over-allocated the native 4 MiB heap,
+         * reproducing `Fatal: malloc(131072): getmem(131104) failed` in
+         * price_init a few seconds into boot. Coins are unwired here, so
+         * the main-parity at-rest value is 0x00 (low nibble coin bits,
+         * high nibble masked off). */
+        result = 0x00;
         break;
     case 0x01: {
         /* Physical[10] — flippers/actions + door interlock + tilts */
