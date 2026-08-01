@@ -269,6 +269,8 @@ static uint64_t s_irq0_in_flight_clear_iret = 0; /* clear by EIP-return-to-pre_e
 static uint64_t s_irq0_in_flight_clear_tsw  = 0; /* clear by task-switch (ESP outside +/-4KiB AND ISR=0) */
 static uint64_t s_irq0_in_flight_max_vt = 0;     /* longest in_flight duration in vticks */
 static uint64_t s_irq0_in_flight_arm_vt = 0;     /* vticks at last arm */
+static uint64_t s_irq0_arm_eoi_count = 0;         /* pic0.irq0_eoi_count at last arm */
+static uint64_t s_irq0_in_flight_clear_eoi = 0;   /* clear by observing the handler's IRQ0 EOI */
 static uint64_t s_irq0_tsw_logged = 0;           /* sample-log first N task-switch clears */
 static uint64_t s_irq0_guard_defer = 0;     /* count of injections deferred by this guard */
 static uint64_t s_inj_defer_iret = 0;
@@ -285,6 +287,22 @@ static void hook_block_count(uc_engine *uc, uint64_t addr,
     s_cpu_bytes_total += size;
     s_cpu_blocks_window++;
     s_cpu_bytes_window += size;
+    /* IRQ0 nested-injection guard, primary clear (matches main's eoi_seen):
+     * the instant clkint issues the IRQ0 EOI, the interrupt is "done" on
+     * real hardware and the PIC ISR bit0 is clear, so a fresh IRQ0 may be
+     * delivered. Clearing here bounds in_flight to a single handler EOI
+     * regardless of any resched()/task-switch that follows, which is what
+     * prevents the delivery collapse (in_flight otherwise stayed armed for
+     * up to ~260 PIT periods waiting for an IRET-to-pre_eip on a suspended
+     * task's stack). */
+    if (s_irq0_in_flight &&
+        g_emu.pic[0].irq0_eoi_count != s_irq0_arm_eoi_count) {
+        uint64_t dur = s_sched.vticks_total - s_irq0_in_flight_arm_vt;
+        if (dur > s_irq0_in_flight_max_vt) s_irq0_in_flight_max_vt = dur;
+        s_irq0_in_flight_clears++;
+        s_irq0_in_flight_clear_eoi++;
+        s_irq0_in_flight = 0;
+    }
     /* IRQ0 nested-injection guard: clear in_flight when we observe the
      * guest is back at the pre-injection EIP AND ESP has returned to
      * >= the pre-injection baseline (clkint's IRET completed). */
@@ -802,6 +820,15 @@ int cpu_inject_interrupt(uint8_t vector)
         s_irq0_handler_eip = handler;
         s_irq0_in_flight_arms++;
         s_irq0_in_flight_arm_vt = s_sched.vticks_total;
+        /* Snapshot the handler-EOI counter so the block hook can clear
+         * in_flight the instant clkint EOIs IRQ0 (main tracks eoi_seen).
+         * This bounds in_flight to one handler execution even when clkint
+         * calls resched() and task-switches away — otherwise the
+         * EIP-return guard waits for an IRET-to-pre_eip that only happens
+         * when the suspended task resumes (measured up to 1.3M vticks =
+         * ~260 PIT periods), deferring every IRQ0 in between (delivery
+         * collapse to ~69%). */
+        s_irq0_arm_eoi_count = g_emu.pic[0].irq0_eoi_count;
     }
     return 1;
 }
@@ -1500,9 +1527,10 @@ void cpu_run(void)
             uint64_t cur_inflight_dur = s_irq0_in_flight
                 ? (s_sched.vticks_total - s_irq0_in_flight_arm_vt) : 0;
             LOG("irq",
-                "         guards: in-flight arms=%llu clears=%llu (iret=%llu tsw=%llu) cur=%llu cur-dur=%llu vt max-vt=%llu  defer: nest=%llu sti/iret=%llu no-prog=%llu burst=%llu esp=%llu  force-EOI=%llu  blk-stub=%llu\n",
+                "         guards: in-flight arms=%llu clears=%llu (eoi=%llu iret=%llu tsw=%llu) cur=%llu cur-dur=%llu vt max-vt=%llu  defer: nest=%llu sti/iret=%llu no-prog=%llu burst=%llu esp=%llu  force-EOI=%llu  blk-stub=%llu\n",
                 (unsigned long long)s_irq0_in_flight_arms,
                 (unsigned long long)s_irq0_in_flight_clears,
+                (unsigned long long)s_irq0_in_flight_clear_eoi,
                 (unsigned long long)s_irq0_in_flight_clear_iret,
                 (unsigned long long)s_irq0_in_flight_clear_tsw,
                 (unsigned long long)s_irq0_in_flight,
