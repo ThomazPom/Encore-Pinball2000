@@ -154,6 +154,18 @@ static struct sched_state {
     uint64_t w_pit_edges_due_base;
     uint64_t w_pic_edges_latched_base;
     uint64_t w_pic_edges_collapsed_base;
+
+    /* Anti-burst pacing (ported from main's p2k-clkint-hotloop.c).
+     * Main raises at most ONE IRQ0 edge per drain: it gates the raise
+     * on "one in flight" (IRR/ISR bit0 clear) and an optional min_gap
+     * rate-limit, then resyncs the deadline when behind instead of
+     * emitting a catch-up burst of edges that only collapse in IRR and
+     * deliver nothing. We mirror that here so the drain never spams the
+     * PIC with edges the guest can't consume. */
+    uint64_t last_irq0_raise_ns;      /* wall-ns of last real edge emitted */
+    int64_t  hotloop_min_gap_ns;      /* -1 uninit, 0 = off, >0 = min ns between edges */
+    uint64_t irq0_skip_in_flight;     /* edges suppressed: IRQ0 already IRR/ISR */
+    uint64_t irq0_skip_min_gap;       /* edges suppressed: within min_gap window */
 } s_sched;
 
 /* Injection ring buffer — captures the last N interrupt injections so
@@ -1157,6 +1169,15 @@ void cpu_run(void)
             s_sched.next_irq0_at_vticks = s_sched.vticks_total + pit_period_insns;
             s_sched.next_irq0_at_ns     = now_wall_ns + pit_period_ns;
             s_sched.w_vticks_base = s_sched.vticks_total;
+
+            /* One-time min_gap init (ported from main). Default OFF: the
+             * one-in-flight gate alone already suppresses burst edges
+             * without changing delivery cadence. Set
+             * P2K_HOTLOOP_MIN_GAP_NS>0 to also rate-limit like main
+             * (main's boot pace is 145000). */
+            const char *g = getenv("P2K_HOTLOOP_MIN_GAP_NS");
+            s_sched.hotloop_min_gap_ns = g ? strtoll(g, NULL, 10) : 0;
+            if (s_sched.hotloop_min_gap_ns < 0) s_sched.hotloop_min_gap_ns = 0;
         }
 
         /* Fire IRQ0 only when BOTH virtual-time AND wall-time deadlines
@@ -1186,6 +1207,27 @@ void cpu_run(void)
                 s_sched.next_irq0_at_vticks += pit_period_insns;
                 s_sched.next_irq0_at_ns     += pit_period_ns;
                 if (g_emu.xinu_ready) {
+                    /* Anti-burst gate (main parity): only emit a real
+                     * PIT edge when no IRQ0 is already in flight (IRR or
+                     * ISR bit0 clear) and the optional min_gap has
+                     * elapsed. Edges emitted while one is in flight only
+                     * collapse in IRR and deliver nothing, so suppress
+                     * them and let the deadline resync advance cadence.
+                     * This turns the old 1024-edge catch-up burst into
+                     * at most one real edge per drain, matching main. */
+                    bool in_flight = (g_emu.pic[0].irr & 0x01) ||
+                                     (g_emu.pic[0].isr & 0x01);
+                    bool gap_ok = (s_sched.hotloop_min_gap_ns <= 0) ||
+                                  (s_sched.last_irq0_raise_ns == 0) ||
+                                  ((now_wall_ns - s_sched.last_irq0_raise_ns) >=
+                                   (uint64_t)s_sched.hotloop_min_gap_ns);
+                    if (in_flight) {
+                        s_sched.irq0_skip_in_flight++;
+                        s_sched.irq0_collapsed++;
+                        s_sched.irq0_coll_irr++;
+                    } else if (!gap_ok) {
+                        s_sched.irq0_skip_min_gap++;
+                    } else {
                     /* QEMU-style: PIT OUT0 mode-2 pulse — drop LOW
                      * then back HIGH. The PIC owns edge detection and
                      * IRR latching; ISR/IMR/IF live in the CPU
@@ -1195,6 +1237,7 @@ void cpu_run(void)
                     pic_set_irq(0, 0, 0);
                     pic_set_irq(0, 0, 1);
                     s_sched.pit_edges_emitted++;
+                    s_sched.last_irq0_raise_ns = now_wall_ns;
                     if (g_emu.pic[0].edges_latched > latched_before) {
                         s_sched.irq0_fired++;
                     } else if (g_emu.pic[0].edges_collapsed_irr > collapsed_before) {
@@ -1213,6 +1256,7 @@ void cpu_run(void)
                         s_sched.irq0_collapsed++;
                     }
                     (void)collapsed_before;
+                    }
                 }
             }
             /* Hard re-sync if the catch-up loop hit its budget — the
