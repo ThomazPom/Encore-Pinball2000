@@ -209,14 +209,34 @@ static int apply_option(const char *key, const char *value)
         return 1;
     }
     if (strcmp(key, "dcs-engine") == 0 && value) {
-        if (strcmp(value, "samples") == 0) {
+        /* main (p2k-dcs-audio.c:1333) accepts several engine names that
+         * collapse onto two real backends:
+         *   - pb2kslib / samples                 -> sample player
+         *   - adsp / adsp-thread / adsp-clock-thread /
+         *     adsp-hybrid-thread / pb2kslib-adsp -> native ADSP execution
+         * unicorn has one native ADSP implementation (no separate threading
+         * model / cache generator), so every adsp* variant maps to it; the
+         * useful apples-to-apples outcome (native DSP vs samples) is kept. */
+        if (strcmp(value, "samples") == 0 ||
+            strcmp(value, "pb2kslib") == 0) {
             g_emu.dcs_engine_choice = ENCORE_DCS_ENGINE_SAMPLES;
-        } else if (strcmp(value, "adsp") == 0) {
+        } else if (strcmp(value, "adsp") == 0 ||
+                   strcmp(value, "adsp-thread") == 0 ||
+                   strcmp(value, "adsp-clock-thread") == 0 ||
+                   strcmp(value, "adsp-hybrid-thread") == 0 ||
+                   strcmp(value, "pb2kslib-adsp") == 0) {
+            if (strcmp(value, "adsp") != 0)
+                fprintf(stderr,
+                    "[main] --dcs-engine '%s': unicorn has a single native "
+                    "ADSP engine (no separate threading/cache variant); "
+                    "using native ADSP\n", value);
             g_emu.dcs_engine_choice = ENCORE_DCS_ENGINE_ADSP;
         } else {
             fprintf(stderr,
-                "[main] --dcs-engine '%s' invalid; expected samples|adsp "
-                "(falling back to samples)\n", value);
+                "[main] --dcs-engine '%s' invalid; expected "
+                "samples|pb2kslib|adsp|adsp-thread|adsp-clock-thread|"
+                "adsp-hybrid-thread|pb2kslib-adsp (falling back to samples)\n",
+                value);
             g_emu.dcs_engine_choice = ENCORE_DCS_ENGINE_SAMPLES;
         }
         return 1;
@@ -850,9 +870,12 @@ print_help:
 "                              RFM --update none, SWE1 --update none).\n"
 "                              Use this if you need sound today; it is\n"
 "                              not the long-term path.\n"
-"  --dcs-engine ENGINE    Audio engine: samples (default) uses the existing\n"
-"                         SDL2_mixer WAV/pb2kslib sample player; adsp runs\n"
-"                         the native ADSP-2105 DCS program and SPORT1 PCM.\n"
+"  --dcs-engine ENGINE    Audio engine. Sample player: samples (default),\n"
+"                         pb2kslib. Native ADSP-2105: adsp, adsp-thread,\n"
+"                         adsp-clock-thread, adsp-hybrid-thread, pb2kslib-adsp\n"
+"                         (unicorn has one native ADSP engine; the threading/\n"
+"                         cache variants are accepted for main parity and map\n"
+"                         to it). Env P2K_DCS_ENGINE overrides this flag.\n"
 "  --config FILE.yaml     Load options from a yaml-ish file (one key:value\n"
 "                         per line; '#' starts a comment). CLI args override\n"
 "                         config; auto-loads ./encore.yaml when no CLI args.\n"
@@ -1051,6 +1074,27 @@ int main(int argc, char **argv)
      * 2. CPU (create Unicorn engine)
      * 3. Memory (map guest physical address space)
      */
+    /* P2K_DCS_ENGINE env overrides the flag (main precedence:
+     * p2k-dcs-audio.c reads getenv("P2K_DCS_ENGINE") first). */
+    {
+        const char *ee = getenv("P2K_DCS_ENGINE");
+        if (ee && *ee) {
+            if (strcmp(ee, "samples") == 0 || strcmp(ee, "pb2kslib") == 0) {
+                g_emu.dcs_engine_choice = ENCORE_DCS_ENGINE_SAMPLES;
+            } else if (strcmp(ee, "adsp") == 0 ||
+                       strcmp(ee, "adsp-thread") == 0 ||
+                       strcmp(ee, "adsp-clock-thread") == 0 ||
+                       strcmp(ee, "adsp-hybrid-thread") == 0 ||
+                       strcmp(ee, "pb2kslib-adsp") == 0) {
+                g_emu.dcs_engine_choice = ENCORE_DCS_ENGINE_ADSP;
+            } else {
+                fprintf(stderr,
+                    "[main] P2K_DCS_ENGINE='%s' unknown; keeping current "
+                    "engine choice\n", ee);
+            }
+        }
+    }
+
     if (rom_load_all() != 0) {
         fprintf(stderr, "Failed to load ROMs\n");
         return 1;
