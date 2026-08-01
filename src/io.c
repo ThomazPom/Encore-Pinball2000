@@ -548,22 +548,24 @@ static void apply_sgc_patches(void)
      * Patch: byte at +5 (low byte of imm32) → 0x0E (MOV EAX,0xE00 = 14MB pages)
      * (BT-130)
      *
-     * NOTE (parity investigation, unicorn branch): main/QEMU ships the
-     * analogous patch OFF by default (P2K_MEM_DETECT_PATCH=1 opt-in) —
-     * its own comment states native 4 MiB boots every current SWE1/RFM
-     * bundle including 2.10 without changing sizmem(). We assumed the
-     * same held here and never tested it. It does not: measured with
-     * P2K_MEM_DETECT_PATCH=0 below, SWE1 2.10 hits a real, reproducible
-     * `*** Fatal: malloc(131072): getmem(131104) failed` guest OOM a few
-     * seconds into boot — i.e. unicorn's guest-visible memory pressure at
-     * this point in boot is measurably higher than main's, for reasons
-     * still to be root-caused (candidates: XINU process/stack accounting
-     * differences, or something in our switch/LPT/DCS emulation causing
-     * more allocation than main's). Until that root cause is found and
-     * fixed, this patch is REQUIRED for unicorn and defaults ON (opt-out
-     * via P2K_MEM_DETECT_PATCH=0, kept only for A/B regression testing —
-     * expect a boot-time Fatal OOM with it disabled, not a clean run). */
-    if (!getenv("P2K_MEM_DETECT_PATCH") || getenv("P2K_MEM_DETECT_PATCH")[0] != '0') {
+     * NOTE (parity investigation, unicorn branch — RESOLVED): main/QEMU
+     * ships the analogous patch OFF by default (P2K_MEM_DETECT_PATCH=1
+     * opt-in) — its comment states native 4 MiB boots every current
+     * SWE1/RFM bundle including 2.10 without changing sizmem(). Unicorn
+     * originally forced this patch ON because P2K_MEM_DETECT_PATCH=0 hit
+     * a real `*** Fatal: malloc(131072): getmem(131104) failed` guest OOM
+     * a few seconds into boot (in price_init). ROOT CAUSE FOUND AND FIXED:
+     * our LPT opcode 0x08 latched LAMP row data into the switch-matrix
+     * store, so illuminated lamps were fed back to XINU as phantom closed
+     * switches (~70% of matrix-scan reads returned nonzero at idle). Those
+     * phantom transitions made XINU spawn excess per-switch handling and
+     * over-allocate, exhausting the native 4 MiB. Splitting lamp rows
+     * (s_lamp_rows) from the switch matrix (s_rendering_status) drops the
+     * phantom rate to 0.0% and unicorn now boots cleanly at native 4 MiB,
+     * matching main. This patch is therefore no longer required and now
+     * defaults OFF (opt-in via P2K_MEM_DETECT_PATCH=1), exactly like main.
+     * Kept only as a diagnostic for older updates that wedge at 4 MiB. */
+    if (getenv("P2K_MEM_DETECT_PATCH") && getenv("P2K_MEM_DETECT_PATCH")[0] == '1') {
         static const uint8_t mem_pat[] = {
             0x55, 0x89, 0xE5, 0xB8, 0x00, 0x04, 0x00, 0x00, 0xC9, 0xC3
         };
@@ -784,7 +786,8 @@ static int     s_access_mode4_prev   = 0; /* bit2 edge detect */
 static int     s_access_mode1_prev   = 0; /* bit0 edge detect */
 
 /* Switch matrix state (mirrors P2K-runtime globals) */
-static uint8_t s_rendering_status[8];
+static uint8_t s_rendering_status[8];   /* switch matrix (injected switches only) */
+static uint8_t s_lamp_rows[8];          /* lamp rows latched via opcode 0x08 */
 static uint8_t s_rendering_data_val  = 0;
 static uint8_t s_start_button_held   = 0;
 static uint8_t s_probe_held          = 0;   /* digit-key debug probe */
@@ -989,11 +992,11 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
          * injections to ONLY the column the game is actually asking
          * about — no more "ROW N SHORTED TO GROUND" cross-talk.
          *
-         * Storage: the POC stores per-col writeback state at
-         * s_rendering_status[col+1] via opcode 0x08, so slot[1] holds
-         * col 0's last write, slot[2] col 1, etc. Returning the
-         * matching slot keeps faithful POC behaviour while letting us
-         * gate Start / probe injections per-column. */
+        /* Storage: s_rendering_status is the SWITCH matrix only — it holds
+         * injected switch state (lpt_inject_switch / start / probe / keymap).
+         * Lamp rows written via opcode 0x08 go to a SEPARATE s_lamp_rows
+         * array and are deliberately NOT read back here; feeding lamps into
+         * this scan made XINU see phantom closed switches (see 0x08). */
         int sel  = calc_bitwise_sum(s_rendering_data_val);   /* 1..8 if one-hot */
         int col  = (sel >= 1 && sel <= 8) ? (sel - 1) : 0;   /* fall back to col 0 */
         int slot = (sel >= 1 && sel <= 8) ? sel : 1;
@@ -1067,7 +1070,12 @@ static void process_data_command(uint8_t opcode, uint8_t data)
         s_data_val4 = data;
         if (data != 0) {
             int idx = calc_bitwise_sum(data);
-            if (idx > 0 && idx < 8) s_rendering_status[idx] = s_data_val2;
+            /* Opcode 0x08 latches LAMP row data. It must NOT land in the
+             * switch-matrix store (s_rendering_status) or illuminated lamps
+             * are fed back to XINU as phantom closed switches — spurious
+             * switch transitions that spawn per-switch handler processes
+             * and bloat the guest heap (matches main's s_lamp_rows split). */
+            if (idx > 0 && idx < 8) s_lamp_rows[idx] = s_data_val2;
         }
         break;
     case 0x09: s_data_flag3 = s_data_flag2 ? (s_data_flag3 | data) : 0; break;
@@ -1264,6 +1272,7 @@ void lpt_activate(void)
      * so the "OPEN COIN DOOR" overlay is gone and play is enabled. F4
      * toggles to OPEN to allow service-button access. */
     memset(s_rendering_status, 0x00, sizeof(s_rendering_status));
+    memset(s_lamp_rows, 0x00, sizeof(s_lamp_rows));
     s_coin_door_closed = 1;
     s_enter_pulse      = 0;
 
