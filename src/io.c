@@ -2310,7 +2310,7 @@ void io_port_write(uint16_t port, uint32_t val, int size)
 
     /* System control port B (0x61) — latch gate bits [1:0] */
     case 0x0061:
-        s_port61 = (s_port61 & 0xFC) | (val & 0x03);
+        s_port61 = val & 0xFF;   /* store full byte (main p2k-superio.c) */
         break;
 
     /* SuperIO W83977EF (0x2E/0x2F) */
