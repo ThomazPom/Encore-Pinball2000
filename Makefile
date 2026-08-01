@@ -20,6 +20,7 @@ SRCS    = $(SRCDIR)/main.c   \
           $(SRCDIR)/bar.c    \
           $(SRCDIR)/display.c \
           $(SRCDIR)/splash.c \
+          $(SRCDIR)/adsp.c   \
           $(SRCDIR)/sound.c  \
           $(SRCDIR)/netcon.c \
           $(SRCDIR)/lpt_pass.c \

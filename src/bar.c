@@ -545,7 +545,9 @@ void bar_mmio_read(uc_engine *uc, uc_mem_type type, uint64_t addr, int size, int
     else if (a >= WMS_BAR4 && a < WMS_BAR4 + BAR4_SIZE) {
         /* BAR4: DCS audio */
         uint32_t off = a - WMS_BAR4;
-        if (off == 0) {
+        if (g_emu.dcs_engine_choice == ENCORE_DCS_ENGINE_ADSP) {
+            val = adsp_bar_read(off, size);
+        } else if (off == 0) {
             if (size == 1) {
                 /* Byte read: echo last-written byte (SRAM/ADSP handshake) */
                 val = s_bar4_echo;
@@ -882,6 +884,10 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
     else if (a >= WMS_BAR4 && a < WMS_BAR4 + BAR4_SIZE) {
         /* BAR4: DCS audio */
         uint32_t off = a - WMS_BAR4;
+        if (g_emu.dcs_engine_choice == ENCORE_DCS_ENGINE_ADSP) {
+            adsp_bar_write(off, val, size);
+            goto dcs_write_done;
+        }
         if (off == 0) {
             if (size == 1) {
                 /* Byte write: store for echo (SRAM/ADSP handshake) */
