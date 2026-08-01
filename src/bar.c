@@ -750,6 +750,12 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
         case 0x8208: /* GP BLT trigger (x64 POC: write to 0x8208 executes blit) */
             gp_execute_blt(uc);
             g_emu.gx_regs[off >> 2] = val;
+            /* BLT is synchronous — keep GP_BLT_STATUS idle in RAM so the
+             * now-unhooked read poll (served from RAM) sees 0x300. */
+            {
+                uint32_t blt_idle = 0x300;
+                uc_mem_write(uc, (uint64_t)(GX_BASE + GP_BLT_STATUS), &blt_idle, 4);
+            }
             break;
         default:
             if ((off >> 2) < 0x9000)

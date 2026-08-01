@@ -433,13 +433,27 @@ int cpu_init(void)
      *   BC:     0x40020000
      * By narrowing from 8MB to ~96KB, we eliminate millions of unnecessary
      * TB exits for accesses to unused register ranges. */
-    uc_hook h_gx_r, h_gx_w;
-    e = uc_hook_add(uc, &h_gx_r, UC_HOOK_MEM_READ, (void*)bar_mmio_read,
-                NULL, (uint64_t)(GX_BASE + 0x8000), (uint64_t)(GX_BASE + 0x20FFF));
-    if (e) LOG("cpu", "GX read hook FAILED: %s\n", uc_strerror(e));
+    uc_hook h_gx_w;
+    /* GX READ hook removed — copy main (p2k-gx.c: memory_region_init_ram):
+     * the GX register page is real backing RAM, so guest polls of DC_TIMING2
+     * (vsync counter) and GP_BLT_STATUS read straight from RAM with NO trap.
+     * A UC_HOOK_MEM_READ over this page traps EVERY poll to C, which collapsed
+     * host throughput ~10x (23->2 MIPS) whenever the guest busy-polls vsync
+     * during rendering. We keep the WRITE hook (BLT trigger + DC side-effects)
+     * and keep the polled read-only registers coherent in RAM:
+     *   - DC_TIMING2 is written each vsync sub-tick (see cpu_run VSYNC).
+     *   - GP_BLT_STATUS is a constant 0x300 (idle); seeded below and re-armed
+     *     after each synchronous BLT. */
     e = uc_hook_add(uc, &h_gx_w, UC_HOOK_MEM_WRITE, (void*)bar_mmio_write,
                 NULL, (uint64_t)(GX_BASE + 0x8000), (uint64_t)(GX_BASE + 0x20FFF));
     if (e) LOG("cpu", "GX write hook FAILED: %s\n", uc_strerror(e));
+    /* Seed GP_BLT_STATUS = 0x300 (idle) into GX RAM so BLT-done polls, now
+     * served directly from RAM, see the engine as idle. Our BLT is synchronous
+     * (executes on the 0x8208 trigger write) so it is always idle when read. */
+    {
+        uint32_t blt_idle = 0x300;
+        uc_mem_write(uc, (uint64_t)(GX_BASE + GP_BLT_STATUS), &blt_idle, 4);
+    }
 
     /* Code trace hook for Init2 checkpoints (0x80000 - 0x90000)
      * and game entry point (0x100000) */
