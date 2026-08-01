@@ -24,6 +24,7 @@ SRCS    = $(SRCDIR)/main.c   \
           $(SRCDIR)/sound.c  \
           $(SRCDIR)/netcon.c \
           $(SRCDIR)/lpt_pass.c \
+          $(SRCDIR)/keymap.c \
           $(SRCDIR)/symbols.c \
           $(SRCDIR)/stb_impl.c
 
@@ -50,7 +51,7 @@ $(TARGET): $(OBJS) $(SPLASH_OBJ) | $(BLDDIR)
 $(SPLASH_OBJ): $(SPLASH_SRC) | $(BLDDIR)
 	ld -r -b binary -o $(SPLASH_OBJ) $(SPLASH_SRC)
 
-$(BLDDIR)/%.o: $(SRCDIR)/%.c $(INCDIR)/encore.h | $(BLDDIR)
+$(BLDDIR)/%.o: $(SRCDIR)/%.c $(wildcard $(INCDIR)/*.h) | $(BLDDIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BLDDIR):
