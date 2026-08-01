@@ -1956,9 +1956,6 @@ void cpu_run(void)
 
         /* Execute a batch of instructions.
          * eip is carried from previous iteration (or initial read before loop). */
-        /* TLB flush: every 64 cycles for DC_TIMING2 VSYNC detection. */
-        if ((g_emu.exec_count & 0x3F) == 0)
-            uc_ctl_flush_tlb(uc);
         uc_err err = uc_emu_start(uc, eip, 0, 0, batch);
 
         /* Refresh local eip from Unicorn — after uc_emu_start, the
@@ -2236,7 +2233,6 @@ handle_display:
                          + (now.tv_nsec - last_display.tv_nsec) / 1000000;
             if (disp_ms >= 16) {
                 last_display = now;
-                uc_ctl_flush_tlb(uc);
                 if (g_emu.display_ready) {
                     display_handle_events();
                     display_update();
