@@ -23,6 +23,8 @@ for the Power Driver Board.
   <a href="docs/03-cli-reference.md">CLI Reference</a>
   &nbsp;|&nbsp;
   <a href="docs/42-cabinet-testing-call.md">Real Hardware Testing</a>
+  &nbsp;|&nbsp;
+  <a href="UNICORN_PARITY_CHECKLIST.md">Parity Checklist</a>
 </p>
 
 ---
@@ -47,6 +49,7 @@ experimental until verified on hardware. Start with:
 | Public PDB/LPT protocol notes | [docs/48-lpt-protocol-references.md](docs/48-lpt-protocol-references.md) |
 | Cabinet test reports | [docs/42-cabinet-testing-call.md](docs/42-cabinet-testing-call.md) |
 | Known limitations | [docs/38-known-limitations.md](docs/38-known-limitations.md) |
+| Gaps vs the QEMU (`main`) branch | [UNICORN_PARITY_CHECKLIST.md](UNICORN_PARITY_CHECKLIST.md) |
 
 ---
 
