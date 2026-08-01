@@ -765,6 +765,15 @@ void nic_dseg_init(void)
 /* Port 0x61 (System Control Port B) — file scope so both read and write can access */
 static uint8_t s_port61 = 0;
 
+/* National PC97338 alternate SuperIO config pair (0x370/0x371).
+ * Older PRISM/XINU builds probe this before 0x2E/0x2F: entering config
+ * mode needs two consecutive 0x55 writes, 0xAA exits; ID/rev = 0x02/0x01.
+ * Direct port of main's qemu/p2k-superio.c. */
+static uint8_t  s_pc97338_idx    = 0;
+static uint8_t  s_pc97338_regs[256];
+static unsigned s_pc97338_unlock = 0;
+static bool     s_pc97338_config = false;
+
 /* ===== LPT (Parallel Port) at 0x378-0x37A ===== */
 /* BT-120: Faithful P2K-driver processParallelPortAccess protocol.
  *
@@ -2118,6 +2127,17 @@ uint32_t io_port_read(uint16_t port, int size)
         default:   return 0x00;
         }
 
+    /* National PC97338 alternate SuperIO (0x370/0x371) */
+    case 0x0370:
+        return s_pc97338_idx;
+    case 0x0371:
+        if (!s_pc97338_config) return 0xFF;
+        switch (s_pc97338_idx) {
+        case 0x20: return 0x02;  /* ID */
+        case 0x21: return 0x01;  /* revision */
+        default:   return s_pc97338_regs[s_pc97338_idx];
+        }
+
     /* DCS2 status — must return 0x00 (ready) */
     case PORT_DCS2_STATUS:
         return 0x00;
@@ -2306,6 +2326,29 @@ void io_port_write(uint16_t port, uint32_t val, int size)
         break;
     case 0x00EB:
         break; /* writes to CC5530 data are ignored */
+
+    /* National PC97338 alternate SuperIO (0x370/0x371) */
+    case 0x0370: {
+        uint8_t byte = val & 0xFF;
+        if (!s_pc97338_config) {
+            if (byte == 0x55 && ++s_pc97338_unlock >= 2) {
+                s_pc97338_config = true;
+            } else if (byte != 0x55) {
+                s_pc97338_unlock = 0;
+            }
+            break;
+        }
+        if (byte == 0xAA) {
+            s_pc97338_config = false;
+            s_pc97338_unlock = 0;
+            break;
+        }
+        s_pc97338_idx = byte;
+        break;
+    }
+    case 0x0371:
+        if (s_pc97338_config) s_pc97338_regs[s_pc97338_idx] = val & 0xFF;
+        break;
 
     /* POST code */
     case PORT_POST:

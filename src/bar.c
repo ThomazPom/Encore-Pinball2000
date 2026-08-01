@@ -8,6 +8,7 @@
  * GX_BASE (0x40000000): MediaGX DC/GP registers + framebuffer
  */
 #include "encore.h"
+#include "adsp.h"
 
 /* ===== 93C46 SEEPROM bit-bang state machine =====
  * Copycat of x64 POC (cpu_backend_qemu.c) + i386 POC (bar4.c).
