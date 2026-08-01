@@ -87,6 +87,22 @@ SDL drivers:
 
 ## Running the matrix
 
+### Automated (recommended)
+
+```sh
+tools/run-bundle-matrix.py --all-updates          # every bundle, io-handled
+tools/run-bundle-matrix.py --all-updates --dcs-mode bar4-patch
+tools/run-bundle-matrix.py --game swe1 --duration 30 --json /tmp/results.json
+```
+
+Exits 0 only if every selected row shows video (`[gp] BLT`) and DCS
+audio (`[dcs] WR` / `[dcs-io] cmd=`) activity and a clean exit. See
+`tools/run-bundle-matrix.py --help` for all options. This replaces the
+manual shell loop below for day-to-day use; the manual form is kept
+for one-off ad-hoc runs with custom flags.
+
+### Manual
+
 A reproducible headless run for every bundle in both modes:
 
 ```sh

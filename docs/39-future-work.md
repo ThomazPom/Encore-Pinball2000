@@ -16,17 +16,18 @@ landed, send a patch to delete it.
 
 ## High priority
 
-### Guest CPU pacing / target-IPS throttle
+### Guest CPU pacing / target-IPS throttle — coarse version done, refine it
 
-Encore runs the guest through Unicorn JIT with no rate limit, so the
-guest executes its iodelay-style busy-waits in microseconds instead of
-the ~233 MHz MediaGX original. Most peripherals don't care, but the
-real LPT cabinet board does — see [50-cpu-clock-mismatch.md](50-cpu-clock-mismatch.md)
-for the structural problem and [19-real-lpt-passthrough.md](19-real-lpt-passthrough.md)
-for `--lpt-bus-pace`, the per-knob band-aid we currently ship. A
-proper fix would measure guest IPS, target a configurable wall-clock
-rate, and throttle inside the run loop. Doing this generically would
-make every other "needs more delay" knob unnecessary.
+`--cpu-stats[=N]` (measurement) and `--realtime` + `--cpu-target-mhz`
+(opt-in once-per-vblank nanosleep throttle) now exist — see
+[50-cpu-clock-mismatch.md](50-cpu-clock-mismatch.md). They are coarse
+and off by default; `--lpt-bus-pace` ([19-real-lpt-passthrough.md](19-real-lpt-passthrough.md))
+remains the finer-grained band-aid for the LPT wire boundary
+specifically. Remaining work: verify `--realtime` actually removes the
+need for `--lpt-bus-pace` on a real cabinet (untested — no hardware
+run logged yet), then retire the band-aid if so. If `--realtime`'s
+per-vblank granularity proves too coarse, move to the icount-style
+per-block throttle described as step 3 in doc 50.
 
 ### LPT cabinet validation on real hardware
 
@@ -46,12 +47,15 @@ Add a `make install DESTDIR=/usr/local` target and a minimal
 `debian/` packaging recipe so Encore can be distributed as a `.deb`
 (or `.rpm`/`.AppImage`).
 
-### Automated regression script
+### Automated regression script — done, wire into CI
 
-The 11-bundle × 2-mode matrix in [26-testing-bundle-matrix.md](26-testing-bundle-matrix.md)
-is currently a manual procedure. A shell script that launches each
-bundle with `--headless`, watches the log for `dcs_wr` and `FPS:`
-markers, and exits 0/1 would make CI feasible.
+`tools/run-bundle-matrix.py` launches every bundle under `updates/`
+(or the base ROMs with `--update none`) `--headless`, checks the log
+for `[gp] BLT` (video) and `[dcs] WR`/`[dcs-io] cmd=` (DCS audio)
+activity, and exits 0/1. See
+[26-testing-bundle-matrix.md](26-testing-bundle-matrix.md#running-it-automated)
+for usage. Remaining work: wire it into CI, and decide whether to also
+assert on the in-scope/reference-only split documented there.
 
 ### Symbol-based patch address resolution everywhere
 

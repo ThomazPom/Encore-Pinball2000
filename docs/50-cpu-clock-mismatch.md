@@ -1,9 +1,13 @@
 # CPU clock-rate mismatch — speculative tracking note
 
-> **Status:** open question / hypothesis. Nothing in this document is a
-> committed plan. It exists so the next person who hits a "guest-side
-> timing got compressed" bug doesn't have to rediscover the underlying
-> mechanism from scratch.
+> **Status:** steps 1 and 2 below are implemented and shipping today as
+> `--cpu-stats[=N]` (measurement) and `--realtime` + `--cpu-target-mhz`
+> (opt-in coarse throttle — a once-per-vblank nanosleep, off by
+> default). See `--help` in `src/main.c` and `src/cpu.c` (search
+> `doc 50`). Steps 3–5 (icount-style per-block throttle, calibration
+> mode, audio/frame pacing rework) remain unprototyped hypotheses. Keep
+> this distinction current: do not let this note imply the whole class
+> of problem is solved, and do not let it imply nothing has been built.
 
 ## The structural mismatch
 
@@ -132,18 +136,18 @@ Effects we would expect:
 
 ### Possible incremental experiments
 
-In rough increasing order of effort and risk, none of which is committed:
+In rough increasing order of effort and risk:
 
-1. **Measurement first.** Add a `--cpu-stats` mode that, for the first
-   N seconds of run-time, counts guest instructions executed (Unicorn
-   `UC_HOOK_BLOCK` or `UC_HOOK_CODE` with cheap accounting) and reports
-   the actual achieved guest IPS on the operator's host. We currently
-   have no idea whether we're 5× too fast or 50×.
-2. **Coarse throttle, opt-in.** A `--cpu-target-mhz N` flag that
-   inserts a single nanosleep at a fixed cadence (e.g., once per
-   vblank period) sized to bring the running average to the target.
-   Cheap, easy to revert, no per-block hot-path cost. May be
-   sufficient on its own.
+1. **Measurement first — done.** `--cpu-stats[=N]` counts guest
+   instructions executed (Unicorn `UC_HOOK_BLOCK`) for the first N
+   seconds and reports achieved guest IPS/MIPS, so an operator can see
+   their host's actual multiplier instead of guessing.
+2. **Coarse throttle, opt-in — done.** `--realtime` inserts a
+   nanosleep once per vblank cadence, referenced against
+   `--cpu-target-mhz` (default 20 MIPS), to keep guest virtual time
+   from running ahead of wall time. Cheap, no per-block hot-path cost,
+   off by default. This is what cabinet-safe LPT runs should enable.
+   Remaining steps below are NOT committed:
 3. **icount-style throttle.** Per-block accounting, sleep only when
    we're more than K µs ahead of schedule. More accurate than (2),
    more invasive.
