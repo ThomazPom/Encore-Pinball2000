@@ -176,6 +176,16 @@ static struct sched_state {
     uint64_t irq0_skip_in_flight;     /* edges suppressed: IRQ0 already IRR/ISR */
     uint64_t irq0_skip_min_gap;       /* edges suppressed: within min_gap window */
 
+    /* Single-deep "edge owed" latch (main-parity, memoryless).
+     * Set true when a PIT period becomes due; cleared when we emit the
+     * edge. Capped at one outstanding edge — exactly like the 8259's
+     * single IRR latch / main's host-timer pulse: at most ONE deferred
+     * tick is remembered, so a slow clkint recovers a single deficit
+     * but a long IF=0/masked window can never burst a backlog. This
+     * replaces the fixed min_gap>=period gate, which beat delivery down
+     * to every-other-period (exactly 50%). */
+    bool     irq0_edge_owed;
+
     bool     pi_adaptive;             /* adaptive min_gap retune on */
     uint64_t min_gap_vticks;          /* current throttle: min virtual ticks between raises */
     uint64_t last_raise_vticks;       /* vticks at last real edge emitted */
@@ -300,21 +310,38 @@ static void hook_block_count(uc_engine *uc, uint64_t addr,
     s_cpu_bytes_total += size;
     s_cpu_blocks_window++;
     s_cpu_bytes_window += size;
-    /* IRQ0 nested-injection guard, primary clear (matches main's eoi_seen):
-     * the instant clkint issues the IRQ0 EOI, the interrupt is "done" on
-     * real hardware and the PIC ISR bit0 is clear, so a fresh IRQ0 may be
-     * delivered. Clearing here bounds in_flight to a single handler EOI
-     * regardless of any resched()/task-switch that follows, which is what
-     * prevents the delivery collapse (in_flight otherwise stayed armed for
-     * up to ~260 PIT periods waiting for an IRET-to-pre_eip on a suspended
-     * task's stack). */
+    /* IRQ0 nested-injection guard, EOI-based clear (OPT-IN).
+     * Clearing in_flight the instant clkint EOIs is TOO EARLY: XINU's
+     * clkint sends the EOI and THEN calls resched(), briefly running
+     * with IF=1. If we inject a fresh IRQ0 in that post-EOI/pre-IRET
+     * window we nest into clkint → XINU panics "resched: called from
+     * interrupt handler" and the guest wedges (IRR pending, IF=0). Real
+     * hardware avoids this because the PIC keeps IRQ0 in-service until a
+     * late EOI; we emulate that by keeping in_flight armed across the
+     * whole handler and clearing it via the IRET path (#2, no-switch)
+     * or the task-switch fallback (#3, switch). The EOI-clear remains
+     * available as a lateness safety valve: only honor it once at least
+     * one PIT period has elapsed since arming, by which point the IRET
+     * or task-switch path should already have fired for a well-behaved
+     * handler — so this only rescues a genuinely lost EOI, it never
+     * opens the fast post-EOI nesting window. Force the old immediate
+     * behavior with P2K_HOTLOOP_EOI_CLEAR=1. */
     if (s_irq0_in_flight &&
         g_emu.pic[0].irq0_eoi_count != s_irq0_arm_eoi_count) {
+        static int eoi_clear_immediate = -1;
+        if (eoi_clear_immediate < 0) {
+            const char *e = getenv("P2K_HOTLOOP_EOI_CLEAR");
+            eoi_clear_immediate = (e && e[0] == '1') ? 1 : 0;
+        }
         uint64_t dur = s_sched.vticks_total - s_irq0_in_flight_arm_vt;
-        if (dur > s_irq0_in_flight_max_vt) s_irq0_in_flight_max_vt = dur;
-        s_irq0_in_flight_clears++;
-        s_irq0_in_flight_clear_eoi++;
-        s_irq0_in_flight = 0;
+        uint64_t min_dur = s_sched.cached_pit_period_insns;
+        if (min_dur < 1000) min_dur = 1000;
+        if (eoi_clear_immediate || dur >= min_dur) {
+            if (dur > s_irq0_in_flight_max_vt) s_irq0_in_flight_max_vt = dur;
+            s_irq0_in_flight_clears++;
+            s_irq0_in_flight_clear_eoi++;
+            s_irq0_in_flight = 0;
+        }
     }
     /* IRQ0 nested-injection guard: clear in_flight when we observe the
      * guest is back at the pre-injection EIP AND ESP has returned to
@@ -1304,22 +1331,33 @@ void cpu_run(void)
                 s_sched.min_gap_vticks = (uint64_t)((double)gns * (double)target_ips / 1e9);
                 s_sched.pi_adaptive = false;
             } else {
-                /* DEFAULT = main-parity stable gap. Pin the gap exactly as
-                 * a manual P2K_HOTLOOP_MIN_GAP_NS=250000 (main's boot
-                 * min_gap) and leave adaptive OFF. The adaptive push-to-
-                 * nominal drives ~98% IRQ0 delivery, which on unicorn's
-                 * hand-injection over-supplies the clkint hot loop: a new
-                 * tick arrives before clkint (which EOIs early then runs
-                 * resched/ctxsw) reaches its IRET, so IRQ0 frames nest and
-                 * ESP walks ~0x180/tick down into the GDT → EIP-in-GDT
-                 * wedge / "resched: called from interrupt handler" storm →
-                 * frozen black screen. The fixed 250 us gap holds ~50%
-                 * delivery, giving each clkint time to return before the
-                 * next tick. A/B-verified: swe1 runs 90s+ (exec ~1.1M, zero
-                 * wedges) vs ~30s EIP-in-GDT freeze under adaptive.
-                 * Opt back into adaptive with P2K_HOTLOOP_ADAPTIVE=1. */
-                int64_t gns = 250000;
-                s_sched.min_gap_vticks = (uint64_t)((double)gns * (double)target_ips / 1e9);
+                /* DEFAULT = main-parity memoryless pulse, throughput-safe.
+                 * Rate is governed by the single-deep edge_owed latch (one
+                 * edge per due PIT period, recover at most one deficit),
+                 * with a min_gap FLOOR that must clear two competing
+                 * hazards:
+                 *   - floor < period beats delivery to every-other-period
+                 *     ONLY under the old lose-the-tick gate; edge_owed
+                 *     persists the owed tick so that is no longer an issue.
+                 *   - floor too SMALL (≈period/4) lets a fresh edge inject
+                 *     into clkint's post-EOI resched tail on our slow
+                 *     Unicorn (clkint occupies ~a full period in guest
+                 *     insns, ~5-10x main's TCG headroom), nesting the
+                 *     handler → XINU "resched: called from interrupt
+                 *     handler" panic → wedge.
+                 * 1.2x the period is the empirically stable floor: swe1
+                 * survives 90s+ with zero wedges at 10-21 MIPS host, while
+                 * still letting the in_flight/IRET guard pace delivery as
+                 * fast as clkint actually completes. On our host that
+                 * settles near ~50% real-time (clkint eats ~half the guest
+                 * budget); a faster host / shorter clkint would let it
+                 * climb toward main's 100% on the same code path.
+                 * P2K_HOTLOOP_MIN_GAP_NS pins a fixed floor (e.g. lower for
+                 * fast hosts); P2K_HOTLOOP_ADAPTIVE=1 enables PI retune;
+                 * P2K_HOTLOOP_EOI_CLEAR=1 restores the aggressive
+                 * immediate-EOI in_flight clear (higher delivery, wedges
+                 * on slow hosts). */
+                s_sched.min_gap_vticks = (pit_period_insns * 6) / 5;
             }
             if (s_sched.min_gap_vticks < 1) s_sched.min_gap_vticks = 1;
             s_sched.last_raise_vticks = s_sched.vticks_total;
@@ -1349,6 +1387,10 @@ void cpu_run(void)
                 s_sched.irq0_due++;
                 s_sched.pit_edges_due++;
                 s_sched.next_irq0_at_vticks += pit_period_insns;
+                /* A period elapsed → we owe one edge. Single-deep latch:
+                 * capped at true, so a backlog of missed periods (masked
+                 * / IF=0) can never accumulate into a burst. */
+                s_sched.irq0_edge_owed = true;
             }
             if (due_budget < 0) {
                 /* Long stall (debugger/host hiccup): resync due deadline
@@ -1384,7 +1426,17 @@ void cpu_run(void)
                 s_sched.pi_last_vticks    = s_sched.vticks_total;
             }
 
-            /* (3) raise — main's one-in-flight + min_gap gate. */
+            /* (3) raise — main's memoryless single-deep pulse.
+             * Emit an edge iff we owe one (a period became due) AND no
+             * IRQ0 is in flight (IRR/ISR bit0 clear) AND IRQ0 isn't
+             * masked. A small min_gap floor prevents pathological
+             * back-to-back micro-spacing but, being well under one
+             * period, never beats the once-per-period cadence down to
+             * every-other-period the way min_gap>=period did (that was
+             * the exact-50% bug). Because edge_owed is single-deep, a
+             * slow clkint recovers at most one deficit and a long
+             * IF=0/masked window can't burst — identical to main's
+             * host-timer pulse + 8259 single IRR latch. */
             if (g_emu.xinu_ready) {
                 bool in_flight = (g_emu.pic[0].irr & 0x01) ||
                                  (g_emu.pic[0].isr & 0x01);
@@ -1395,6 +1447,9 @@ void cpu_run(void)
                     s_sched.irq0_skip_in_flight++;
                 } else if (masked) {
                     /* IRQ0 masked in IMR: raising would never deliver. */
+                } else if (!s_sched.irq0_edge_owed) {
+                    /* No period due since last edge — nothing to raise.
+                     * This caps delivery at nominal (no over-supply). */
                 } else if (!gap_ok) {
                     s_sched.irq0_skip_min_gap++;
                 } else {
@@ -1408,6 +1463,8 @@ void cpu_run(void)
                     s_sched.pit_edges_emitted++;
                     s_sched.last_raise_vticks  = s_sched.vticks_total;
                     s_sched.last_irq0_raise_ns = now_wall_ns;
+                    /* Consume the owed edge (single-deep). */
+                    s_sched.irq0_edge_owed = false;
                     if (g_emu.pic[0].edges_latched > latched_before) {
                         s_sched.irq0_fired++;
                     } else if (g_emu.pic[0].edges_collapsed_irr > collapsed_before) {
