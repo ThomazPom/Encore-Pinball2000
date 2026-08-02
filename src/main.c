@@ -767,16 +767,16 @@ print_help:
 "                         PERCENT: shrinks the PIT divisor so 150 runs the\n"
 "                         guest 1.5× (more IRQ0/s), 50 runs it half-speed.\n"
 "\n"
-"  --realtime             Wall-clock throttle (DEFAULT ON). The cpu loop\n"
-"                         nanosleeps once per vblank cadence to keep guest\n"
-"                         virtual time from running ahead of wall time, so\n"
-"                         game speed is consistent regardless of host CPU\n"
-"                         speed / power state (battery vs AC). Without it the\n"
-"                         guest runs as fast as the host allows — crawling on\n"
-"                         a throttled/battery CPU, 5-8x too fast on a boosted\n"
-"                         AC CPU.\n"
-"  --no-realtime          Disable the throttle → full-speed (for benchmarks,\n"
-"                         cpu-stats MIPS measurement, or fastest boot-to-game).\n"
+"  --realtime             Real-time game-clock pacing (DEFAULT ON). Pins the\n"
+"                         delivered PIT/IRQ0 tick rate to the real ~4004 Hz\n"
+"                         period in wall time, so game speed is correct and\n"
+"                         identical on any host / CPU governor (performance\n"
+"                         vs powersave). Without it the guest runs as fast as\n"
+"                         the host allows → 2-8x too fast on a quick CPU and\n"
+"                         host-dependent. Only ever sleeps, so an under-\n"
+"                         powered host runs best-effort slower (never races).\n"
+"  --no-realtime          Disable pacing → full-speed (benchmarks, cpu-stats\n"
+"                         MIPS measurement, fastest boot-to-game).\n"
 "\n"
 "════════════════════════════════════════════════════════════════════════\n"
 " Maybe-fun future ideas (not implemented — left as bread crumbs)\n"
@@ -1043,7 +1043,7 @@ int main(int argc, char **argv)
     g_emu.cpu_stats_enabled = false;
     g_emu.cpu_stats_period_s = 5;
     g_emu.cpu_target_mhz = 0;          /* 0 = use 20 MIPS fallback as guest CPU model rate */
-    g_emu.realtime = true;             /* default: wall-clock pace to guest CPU model rate so game speed is consistent across hosts/power states; --no-realtime = full-speed */
+    g_emu.realtime = true;             /* default: pace guest game clock (delivered PIT ticks) to real wall time so speed is correct & host/governor-independent; --no-realtime = full-speed */
     print_banner();
     parse_args(argc, argv);
 

@@ -1687,23 +1687,36 @@ void cpu_run(void)
             if (g_emu.timer_pending > 0)
                 g_emu.timer_pending = 0;
 
-            /* doc 50 — opt-in realtime throttle (--realtime).
-             * Uses the same authoritative virtual-time clock as the
-             * IRQ scheduler, so throttle and IRQ timing always agree. */
-            if (g_emu.realtime && s_cpu_run_start_ns) {
-                uint64_t target_ips = g_emu.cpu_target_mhz > 0
-                    ? (uint64_t)g_emu.cpu_target_mhz * 1000000ULL
-                    : 20000000ULL;
-                uint64_t expected_ns = (s_sched.vticks_total * 1000000000ULL) / target_ips;
-                uint64_t actual_ns   = now_ns - s_cpu_run_start_ns;
-                if (expected_ns > actual_ns) {
-                    uint64_t sleep_ns = expected_ns - actual_ns;
-                    if (sleep_ns > 50000000ULL) sleep_ns = 50000000ULL; /* cap 50 ms */
-                    struct timespec ts = {
-                        .tv_sec  = (time_t)(sleep_ns / 1000000000ULL),
-                        .tv_nsec = (long)(sleep_ns % 1000000000ULL),
-                    };
-                    nanosleep(&ts, NULL);
+            /* doc 50 — realtime pacing (--realtime): pin the guest GAME
+             * CLOCK to real wall time. The game's sense of time comes from
+             * delivered PIT/IRQ0 ticks (clkint), so we pace the DELIVERED
+             * tick count (irq0_inject) to the real PIT period — main parity
+             * (main paces its PIT source on QEMU_CLOCK_VIRTUAL ≈ wall), so
+             * game speed is identical on any host and CPU governor (perf vs
+             * powersave). We pace on irq0_inject, NOT vticks, so it is
+             * immune to the vtick idle-credit inflation; and we only ever
+             * SLEEP (never speed a slow host up), so an under-powered host
+             * just runs best-effort slower instead of racing. Anchored at
+             * the first delivered tick so boot runs full-speed. */
+            if (g_emu.realtime && g_emu.xinu_ready) {
+                static uint64_t rt_base_ns = 0, rt_base_ticks = 0;
+                uint64_t ticks = s_sched.irq0_inject;
+                if (rt_base_ns == 0) {
+                    if (ticks > 0) { rt_base_ns = now_ns; rt_base_ticks = ticks; }
+                } else {
+                    uint64_t period_ns = s_sched.pit_period_ns
+                                         ? s_sched.pit_period_ns : 250000ULL;
+                    uint64_t expected_ns = (ticks - rt_base_ticks) * period_ns;
+                    uint64_t actual_ns   = now_ns - rt_base_ns;
+                    if (expected_ns > actual_ns) {
+                        uint64_t sleep_ns = expected_ns - actual_ns;
+                        if (sleep_ns > 50000000ULL) sleep_ns = 50000000ULL; /* cap 50 ms */
+                        struct timespec ts = {
+                            .tv_sec  = (time_t)(sleep_ns / 1000000000ULL),
+                            .tv_nsec = (long)(sleep_ns % 1000000000ULL),
+                        };
+                        nanosleep(&ts, NULL);
+                    }
                 }
             }
 

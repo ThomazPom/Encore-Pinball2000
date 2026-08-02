@@ -365,15 +365,15 @@ typedef struct {
      *   speed. Ported from main's P2K_SPEED_TARGET_PERCENT. 0/unset =
      *   100. Bounded to [1,1000] on parse. */
     int      speed_target_pct;
-    /* --realtime: wall-clock throttle (DEFAULT ON, --no-realtime disables).
-     *   When true, the cpu loop nanosleeps once per vblank cadence to keep
-     *   guest virtual time from running ahead of wall time, so game speed is
-     *   consistent regardless of host CPU speed / power state (battery vs AC).
-     *   Without it the guest runs full-speed = raw host speed: crawls on a
-     *   throttled/battery CPU, races 5-8x on a boosted AC CPU. Disable with
-     *   --no-realtime for benchmarks / cpu-stats MIPS / fastest boot.
-     *   Independent of cpu_target_mhz (was previously coupled — split per
-     *   the eriki-style virtual-time rework). */
+    /* --realtime: real-time game-clock pacing (DEFAULT ON, --no-realtime
+     *   disables). Pins the delivered PIT/IRQ0 tick rate (irq0_inject) to
+     *   the real PIT period in wall time, so game speed is correct and
+     *   host/CPU-governor-independent (main parity — main paces its PIT on
+     *   QEMU_CLOCK_VIRTUAL ≈ wall). Paces on delivered ticks, not vticks,
+     *   so it is immune to the vtick idle-credit inflation; only ever
+     *   sleeps, so an under-powered host runs best-effort slower rather
+     *   than racing. Disable for benchmarks / cpu-stats MIPS / fastest
+     *   boot. Independent of cpu_target_mhz. */
     bool     realtime;
     bool     update_explicit_none;    /* user gave --update none → skip auto-pick */
     char     update_file[512];        /* explicit update.bin path; empty → default search */
