@@ -9,6 +9,21 @@
 #include "encore.h"
 #include "keymap.h"
 #include "stb_image_write.h"
+#include <pthread.h>
+#include <time.h>
+
+/* Dedicated display thread (main parity: qemu/p2k-display.c p2k_display_worker).
+ * Presentation runs on its OWN thread at a steady ~60 Hz cadence, fully
+ * decoupled from the CPU/emulation thread. Previously display_update() was
+ * called inline from the CPU loop, so the present cadence rode the CPU
+ * thread's execution bursts and its realtime-throttle / HLT nanosleeps —
+ * frames came out bunched then paused, causing visible judder even at a
+ * steady 100% IRQ0 delivery. A separate steady-cadence thread fixes that. */
+static pthread_t     s_disp_thread;
+static bool          s_disp_thread_started = false;
+static volatile int  s_disp_worker_run     = 0;
+static volatile int  s_disp_worker_ready    = 0; /* 0=pending, 1=ok, -1=failed */
+static void *display_worker(void *arg);
 
 static int  s_y_flip = 1;
 static bool s_seen_nonzero_fb = false;
@@ -188,54 +203,6 @@ int display_init(void)
         g_emu.bpp = 32;
     }
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
-        LOG("disp", "SDL_Init failed: %s\n", SDL_GetError());
-        /* Try without video for headless operation */
-        if (!getenv("DISPLAY")) {
-            LOG("disp", "No DISPLAY — running headless\n");
-            return -1;
-        }
-        return -1;
-    }
-
-    Uint32 win_flags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
-    if (g_emu.start_fullscreen)
-        win_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
-
-    g_emu.window = SDL_CreateWindow(
-        "Encore — Pinball 2000",
-        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        SCREEN_W, SCREEN_H,
-        win_flags
-    );
-    if (!g_emu.window) {
-        LOG("disp", "SDL_CreateWindow failed: %s\n", SDL_GetError());
-        return -1;
-    }
-
-    /* No PRESENTVSYNC — i386 POC uses uncapped SDL_Flip().
-     * Render loop controls frame timing via timer. */
-    g_emu.renderer = SDL_CreateRenderer(g_emu.window, -1,
-        SDL_RENDERER_ACCELERATED);
-    if (!g_emu.renderer) {
-        g_emu.renderer = SDL_CreateRenderer(g_emu.window, -1, SDL_RENDERER_SOFTWARE);
-    }
-    if (!g_emu.renderer) {
-        LOG("disp", "SDL_CreateRenderer failed: %s\n", SDL_GetError());
-        return -1;
-    }
-
-    Uint32 tex_fmt = (g_emu.bpp == 16)
-                    ? SDL_PIXELFORMAT_RGB565
-                    : SDL_PIXELFORMAT_ARGB8888;
-    g_emu.texture = SDL_CreateTexture(g_emu.renderer,
-        tex_fmt, SDL_TEXTUREACCESS_STREAMING,
-        SCREEN_W, SCREEN_H);
-    if (!g_emu.texture) {
-        LOG("disp", "SDL_CreateTexture failed: %s\n", SDL_GetError());
-        return -1;
-    }
-
     /* Build RGB555 → ARGB8888 lookup table (32K entries).
      * Also build RGB555 → RGB565 LUT for --bpp 16 output. */
     for (int i = 0; i < 32768; i++) {
@@ -251,18 +218,6 @@ int display_init(void)
         uint16_t g6 = (g5 << 1) | (g5 >> 4);
         g_emu.rgb555_lut16[i] = (uint16_t)((r5 << 11) | (g6 << 5) | b5);
     }
-
-    g_emu.display_ready = true;
-    LOG("disp", "SDL2 display: %dx%d %s%s%s\n", SCREEN_W, SCREEN_H,
-        g_emu.bpp == 16 ? "RGB565" : "ARGB8888",
-        g_emu.start_fullscreen ? " [fullscreen]" : "",
-        g_emu.start_flipscreen ? " [flipscreen]" : "");
-
-    /* Pop the splash up immediately so the user has visual feedback while
-     * the CPU thread spins through PCI enumeration and the PRISM update
-     * validator. It will be dismissed automatically on the first frame
-     * the guest framebuffer contains anything (see display_update). */
-    splash_show();
 
     /* Print key bindings to stderr so the user always has the up-to-date
      * help text without digging in source. Mirrors the actual SDL key
@@ -291,7 +246,111 @@ int display_init(void)
         "        KP_ENT  btn4: Begin Test      / Enter     (Phys[9].b3)\n"
         "==================================\n\n");
 
+    /* Spawn the dedicated display thread. It owns SDL init, the window,
+     * renderer, texture, event pump, and the steady ~60 Hz present loop —
+     * exactly like main's p2k_display_worker. We block here until it has
+     * finished SDL setup so callers see g_emu.display_ready correctly and
+     * SDL errors still fall back to headless. */
+    s_disp_worker_run = 1;
+    s_disp_worker_ready = 0;
+    if (pthread_create(&s_disp_thread, NULL, display_worker, NULL) != 0) {
+        LOG("disp", "pthread_create(display) failed — running headless\n");
+        s_disp_worker_run = 0;
+        return -1;
+    }
+    s_disp_thread_started = true;
+    while (s_disp_worker_ready == 0) {
+        struct timespec ts = { 0, 1000000 }; /* 1 ms */
+        nanosleep(&ts, NULL);
+    }
+    if (s_disp_worker_ready < 0) {
+        pthread_join(s_disp_thread, NULL);
+        s_disp_thread_started = false;
+        return -1;
+    }
     return 0;
+}
+
+/* Dedicated display thread body — SDL setup + steady-cadence present loop. */
+static void *display_worker(void *arg)
+{
+    (void)arg;
+
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
+        LOG("disp", "SDL_Init failed: %s\n", SDL_GetError());
+        s_disp_worker_ready = -1;
+        return NULL;
+    }
+
+    Uint32 win_flags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
+    if (g_emu.start_fullscreen)
+        win_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+
+    g_emu.window = SDL_CreateWindow(
+        "Encore — Pinball 2000",
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        SCREEN_W, SCREEN_H,
+        win_flags
+    );
+    if (!g_emu.window) {
+        LOG("disp", "SDL_CreateWindow failed: %s\n", SDL_GetError());
+        s_disp_worker_ready = -1;
+        return NULL;
+    }
+
+    /* No PRESENTVSYNC — the loop paces itself at a steady ~60 Hz. */
+    g_emu.renderer = SDL_CreateRenderer(g_emu.window, -1,
+        SDL_RENDERER_ACCELERATED);
+    if (!g_emu.renderer)
+        g_emu.renderer = SDL_CreateRenderer(g_emu.window, -1, SDL_RENDERER_SOFTWARE);
+    if (!g_emu.renderer) {
+        LOG("disp", "SDL_CreateRenderer failed: %s\n", SDL_GetError());
+        s_disp_worker_ready = -1;
+        return NULL;
+    }
+
+    Uint32 tex_fmt = (g_emu.bpp == 16)
+                    ? SDL_PIXELFORMAT_RGB565
+                    : SDL_PIXELFORMAT_ARGB8888;
+    g_emu.texture = SDL_CreateTexture(g_emu.renderer,
+        tex_fmt, SDL_TEXTUREACCESS_STREAMING,
+        SCREEN_W, SCREEN_H);
+    if (!g_emu.texture) {
+        LOG("disp", "SDL_CreateTexture failed: %s\n", SDL_GetError());
+        s_disp_worker_ready = -1;
+        return NULL;
+    }
+
+    g_emu.display_ready = true;
+    LOG("disp", "SDL2 display: %dx%d %s%s%s (threaded, ~60 Hz)\n",
+        SCREEN_W, SCREEN_H,
+        g_emu.bpp == 16 ? "RGB565" : "ARGB8888",
+        g_emu.start_fullscreen ? " [fullscreen]" : "",
+        g_emu.start_flipscreen ? " [flipscreen]" : "");
+
+    /* Pop the splash up immediately so the user has visual feedback while
+     * the CPU thread spins through PCI enumeration and the PRISM update
+     * validator. Dismissed automatically on the first non-zero framebuffer
+     * (see display_update). */
+    splash_show();
+
+    s_disp_worker_ready = 1; /* SDL is up: unblock display_init(). */
+
+    /* Steady-cadence present loop — main parity (p2k_display_worker):
+     * pump events, rebuild the frame from guest RAM, present, sleep 16 ms.
+     * Runs on this thread only, so the present rate is immune to the CPU
+     * thread's execution bursts and realtime-throttle / HLT sleeps. Driven
+     * solely by s_disp_worker_run (cleared by display_cleanup at shutdown)
+     * — NOT g_emu.running, which is still false at display_init time and
+     * would otherwise make this loop exit before the guest even starts. */
+    while (s_disp_worker_run) {
+        display_handle_events();
+        display_update();
+        struct timespec ts = { 0, 16000000 }; /* 16 ms ≈ 62.5 Hz */
+        nanosleep(&ts, NULL);
+    }
+
+    return NULL;
 }
 
 void display_update(void)
@@ -635,9 +694,17 @@ void display_handle_events(void)
 
 void display_cleanup(void)
 {
+    /* Stop the display thread first so it can't touch SDL objects while we
+     * tear them down. The worker created them, but destroying from here is
+     * safe once it has exited (joined). */
+    if (s_disp_thread_started) {
+        s_disp_worker_run = 0;
+        pthread_join(s_disp_thread, NULL);
+        s_disp_thread_started = false;
+    }
+    g_emu.display_ready = false;
     if (g_emu.texture)  { SDL_DestroyTexture(g_emu.texture);   g_emu.texture = NULL; }
     if (g_emu.renderer) { SDL_DestroyRenderer(g_emu.renderer); g_emu.renderer = NULL; }
     if (g_emu.window)   { SDL_DestroyWindow(g_emu.window);     g_emu.window = NULL; }
     SDL_Quit();
-    g_emu.display_ready = false;
 }

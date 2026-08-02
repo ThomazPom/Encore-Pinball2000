@@ -1730,6 +1730,26 @@ void cpu_run(void)
                             .tv_nsec = (long)(sleep_ns % 1000000000ULL),
                         };
                         nanosleep(&ts, NULL);
+                    } else {
+                        /* Behind schedule: the host could not sustain the
+                         * real PIT rate this window (e.g. CPU governor in
+                         * powersave, or heavy load). CLAMP the accrued debt
+                         * so that when the host speeds back up (perf mode)
+                         * we do NOT sprint at full speed to "catch up" —
+                         * that catch-up burst delivered ticks at 2-4x the
+                         * real PIT rate (wall 8800 Hz / 220%), fast-
+                         * forwarding the framebuffer and making the picture
+                         * jump. By re-anchoring once we fall more than ~one
+                         * display frame behind, pacing resumes at the real
+                         * 4004 Hz immediately: under load the game degrades
+                         * to smooth slow-motion (frames "dropped", never
+                         * repaid) instead of a rubber-band fast-forward —
+                         * the standard real-time game-loop behaviour. */
+                        uint64_t lag_ns = actual_ns - expected_ns;
+                        if (lag_ns > 15000000ULL) { /* ~15 ms ≈ one 60 Hz frame */
+                            rt_base_ns    = now_ns;
+                            rt_base_ticks = ticks;
+                        }
                     }
                 }
             }
@@ -2301,6 +2321,12 @@ handle_display:
          * to ~1 MIPS during the tiny-batch flash-write/factory-reset phase
          * because clock_gettime then dominates — that caused a visible
          * graphics hang. The 16 ms disp_ms gate already paces presentation.) */
+        /* Netcon (serial/keyboard TCP) poll — check wall clock every 128
+         * iterations. Presentation moved to the dedicated display thread
+         * (see display.c display_worker), so the CPU loop no longer calls
+         * display_update()/display_handle_events(): the present cadence is
+         * now a steady ~60 Hz independent of this thread's execution bursts
+         * and the realtime-throttle / HLT sleeps. */
         if ((g_emu.exec_count & 0x7F) == 0) {
             static struct timespec last_display = {0, 0};
             clock_gettime(CLOCK_MONOTONIC, &now);
@@ -2309,11 +2335,7 @@ handle_display:
                          + (now.tv_nsec - last_display.tv_nsec) / 1000000;
             if (disp_ms >= 16) {
                 last_display = now;
-                if (g_emu.display_ready) {
-                    display_handle_events();
-                    display_update();
-                }
-                /* Always poll netcon — independent of SDL display so that
+                /* Poll netcon independent of SDL display so that
                  * --headless + --serial-tcp / --keyboard-tcp still work. */
                 netcon_poll();
             }
