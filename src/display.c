@@ -156,11 +156,63 @@ static void ensure_screenshot_dir(void)
     mkdir(screenshot_dir(), 0777);
 }
 
+/* Latch the guest framebuffer source for the current front buffer.
+ * Returns a pointer into guest RAM, plus the row stride and Y-flip flag.
+ * Shared by the present path (display_update) and the screenshot path so
+ * both agree on which buffer / stride / orientation is live. */
+static uint8_t *latch_guest_fb(int *out_pitch, bool *out_flip)
+{
+    /* The framebuffer is always 640x240 XRGB1555, but the *stride* differs
+     * between phases:
+     *   - PRISM update validator / boot phase: 1280 bytes/row (no padding)
+     *   - Game runtime: 2048 bytes/row (padded), double-buffered via
+     *     DC_FB_ST_OFFSET = 0 / 0x78000 / 0xf0000 (one buffer = 240*2048).
+     * Latch into 2048-stride mode the first time DC_FB_ST_OFFSET lands on a
+     * non-zero multiple of 0x78000 (the game has taken over paging buffers);
+     * until then use 1280-stride so the boot validator renders cleanly. */
+    uint32_t fb_off = g_emu.dc_fb_offset;
+    static bool s_game_pitch = false;
+    if (!s_game_pitch && fb_off != 0 && (fb_off % 0x78000u) == 0)
+        s_game_pitch = true;
+    int src_pitch = s_game_pitch ? 2048 : 1280;
+    if (fb_off + (uint32_t)(FB_H * src_pitch) > RAM_SIZE) fb_off = 0;
+    *out_pitch = src_pitch;
+    *out_flip  = (bool)s_y_flip;
+    return g_emu.ram + 0x800000u + fb_off;
+}
+
+/* Build the ARGB8888 shadow (640x480, line-doubled, Y-flipped) from guest
+ * RAM on demand. Only the screenshot path needs it, so — unlike the old
+ * per-frame conversion — this runs solely when the user captures a frame. */
+static void build_argb_shadow(void)
+{
+    if (!g_emu.ram) return;
+    int src_pitch;
+    bool flip;
+    uint8_t *guest_fb = latch_guest_fb(&src_pitch, &flip);
+    for (int src_y = 0; src_y < FB_H; src_y++) {
+        int draw_y = flip ? (FB_H - 1 - src_y) : src_y;
+        int dst_y  = draw_y * 2;
+        const uint16_t *pixels = (const uint16_t *)(guest_fb + src_y * src_pitch);
+        uint32_t *dst1 = &g_emu.fb_pixels[dst_y * SCREEN_W];
+        uint32_t *dst2 = &g_emu.fb_pixels[(dst_y + 1) * SCREEN_W];
+        for (int x = 0; x < FB_W; x++) {
+            uint32_t argb = g_emu.rgb555_lut[pixels[x] & 0x7FFF];
+            dst1[x] = argb;
+            dst2[x] = argb;
+        }
+    }
+}
+
 static void save_screenshot(const char *prefix, int id)
 {
     if (!g_emu.display_ready) return;
 
     ensure_screenshot_dir();
+
+    /* Rebuild the ARGB shadow from the live guest framebuffer (the present
+     * path no longer maintains it every frame). */
+    build_argb_shadow();
 
     /* Timestamped PNG filename for unique, viewable captures */
     struct timespec ts;
@@ -298,9 +350,18 @@ static void *display_worker(void *arg)
         return NULL;
     }
 
-    /* No PRESENTVSYNC — the loop paces itself at a steady ~60 Hz. */
+    /* PRESENTVSYNC locks SDL_RenderPresent to the host monitor's vblank, so
+     * frames are scanned out tear-free and phase-steady — matching the QEMU
+     * GTK/SDL UI (our reference), whose presentation the host compositor
+     * vsync-locks. Without it, a free-running present phase beats against the
+     * monitor refresh and the picture "jumps" even at a steady FPS. The
+     * absolute-deadline pacer in the worker loop is the fallback cap for when
+     * vsync is unavailable (e.g. the dummy driver), so we never busy-spin. */
     g_emu.renderer = SDL_CreateRenderer(g_emu.window, -1,
-        SDL_RENDERER_ACCELERATED);
+        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    if (!g_emu.renderer)
+        g_emu.renderer = SDL_CreateRenderer(g_emu.window, -1,
+            SDL_RENDERER_SOFTWARE | SDL_RENDERER_PRESENTVSYNC);
     if (!g_emu.renderer)
         g_emu.renderer = SDL_CreateRenderer(g_emu.window, -1, SDL_RENDERER_SOFTWARE);
     if (!g_emu.renderer) {
@@ -309,12 +370,14 @@ static void *display_worker(void *arg)
         return NULL;
     }
 
-    Uint32 tex_fmt = (g_emu.bpp == 16)
-                    ? SDL_PIXELFORMAT_RGB565
-                    : SDL_PIXELFORMAT_ARGB8888;
+    /* Native source: 640x240 XRGB1555. The GPU scales to the 640x480 window
+     * (free line-doubling), converts RGB555 → display-native, and applies the
+     * Y-flip in SDL_RenderCopyEx — main parity (p2k-display.c). Moving all
+     * per-pixel work onto the GPU keeps the present cadence steady under the
+     * powersave governor (the old CPU convert+double loop stalled it). */
     g_emu.texture = SDL_CreateTexture(g_emu.renderer,
-        tex_fmt, SDL_TEXTUREACCESS_STREAMING,
-        SCREEN_W, SCREEN_H);
+        SDL_PIXELFORMAT_RGB555, SDL_TEXTUREACCESS_STREAMING,
+        FB_W, FB_H);
     if (!g_emu.texture) {
         LOG("disp", "SDL_CreateTexture failed: %s\n", SDL_GetError());
         s_disp_worker_ready = -1;
@@ -322,9 +385,8 @@ static void *display_worker(void *arg)
     }
 
     g_emu.display_ready = true;
-    LOG("disp", "SDL2 display: %dx%d %s%s%s (threaded, ~60 Hz)\n",
+    LOG("disp", "SDL2 display: %dx%d RGB555→GPU%s%s (threaded, ~60 Hz)\n",
         SCREEN_W, SCREEN_H,
-        g_emu.bpp == 16 ? "RGB565" : "ARGB8888",
         g_emu.start_fullscreen ? " [fullscreen]" : "",
         g_emu.start_flipscreen ? " [flipscreen]" : "");
 
@@ -337,17 +399,40 @@ static void *display_worker(void *arg)
     s_disp_worker_ready = 1; /* SDL is up: unblock display_init(). */
 
     /* Steady-cadence present loop — main parity (p2k_display_worker):
-     * pump events, rebuild the frame from guest RAM, present, sleep 16 ms.
-     * Runs on this thread only, so the present rate is immune to the CPU
-     * thread's execution bursts and realtime-throttle / HLT sleeps. Driven
-     * solely by s_disp_worker_run (cleared by display_cleanup at shutdown)
-     * — NOT g_emu.running, which is still false at display_init time and
-     * would otherwise make this loop exit before the guest even starts. */
+     * pump events, upload+present the current guest buffer, wait for the
+     * next frame deadline. Runs on this thread only, so the present rate is
+     * immune to the CPU thread's execution bursts and realtime-throttle /
+     * HLT sleeps. Driven solely by s_disp_worker_run (cleared by
+     * display_cleanup at shutdown) — NOT g_emu.running, which is still false
+     * at display_init time and would otherwise make this loop exit before
+     * the guest even starts.
+     *
+     * Pacing uses an ABSOLUTE 16 ms deadline (clock_nanosleep TIMER_ABSTIME)
+     * rather than a fixed sleep after variable work, so the present cadence
+     * stays rock-steady regardless of how long a frame's upload/present
+     * takes. A fixed post-work sleep let the period drift with per-frame
+     * cost, jittering the present phase against the guest's frame flips —
+     * visible as the picture "jumping" even at steady FPS. */
+    #define DISP_FRAME_NS 16000000L   /* 16 ms ≈ 62.5 Hz */
+    struct timespec next;
+    clock_gettime(CLOCK_MONOTONIC, &next);
     while (s_disp_worker_run) {
         display_handle_events();
         display_update();
-        struct timespec ts = { 0, 16000000 }; /* 16 ms ≈ 62.5 Hz */
-        nanosleep(&ts, NULL);
+        next.tv_nsec += DISP_FRAME_NS;
+        if (next.tv_nsec >= 1000000000L) {
+            next.tv_nsec -= 1000000000L;
+            next.tv_sec  += 1;
+        }
+        /* If we fell behind (present took >1 frame), resync to now so we
+         * don't burst a backlog of catch-up presents. */
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        if (now.tv_sec > next.tv_sec ||
+            (now.tv_sec == next.tv_sec && now.tv_nsec > next.tv_nsec)) {
+            next = now;
+        }
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, NULL);
     }
 
     return NULL;
@@ -357,93 +442,44 @@ void display_update(void)
 {
     if (!g_emu.display_ready || !g_emu.ram) return;
 
-    /* Direct pointer to guest physical RAM framebuffer.
-     * g_emu.ram is the Unicorn backing store (uc_mem_map_ptr),
-     * so reads are zero-overhead pointer dereferences. */
-    uint32_t fb_off = g_emu.dc_fb_offset;
+    int src_pitch;
+    bool flip;
+    uint8_t *guest_fb = latch_guest_fb(&src_pitch, &flip);
 
-    /* The framebuffer is always 640x240 RGB555 line-doubled to 480, but
-     * the *stride* differs between phases:
-     *   - PRISM update validator / boot phase: 1280 bytes/row (no padding)
-     *   - Game runtime: 2048 bytes/row (padded), double-buffered via
-     *     DC_FB_ST_OFFSET = 0 / 0x78000 / 0xf0000 (one buffer = 240*2048).
-     *
-     * Latch into 2048-stride mode the first time we see DC_FB_ST_OFFSET
-     * land on a non-zero multiple of 0x78000 — that proves the game has
-     * taken over and is paging through 240*2048-byte buffers. Until then,
-     * use 1280-stride so the boot validator screen renders cleanly instead
-     * of being scrambled into dot patterns. */
-    static bool s_game_pitch = false;
-    if (!s_game_pitch && fb_off != 0 && (fb_off % 0x78000u) == 0)
-        s_game_pitch = true;
-
-    int src_pitch = s_game_pitch ? 2048 : 1280;
-
-    if (fb_off + (uint32_t)(FB_H * src_pitch) > RAM_SIZE) fb_off = 0;
-    uint8_t *guest_fb = g_emu.ram + 0x800000u + fb_off;
-    bool any_nonzero = false;
-
-    /* Render 240 source rows → 480 output rows (double each row, Y-flip). */
-    bool bpp16 = (g_emu.bpp == 16);
-    for (int src_y = 0; src_y < FB_H; src_y++) {
-        int draw_y = s_y_flip ? (FB_H - 1 - src_y) : src_y;
-        int dst_y = draw_y * 2;
-
-        uint16_t *pixels = (uint16_t *)(guest_fb + src_y * src_pitch);
-        if (bpp16) {
-            uint16_t *dst1 = &g_emu.fb_pixels16[dst_y * SCREEN_W];
-            uint16_t *dst2 = &g_emu.fb_pixels16[(dst_y + 1) * SCREEN_W];
-            /* Maintain ARGB shadow only for screenshot/snapshot path. */
-            uint32_t *sh1 = &g_emu.fb_pixels[dst_y * SCREEN_W];
-            uint32_t *sh2 = &g_emu.fb_pixels[(dst_y + 1) * SCREEN_W];
+    /* Splash handoff: until the guest has drawn a non-zero pixel, keep the
+     * startup splash instead of blacking the window. Scan only until the
+     * first non-zero frame — once gameplay starts this is skipped entirely,
+     * so steady state does zero per-pixel CPU work. */
+    if (!s_seen_nonzero_fb) {
+        bool any_nonzero = false;
+        for (int y = 0; y < FB_H && !any_nonzero; y++) {
+            const uint16_t *row = (const uint16_t *)(guest_fb + y * src_pitch);
             for (int x = 0; x < FB_W; x++) {
-                uint16_t px = pixels[x] & 0x7FFF;
-                if (px) any_nonzero = true;
-                uint16_t out = g_emu.rgb555_lut16[px];
-                dst1[x] = out;
-                dst2[x] = out;
-                uint32_t argb = g_emu.rgb555_lut[px];
-                sh1[x] = argb;
-                sh2[x] = argb;
+                if (row[x] & 0x7FFF) { any_nonzero = true; break; }
             }
-        } else {
-            uint32_t *dst1 = &g_emu.fb_pixels[dst_y * SCREEN_W];
-            uint32_t *dst2 = &g_emu.fb_pixels[(dst_y + 1) * SCREEN_W];
-            for (int x = 0; x < FB_W; x++) {
-                uint16_t px = pixels[x] & 0x7FFF;
-                if (px) any_nonzero = true;
-                uint32_t argb = g_emu.rgb555_lut[px];
-                dst1[x] = argb;
-                dst2[x] = argb;
-            }
+        }
+        if (any_nonzero) {
+            s_seen_nonzero_fb = true;
+            LOG("disp", "first non-zero framebuffer detected (stride=%d)\n",
+                src_pitch);
+            /* Hand the window over from the startup splash to the guest. */
+            if (splash_active()) splash_dismiss();
+        } else if (splash_active()) {
+            splash_present();
+            g_emu.frame_count++;
+            return;
         }
     }
 
-    if (any_nonzero && !s_seen_nonzero_fb) {
-        s_seen_nonzero_fb = true;
-        LOG("disp", "first non-zero framebuffer detected (fb_off=0x%x, stride=%d)\n",
-            fb_off, src_pitch);
-        /* Hand the window over from the startup splash to the guest. */
-        if (splash_active()) splash_dismiss();
-    }
-
-    /* While the guest framebuffer is still all zero (nothing has been
-     * drawn yet by the PRISM option ROM), keep showing the splash
-     * instead of clearing the window to black. */
-    if (splash_active() && !any_nonzero) {
-        splash_present();
-        g_emu.frame_count++;
-        return;
-    }
-
-    /* Upload to GPU and present */
-    if (bpp16) {
-        SDL_UpdateTexture(g_emu.texture, NULL, g_emu.fb_pixels16, SCREEN_W * 2);
-    } else {
-        SDL_UpdateTexture(g_emu.texture, NULL, g_emu.fb_pixels, SCREEN_W * 4);
-    }
+    /* Upload the raw guest framebuffer and let the GPU do all per-pixel work:
+     * scale 640x240 → 640x480 (line-doubling), convert XRGB1555 → display
+     * native, and apply the Y-flip via SDL_RenderCopyEx. Main parity
+     * (p2k-display.c p2k_display_worker); the source pitch (1280 or 2048)
+     * is honoured directly by SDL_UpdateTexture. */
+    SDL_UpdateTexture(g_emu.texture, NULL, guest_fb, src_pitch);
     SDL_RenderClear(g_emu.renderer);
-    SDL_RenderCopy(g_emu.renderer, g_emu.texture, NULL, NULL);
+    SDL_RenderCopyEx(g_emu.renderer, g_emu.texture, NULL, NULL, 0.0, NULL,
+                     flip ? SDL_FLIP_VERTICAL : SDL_FLIP_NONE);
     SDL_RenderPresent(g_emu.renderer);
 
     g_emu.frame_count++;

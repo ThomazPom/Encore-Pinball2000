@@ -359,6 +359,47 @@ static int     flash_cmd = 0xFF;
 static bool    flash_cmd_active = false;
 static uint8_t flash_status = 0x80; /* bit7=ready */
 
+/* Dynamic BAR3 read-hook management (rom_device-equivalent).
+ * BAR3 is real backing RAM pre-loaded with the flash image, so read-array
+ * reads run straight from RAM with no TB exit (fast). While the flash is in
+ * command/status mode the guest polls the Status Register from flash
+ * addresses, which must return SR instead of array data — so we add a
+ * temporary UC_HOOK_MEM_READ over the flash span for the duration of command
+ * mode. On return to read-array (0xFF) we drop the hook and re-sync the RAM
+ * copy from the master g_emu.flash buffer (which the command handlers below
+ * keep authoritative) to clear any command-byte bytes the CPU wrote into the
+ * writable BAR3 RAM during the sequence. Command mode is rare (saves only),
+ * so this keeps the hot read-array path hook-free. */
+static uc_hook s_flash_rd_hook;
+static bool    s_flash_rd_hook_on = false;
+
+static void flash_enter_cmd_mode(uc_engine *uc)
+{
+    if (s_flash_rd_hook_on || !uc) return;
+    uc_err e = uc_hook_add(uc, &s_flash_rd_hook, UC_HOOK_MEM_READ,
+                           (void*)bar_mmio_read, NULL,
+                           (uint64_t)WMS_BAR3,
+                           (uint64_t)(WMS_BAR3 + FLASH_SIZE - 1));
+    if (e) {
+        LOGV3("flash", "cmd-mode read hook add FAILED: %s\n", uc_strerror(e));
+        return;
+    }
+    s_flash_rd_hook_on = true;
+}
+
+static void flash_exit_to_read_array(uc_engine *uc)
+{
+    if (uc && s_flash_rd_hook_on) {
+        uc_hook_del(uc, s_flash_rd_hook);
+        s_flash_rd_hook_on = false;
+    }
+    /* Re-publish the authoritative flash image into the BAR3 RAM so
+     * subsequent hook-free read-array reads see programmed/erased data and
+     * not the stray command bytes the CPU wrote into RAM during the sequence. */
+    if (uc && g_emu.flash)
+        uc_mem_write(uc, WMS_BAR3, g_emu.flash, FLASH_SIZE);
+}
+
 static uint8_t flash_read_byte(uint32_t off)
 {
     if (!flash_cmd_active)
@@ -844,26 +885,30 @@ void bar_mmio_write(uc_engine *uc, uc_mem_type type, uint64_t addr, int size,
         uint32_t foff = a - WMS_BAR3;
         switch (cmd) {
         case 0xFF: /* Read array */
-            flash_cmd = 0xFF; flash_cmd_active = false; break;
-        case 0x70: flash_cmd = 0x70; flash_cmd_active = true; break;
-        case 0x90: flash_cmd = 0x90; flash_cmd_active = true; break;
-        case 0x98: flash_cmd = 0x98; flash_cmd_active = true; break;
+            flash_cmd = 0xFF; flash_cmd_active = false;
+            flash_exit_to_read_array(uc);
+            break;
+        case 0x70: flash_cmd = 0x70; flash_cmd_active = true; flash_enter_cmd_mode(uc); break;
+        case 0x90: flash_cmd = 0x90; flash_cmd_active = true; flash_enter_cmd_mode(uc); break;
+        case 0x98: flash_cmd = 0x98; flash_cmd_active = true; flash_enter_cmd_mode(uc); break;
         case 0x20: /* Block erase setup */
-            flash_cmd = 0x20; flash_cmd_active = true; break;
+            flash_cmd = 0x20; flash_cmd_active = true; flash_enter_cmd_mode(uc); break;
         case 0x40: case 0x10: /* Byte/halfword program setup */
-            flash_cmd = cmd; flash_cmd_active = true; break;
+            flash_cmd = cmd; flash_cmd_active = true; flash_enter_cmd_mode(uc); break;
         case 0x60: /* Block lock/unlock setup */
-            flash_cmd = 0x60; flash_cmd_active = true; break;
+            flash_cmd = 0x60; flash_cmd_active = true; flash_enter_cmd_mode(uc); break;
         case 0x01: /* Lock-block confirm (after 0x60) */
         case 0xD0: /* Unlock-block confirm OR erase/program confirm */
             flash_status = 0x80;
             flash_cmd = 0x70;   /* switch to read-status mode */
             flash_cmd_active = true;
+            flash_enter_cmd_mode(uc);
             break;
         case 0x50: /* Clear status register */
             flash_status = 0x80;
             flash_cmd = 0x70;   /* stay in status mode after clear */
             flash_cmd_active = true;
+            flash_enter_cmd_mode(uc);
             break;
         default:
             /* Data write during byte/halfword program sequence */

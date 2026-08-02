@@ -448,11 +448,23 @@ int cpu_init(void)
                 UC_HOOK_MEM_FETCH_PROT, (void*)hook_mem_invalid, NULL, 1, 0);
 
     /* MMIO hooks for BAR regions + GX_BASE */
-    uc_hook h_bar_r, h_bar_w;
+    uc_hook h_bar_r, h_bar_r2, h_bar_w;
     uc_err e;
+    /* BAR3 (update flash) is deliberately EXCLUDED from the permanent read
+     * hook: it is real backing RAM pre-loaded with the flash image (see
+     * main.c), so read-array-mode reads hit RAM directly with NO TB exit —
+     * the guest's resource walker scans the 4 MB flash millions of times/s,
+     * and trapping every read collapsed host throughput ~15x (this is the
+     * powersave "delivery" bottleneck). Reads only need to trap while the
+     * flash is in command/status mode (rare, during saves); bar.c adds a
+     * temporary BAR3 read hook then and resyncs RAM on return to read-array.
+     * We therefore split the read hook into BAR0..BAR2 and BAR4 spans. */
     e = uc_hook_add(uc, &h_bar_r, UC_HOOK_MEM_READ, (void*)bar_mmio_read,
-                NULL, (uint64_t)WMS_BAR0, (uint64_t)(WMS_BAR4 + BAR4_SIZE - 1));
-    if (e) LOG("cpu", "BAR read hook FAILED: %s\n", uc_strerror(e));
+                NULL, (uint64_t)WMS_BAR0, (uint64_t)(WMS_BAR3 - 1));
+    if (e) LOG("cpu", "BAR read hook (lo) FAILED: %s\n", uc_strerror(e));
+    e = uc_hook_add(uc, &h_bar_r2, UC_HOOK_MEM_READ, (void*)bar_mmio_read,
+                NULL, (uint64_t)WMS_BAR4, (uint64_t)(WMS_BAR4 + BAR4_SIZE - 1));
+    if (e) LOG("cpu", "BAR read hook (hi) FAILED: %s\n", uc_strerror(e));
     e = uc_hook_add(uc, &h_bar_w, UC_HOOK_MEM_WRITE, (void*)bar_mmio_write,
                 NULL, (uint64_t)WMS_BAR0, (uint64_t)(WMS_BAR4 + BAR4_SIZE - 1));
     if (e) LOG("cpu", "BAR write hook FAILED: %s\n", uc_strerror(e));
