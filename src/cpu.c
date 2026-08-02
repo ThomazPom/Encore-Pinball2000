@@ -1650,31 +1650,59 @@ void cpu_run(void)
         clock_gettime(CLOCK_MONOTONIC, &now_ts);
         uint64_t now_ns = (uint64_t)now_ts.tv_sec * 1000000000ULL + now_ts.tv_nsec;
 
-        /* Coarser per-vblank work — still gated to once-every-64-batches
-         * to avoid clock_gettime / uc_mem_write overhead on every batch.
-         * VSYNC, timer-pending drain, optional throttle and cpu-stats. */
-        if (g_emu.xinu_ready && (g_emu.exec_count & 0x3F) == 0) {
-            /* VSYNC driven off VIRTUAL time (mirrors main's p2k-vsync.c which
-             * arms its ticker on QEMU_CLOCK_VIRTUAL, NOT wall clock).  Main:
-             * 17.5ms frame period, 30 sub-tick DC_TIMING2 updates, scanline
-             * steps by 8 (0..240), end-of-frame pulses vsync flag + 241.
+        /* ── Per-batch real-time work: VSYNC + realtime pacer. Run EVERY
+         * batch (NOT gated to /64). THE JUDDER FIX: the old /64 gate paced
+         * the guest clock in ~16 ms chunks (execute-fast-then-sleep bursts)
+         * AND emitted vsync inside those same bursts, so the guest's
+         * framebuffer page-flips landed at irregular wall times → the
+         * picture jumped even at correct average IRQ0. Pacing every batch
+         * spreads execution evenly across wall time (small per-batch sleeps),
+         * and a wall-clock VSYNC then flips buffers steadily — mirroring
+         * main's separate p2k-vsync timer running over an evenly-clocked
+         * vCPU. now_ns is already computed above every batch, so the extra
+         * cost is a couple of comparisons; uc_mem_write only runs on an
+         * actual subtick boundary. */
+        if (g_emu.xinu_ready) {
+            /* VSYNC cadence. Two regimes (main's p2k-vsync.c: 17.5 ms frame,
+             * 30 sub-ticks, scanline steps by 8 over 0..240, end-of-frame
+             * pulses vsync flag + DC_TIMING2=241):
              *
-             * WHY VIRTUAL, NOT WALL: on this host the guest virtual clock runs
-             * at ~0.3x wall (host-slow).  A wall-clock vsync cadence therefore
-             * arrives ~3x too fast relative to the guest scheduler tick, and
-             * the Display Manager(HD) render-pass watchdog — which measures
-             * render completion in guest-scheduler ticks — eventually expires
-             * ("Render pass watchdog has expired" Fatal).  Tying vsync to
-             * vticks keeps the vsync:IRQ0 ratio constant at any host speed. */
+             *  - realtime (default): drive off WALL time at main's fixed
+             *    17.5 ms / 30-subtick period (~57 Hz). vticks accumulate in
+             *    BURSTS under the pacer, so a vtick-driven vsync fired the
+             *    guest page-flips at irregular wall times → judder. A
+             *    wall-clock vsync flips buffers steadily and is correctly
+             *    proportioned now the pacer holds IRQ0 at real 4004 Hz
+             *    (≈70 IRQ0/frame = real hardware).
+             *
+             *  - --no-realtime (free-run bench): keep the VIRTUAL cadence so
+             *    the vsync:IRQ0 ratio stays constant at any host speed and
+             *    the Display-Manager render-pass watchdog (measured in
+             *    guest-scheduler ticks) can't expire on a host-slow box. */
             const uint64_t vsync_period_vt =
                 (uint64_t)(0.0175 * (double)target_ips);          /* 17.5ms   */
             const uint64_t vsync_subtick_vt = vsync_period_vt / 30u ?: 1u;
+            const uint64_t vsync_subtick_ns = 17500000ULL / 30u;   /* 17.5ms/30 */
             static uint64_t last_vsync_subtick_vt = 0;
+            static uint64_t last_vsync_subtick_ns = 0;
             static uint32_t vsync_scanline = 0;
             if (last_vsync_subtick_vt == 0)
                 last_vsync_subtick_vt = s_sched.vticks_total;
-            if (s_sched.vticks_total - last_vsync_subtick_vt >= vsync_subtick_vt) {
-                last_vsync_subtick_vt += vsync_subtick_vt;
+            if (last_vsync_subtick_ns == 0)
+                last_vsync_subtick_ns = now_ns;
+            /* Catch-up loop, bounded (≤~2 frames/batch) so a long pacer
+             * sleep or --no-realtime burst can't spin here. */
+            for (int vguard = 0; vguard < 64; vguard++) {
+                bool subtick_due;
+                if (g_emu.realtime) {
+                    subtick_due = (now_ns - last_vsync_subtick_ns >= vsync_subtick_ns);
+                    if (subtick_due) last_vsync_subtick_ns += vsync_subtick_ns;
+                } else {
+                    subtick_due = (s_sched.vticks_total - last_vsync_subtick_vt
+                                   >= vsync_subtick_vt);
+                    if (subtick_due) last_vsync_subtick_vt += vsync_subtick_vt;
+                }
+                if (!subtick_due) break;
                 vsync_scanline += 8;
                 if (vsync_scanline >= 241) {
                     /* End-of-frame pulse: assert vsync flag + DC_TIMING2=241. */
@@ -1697,10 +1725,6 @@ void cpu_run(void)
                 }
             }
 
-            /* Drain SIGALRM timer_pending (used only for HLT wakeup) */
-            if (g_emu.timer_pending > 0)
-                g_emu.timer_pending = 0;
-
             /* doc 50 — realtime pacing (--realtime): pin the guest GAME
              * CLOCK to real wall time. The game's sense of time comes from
              * delivered PIT/IRQ0 ticks (clkint), so we pace the DELIVERED
@@ -1711,8 +1735,12 @@ void cpu_run(void)
              * immune to the vtick idle-credit inflation; and we only ever
              * SLEEP (never speed a slow host up), so an under-powered host
              * just runs best-effort slower instead of racing. Anchored at
-             * the first delivered tick so boot runs full-speed. */
-            if (g_emu.realtime && g_emu.xinu_ready) {
+             * the first delivered tick so boot runs full-speed. Run EVERY
+             * batch (small per-batch sleeps) so execution spreads evenly
+             * across wall time — the old /64 gate paced in ~16 ms chunks,
+             * producing execute-then-sleep bursts that re-bunched the
+             * framebuffer flips (the judder). */
+            if (g_emu.realtime) {
                 static uint64_t rt_base_ns = 0, rt_base_ticks = 0;
                 uint64_t ticks = s_sched.irq0_inject;
                 if (rt_base_ns == 0) {
@@ -1753,6 +1781,14 @@ void cpu_run(void)
                     }
                 }
             }
+        }
+
+        /* Coarser /64 work: the SIGALRM timer-pending drain and cpu-stats
+         * don't need per-batch resolution. */
+        if (g_emu.xinu_ready && (g_emu.exec_count & 0x3F) == 0) {
+            /* Drain SIGALRM timer_pending (used only for HLT wakeup) */
+            if (g_emu.timer_pending > 0)
+                g_emu.timer_pending = 0;
 
             /* doc 50 — guest-CPU stats report. */
             if (g_emu.cpu_stats_enabled && s_cpu_window_start_ns) {
