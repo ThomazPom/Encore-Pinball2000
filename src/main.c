@@ -350,6 +350,10 @@ static int apply_option(const char *key, const char *value)
         g_emu.realtime = true;
         return 0;
     }
+    if (strcmp(key, "no-realtime") == 0) {
+        g_emu.realtime = false;
+        return 0;
+    }
     if (strcmp(key, "update") == 0 && value) {
         if (strcasecmp(value, "none") == 0) {
             g_emu.update_file[0] = '\0';
@@ -763,12 +767,16 @@ print_help:
 "                         PERCENT: shrinks the PIT divisor so 150 runs the\n"
 "                         guest 1.5× (more IRQ0/s), 50 runs it half-speed.\n"
 "\n"
-"  --realtime             Opt-in wall-clock throttle. When set, the cpu loop\n"
+"  --realtime             Wall-clock throttle (DEFAULT ON). The cpu loop\n"
 "                         nanosleeps once per vblank cadence to keep guest\n"
-"                         virtual time from running ahead of wall time. Off\n"
-"                         by default — Encore is full-speed. Enable only for\n"
-"                         cabinet-safe runs driving a real Pinball 2000 board\n"
-"                         over LPT that needs real-time pacing.\n"
+"                         virtual time from running ahead of wall time, so\n"
+"                         game speed is consistent regardless of host CPU\n"
+"                         speed / power state (battery vs AC). Without it the\n"
+"                         guest runs as fast as the host allows — crawling on\n"
+"                         a throttled/battery CPU, 5-8x too fast on a boosted\n"
+"                         AC CPU.\n"
+"  --no-realtime          Disable the throttle → full-speed (for benchmarks,\n"
+"                         cpu-stats MIPS measurement, or fastest boot-to-game).\n"
 "\n"
 "════════════════════════════════════════════════════════════════════════\n"
 " Maybe-fun future ideas (not implemented — left as bread crumbs)\n"
@@ -1035,7 +1043,7 @@ int main(int argc, char **argv)
     g_emu.cpu_stats_enabled = false;
     g_emu.cpu_stats_period_s = 5;
     g_emu.cpu_target_mhz = 0;          /* 0 = use 20 MIPS fallback as guest CPU model rate */
-    g_emu.realtime = false;            /* opt-in wall-clock throttle (see --realtime) */
+    g_emu.realtime = true;             /* default: wall-clock pace to guest CPU model rate so game speed is consistent across hosts/power states; --no-realtime = full-speed */
     print_banner();
     parse_args(argc, argv);
 

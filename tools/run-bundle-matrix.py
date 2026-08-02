@@ -66,6 +66,7 @@ def run_one(binary, update_path, game, dcs_mode, duration, extra_args):
         cmd = [
             str(binary),
             "--headless",
+            "--no-realtime",
             "--no-savedata",
             "--savedata", savedir,
             "-vv",

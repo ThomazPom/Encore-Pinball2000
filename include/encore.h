@@ -365,13 +365,15 @@ typedef struct {
      *   speed. Ported from main's P2K_SPEED_TARGET_PERCENT. 0/unset =
      *   100. Bounded to [1,1000] on parse. */
     int      speed_target_pct;
-    /* --realtime: opt-in wall-clock throttle. When true, the cpu loop
-     *   nanosleeps once per vblank cadence to keep guest virtual time
-     *   from running ahead of wall time. Off by default — the emulator
-     *   core runs full-speed; enable only for "cabinet-safe" runs that
-     *   drive a real Pinball 2000 board over LPT and need real-time
-     *   pacing. Independent of cpu_target_mhz now (was previously
-     *   coupled — split per the eriki-style virtual-time rework). */
+    /* --realtime: wall-clock throttle (DEFAULT ON, --no-realtime disables).
+     *   When true, the cpu loop nanosleeps once per vblank cadence to keep
+     *   guest virtual time from running ahead of wall time, so game speed is
+     *   consistent regardless of host CPU speed / power state (battery vs AC).
+     *   Without it the guest runs full-speed = raw host speed: crawls on a
+     *   throttled/battery CPU, races 5-8x on a boosted AC CPU. Disable with
+     *   --no-realtime for benchmarks / cpu-stats MIPS / fastest boot.
+     *   Independent of cpu_target_mhz (was previously coupled — split per
+     *   the eriki-style virtual-time rework). */
     bool     realtime;
     bool     update_explicit_none;    /* user gave --update none → skip auto-pick */
     char     update_file[512];        /* explicit update.bin path; empty → default search */
