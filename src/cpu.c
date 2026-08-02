@@ -1496,10 +1496,17 @@ void cpu_run(void)
             double target_mips = (double)target_ips / 1e6;
             double vt_scale  = host_mips / target_mips;
             double eoi_ratio = d_inject ? (double)d_eoi / (double)d_inject : 0.0;
-            const char *health = (vt_scale >= 1.05) ? "AHEAD"
-                              : (vt_scale >= 0.95) ? "OK"
-                              : (vt_scale >= 0.50) ? "HOST-SLOW"
-                                                   : "HOST-BEHIND";
+            /* Real-game-speed health: compare the DELIVERED IRQ0 rate to
+             * the real PIT rate in wall time. This is the true game-clock
+             * signal. (Do NOT use vt_scale here: unicorn credits a full
+             * vtick batch on HLT idle-wait, so vt_scale/`due` read ~2x even
+             * when the guest is mostly idle — that inflation is exactly why
+             * the old vtick-based `delivered %` looked like a false 50%.) */
+            double deliv_ratio = target_hz > 0.0 ? wall_hz / target_hz : 0.0;
+            const char *health = (deliv_ratio >= 1.05) ? "FAST"
+                              : (deliv_ratio >= 0.95) ? "OK"
+                              : (deliv_ratio >= 0.50) ? "SLOW"
+                                                      : "STALLED";
 
             /* Sample current PIC0 + guest IF for the block-reason verdict. */
             uint8_t irr0 = g_emu.pic[0].irr & 0x01;
@@ -1519,12 +1526,19 @@ void cpu_run(void)
                 else if (irr0)         verdict = "DEAD: IRR pending, inject loop not firing";
                 else if (d_blk_stub)   verdict = "DEAD: IDT stub for vector 0x08";
                 else                   verdict = "DEAD: unknown (no IRR/ISR/IMR/IF block)";
-            } else if (d_due > 0 && d_inject < d_due / 2) {
-                verdict = "DEGRADED: <50% IRQ0s delivered";
+            } else if (deliv_ratio < 0.90) {
+                verdict = "DEGRADED: delivered rate <90% of real PIT";
+            } else if (deliv_ratio > 1.10) {
+                verdict = "FAST: delivered rate >110% of real PIT";
             }
 
-            double delivered_pct = d_due ? 100.0 * (double)d_inject / (double)d_due : 0.0;
-            double collapsed_pct = d_due ? 100.0 * (double)d_collapsed / (double)d_due : 0.0;
+            /* delivered% is measured against real wall time (expected PIT
+             * ticks = elapsed * target_hz), NOT the vtick `due` counter
+             * which is inflated ~2x by the HLT idle-credit. So a correct
+             * real-time game clock reads ~100% here. */
+            double expected_ticks = dt_s * target_hz;
+            double delivered_pct = expected_ticks > 0.0 ? 100.0 * (double)d_inject / expected_ticks : 0.0;
+            double collapsed_pct = expected_ticks > 0.0 ? 100.0 * (double)d_collapsed / expected_ticks : 0.0;
             double wall_period_us = wall_hz > 0.0 ? 1.0e6 / wall_hz : 0.0;
             double target_period_us = target_hz > 0.0 ? 1.0e6 / target_hz : 0.0;
             LOG("irq",
