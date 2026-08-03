@@ -550,6 +550,34 @@ static Sample *get_sample_for_entry(DcsAudio *a, int idx, const char **out_name)
     return s;
 }
 
+static int find_sample_entry(DcsAudio *a, uint16_t cmd)
+{
+    for (int i = 0; i < a->entry_cnt; i++) {
+        if (a->entries[i].track_cmd == cmd) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/* The native player accepts four related mixer commands for sparse RFM
+ * entries.  It tries the exact command first, then clears the low two bits
+ * only when that exact entry is absent (for example 0x02d7 -> 0x02d4). */
+static uint16_t resolve_sample_cmd(DcsAudio *a, uint16_t cmd)
+{
+    if (cmd >= SAMPLE_CACHE_SIZE || find_sample_entry(a, cmd) >= 0) {
+        return cmd;
+    }
+
+    if (cmd & 3) {
+        uint16_t aligned = cmd & 0xfffc;
+        if (find_sample_entry(a, aligned) >= 0) {
+            return aligned;
+        }
+    }
+    return cmd;
+}
+
 static Sample *get_sample_for_cmd(DcsAudio *a, uint16_t cmd,
                                   const char **out_name)
 {
@@ -557,10 +585,7 @@ static Sample *get_sample_for_cmd(DcsAudio *a, uint16_t cmd,
     if (cmd >= SAMPLE_CACHE_SIZE) return NULL;
 
     /* Find entry by track_cmd (cached lookup attempted only once). */
-    int idx = -1;
-    for (int i = 0; i < a->entry_cnt; i++) {
-        if (a->entries[i].track_cmd == cmd) { idx = i; break; }
-    }
+    int idx = find_sample_entry(a, cmd);
     if (idx < 0) return NULL;
     return get_sample_for_entry(a, idx, out_name);
 }
@@ -1098,6 +1123,7 @@ static void dcs_audio_on_process_cmd(uint16_t cmd)
         return;
     }
 
+    lookup_cmd = resolve_sample_cmd(a, lookup_cmd);
     const char *name = NULL;
     Sample *s = get_sample_for_cmd(a, lookup_cmd, &name);
     if (s) {
@@ -1213,23 +1239,25 @@ static void dcs_audio_on_execute_mixer(uint16_t cmd, uint16_t data1,
      * zero and cache misses. */
     stop_voice_on_channel(a, channel, "MIXER");
 
+    uint16_t lookup_cmd = resolve_sample_cmd(a, cmd);
     const char *name = NULL;
-    Sample *s = get_sample_for_cmd(a, cmd, &name);
+    Sample *s = get_sample_for_cmd(a, lookup_cmd, &name);
     if (s) {
-        start_voice_on_channel(a, channel, s, vol, pan, cmd, name);
+        start_voice_on_channel(a, channel, s, vol, pan, lookup_cmd, name);
         a->played_count++;
         TRACE_EVT(a,
                   "[%s] execute_mixer 0x%04x d1=0x%04x d2=0x%04x → "
-                  "name=%s frames=%zu ch=%d vol=%d pan=%d (played #%llu)",
-                  src, cmd, data1, data2, name ? name : "?", s->frames,
-                  channel, vol, pan,
+                  "key=0x%04x name=%s frames=%zu ch=%d vol=%d pan=%d "
+                  "(played #%llu)",
+                  src, cmd, data1, data2, lookup_cmd,
+                  name ? name : "?", s->frames, channel, vol, pan,
                   (unsigned long long)a->played_count);
     } else {
         a->missed_count++;
         TRACE_EVT(a,
                   "[%s] execute_mixer 0x%04x d1=0x%04x d2=0x%04x → "
                   "key=0x%04x %s (missed #%llu)",
-                  src, cmd, data1, data2, cmd,
+                  src, cmd, data1, data2, lookup_cmd,
                   name ? "decode-failed" : "no-pb2k-entry",
                   (unsigned long long)a->missed_count);
     }
