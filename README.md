@@ -30,6 +30,7 @@ software itself is running.
 
 ## Read next
 
+- **[Cabinet installation](docs/01-cabinet-installation.md)**
 - **[Quickstart](docs/02-quickstart.md)**
 - **[Desktop controls](docs/41-cli-keyboard-guide.md)**
 - **[Command-line reference](docs/03-cli-reference.md)**

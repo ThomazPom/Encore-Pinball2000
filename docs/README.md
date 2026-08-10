@@ -1,5 +1,7 @@
 # Encore documentation
 
+- [01 — Cabinet installation](01-cabinet-installation.md)
+
 This documentation covers the current QEMU implementation. It is intentionally
 limited to material that helps run Encore, understand current code, reproduce a
 result, or test a cabinet.

@@ -1,5 +1,9 @@
 # 02 — Quickstart
 
+For a machine that should boot directly into the game, use the
+[cabinet installer](01-cabinet-installation.md). The steps below describe a
+manual desktop/development setup.
+
 ## Install build dependencies
 
 On Debian, Ubuntu or Kali:
