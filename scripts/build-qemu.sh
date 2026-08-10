@@ -71,6 +71,68 @@ is_known_good() {
   return 1
 }
 
+check_build_prerequisites() {
+  local -a required_commands=(
+    cc pkg-config curl patch ninja python3 tar xz sha256sum
+  )
+  local -a required_modules=(
+    glib-2.0 pixman-1 sdl2 zlib slirp vorbisfile ogg
+  )
+  local -a missing_commands=() missing_modules=()
+  local command_name module_name
+  local venv_ok=1 probe_dir=""
+
+  for command_name in "${required_commands[@]}"; do
+    command -v "$command_name" >/dev/null 2>&1 ||
+      missing_commands+=("$command_name")
+  done
+
+  if command -v pkg-config >/dev/null 2>&1; then
+    for module_name in "${required_modules[@]}"; do
+      pkg-config --exists "$module_name" 2>/dev/null ||
+        missing_modules+=("$module_name")
+    done
+  else
+    missing_modules=("${required_modules[@]}")
+  fi
+
+  # QEMU creates a Python virtual environment during configure. Importing the
+  # venv module is not sufficient on Debian: ensurepip can still be absent.
+  if command -v python3 >/dev/null 2>&1; then
+    probe_dir="$(mktemp -d /tmp/encore-venv-check.XXXXXX)"
+    if ! python3 -m venv "$probe_dir" >/dev/null 2>&1; then
+      venv_ok=0
+    fi
+    rm -rf -- "$probe_dir"
+  else
+    venv_ok=0
+  fi
+
+  if ((${#missing_commands[@]} == 0 && ${#missing_modules[@]} == 0 && venv_ok)); then
+    echo "[build-qemu] prerequisites: OK"
+    return 0
+  fi
+
+  echo "[build-qemu] missing build prerequisites; no download or build was started." >&2
+  ((${#missing_commands[@]} == 0)) ||
+    printf '  commands: %s\n' "${missing_commands[*]}" >&2
+  ((${#missing_modules[@]} == 0)) ||
+    printf '  pkg-config modules: %s\n' "${missing_modules[*]}" >&2
+  ((venv_ok)) || echo "  Python venv creation: unavailable" >&2
+  if command -v apt-get >/dev/null 2>&1; then
+    cat >&2 <<'EOF'
+
+Install the complete Debian/Ubuntu/Kali build set with:
+  sudo apt update
+  sudo apt install -y --no-install-recommends \
+    ca-certificates build-essential pkg-config git curl patch ninja-build \
+    python3 python3-venv xz-utils libsdl2-dev libglib2.0-dev \
+    libpixman-1-dev zlib1g-dev libslirp-dev libvorbis-dev libogg-dev
+EOF
+  fi
+  return 2
+}
+
 PICK_LATEST=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -98,6 +160,11 @@ while [[ $# -gt 0 ]]; do
         fi ;;
   esac
 done
+
+# Fail before version resolution, cache creation, downloading, extraction or
+# source grafting. The installer may offer to install these packages; the
+# builder itself never mutates the host package set.
+check_build_prerequisites
 
 if (( PICK_LATEST )); then
   if (( INCLUDE_UNSTABLE )); then

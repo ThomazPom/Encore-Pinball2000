@@ -27,7 +27,7 @@ jobs:
             ca-certificates curl git xz-utils \
             build-essential ninja-build meson pkg-config python3 python3-venv \
             libglib2.0-dev libpixman-1-dev libsdl2-dev \
-            libvorbis-dev libogg-dev libgtk-3-dev zlib1g-dev \
+            libvorbis-dev libogg-dev libslirp-dev libgtk-3-dev zlib1g-dev \
             >>/tmp/apt.log 2>&1 || { tail -n 80 /tmp/apt.log; exit 1; }
 
       - uses: actions/checkout@v6

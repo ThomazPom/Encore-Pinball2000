@@ -175,9 +175,9 @@ if [[ ! -x "$qemu_bin" ]]; then
     command -v apt-get >/dev/null 2>&1 || { echo "Automatic build setup requires APT" >&2; exit 2; }
     DEBIAN_FRONTEND=noninteractive apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        build-essential pkg-config git curl patch ninja-build python3 \
-        python3-venv libsdl2-dev libglib2.0-dev libpixman-1-dev zlib1g-dev \
-        libslirp-dev libvorbis-dev
+        ca-certificates build-essential pkg-config git curl patch ninja-build \
+        python3 python3-venv xz-utils libsdl2-dev libglib2.0-dev \
+        libpixman-1-dev zlib1g-dev libslirp-dev libvorbis-dev libogg-dev
     runuser -u "$session_user" -- env HOME="$session_home" \
         "$ROOT/scripts/build-qemu.sh"
     [[ -x "$qemu_bin" ]] || { echo "install.sh: build completed without expected binary" >&2; exit 3; }
