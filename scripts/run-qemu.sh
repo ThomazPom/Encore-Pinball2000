@@ -72,6 +72,7 @@ AUTOMATION_DIR=""
 SPEED_TARGET="${P2K_SPEED_TARGET_PERCENT:-100}"
 EXTRA=()
 QEMU_FB_ASYNC_DRIVER="${P2K_QEMU_FB_ASYNC_DRIVER:-auto}"
+SDL_VIDEO_DRIVER_REQUEST=""
 
 # --- QEMU binary lookup -----------------------------------------------------
 QEMU_BIN="${QEMU_BIN:-$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386}"
@@ -268,6 +269,12 @@ DISPLAY / UX
                             present it without host pixel conversion.
                             Use --display <backend> to select QEMU's display
                             path explicitly.
+  --wayland                 Use the direct SDL2 renderer as a native Wayland
+                            client. Requires WAYLAND_DISPLAY and implies
+                            --framebuffer.
+  --direct-console          Use SDL2's KMSDRM backend directly from a login VT.
+                            Implies --framebuffer and removes graphical-display
+                            variables; intended for cabinet sessions only.
   --switch-keymap <yaml>    A-Z to matrix-switch bindings. Missing files are
                             initialized with an editable starter map. Default:
                             $XDG_CONFIG_HOME/encore/switch-keymap.yaml, or
@@ -592,6 +599,14 @@ while [[ $# -gt 0 ]]; do
     --headless)        HEADLESS=1; shift ;;
     --fullscreen)      FULLSCREEN=1; shift ;;
     --framebuffer)     FRAMEBUFFER_REQUEST=1; shift ;;
+    --wayland)
+      SDL_VIDEO_DRIVER_REQUEST=wayland
+      FRAMEBUFFER_REQUEST=1
+      shift ;;
+    --direct-console)
+      SDL_VIDEO_DRIVER_REQUEST=KMSDRM
+      FRAMEBUFFER_REQUEST=1
+      shift ;;
     --switch-keymap)
       [[ -n "${2:-}" ]] || {
         echo "[run-qemu] --switch-keymap: expected a YAML file path" >&2
@@ -897,6 +912,23 @@ if [[ $VERBOSITY -lt 1 && "${P2K_TIMING_SNAPSHOTS:-0}" != "1" ]]; then
 fi
 
 # --- display defaults -------------------------------------------------------
+# Cabinet-facing SDL selection is explicit only when requested. Normal desktop
+# launches retain SDL's discovery. These options target the direct SDL2
+# framebuffer renderer; they never introduce an X11 or XWayland fallback.
+case "$SDL_VIDEO_DRIVER_REQUEST" in
+  wayland)
+    [[ -n "${WAYLAND_DISPLAY:-}" && -n "${XDG_RUNTIME_DIR:-}" ]] || {
+      echo "[run-qemu] --wayland requires WAYLAND_DISPLAY and XDG_RUNTIME_DIR" >&2
+      exit 2
+    }
+    export SDL_VIDEODRIVER=wayland
+    ;;
+  KMSDRM)
+    unset DISPLAY XAUTHORITY WAYLAND_DISPLAY
+    export SDL_VIDEODRIVER=KMSDRM
+    ;;
+esac
+
 # Direct framebuffer presentation is the desktop default. Explicit headless,
 # QEMU display, or QEMU-framebuffer selections retain their requested path.
 if [[ "$FRAMEBUFFER_REQUEST" == "auto" ]]; then

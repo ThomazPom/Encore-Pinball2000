@@ -75,7 +75,10 @@ jobs:
           mkdir -p "$PACKAGE"
           install -m 0755 "$BIN" "$PACKAGE/qemu-system-i386"
           cp -a scripts "$PACKAGE/scripts"
+          install -m 0755 install.sh uninstall.sh "$PACKAGE/"
           cp README.md "$PACKAGE/" 2>/dev/null || true
+          mkdir -p "$PACKAGE/docs"
+          cp docs/01-cabinet-installation.md "$PACKAGE/docs/"
 
           cat > "$PACKAGE/run-qemu.sh" <<'EOF'
           #!/usr/bin/env bash
