@@ -211,8 +211,8 @@ static inline uint32_t rgb555_to_argb(uint16_t px)
 
 static uint32_t s_rgb555_lut[1 << 15];
 static uint16_t s_rgb565_lut[1 << 15];
-/* The guest framebuffer is bottom-up, so display/capture flip by default. */
-static bool s_flip_y = true;
+/* Flipscreen vertically reverses the displayed result relative to default. */
+static bool s_flipscreen;
 
 static inline uint16_t rgb555_to_rgb565(uint16_t px)
 {
@@ -246,7 +246,7 @@ static uint32_t p2k_display_latch_source(P2KDisplayState *s,
         s->game_pitch = true;
     }
     *src_pitch = s->game_pitch ? 2048 : 1280;
-    *flip_y = s_flip_y;
+    *flip_y = !s_flipscreen;
     s->last_fb_off = fb_off;
     qemu_mutex_unlock(&s->frame_lock);
 
@@ -283,13 +283,13 @@ static void p2k_display_invalidate(void *opaque)
      * buffer is regenerated from guest RAM every gfx_update call. */
 }
 
-void p2k_display_toggle_flip_y(void)
+void p2k_display_toggle_flipscreen(void)
 {
     qemu_mutex_lock(&s_disp.frame_lock);
-    s_flip_y = !s_flip_y;
+    s_flipscreen = !s_flipscreen;
     qemu_mutex_unlock(&s_disp.frame_lock);
-    fprintf(stderr, "[display] F2 → flip-Y %s\n",
-            s_flip_y ? "ON (default)" : "OFF (raw orientation)");
+    fprintf(stderr, "[display] F2 → vertical flipscreen %s\n",
+            s_flipscreen ? "ON" : "OFF");
 }
 
 /* Per-frame submit counter. Snapshotted by the audit panel to emit
@@ -819,6 +819,7 @@ void p2k_install_display(void)
     const char     *qemu_fb_format = getenv("P2K_QEMU_FB_FORMAT");
     const char     *qemu_fb_async = getenv("P2K_QEMU_FB_ASYNC");
     const char     *profile_env = getenv("P2K_DISPLAY_PROFILE");
+    const char     *flip_env = getenv("P2K_FLIPSCREEN");
     bool            bpp16   = bpp_env && !strcmp(bpp_env, "16");
 
     qemu_mutex_init(&s_status_lock);
@@ -832,6 +833,19 @@ void p2k_install_display(void)
     s_disp.qemu_rgb565 = s_disp.qemu_framebuffer && qemu_fb_format &&
         !strcmp(qemu_fb_format, "565");
     s_disp.profile = profile_env && profile_env[0] == '1';
+    if (flip_env) {
+        if (!strcmp(flip_env, "0")) {
+            s_flipscreen = false;
+        } else if (!strcmp(flip_env, "1")) {
+            s_flipscreen = true;
+        } else {
+            warn_report("pinball2000: P2K_FLIPSCREEN must be 0 or 1; "
+                        "using the default orientation");
+        }
+    }
+    info_report("pinball2000: initial display orientation: %s",
+                s_flipscreen ? "vertical flipscreen"
+                             : "default");
     if (s_disp.qemu_framebuffer && bpp16 && !s_disp.qemu_rgb565) {
         warn_report("pinball2000: fast QEMU framebuffer ignores 16 bpp; "
                     "QEMU SDL presents its ARGB surface more efficiently");

@@ -22,6 +22,10 @@ Optional GTK display, interactive serial-console helpers and video capture:
 sudo apt install -y libgtk-3-dev netcat-openbsd rlwrap ffmpeg
 ```
 
+GTK is deliberately absent from the normal cabinet build. After installing
+its headers, opt into that developer-only backend with
+`P2K_ENABLE_GTK=1 scripts/build-qemu.sh`.
+
 > [!IMPORTANT]
 > `libvorbis-dev` is required for DCS OGG playback. Install it before building.
 

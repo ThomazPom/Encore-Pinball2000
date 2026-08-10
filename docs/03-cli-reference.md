@@ -32,6 +32,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--framebuffer` | — | on for desktop auto-selection | Runs QEMU with display `none` and gives a dedicated SDL thread direct access to the native 640×240 RGB555 framebuffer. SDL scales it to the window; presentation and input bypass QEMU's display backend. | `scripts/run-qemu.sh --framebuffer` |
 | `--wayland` | — | off | Selects SDL2's native Wayland backend for the direct framebuffer renderer. Requires an existing Wayland session and implies `--framebuffer`; no X11 fallback is attempted. | `scripts/run-qemu.sh --wayland --fullscreen` |
 | `--direct-console` | — | off | Selects SDL2's KMSDRM backend for the direct framebuffer renderer, removes graphical-display variables and implies `--framebuffer`. Run it only from an active local login VT that can own DRM/KMS. | `scripts/run-qemu.sh --direct-console --fullscreen` |
+| `--flipscreen` | — | off | Vertically reverses the displayed image, exactly as if F2 had been pressed once. F2 toggles that same state at run time. | `scripts/run-qemu.sh --flipscreen` |
 | `--switch-keymap` | YAML file | `$XDG_CONFIG_HOME/encore/switch-keymap.yaml`, else `~/.config/encore/switch-keymap.yaml` | Maps A-Z keys directly to matrix switches. A missing file is initialized with an editable starter map. | `scripts/run-qemu.sh --switch-keymap ./my-switches.yaml` |
 | `--qemu-framebuffer` | — | off | Keeps the selected QEMU display backend, but reads RGB555 directly from guest RAM and expands it through a lookup table into QEMU's preferred ARGB surface instead of using address-space reads. Experimental A/B option. | `scripts/run-qemu.sh --qemu-framebuffer` |
 | `--qemu-framebuffer-async` | — | off | Adds worker-thread QEMU-surface submission to `--qemu-framebuffer`. It requires QEMU's SDL display. OpenGL-backed renderers transfer their context to the worker on the first refresh. Experimental A/B option. | `scripts/run-qemu.sh --qemu-framebuffer-async` |
@@ -142,7 +143,7 @@ Delivered by the QEMU machine, not the wrapper:
 | Key | Action |
 |---|---|
 | `F1` | Quit / shutdown request |
-| `F2` | Toggle vertical flip; default is on because source is bottom-up |
+| `F2` | Toggle vertical flipscreen; `--flipscreen` starts with that state active |
 | `F3` | Screenshot to `<screenshot-dir>/p2k_screen_<ts>.jpg`, with `.ppm` fallback |
 | `F4` | Toggle coin door |
 | `F5`, `Enter`, `KP-Enter` | ~60-frame Enter pulse |
@@ -182,6 +183,7 @@ Builds a minimal `qemu-system-i386` with the Encore `pinball2000` machine.
 | `-h`, `--help` | — | Prints the script's usage block. | `scripts/build-qemu.sh --help` |
 | `--` | — | Stops option parsing; currently there are no build passthrough args after it. | `scripts/build-qemu.sh --` |
 | `QEMU_VER=...` | `10.0.8` | Environment override for version. | `QEMU_VER=10.0.8 scripts/build-qemu.sh` |
+| `P2K_ENABLE_GTK=1` | off | Opts a developer build into QEMU's GTK backend; requires `gtk+-3.0` development files. Cabinet builds omit GTK/X11 by default. | `P2K_ENABLE_GTK=1 scripts/build-qemu.sh` |
 
 The runtime-validated releases are QEMU 10.0.8 and 10.2.4. The pinned default
 remains 10.0.8; `--latest` selects 10.2.4.
@@ -194,10 +196,10 @@ remains 10.0.8; `--latest` selects 10.2.4.
 
 The build script configures QEMU with `--target-list=i386-softmmu`,
 `--without-default-devices`, SDL, and only Encore's explicit Kconfig/Meson
-dependencies. Docs, tools, guest agent, plugins and VNC are disabled. GTK is
-enabled only when `pkg-config --exists gtk+-3.0` succeeds. A hashed configure
-profile recreates the build directory when these choices change; ordinary
-source edits preserve the incremental build.
+dependencies. Docs, tools, guest agent, plugins, VNC and GTK are disabled.
+Developers can explicitly opt into GTK with `P2K_ENABLE_GTK=1`. A hashed
+configure profile recreates the build directory when these choices change;
+ordinary source edits preserve the incremental build.
 
 The `machine-build-integration` patch family connects upstream QEMU to an
 Encore-owned `hw/i386/p2k/` directory. Its filename declares the tested QEMU

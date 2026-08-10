@@ -25,8 +25,8 @@
 #   --update SWE1 v2.10. KNOWN_GOOD_VERS lists every release we've
 #   confirmed builds cleanly with the current hw/i386 grafts. Anything
 #   outside that list is best-effort and the script will warn.
-#   GTK display backend (run-qemu.sh --display gtk) is auto-enabled when
-#   `pkg-config --exists gtk+-3.0` succeeds.
+#   Cabinet builds deliberately exclude GTK/X11. Developers may opt in with
+#   P2K_ENABLE_GTK=1 when gtk+-3.0 development files are installed.
 set -euo pipefail
 
 DEFAULT_VER="10.0.8"
@@ -307,7 +307,11 @@ fi
 # --- Configure when the minimal build profile changes ----------------------
 BUILD="$SRC/build"
 GTK_FLAG="--disable-gtk"
-if pkg-config --exists gtk+-3.0 2>/dev/null; then
+if [[ "${P2K_ENABLE_GTK:-0}" == 1 ]]; then
+  pkg-config --exists gtk+-3.0 2>/dev/null || {
+    echo "[build-qemu] P2K_ENABLE_GTK=1 requires gtk+-3.0 development files" >&2
+    exit 2
+  }
   GTK_FLAG="--enable-gtk"
 fi
 CONFIG_ARGS=(
@@ -333,13 +337,10 @@ if [[ ! -f "$BUILD/build.ninja" ]]; then
   echo "[build-qemu] configuring minimal pinball2000/i386-softmmu build"
   rm -rf "$BUILD"
   cd "$SRC"
-  # Enable GTK display backend if dev headers are present so users can
-  # `--display gtk` from run-qemu.sh; otherwise fall back to disabling it
-  # so configure doesn't error out.
   if [[ "$GTK_FLAG" == "--enable-gtk" ]]; then
-    echo "[build-qemu] gtk+-3.0 found → --enable-gtk"
+    echo "[build-qemu] P2K_ENABLE_GTK=1 → --enable-gtk"
   else
-    echo "[build-qemu] gtk+-3.0 not found → --disable-gtk (apt install libgtk-3-dev to enable)"
+    echo "[build-qemu] cabinet profile → --disable-gtk"
   fi
   ./configure "${CONFIG_ARGS[@]}"
   echo "$CONFIG_PROFILE" > "$CONFIG_SENTINEL"

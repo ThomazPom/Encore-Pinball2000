@@ -40,6 +40,11 @@ scripts/run-qemu.sh \
 silently running the keyboard-backed emulated board when cabinet control was
 intended.
 
+The cabinet installer applies the same safety policy. If `/dev/parport0` is
+detected, it displays the validation sequence below and keeps emulation enabled
+unless the operator explicitly confirms that the checks have passed. It can
+also add the selected unprivileged session account to `lp`.
+
 The direct path uses `PPCLAIM`, negotiates compatibility mode, and forwards
 DATA, STATUS and CONTROL accesses with `ppdev` ioctls. It does not need a QEMU
 chardev or a separate helper process.

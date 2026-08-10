@@ -47,10 +47,11 @@ compatibility fallback.
 > Host conversion and QEMU presentation are separate costs. Use `--bench` on
 > the target computer to compare the two paths.
 
-The source framebuffer is bottom-up, so vertical flip starts enabled. Press
-`F2` to toggle it. `F3` writes a screenshot under `--screenshot-dir`; the
-direct SDL path writes BMP while the QEMU console path prefers JPEG and falls
-back to PPM.
+With no option, Encore displays the image normally. `--flipscreen` vertically
+reverses that display. This is exactly the same state as pressing `F2` once;
+F2 can still toggle it while running. `F3` writes a screenshot under
+`--screenshot-dir`; the direct SDL path writes BMP while the QEMU console path
+prefers JPEG and falls back to PPM.
 
 ## Video capture
 

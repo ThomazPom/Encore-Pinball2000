@@ -275,6 +275,9 @@ DISPLAY / UX
   --direct-console          Use SDL2's KMSDRM backend directly from a login VT.
                             Implies --framebuffer and removes graphical-display
                             variables; intended for cabinet sessions only.
+  --flipscreen              Vertically reverse the displayed image, exactly as
+                            if F2 had been pressed once. F2 toggles the same
+                            state at run time.
   --switch-keymap <yaml>    A-Z to matrix-switch bindings. Missing files are
                             initialized with an editable starter map. Default:
                             $XDG_CONFIG_HOME/encore/switch-keymap.yaml, or
@@ -546,7 +549,7 @@ KEY BINDINGS (delivered by the QEMU machine, not by this wrapper)
                             switch. Example: 13, hold Ctrl for 3 s holds Start.
   Configured A-Z            Hold mapped letters to hold their matrix switches.
                             See --switch-keymap and docs/41-cli-keyboard-guide.md.
-  F2                        Toggle vertical-flip of the framebuffer
+  F2                        Toggle vertical flipscreen
                             (default ON: bottom-up source → top-down
                              display).
   F3                        Screenshot to <screenshot-dir>/p2k_screen_<ts>.jpg
@@ -606,6 +609,9 @@ while [[ $# -gt 0 ]]; do
     --direct-console)
       SDL_VIDEO_DRIVER_REQUEST=KMSDRM
       FRAMEBUFFER_REQUEST=1
+      shift ;;
+    --flipscreen)
+      export P2K_FLIPSCREEN=1
       shift ;;
     --switch-keymap)
       [[ -n "${2:-}" ]] || {
