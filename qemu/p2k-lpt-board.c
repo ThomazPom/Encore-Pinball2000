@@ -680,8 +680,8 @@ void p2k_lpt_host_key(int qcode, bool down)
     case Q_KEY_CODE_F3:                              /* screenshot to PPM */
         if (down) p2k_lpt_screenshot();
         break;
-    case Q_KEY_CODE_F2:                              /* toggle Y-flip */
-        if (down) p2k_display_toggle_flip_y();
+    case Q_KEY_CODE_F2:                              /* toggle flipscreen */
+        if (down) p2k_display_toggle_flipscreen();
         break;
     case Q_KEY_CODE_F12:
         if (down) p2k_lpt_dump_state();
@@ -809,7 +809,7 @@ void p2k_install_lpt_board(void)
                 "(STATUS=0x%02x, edge-detect dispatch%s)",
                 ioport, ioport + 2, s_lpt_status,
                 purist_on ? "; cabinet-purist (no desktop keys)" :
-                "; keys: F1 quit | F2 flip-Y | F3 screenshot | "
+                "; keys: F1 quit | F2 vertical flip | F3 screenshot | "
                 "F4 door | F5/Enter pulse | F6/F9 actions | "
                 "F7/F8 flippers | Space/S start | F10/C coin | "
                 "F12 dump | Esc/Left service | Up/Down volume | "

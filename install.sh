@@ -127,42 +127,71 @@ read -r -p "Game [swe1/rfm] (swe1): " game
 game="${game:-swe1}"
 case "$game" in swe1|rfm) ;; *) echo "Invalid game" >&2; exit 2 ;; esac
 
-missing=()
+start_flipped=1
+echo
+echo "F2 vertically reverses the displayed image."
+echo "The cabinet setup enables that same state from startup by default."
+if ! ask "Start with flipscreen enabled?"; then
+    start_flipped=0
+fi
+
+missing_packages=()
 case "$backend" in
-    cage) command -v cage >/dev/null 2>&1 || missing+=(cage) ;;
-    weston) command -v weston >/dev/null 2>&1 || missing+=(weston) ;;
+    cage) command -v cage >/dev/null 2>&1 || missing_packages+=(cage) ;;
+    weston) command -v weston >/dev/null 2>&1 || missing_packages+=(weston) ;;
 esac
-command -v python3 >/dev/null 2>&1 || missing+=(python3)
-command -v systemd-inhibit >/dev/null 2>&1 || {
-    echo "install.sh: systemd-inhibit is required on this systemd-based profile" >&2
-    exit 2
-}
-if ((${#missing[@]})); then
-    echo "Missing packages/tools: ${missing[*]}"
+command -v python3 >/dev/null 2>&1 || missing_packages+=(python3)
+command -v systemd-inhibit >/dev/null 2>&1 || missing_packages+=(systemd)
+if ((${#missing_packages[@]})); then
+    echo "Missing runtime packages/tools: ${missing_packages[*]}"
     if command -v apt-get >/dev/null 2>&1 && ask "Install the missing Debian packages now?"; then
         DEBIAN_FRONTEND=noninteractive apt-get update
-        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            "${missing_packages[@]}"
     else
         echo "install.sh: required tools are missing" >&2; exit 2
     fi
 fi
 
-# Validate the direct-console claim against the SDL2 actually installed on the
-# target. This queries SDL itself; it does not infer support from filenames.
-if [[ "$backend" == direct-console ]]; then
-    if ! python3 - <<'PY'
+sdl_has_driver() {
+    local wanted="$1"
+    SDL_WANTED_DRIVER="$wanted" python3 - <<'PY'
 import ctypes, ctypes.util, sys
+import os
 name = ctypes.util.find_library("SDL2")
 if not name:
     sys.exit(1)
 sdl = ctypes.CDLL(name)
 sdl.SDL_GetVideoDriver.restype = ctypes.c_char_p
 drivers = {sdl.SDL_GetVideoDriver(i).decode() for i in range(sdl.SDL_GetNumVideoDrivers())}
-sys.exit(0 if "KMSDRM" in drivers else 1)
+sys.exit(0 if os.environ["SDL_WANTED_DRIVER"] in drivers else 1)
 PY
-    then
-        echo "install.sh: this system SDL2 has no KMSDRM video backend." >&2
-        echo "Choose Cage, Weston, or the existing Wayland display manager." >&2
+}
+
+# Query SDL itself rather than inferring support from library filenames. A
+# stock Debian SDL2 normally exposes both drivers, but release users may have a
+# smaller host runtime.
+sdl_driver=wayland
+[[ "$backend" == direct-console ]] && sdl_driver=KMSDRM
+if ! sdl_has_driver "$sdl_driver"; then
+    echo "The installed SDL2 does not expose its $sdl_driver video backend."
+    if command -v apt-get >/dev/null 2>&1 &&
+       ask "Install Debian's SDL2 and graphics runtime now?"; then
+        DEBIAN_FRONTEND=noninteractive apt-get update
+        if [[ "$sdl_driver" == wayland ]]; then
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                libsdl2-2.0-0 libwayland-client0 libegl1 libgles2 libgl1-mesa-dri
+        else
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                libsdl2-2.0-0 libdrm2 libgbm1 libegl1 libgles2 libgl1-mesa-dri
+        fi
+    fi
+    if ! sdl_has_driver "$sdl_driver"; then
+        if [[ "$sdl_driver" == KMSDRM ]]; then
+            echo "install.sh: SDL2 still has no KMSDRM backend; choose a Wayland profile." >&2
+        else
+            echo "install.sh: SDL2 still has no native Wayland backend." >&2
+        fi
         exit 2
     fi
 fi
@@ -187,12 +216,21 @@ fi
 
 launch_args=()
 add_lp_group=0
+[[ "$start_flipped" -eq 0 ]] || launch_args+=(--flipscreen)
 if [[ -e /dev/parport0 ]]; then
-    if ask "Use the real cabinet board at /dev/parport0?" N; then
+    echo
+    echo "Real cabinet interface detected: /dev/parport0"
+    echo "WARNING: Encore's powered-playfield validation is still pending."
+    echo "The documented sequence is: emulated benchmark, playfield power OFF,"
+    echo "real-port trace, then one low-risk device class at a time."
+    if ask "Have those checks passed, and enable /dev/parport0 at boot?" N; then
         launch_args+=(--cabinet --lpt-device /dev/parport0)
         if ! id -nG "$session_user" | tr ' ' '\n' | grep -qx lp; then
             add_lp_group=1
         fi
+    else
+        echo "Keeping the emulated driver board. Follow docs/46-real-lpt-passthrough.md"
+        echo "before reinstalling with real cabinet I/O enabled."
     fi
 fi
 

@@ -75,11 +75,24 @@ The guided setup asks for:
 1. the session profile;
 2. the unprivileged cabinet account;
 3. Star Wars Episode I or Revenge from Mars;
-4. optional real `/dev/parport0` access when the device exists.
+4. whether to start with flipscreen active (enabled by default);
+5. optional real `/dev/parport0` access when the device exists.
 
-Missing Cage or Weston packages can be installed through APT. If the custom
-QEMU binary is absent, the installer offers to install the documented build
-dependencies and build it in the selected user's cache.
+That choice adds `--flipscreen`. It vertically reverses the displayed image
+relative to the normal display. F2 toggles exactly that same state while Encore
+is running. The cabinet installer enables it by default; declining the prompt
+leaves the normal display unchanged.
+
+Missing Cage, Weston, SDL2 or host graphics components can be installed through
+APT. The installer queries SDL itself for the required Wayland or KMSDRM
+backend, installs the appropriate runtime when requested, then checks again.
+If the custom QEMU binary is absent, it similarly offers the documented build
+dependencies and builds QEMU in the selected user's cache.
+
+When `/dev/parport0` exists, real hardware remains disabled by default. The
+installer shows the validation sequence from
+[real LPT passthrough](46-real-lpt-passthrough.md) and enables the port only
+after the operator confirms that those checks have passed.
 
 Non-interactive profile selection is also available:
 

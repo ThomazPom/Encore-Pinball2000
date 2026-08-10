@@ -88,8 +88,8 @@ void p2k_install_gfxlist_watch(Pinball2000MachineState *s);
 
 /* p2k-display.c: 640×480 SDL/QEMU display reading FB at RAM 0x800000. */
 void p2k_install_display(void);
-/* F2 Y-flip toggle. Default on (matches the default framebuffer orientation). */
-void p2k_display_toggle_flip_y(void);
+/* F2 toggles the vertical flipscreen state. */
+void p2k_display_toggle_flipscreen(void);
 /* Queue a screenshot on the direct SDL renderer. False means use QEMU's
  * ordinary console surface instead. */
 bool p2k_display_request_screenshot(void);
