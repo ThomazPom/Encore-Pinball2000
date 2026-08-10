@@ -1,0 +1,115 @@
+diff --git a/include/uc_priv.h b/include/uc_priv.h
+index c3132dc..2e9daff 100644
+--- a/include/uc_priv.h
++++ b/include/uc_priv.h
+@@ -280,6 +280,13 @@ struct uc_struct {
+     reg_write_t reg_write;
+     reg_reset_t reg_reset;
+ 
++    /* P2K: atomic hardware-IRQ delivery (restores QEMU's cpu_get_pic_interrupt
++     * path that Unicorn stubbed to intno=0). pending_hard_vector holds the
++     * vector queued by uc_x86_raise_irq; raise_irq is the arch hook that sets
++     * CPU_INTERRUPT_HARD so the TCG core delivers it at the next TB boundary. */
++    int32_t pending_hard_vector;
++    void (*raise_irq)(struct uc_struct *uc, uint32_t vector);
++
+     uc_write_mem_t write_mem;
+     uc_read_mem_t read_mem;
+     uc_read_mem_virtual_t read_mem_virtual;
+diff --git a/include/unicorn/unicorn.h b/include/unicorn/unicorn.h
+index b4ffc6b..e7961de 100644
+--- a/include/unicorn/unicorn.h
++++ b/include/unicorn/unicorn.h
+@@ -811,6 +811,22 @@ const char *uc_strerror(uc_err code);
+ UNICORN_EXPORT
+ uc_err uc_reg_write(uc_engine *uc, int regid, const void *value);
+ 
++/*
++ P2K extension: raise a hardware interrupt with an explicit vector, delivered
++ atomically by the TCG core at the next translation-block boundary (only when
++ guest IF=1 and not in an IRQ-inhibit shadow). Restores the QEMU
++ cpu_get_pic_interrupt delivery path that stock Unicorn stubbed out. Use this
++ instead of hand-building the interrupt stack frame to get main/QEMU-parity
++ non-nesting hardware IRQ delivery (e.g. IRQ0 -> vector 0x08).
++
++ @uc: handle returned by uc_open()
++ @vector: interrupt vector number (IDT index) to deliver
++
++ @return UC_ERR_OK on success; UC_ERR_ARG on bad handle / unsupported arch
++*/
++UNICORN_EXPORT
++uc_err uc_x86_raise_irq(uc_engine *uc, uint32_t vector);
++
+ /*
+  Read register value.
+ 
+diff --git a/qemu/target/i386/seg_helper.c b/qemu/target/i386/seg_helper.c
+index 97447fe..dfad70e 100644
+--- a/qemu/target/i386/seg_helper.c
++++ b/qemu/target/i386/seg_helper.c
+@@ -1265,8 +1265,14 @@ bool x86_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
+         cpu_svm_check_intercept_param(env, SVM_EXIT_INTR, 0, 0);
+         cs->interrupt_request &= ~(CPU_INTERRUPT_HARD |
+                                    CPU_INTERRUPT_VIRQ);
+-        // intno = cpu_get_pic_interrupt(env);
+-        intno = 0;
++        // P2K: deliver the vector queued by uc_x86_raise_irq. This restores
++        // the cpu_get_pic_interrupt(env) behaviour that stock Unicorn stubbed
++        // out (it hardcoded intno=0), so a hardware IRQ raised via
++        // uc_x86_raise_irq is delivered atomically here at the TB boundary,
++        // exactly like QEMU/main — only when IF=1 (gated by
++        // x86_cpu_pending_interrupt), which makes nesting impossible.
++        intno = (env->uc && env->uc->pending_hard_vector >= 0)
++                    ? env->uc->pending_hard_vector : 0;
+         //qemu_log_mask(CPU_LOG_TB_IN_ASM,
+         //              "Servicing hardware INT=0x%02x\n", intno);
+         do_interrupt_x86_hardirq(env, intno, 1);
+diff --git a/qemu/target/i386/unicorn.c b/qemu/target/i386/unicorn.c
+index 1e79b94..4471c98 100644
+--- a/qemu/target/i386/unicorn.c
++++ b/qemu/target/i386/unicorn.c
+@@ -2069,6 +2069,15 @@ static int x86_cpus_init(struct uc_struct *uc, const char *cpu_model)
+     return 0;
+ }
+ 
++/* P2K: queue a hardware interrupt vector and raise CPU_INTERRUPT_HARD so the
++ * TCG core delivers it atomically at the next TB boundary (mirrors main's
++ * `cpu_interrupt(cs, CPU_INTERRUPT_HARD)` after setting the PIC vector). */
++static void x86_raise_irq(struct uc_struct *uc, uint32_t vector)
++{
++    uc->pending_hard_vector = (int32_t)vector;
++    cpu_interrupt(uc->cpu, CPU_INTERRUPT_HARD);
++}
++
+ DEFAULT_VISIBILITY
+ void uc_init(struct uc_struct *uc)
+ {
+@@ -2078,6 +2087,7 @@ void uc_init(struct uc_struct *uc)
+     uc->release = x86_release;
+     uc->set_pc = x86_set_pc;
+     uc->get_pc = x86_get_pc;
++    uc->raise_irq = x86_raise_irq;
+     uc->stop_interrupt = x86_stop_interrupt;
+     uc->insn_hook_validate = x86_insn_hook_validate;
+     uc->opcode_hook_invalidate = x86_opcode_hook_invalidate;
+diff --git a/uc.c b/uc.c
+index 75b89a0..266807d 100644
+--- a/uc.c
++++ b/uc.c
+@@ -716,6 +716,16 @@ uc_err uc_reg_write(uc_engine *uc, int regid, const void *value)
+     return UC_ERR_OK;
+ }
+ 
++UNICORN_EXPORT
++uc_err uc_x86_raise_irq(uc_engine *uc, uint32_t vector)
++{
++    if (!uc || !uc->raise_irq) {
++        return UC_ERR_ARG;
++    }
++    uc->raise_irq(uc, vector);
++    return UC_ERR_OK;
++}
++
+ UNICORN_EXPORT
+ uc_err uc_reg_read2(uc_engine *uc, int regid, void *value, size_t *size)
+ {

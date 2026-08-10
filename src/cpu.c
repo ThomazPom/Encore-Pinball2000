@@ -44,6 +44,13 @@
  */
 #include "encore.h"
 
+/* Provided by our patched libunicorn (source at /tmp/unicorn-src): raise a
+ * hardware interrupt with an explicit vector, delivered atomically by the TCG
+ * core at the next TB boundary when guest IF=1 (restores QEMU's
+ * cpu_get_pic_interrupt path Unicorn stubbed to intno=0). The stock system
+ * <unicorn/unicorn.h> does not declare it, so we declare it here. */
+extern uc_err uc_x86_raise_irq(uc_engine *uc, uint32_t vector);
+
 /* Forward declarations for hooks */
 static void hook_insn_in(uc_engine *uc, uint32_t port, int size, void *user_data);
 static uint32_t hook_insn_in_val(uc_engine *uc, uint32_t port, int size, void *user_data);
@@ -222,6 +229,45 @@ static uint64_t          s_inj_seq = 0;          /* next seq to assign */
 static int               s_inj_head = 0;         /* next ring slot */
 static int               s_gdt_eip_trapped = 0;  /* once-shot trap flag */
 
+/* Atomic-delivery history ring — records the exact CPU/PIC state at each
+ * uc_x86_raise_irq(IRQ0) so a post-mortem after the resched-nest wedge
+ * shows whether a second clkint was delivered while the first was still
+ * in flight, and with what IF / ISR / EOI state. */
+#define DELIV_RING 48
+struct deliv_record {
+    uint64_t seq;
+    uint64_t vt;
+    uint64_t vt_since_prev;
+    uint32_t eip;
+    uint32_t esp;
+    uint8_t  if_bit;
+    uint8_t  pic_irr;
+    uint8_t  pic_isr;
+    uint8_t  pic_imr;
+    uint32_t eoi_count;
+};
+static struct deliv_record s_deliv_ring[DELIV_RING];
+static int                 s_deliv_head = 0;
+static uint64_t            s_deliv_prev_vt = 0;
+
+static void cpu_dump_deliv_ring(const char *why)
+{
+    LOG("irq", "=== DELIV RING DUMP (%s) — last %d IRQ0 deliveries ===\n",
+        why, DELIV_RING);
+    for (int i = 0; i < DELIV_RING; i++) {
+        int idx = (s_deliv_head + i) % DELIV_RING;
+        struct deliv_record *r = &s_deliv_ring[idx];
+        if (r->seq == 0) continue;
+        LOG("irq",
+            "  #%llu vt=%llu dVt=%llu EIP=0x%08x ESP=0x%08x IF=%d "
+            "IRR=%02x ISR=%02x IMR=%02x eoi=%u\n",
+            (unsigned long long)r->seq, (unsigned long long)r->vt,
+            (unsigned long long)r->vt_since_prev, r->eip, r->esp,
+            r->if_bit, r->pic_irr, r->pic_isr, r->pic_imr, r->eoi_count);
+    }
+    LOG("irq", "=== end DELIV RING ===\n");
+}
+
 static void cpu_dump_inj_ring(const char *why)
 {
     LOG("irq", "=== INJ RING DUMP (%s) — last %d injections ===\n", why, IRQ_INJ_RING);
@@ -287,8 +333,21 @@ static uint64_t s_irq0_in_flight_max_vt = 0;     /* longest in_flight duration i
 static uint64_t s_irq0_in_flight_arm_vt = 0;     /* vticks at last arm */
 static uint64_t s_irq0_arm_eoi_count = 0;         /* pic0.irq0_eoi_count at last arm */
 static uint64_t s_irq0_in_flight_clear_eoi = 0;   /* clear by observing the handler's IRQ0 EOI */
-static uint64_t s_irq0_tsw_logged = 0;           /* sample-log first N task-switch clears */
 static uint64_t s_irq0_guard_defer = 0;     /* count of injections deferred by this guard */
+/* Post-EOI cooldown (main-parity nest guard, replaces the ESP heuristic).
+ * XINU's clkint sends its EOI early then runs resched()/ctxsw with IF=1.
+ * Delivering a fresh IRQ0 into that post-EOI resched tail nests the
+ * handler → XINU "resched: called from interrupt handler" → eventual
+ * wedge. We block IRQ0 delivery for a short window after each observed
+ * IRQ0 EOI so the tail finishes (IRET or ctxsw to a fresh task) before
+ * the next clkint enters. Because the window starts at the EOI (which for
+ * a well-behaved handler is near its end), steady-state delivery is not
+ * capped — the cooldown overlaps the resched tail productively — while
+ * the rare heavy/early-EOI clkint is protected from re-entry. */
+static uint64_t s_irq0_last_eoi_seen = 0;   /* pic0.irq0_eoi_count last observed */
+static uint64_t s_irq0_last_eoi_vt   = 0;   /* vticks_total at that EOI */
+static uint64_t s_irq0_eoi_cooldown_vt = 0; /* cooldown length in vticks (set at init) */
+static uint64_t s_irq0_skip_eoi_cd   = 0;   /* deliveries blocked by the cooldown */
 static uint64_t s_inj_defer_iret = 0;
 static uint64_t s_inj_defer_progress = 0;
 static uint64_t s_inj_defer_burst = 0;
@@ -326,89 +385,34 @@ static void hook_block_count(uc_engine *uc, uint64_t addr,
      * handler — so this only rescues a genuinely lost EOI, it never
      * opens the fast post-EOI nesting window. Force the old immediate
      * behavior with P2K_HOTLOOP_EOI_CLEAR=1. */
-    if (s_irq0_in_flight &&
-        g_emu.pic[0].irq0_eoi_count != s_irq0_arm_eoi_count) {
-        static int eoi_clear_immediate = -1;
-        if (eoi_clear_immediate < 0) {
-            const char *e = getenv("P2K_HOTLOOP_EOI_CLEAR");
-            eoi_clear_immediate = (e && e[0] == '1') ? 1 : 0;
-        }
-        uint64_t dur = s_sched.vticks_total - s_irq0_in_flight_arm_vt;
-        uint64_t min_dur = s_sched.cached_pit_period_insns;
-        if (min_dur < 1000) min_dur = 1000;
-        if (eoi_clear_immediate || dur >= min_dur) {
-            if (dur > s_irq0_in_flight_max_vt) s_irq0_in_flight_max_vt = dur;
-            s_irq0_in_flight_clears++;
-            s_irq0_in_flight_clear_eoi++;
-            s_irq0_in_flight = 0;
-        }
-    }
-    /* IRQ0 nested-injection guard: clear in_flight when we observe the
-     * guest is back at the pre-injection EIP AND ESP has returned to
-     * >= the pre-injection baseline (clkint's IRET completed). */
-    if (s_irq0_in_flight && (uint32_t)addr == s_irq0_pre_eip) {
-        uint32_t cur_esp = 0;
-        uc_reg_read(uc, UC_X86_REG_ESP, &cur_esp);
-        if (cur_esp >= s_irq0_pre_esp) {
-            uint64_t dur = s_sched.vticks_total - s_irq0_in_flight_arm_vt;
-            if (dur > s_irq0_in_flight_max_vt) s_irq0_in_flight_max_vt = dur;
-            s_irq0_in_flight_clears++;
-            s_irq0_in_flight_clear_iret++;
-            s_irq0_in_flight = 0;
-        }
-    }
-    /* Task-switch fallback: when XINU's clkint calls resched, the new
-     * task's stack is loaded and the original pre_eip is never executed
-     * again from this context — in_flight would stay armed until task
-     * wraparound (measured up to 86 ms). Only clear in_flight when:
-     *   (a) ESP is far outside the pre-injection baseline (>= 16 KiB),
-     *       wider than any plausible clkint stack frame (printf etc.),
-     *   (b) PIC ISR for IRQ0 is already 0 (clkint EOI sent), AND
-     *   (c) at least one full PIT period of guest time has elapsed
-     *       since arming — by which point a real IRET back to pre_eip
-     *       would have been observed by the iret-clear path. (a)+(b)
-     *       alone fired during clkint's own post-EOI body and caused
-     *       a resched-in-ISR storm.
-     * NOTE: heuristic, not proven hardware-equivalent — counted
-     * separately so we can audit it via the 5s heartbeat. */
-    if (s_irq0_in_flight) {
-        uint64_t dur = s_sched.vticks_total - s_irq0_in_flight_arm_vt;
-        uint64_t min_dur = s_sched.cached_pit_period_insns;
-        if (min_dur < 1000) min_dur = 1000;
-        if (dur < min_dur) {
-            return;
-        }
-        uint32_t cur_esp = 0;
-        uc_reg_read(uc, UC_X86_REG_ESP, &cur_esp);
-        const uint32_t WINDOW = 0x4000; /* +/-16 KiB */
-        uint32_t lo = (s_irq0_pre_esp > WINDOW) ? (s_irq0_pre_esp - WINDOW) : 0;
-        uint32_t hi = s_irq0_pre_esp + WINDOW;
-        int32_t  desp = (int32_t)cur_esp - (int32_t)s_irq0_pre_esp;
-        int32_t  abs_desp = desp < 0 ? -desp : desp;
-        if ((cur_esp < lo || cur_esp > hi) &&
-            abs_desp >= (int32_t)WINDOW &&
-            !(g_emu.pic[0].isr & 0x01)) {
-            if (dur > s_irq0_in_flight_max_vt) s_irq0_in_flight_max_vt = dur;
-            s_irq0_in_flight_clears++;
-            s_irq0_in_flight_clear_tsw++;
-            if (s_irq0_tsw_logged < 5) {
-                uint32_t cur_eflags = 0;
-                uc_reg_read(uc, UC_X86_REG_EFLAGS, &cur_eflags);
-                LOG("irq",
-                    "in_flight cleared by TASK-SWITCH #%llu: pre_eip=0x%08x pre_esp=0x%08x cur_eip=0x%08x cur_esp=0x%08x dESP=%+ld IRR=%02x ISR=%02x IMR=%02x IF=%d dur=%llu vt (min_dur=%llu)\n",
-                    (unsigned long long)(s_irq0_tsw_logged + 1),
-                    s_irq0_pre_eip, s_irq0_pre_esp,
-                    (uint32_t)addr, cur_esp,
-                    (long)desp,
-                    g_emu.pic[0].irr, g_emu.pic[0].isr, g_emu.pic[0].imr,
-                    (cur_eflags >> 9) & 1,
-                    (unsigned long long)dur,
-                    (unsigned long long)min_dur);
-                s_irq0_tsw_logged++;
-            }
-            s_irq0_in_flight = 0;
-        }
-    }
+    /* ---- main-faithful in-service clear ----
+     * main (no_pit) has NO esp/eip heuristic: the i8259 in-service bit is
+     * set at delivery-ack and cleared by the guest's EOI, and that single
+     * bit is the whole nest guard. We mirror that with a robust "handler
+     * returned" signal built purely from ESP, since our atomic delivery
+     * ack sets s_irq0_in_flight instead of relying on the guest ever
+     * reading ISR back. Clear in_flight when EITHER:
+     *   (a) ESP >= pre_esp — the interrupt frame was popped (true IRET),
+     *       or a resched ctxsw restored a task whose stack sits at/above
+     *       pre_esp; both mean we are no longer inside this clkint frame.
+     *   (b) ESP dropped more than 2 KiB BELOW pre_esp — clkint called
+     *       resched() and ctxsw loaded a DIFFERENT task's (lower) stack.
+     *       A single clkint+resched frame chain never descends 2 KiB, so
+     *       this unambiguously means a task switch: the original clkint
+     *       is suspended on its own task's stack and the CPU is now in a
+     *       fresh context where a new IRQ0 is legitimate, not nested.
+     * This replaces the old EOI-late / IRET-eip / 16 KiB-tsw heuristics,
+     * which either false-fired at hot looping EIPs (runaway recursion) or
+     * got stuck armed when a task switched to a nearby lower stack. */
+    /* NOTE (main parity): the ESP-based in_flight clear that used to live
+     * here was REMOVED. main's no_pit hotloop has NO esp/eip heuristic;
+     * across a resched ctxsw the interrupted task's ESP is arbitrary, so
+     * any ESP test either false-fires during nested recursion (ESP drops
+     * ~0x870/frame, same as a task switch → runaway nest) or gets stuck
+     * armed. The nest guard is now purely the i8259 in-service bit (isr)
+     * plus a ~1-period min_gap in check_and_inject_irq / the scheduler
+     * raise gate + the CPU IF gate — exactly what main relies on. */
+    (void)s_irq0_pre_esp;
 }
 
 /* QEMU-style PIC line-level setter.
@@ -915,6 +919,25 @@ static int check_and_inject_irq(void)
         s_sched.irq0_blk_imr++;
     }
 
+    /* main-faithful: NO extra in-flight gate here. The i8259 in-service
+     * bit (pending = irr & ~imr & ~isr, computed below) is the whole nest
+     * guard, exactly like main's no_pit hotloop. Once ISR bit0 is set at
+     * delivery it holds off any further IRQ0 until the guest EOIs; the
+     * scheduler raise gate's ~1-period min_gap covers clkint's brief
+     * post-EOI resched tail; the CPU IF gate blocks delivery whenever the
+     * kernel has interrupts disabled. */
+
+    /* Track the guest's IRQ0 EOI and start a post-EOI cooldown. A new EOI
+     * means clkint just released the in-service line and is now in its
+     * IF=1 resched tail — the exact window a fresh IRQ0 would nest into. */
+    {
+        uint64_t eoi_now = g_emu.pic[0].irq0_eoi_count;
+        if (eoi_now != s_irq0_last_eoi_seen) {
+            s_irq0_last_eoi_seen = eoi_now;
+            s_irq0_last_eoi_vt   = s_sched.vticks_total;
+        }
+    }
+
     for (int pic_idx = 0; pic_idx < 2; pic_idx++) {
         PICState *pic = &g_emu.pic[pic_idx];
         uint8_t pending = pic->irr & ~pic->imr & ~pic->isr;
@@ -925,28 +948,108 @@ static int check_and_inject_irq(void)
             if (pending & (1 << bit)) {
                 uint8_t vector = pic->icw2 + bit;
 
+                /* Post-EOI cooldown gate — IRQ0 only. Hold the freshly
+                 * pending IRQ0 in IRR (do NOT drop it) until the resched
+                 * tail of the previous clkint has cleared. */
+                if (pic_idx == 0 && bit == 0 && s_irq0_eoi_cooldown_vt &&
+                    s_irq0_last_eoi_vt &&
+                    (s_sched.vticks_total - s_irq0_last_eoi_vt)
+                        < s_irq0_eoi_cooldown_vt) {
+                    s_irq0_skip_eoi_cd++;
+                    return -1;
+                }
+
                 /* If slave PIC, check cascade through master IRQ2 */
                 if (pic_idx == 1) {
                     if (g_emu.pic[0].imr & 0x04) continue;
                 }
 
-                /* Mark in-service, clear request */
+                /* Mark in-service, clear request. The i8259 in-service
+                 * mask (pending = irr & ~imr & ~isr) holds off any further
+                 * IRQ0 until the guest EOIs — the hardware priority gate
+                 * that, together with atomic IF-gated delivery, prevents
+                 * re-entry into the handler. */
                 pic->isr |= (1 << bit);
                 pic->irr &= ~(1 << bit);
 
-                if (cpu_inject_interrupt(vector)) {
+                /* Atomic hardware delivery via patched Unicorn
+                 * (uc_x86_raise_irq restores QEMU's cpu_get_pic_interrupt
+                 * path). Sets CPU_INTERRUPT_HARD; the TCG core delivers the
+                 * vector at the next TB boundary ONLY when IF=1 and not in
+                 * an IRQ-inhibit shadow — identical to main/QEMU. No
+                 * hand-built stack frame, no nesting. IF is already
+                 * confirmed set above. */
+                if (uc_x86_raise_irq(g_emu.uc, vector) == UC_ERR_OK) {
+                    /* Arm the in-flight latch for IRQ0. Delivery is atomic
+                     * at the next TB boundary, which is exactly the eip we
+                     * hand to uc_emu_start (cpu_handle_interrupt runs before
+                     * the first TB executes), so pre_eip is precise and the
+                     * block hook's IRET-clear fires the instant clkint
+                     * returns. */
+                    if (pic_idx == 0 && bit == 0) {
+                        uint32_t cur[2] = {0, 0};
+                        int ids[2] = {UC_X86_REG_EIP, UC_X86_REG_ESP};
+                        void *ps[2] = {&cur[0], &cur[1]};
+                        uc_reg_read_batch(g_emu.uc, ids, ps, 2);
+                        s_inj_seq++;
+                        s_irq0_pre_eip          = cur[0];
+                        s_irq0_pre_esp          = cur[1];
+                        s_irq0_in_flight_arm_vt = s_sched.vticks_total;
+
+                        /* Record delivery context for post-mortem. */
+                        struct deliv_record *dr = &s_deliv_ring[s_deliv_head];
+                        dr->seq           = s_inj_seq;
+                        dr->vt            = s_sched.vticks_total;
+                        dr->vt_since_prev = s_sched.vticks_total - s_deliv_prev_vt;
+                        dr->eip           = cur[0];
+                        dr->esp           = cur[1];
+                        dr->if_bit        = (eflags >> 9) & 1;
+                        dr->pic_irr       = g_emu.pic[0].irr;
+                        dr->pic_isr       = g_emu.pic[0].isr;
+                        dr->pic_imr       = g_emu.pic[0].imr;
+                        dr->eoi_count     = (uint32_t)g_emu.pic[0].irq0_eoi_count;
+                        s_deliv_head      = (s_deliv_head + 1) % DELIV_RING;
+                        s_deliv_prev_vt   = s_sched.vticks_total;
+
+                        /* Nest-onset detector: if this IRQ0 lands with ESP
+                         * BELOW the previous delivery's ESP by ~a frame or
+                         * more, we are re-entering before the prior clkint
+                         * popped its frame — the start of a recursion
+                         * spiral. Log the first 40 with full IF/eip so we
+                         * can see whether IF was (wrongly) 1 inside the
+                         * critical section. */
+                        {
+                            static uint32_t s_prev_deliv_esp = 0;
+                            static int s_nest_logged = 0;
+                            static int s_nest_dbg = -1;
+                            if (s_nest_dbg < 0) {
+                                const char *e = getenv("P2K_IRQ_NEST_DEBUG");
+                                s_nest_dbg = (e && *e == '1') ? 1 : 0;
+                            }
+                            if (s_nest_dbg && s_prev_deliv_esp &&
+                                (int32_t)cur[1] < (int32_t)s_prev_deliv_esp - 0x40 &&
+                                s_nest_logged < 40) {
+                                s_nest_logged++;
+                                LOG("irq",
+                                    "*** NEST-ONSET #%d: EIP=0x%08x ESP=0x%08x (prev ESP=0x%08x d=%d) IF=%d "
+                                    "IRR=%02x ISR=%02x IMR=%02x dVt=%llu eoi=%llu\n",
+                                    s_nest_logged, cur[0], cur[1], s_prev_deliv_esp,
+                                    (int32_t)cur[1] - (int32_t)s_prev_deliv_esp,
+                                    (int)((eflags >> 9) & 1),
+                                    g_emu.pic[0].irr, g_emu.pic[0].isr, g_emu.pic[0].imr,
+                                    (unsigned long long)(s_sched.vticks_total - s_irq0_last_eoi_vt),
+                                    (unsigned long long)g_emu.pic[0].irq0_eoi_count);
+                            }
+                            s_prev_deliv_esp = cur[1];
+                        }
+                    }
                     return vector;
                 }
-                /* Inject failed — restore IRR, drop ISR; line stays
-                 * pending so next iteration retries. Without this we'd
-                 * stall waiting for an EOI that will never come. */
+                /* Raise failed (unsupported) — restore IRR, drop ISR so
+                 * the line stays pending for the next attempt. */
                 pic->isr &= ~(1 << bit);
                 pic->irr |= (1 << bit);
-                /* For IRQ0 specifically, classify why inject failed. */
-                if (pic_idx == 0 && bit == 0) {
-                    if (!(eflags & 0x200)) s_sched.irq0_blk_if++;
-                    else                   s_sched.irq0_blk_stub++;
-                }
+                if (pic_idx == 0 && bit == 0) s_sched.irq0_blk_stub++;
                 return -1;
             }
         }
@@ -1357,9 +1460,48 @@ void cpu_run(void)
                  * P2K_HOTLOOP_EOI_CLEAR=1 restores the aggressive
                  * immediate-EOI in_flight clear (higher delivery, wedges
                  * on slow hosts). */
-                s_sched.min_gap_vticks = (pit_period_insns * 6) / 5;
+                /* DEFAULT with ATOMIC delivery (patched Unicorn
+                 * uc_x86_raise_irq) — COPY MAIN's no_pit gate exactly.
+                 * main/p2k-clkint-hotloop.c gates the re-raise on ONLY
+                 * (irr&1 || isr&1 || imr&1) plus a min_gap floor of ~one
+                 * PIT period (250 us, its calibrated default). It has NO
+                 * esp/eip "in-flight" heuristic in no_pit mode. The i8259
+                 * in-service bit (isr) + a ~1-period min_gap are what make
+                 * it nest-proof: after clkint sends its early EOI (isr→0)
+                 * the min_gap still forbids a fresh edge until ~1 period
+                 * after the last raise, by which point clkint's post-EOI
+                 * tail has IRET'd (or resched task-switched to a NEW task
+                 * whose context a fresh IRQ0 may legitimately enter). A
+                 * floor BELOW one period re-opens that post-EOI window and
+                 * nests → XINU "resched: called from interrupt handler".
+                 * So the floor is exactly one PIT period, matching main.
+                 * P2K_HOTLOOP_MIN_GAP_NS pins a fixed floor;
+                 * P2K_HOTLOOP_ADAPTIVE=1 enables PI retune. */
+                s_sched.min_gap_vticks = pit_period_insns;
             }
             if (s_sched.min_gap_vticks < 1) s_sched.min_gap_vticks = 1;
+            /* Post-EOI cooldown (OPT-IN nest damper, default OFF = pure
+             * main parity). main's no_pit hotloop has NO cooldown: it
+             * relies on the i8259 ISR bit + ~1-period min_gap + the CPU IF
+             * gate, and delivers ~100%. We default to the same. If a host
+             * exhibits the rare benign clkint re-entry (XINU NonFatal
+             * "resched: called from interrupt handler"), P2K_EOI_COOLDOWN_PCT
+             * blocks a fresh IRQ0 for that percent of one PIT period after
+             * the guest's clkint EOI so its resched tail can IRET first.
+             * Keep it UNDER 100: at/above one period the single-bit IRR
+             * collapses queued ticks → delivery starves → the guest's
+             * 0.25 ms interval watchdog trips ("exec is hung"). Ticks a
+             * sub-period cooldown defers are recovered by edge_owed, so
+             * guest-relative delivery stays ~100%. */
+            {
+                unsigned cd_pct = 0;
+                const char *cd = getenv("P2K_EOI_COOLDOWN_PCT");
+                if (cd && *cd) {
+                    unsigned v = (unsigned)strtoul(cd, NULL, 10);
+                    if (v <= 400) cd_pct = v;
+                }
+                s_irq0_eoi_cooldown_vt = (pit_period_insns * cd_pct) / 100;
+            }
             s_sched.last_raise_vticks = s_sched.vticks_total;
             s_sched.pi_last_sample_ns = now_wall_ns;
             s_sched.pi_last_inject    = s_sched.irq0_inject;
@@ -1501,6 +1643,7 @@ void cpu_run(void)
                 span > (uint64_t)(s_sched.cached_target_ips / 20ULL)) {
                 s_sched.isr_warned_this_span = true;
                 cpu_dump_irq_snapshot("stuck-ISR>50ms");
+                cpu_dump_deliv_ring("stuck-ISR>50ms");
             }
             /* Stuck-ISR recovery (BAND-AID, NOT a fix).
              *
@@ -2265,6 +2408,7 @@ void cpu_run(void)
                 eip, (unsigned)GDT_ADDR);
             cpu_dump_irq_snapshot("EIP-in-GDT");
             cpu_dump_inj_ring("EIP-in-GDT");
+            cpu_dump_deliv_ring("EIP-in-GDT");
             /* Stop the emulator gracefully — main loop will see EOF. */
             uc_emu_stop(uc);
             g_emu.running = false;

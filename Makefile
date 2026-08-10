@@ -3,9 +3,14 @@
 # Run:   ./build/encore [--game swe1|rfm] [--roms /path/to/roms]
 
 CC      = gcc
+# Patched Unicorn (adds uc_x86_raise_irq for atomic hardware-IRQ delivery —
+# see vendor/unicorn/). Override UNICORN_DIR to point at a different build.
+UNICORN_DIR ?= vendor/unicorn
 CFLAGS  = -O2 -g -Wall -Wextra -Wno-unused-parameter -Iinclude -MMD -MP \
           $(shell pkg-config --cflags sdl2 SDL2_mixer)
-LDFLAGS = $(shell pkg-config --libs sdl2 SDL2_mixer) -lunicorn -lm -lpthread
+LDFLAGS = $(shell pkg-config --libs sdl2 SDL2_mixer) \
+          -L$(UNICORN_DIR) -Wl,-rpath,$(abspath $(UNICORN_DIR)) \
+          -lunicorn -lm -lpthread
 
 SRCDIR  = src
 BLDDIR  = build
