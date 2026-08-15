@@ -83,12 +83,19 @@ source "$CONF"
 export QEMU_BIN
 
 # Standalone installation temporarily makes the system copy of this script
-# the account's login shell. Only tty1 is the cabinet entry point. SSH, other
-# VTs and the post-game maintenance getty retain the user's original shell.
-if [[ "${STANDALONE_LOGIN_SHELL:-0}" -eq 1 && -z "${1:-}" ]]; then
+# the account's login shell. Only tty1 is the cabinet entry point. GDM/SDDM,
+# SSH, other VTs and the post-game maintenance getty must always reach the
+# original shell. In particular, graphical login managers invoke a user's
+# shell with `-c ...`; testing only the no-argument case would accidentally
+# launch the cabinet backend inside every graphical login.
+if [[ "${STANDALONE_LOGIN_SHELL:-0}" -eq 1 ]]; then
     login_tty="$(tty 2>/dev/null || true)"
     if [[ "$login_tty" != /dev/tty1 || -e /run/systemd/system/getty@tty1.service.d/50-encore-maintenance.conf ]]; then
-        exec "$ORIGINAL_SHELL" -l
+        if (($#)); then
+            exec "$ORIGINAL_SHELL" "$@"
+        else
+            exec "$ORIGINAL_SHELL" -l
+        fi
     fi
 fi
 

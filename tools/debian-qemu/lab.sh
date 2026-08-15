@@ -230,6 +230,10 @@ test_install() {
     reset_overlay; start_overlay; assert_stripped_guest; copy_checkout 1; enable_nonroot_escalation
     install_as_cabinet "$run_as_root"
     ssh_guest "test -s /etc/encore-pinball2000/session.conf; grep -qx BACKEND=cage /etc/encore-pinball2000/session.conf; grep -qx RUN_AS_ROOT=$run_as_root /etc/encore-pinball2000/session.conf; grep -q 'Restart=always' /etc/systemd/system/getty@tty1.service.d/49-encore.conf"
+    # A display manager and SSH invoke the account shell with `-c`. That must
+    # delegate to the original shell instead of starting another cabinet
+    # backend outside tty1.
+    ssh_guest 'test "$(runuser -u cabinet -- /usr/local/libexec/encore-pinball2000-session -c '\''printf delegated'\'')" = delegated'
     ssh_guest 'systemctl reboot' >/dev/null 2>&1 || true
     wait_ssh_down
     wait_ssh
