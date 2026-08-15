@@ -11,6 +11,7 @@ GRUB_DROPIN=/etc/default/grub.d/99-encore-pinball2000.cfg
 GRUB_QUIET_SCRIPT=/etc/grub.d/01_encore_pinball2000_quiet
 ROOT_SERVICE=/etc/systemd/system/encore-pinball2000-root.service
 CABINET_SHELL=/usr/local/libexec/encore-pinball2000-session
+DIRECT_INPUT_RULE=/etc/udev/rules.d/70-encore-pinball2000-input.rules
 
 usage() {
     cat <<'EOF'
@@ -329,6 +330,26 @@ if [[ "$add_lp_group" -eq 1 ]]; then
     usermod -aG lp "$session_user"
     printf '%s\n' "$session_user" > "$STATE/lp-group-added"
     echo "Added $session_user to group lp for /dev/parport0."
+fi
+
+# SDL's KMSDRM backend opens evdev devices directly. Unlike a compositor, it
+# has no privileged input broker, and standard Debian intentionally does not
+# grant ordinary users permanent membership of the global input group. Mark
+# event devices for logind's active-seat ACL only in the unprivileged direct
+# console profile. The permission then follows the real PAM/login session.
+if [[ "$backend" == direct-console && "$run_as_root" -eq 0 ]]; then
+    if [[ -e "$DIRECT_INPUT_RULE" ]] &&
+       ! grep -q '^# encore-pinball2000 managed direct-console input$' "$DIRECT_INPUT_RULE"; then
+        echo "install.sh: refusing unrelated existing $DIRECT_INPUT_RULE" >&2
+        exit 3
+    fi
+    cat > "$DIRECT_INPUT_RULE" <<'EOF'
+# encore-pinball2000 managed direct-console input
+SUBSYSTEM=="input", KERNEL=="event*", TAG+="uaccess"
+EOF
+    chmod 0644 "$DIRECT_INPUT_RULE"
+    udevadm control --reload
+    udevadm trigger --subsystem-match=input --action=change
 fi
 
 if [[ "$quiet_boot" -eq 1 || "$zero_grub_timeout" -eq 1 ]]; then

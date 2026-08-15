@@ -11,6 +11,7 @@ GRUB_DROPIN=/etc/default/grub.d/99-encore-pinball2000.cfg
 GRUB_QUIET_SCRIPT=/etc/grub.d/01_encore_pinball2000_quiet
 ROOT_SERVICE=/etc/systemd/system/encore-pinball2000-root.service
 CABINET_SHELL=/usr/local/libexec/encore-pinball2000-session
+DIRECT_INPUT_RULE=/etc/udev/rules.d/70-encore-pinball2000-input.rules
 
 if [[ ${EUID} -ne 0 ]]; then
     for esc in run0 sudo pkexec; do
@@ -187,6 +188,14 @@ if [[ -s "$STATE/lp-group-added" ]]; then
     lp_user="$(sed -n '1p' "$STATE/lp-group-added")"
     if [[ -n "$lp_user" ]] && id "$lp_user" >/dev/null 2>&1; then
         gpasswd -d "$lp_user" lp >/dev/null 2>&1 || true
+    fi
+fi
+if [[ -f "$DIRECT_INPUT_RULE" ]] &&
+   grep -q '^# encore-pinball2000 managed direct-console input$' "$DIRECT_INPUT_RULE"; then
+    rm -f "$DIRECT_INPUT_RULE"
+    if command -v udevadm >/dev/null 2>&1; then
+        udevadm control --reload
+        udevadm trigger --subsystem-match=input --action=change
     fi
 fi
 rm -f "$STATE/install-mode" "$STATE/previous-default-target" \
