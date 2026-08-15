@@ -6,7 +6,11 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 CONF_DIR=/etc/encore-pinball2000
 STATE=/var/lib/encore-pinball2000
 GETTY_DROPIN=/etc/systemd/system/getty@tty1.service.d/49-encore.conf
-AUTOSTART=/etc/xdg/autostart/encore-cabinet.desktop
+MAINTENANCE_DROPIN=/run/systemd/system/getty@tty1.service.d/50-encore-maintenance.conf
+GRUB_DROPIN=/etc/default/grub.d/99-encore-pinball2000.cfg
+GRUB_QUIET_SCRIPT=/etc/grub.d/01_encore_pinball2000_quiet
+ROOT_SERVICE=/etc/systemd/system/encore-pinball2000-root.service
+CABINET_SHELL=/usr/local/libexec/encore-pinball2000-session
 
 usage() {
     cat <<'EOF'
@@ -37,13 +41,15 @@ esac
 if [[ ${EUID} -ne 0 ]]; then
     for esc in run0 sudo pkexec; do
         command -v "$esc" >/dev/null 2>&1 || continue
+        [[ "$esc" != run0 ]] || command -v pkttyagent >/dev/null 2>&1 || continue
         echo "[install.sh] re-launching under $esc..."
         case "$esc" in
             run0) exec run0 --description="Encore cabinet installer" -- "$ROOT/install.sh" "$@" ;;
             *) exec "$esc" "$ROOT/install.sh" "$@" ;;
         esac
     done
-    echo "install.sh: root privileges are required" >&2
+    echo "install.sh: root privileges are required." >&2
+    echo "Install polkitd for run0, install pkexec, or run through sudo." >&2
     exit 1
 fi
 
@@ -121,7 +127,12 @@ session_user="${session_user:-$default_user}"
 session_uid="$(id -u "$session_user" 2>/dev/null)" || { echo "Unknown user" >&2; exit 2; }
 [[ "$session_uid" -ge 1000 ]] || { echo "Cabinet user must have UID >= 1000" >&2; exit 2; }
 session_home="$(getent passwd "$session_user" | cut -d: -f6)"
+original_shell="$(getent passwd "$session_user" | cut -d: -f7)"
 session_group="$(id -gn "$session_user")"
+AUTOSTART="$session_home/.config/autostart/encore-cabinet.desktop"
+USER_UNIT_DIR="$session_home/.config/systemd/user"
+USER_SERVICE="$USER_UNIT_DIR/encore-pinball2000.service"
+USER_WANT="$USER_UNIT_DIR/graphical-session.target.wants/encore-pinball2000.service"
 
 read -r -p "Game [swe1/rfm] (swe1): " game
 game="${game:-swe1}"
@@ -134,6 +145,32 @@ echo "The cabinet setup enables that same state from startup by default."
 if ! ask "Start with flipscreen enabled?"; then
     start_flipped=0
 fi
+
+run_as_root=0
+echo
+echo "Encore is designed to run as the unprivileged session user."
+echo "Root mode is a diagnostic fallback for comparing unresolved hardware issues."
+ask "Run Encore as root instead?" N && run_as_root=1
+
+quiet_boot=0
+zero_grub_timeout=0
+ask "Use the distribution's quiet boot presentation?" && quiet_boot=1
+if command -v update-grub >/dev/null 2>&1; then
+    ask "Hide the GRUB menu and use a zero-second timeout?" && zero_grub_timeout=1
+fi
+
+echo
+echo "About to install:"
+echo "  setup        : $backend"
+echo "  session user : $session_user (unprivileged)"
+echo "  game         : $game"
+echo "  flipscreen   : $([[ $start_flipped -eq 1 ]] && echo enabled || echo disabled)"
+echo "  execution    : $([[ $run_as_root -eq 1 ]] && echo 'root (diagnostic)' || echo 'session user')"
+echo "  quiet boot   : $([[ $quiet_boot -eq 1 ]] && echo enabled || echo disabled)"
+if command -v update-grub >/dev/null 2>&1; then
+    echo "  GRUB timeout : $([[ $zero_grub_timeout -eq 1 ]] && echo hidden/zero || echo unchanged)"
+fi
+ask "Proceed?" || exit 0
 
 missing_packages=()
 case "$backend" in
@@ -158,7 +195,7 @@ sdl_has_driver() {
     SDL_WANTED_DRIVER="$wanted" python3 - <<'PY'
 import ctypes, ctypes.util, sys
 import os
-name = ctypes.util.find_library("SDL2")
+name = ctypes.util.find_library("SDL2-2.0") or ctypes.util.find_library("SDL2")
 if not name:
     sys.exit(1)
 sdl = ctypes.CDLL(name)
@@ -168,9 +205,7 @@ sys.exit(0 if os.environ["SDL_WANTED_DRIVER"] in drivers else 1)
 PY
 }
 
-# Query SDL itself rather than inferring support from library filenames. A
-# stock Debian SDL2 normally exposes both drivers, but release users may have a
-# smaller host runtime.
+# Query SDL itself rather than inferring support from library filenames.
 sdl_driver=wayland
 [[ "$backend" == direct-console ]] && sdl_driver=KMSDRM
 if ! sdl_has_driver "$sdl_driver"; then
@@ -187,11 +222,7 @@ if ! sdl_has_driver "$sdl_driver"; then
         fi
     fi
     if ! sdl_has_driver "$sdl_driver"; then
-        if [[ "$sdl_driver" == KMSDRM ]]; then
-            echo "install.sh: SDL2 still has no KMSDRM backend; choose a Wayland profile." >&2
-        else
-            echo "install.sh: SDL2 still has no native Wayland backend." >&2
-        fi
+        echo "install.sh: SDL2 still has no $sdl_driver backend." >&2
         exit 2
     fi
 fi
@@ -237,21 +268,44 @@ fi
 # Refuse path collisions before writing installation state, so a failed
 # preflight cannot leave an installation marker behind.
 if [[ "$backend" == display-manager ]]; then
-    if [[ -e "$AUTOSTART" ]] && ! grep -q '^Name=Encore Pinball 2000 cabinet$' "$AUTOSTART"; then
-        echo "install.sh: refusing unrelated existing $AUTOSTART" >&2
+    if [[ -e "$USER_SERVICE" ]] &&
+       ! grep -q '^Description=Encore Pinball 2000 cabinet session$' "$USER_SERVICE"; then
+        echo "install.sh: refusing unrelated existing $USER_SERVICE" >&2
         exit 3
     fi
     if [[ "$dm_service" == *gdm* ]]; then
         gdm_conf=/etc/gdm3/daemon.conf
         [[ -f "$gdm_conf" ]] || gdm_conf=/etc/gdm/custom.conf
         [[ -f "$gdm_conf" ]] || { echo "GDM configuration not found" >&2; exit 3; }
+    elif [[ -e /etc/sddm.conf.d/49-encore.conf ]] &&
+         ! grep -q '^# Managed by Encore Pinball 2000$' /etc/sddm.conf.d/49-encore.conf; then
+        echo "install.sh: refusing unrelated existing /etc/sddm.conf.d/49-encore.conf" >&2
+        exit 3
     fi
-elif [[ -e "$GETTY_DROPIN" ]] && ! grep -q 'encore-session.sh' "$GETTY_DROPIN"; then
+elif [[ -e "$GETTY_DROPIN" ]] && ! grep -q 'encore-pinball2000-session' "$GETTY_DROPIN"; then
     echo "install.sh: refusing unrelated existing $GETTY_DROPIN" >&2
     exit 3
 fi
+if [[ "$backend" != display-manager && -e "$CABINET_SHELL" ]] &&
+   ! grep -q '^# Cabinet session entry point\.' "$CABINET_SHELL"; then
+    echo "install.sh: refusing unrelated existing $CABINET_SHELL" >&2
+    exit 3
+fi
+if [[ "$quiet_boot" -eq 1 || "$zero_grub_timeout" -eq 1 ]]; then
+    if [[ -e "$GRUB_DROPIN" ]] &&
+       ! grep -q '^# encore-pinball2000 managed boot presentation$' "$GRUB_DROPIN"; then
+        echo "install.sh: refusing unrelated existing $GRUB_DROPIN" >&2
+        exit 3
+    fi
+    if [[ "$quiet_boot" -eq 1 && -e "$GRUB_QUIET_SCRIPT" ]] &&
+       ! grep -q '^# encore-pinball2000 managed silent GRUB handoff$' "$GRUB_QUIET_SCRIPT"; then
+        echo "install.sh: refusing unrelated existing $GRUB_QUIET_SCRIPT" >&2
+        exit 3
+    fi
+fi
 
-install -d -m 0755 "$CONF_DIR" "$STATE"
+install -d -m 0755 "$CONF_DIR"
+install -d -m 0700 "$STATE"
 {
     printf 'ROOT=%q\n' "$ROOT"
     printf 'SESSION_USER=%q\n' "$session_user"
@@ -259,6 +313,9 @@ install -d -m 0755 "$CONF_DIR" "$STATE"
     printf 'BACKEND=%q\n' "$backend"
     printf 'GAME=%q\n' "$game"
     printf 'QEMU_BIN=%q\n' "$qemu_bin"
+    printf 'RUN_AS_ROOT=%q\n' "$run_as_root"
+    printf 'ORIGINAL_SHELL=%q\n' "$original_shell"
+    printf 'STANDALONE_LOGIN_SHELL=%q\n' "$([[ "$backend" == display-manager ]] && echo 0 || echo 1)"
 } > "$CONF_DIR/session.conf"
 : > "$CONF_DIR/launch.args"
 if ((${#launch_args[@]})); then
@@ -274,17 +331,66 @@ if [[ "$add_lp_group" -eq 1 ]]; then
     echo "Added $session_user to group lp for /dev/parport0."
 fi
 
-if [[ "$backend" == display-manager ]]; then
-    install -d -m 0755 /etc/xdg/autostart
-    cat > "$AUTOSTART" <<EOF
-[Desktop Entry]
-Type=Application
-Name=Encore Pinball 2000 cabinet
-Exec=$ROOT/scripts/encore-session.sh --desktop
-Terminal=false
-NoDisplay=true
-X-GNOME-Autostart-enabled=true
+if [[ "$quiet_boot" -eq 1 || "$zero_grub_timeout" -eq 1 ]]; then
+    install -d -m 0755 /etc/default/grub.d
+    {
+        echo '# encore-pinball2000 managed boot presentation'
+        if [[ "$quiet_boot" -eq 1 ]]; then
+            cat <<'EOF'
+for encore_boot_arg in quiet loglevel=3 systemd.show_status=false rd.udev.log_level=3 vt.global_cursor_default=0; do
+    case " $GRUB_CMDLINE_LINUX_DEFAULT " in
+        *" $encore_boot_arg "*) ;;
+        *) GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT $encore_boot_arg" ;;
+    esac
+done
+if command -v plymouth >/dev/null 2>&1; then
+    case " $GRUB_CMDLINE_LINUX_DEFAULT " in
+        *' splash '*) ;;
+        *) GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT splash" ;;
+    esac
+fi
+unset encore_boot_arg
 EOF
+        fi
+        if [[ "$zero_grub_timeout" -eq 1 ]]; then
+            cat <<'EOF'
+GRUB_TIMEOUT_STYLE=hidden
+GRUB_TIMEOUT=0
+GRUB_RECORDFAIL_TIMEOUT=0
+GRUB_THEME=""
+GRUB_BACKGROUND=""
+GRUB_TERMINAL_OUTPUT=console
+EOF
+        fi
+    } > "$GRUB_DROPIN"
+    chmod 0644 "$GRUB_DROPIN"
+
+    if [[ "$quiet_boot" -eq 1 ]]; then
+        cat > "$GRUB_QUIET_SCRIPT" <<'EOF'
+#!/bin/sh
+# encore-pinball2000 managed silent GRUB handoff
+cat <<'GRUB_EOF'
+if [ "${recordfail}" != 1 ]; then
+  set color_normal=black/black
+fi
+GRUB_EOF
+EOF
+        chmod 0755 "$GRUB_QUIET_SCRIPT"
+    else
+        rm -f "$GRUB_QUIET_SCRIPT"
+    fi
+    update-grub
+fi
+
+if [[ "$backend" == display-manager ]]; then
+    # The graphical-session target is reached by the distribution-managed
+    # GNOME/KWin Wayland session after its environment has been imported into
+    # systemd --user. Avoid both XDG-autostart timing and a root-side broker.
+    rm -f "$AUTOSTART"
+    if [[ -f /etc/xdg/autostart/encore-cabinet.desktop ]] &&
+       grep -q '^Name=Encore Pinball 2000 cabinet$' /etc/xdg/autostart/encore-cabinet.desktop; then
+        rm -f /etc/xdg/autostart/encore-cabinet.desktop
+    fi
     case "$dm_service" in
         *gdm*)
             sed -i '/^# >>> encore autologin >>>$/,/^# <<< encore autologin <<<$/{d}' "$gdm_conf"
@@ -299,12 +405,45 @@ EOF
         *sddm*)
             install -d -m 0755 /etc/sddm.conf.d
             cat > /etc/sddm.conf.d/49-encore.conf <<EOF
+# Managed by Encore Pinball 2000
 [Autologin]
 User=$session_user
 Relogin=false
 EOF
             ;;
     esac
+    runuser -u "$session_user" -- mkdir -p \
+        "$USER_UNIT_DIR/graphical-session.target.wants"
+    cat > "$USER_SERVICE" <<EOF
+[Unit]
+Description=Encore Pinball 2000 cabinet session
+Documentation=file:$ROOT/docs/01-cabinet-installation.md
+PartOf=graphical-session.target
+After=graphical-session-pre.target
+
+[Service]
+Type=simple
+WorkingDirectory=$ROOT
+ExecStartPre="$ROOT/scripts/encore-session.sh" --wait-wayland
+ExecStart="$ROOT/scripts/encore-session.sh" --desktop
+Restart=no
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical-session.target
+EOF
+    chown "$session_user:$session_group" "$USER_SERVICE"
+    chmod 0644 "$USER_SERVICE"
+    ln -sfn ../encore-pinball2000.service "$USER_WANT"
+    chown -h "$session_user:$session_group" "$USER_WANT"
+    printf '%s\n' "$USER_SERVICE" > "$STATE/user-service-path"
+    if [[ -S "/run/user/$session_uid/bus" ]]; then
+        runuser -u "$session_user" -- env \
+            XDG_RUNTIME_DIR="/run/user/$session_uid" \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$session_uid/bus" \
+            systemctl --user daemon-reload || true
+    fi
     systemctl set-default graphical.target
 else
     # The empty standard hush file suppresses distro MOTD/legal text without
@@ -316,21 +455,63 @@ else
         { printf '%s\n' "$hushlogin"; stat -c '%d:%i' "$hushlogin"; } > "$STATE/hushlogin-created"
     fi
     install -d -m 0755 "$(dirname "$GETTY_DROPIN")"
+    install -d -m 0755 "$(dirname "$CABINET_SHELL")"
+    install -m 0755 "$ROOT/scripts/encore-session.sh" "$CABINET_SHELL"
+    if ! grep -Fxq "$CABINET_SHELL" /etc/shells 2>/dev/null; then
+        printf '%s\n' "$CABINET_SHELL" >> /etc/shells
+        printf '%s\n' "$CABINET_SHELL" > "$STATE/shells-line-added"
+    fi
+    printf '%s\n' "$session_user" > "$STATE/session-shell-user"
+    printf '%s\n' "$original_shell" > "$STATE/original-shell"
+    usermod --shell "$CABINET_SHELL" "$session_user"
+    rm -f "$MAINTENANCE_DROPIN"
     cat > "$GETTY_DROPIN" <<EOF
+[Unit]
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
 [Service]
 ExecStart=
-ExecStart=-/sbin/agetty --skip-login --login-program "$ROOT/scripts/encore-session.sh" --login-options '--login $session_user tty1' --noissue --noclear %I \$TERM
+ExecStart=-/sbin/agetty --autologin $session_user --noissue --noclear %I \$TERM
+ExecStopPost=$CABINET_SHELL --maintenance
 StandardOutput=journal
 StandardError=journal
 TTYVTDisallocate=no
 Restart=always
-RestartSec=1
+RestartSec=0.2
 EOF
     systemctl set-default multi-user.target
     systemctl enable getty@tty1.service
 fi
 
+if [[ "$run_as_root" -eq 1 ]]; then
+    cat > "$ROOT_SERVICE" <<EOF
+[Unit]
+Description=Encore Pinball 2000 root diagnostic launcher
+After=systemd-user-sessions.service
+
+[Service]
+Type=simple
+WorkingDirectory=$ROOT
+ExecStart="$ROOT/scripts/encore-session.sh" --root-service
+Restart=no
+KillMode=control-group
+TimeoutStopSec=15
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=$([[ "$backend" == display-manager ]] && echo graphical.target || echo multi-user.target)
+EOF
+    chmod 0644 "$ROOT_SERVICE"
+else
+    rm -f "$ROOT_SERVICE"
+fi
+
 systemctl daemon-reload
+if [[ "$run_as_root" -eq 1 ]]; then
+    systemctl enable encore-pinball2000-root.service
+fi
 echo
 echo "Encore cabinet profile installed: $backend"
 echo "User: $session_user   Game: $game"

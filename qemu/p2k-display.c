@@ -517,6 +517,10 @@ static void *p2k_display_worker(void *opaque)
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         return NULL;
     }
+    /* Fullscreen is a compositor request under Wayland. Follow it with SDL's
+     * portable best-effort request to raise the new toplevel; the compositor
+     * remains responsible for focus policy. */
+    SDL_RaiseWindow(s->window);
     s->renderer = SDL_CreateRenderer(s->window, -1, SDL_RENDERER_ACCELERATED);
     if (!s->renderer) {
         s->renderer = SDL_CreateRenderer(s->window, -1, SDL_RENDERER_SOFTWARE);
