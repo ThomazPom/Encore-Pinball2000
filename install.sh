@@ -153,6 +153,19 @@ echo "Encore is designed to run as the unprivileged session user."
 echo "Root mode is a diagnostic fallback for comparing unresolved hardware issues."
 ask "Run Encore as root instead?" N && run_as_root=1
 
+maintenance=tty
+if [[ "$backend" != display-manager && -n "$dm_service" ]]; then
+    maintenance=display-manager
+    read -r -p "After Encore exits [display-manager/tty] ($maintenance): " answer
+    maintenance=${answer:-$maintenance}
+    case "$maintenance" in
+        display-manager|tty) ;;
+        *) echo "install.sh: expected display-manager or tty" >&2; exit 2 ;;
+    esac
+elif [[ "$backend" != display-manager ]]; then
+    echo "After Encore exits: password-backed tty1 login (no display manager detected)."
+fi
+
 quiet_boot=0
 zero_grub_timeout=0
 ask "Use the distribution's quiet boot presentation?" && quiet_boot=1
@@ -167,6 +180,7 @@ echo "  session user : $session_user (unprivileged)"
 echo "  game         : $game"
 echo "  flipscreen   : $([[ $start_flipped -eq 1 ]] && echo enabled || echo disabled)"
 echo "  execution    : $([[ $run_as_root -eq 1 ]] && echo 'root (diagnostic)' || echo 'session user')"
+[[ "$backend" == display-manager ]] || echo "  maintenance  : $maintenance"
 echo "  quiet boot   : $([[ $quiet_boot -eq 1 ]] && echo enabled || echo disabled)"
 if command -v update-grub >/dev/null 2>&1; then
     echo "  GRUB timeout : $([[ $zero_grub_timeout -eq 1 ]] && echo hidden/zero || echo unchanged)"
@@ -331,6 +345,7 @@ install -d -m 0700 "$STATE"
     printf 'GAME=%q\n' "$game"
     printf 'QEMU_BIN=%q\n' "$qemu_bin"
     printf 'RUN_AS_ROOT=%q\n' "$run_as_root"
+    printf 'MAINTENANCE=%q\n' "$maintenance"
     printf 'ORIGINAL_SHELL=%q\n' "$original_shell"
     printf 'STANDALONE_LOGIN_SHELL=%q\n' "$([[ "$backend" == display-manager ]] && echo 0 || echo 1)"
 } > "$CONF_DIR/session.conf"
@@ -514,8 +529,7 @@ ExecStopPost=$CABINET_SHELL --maintenance
 StandardOutput=journal
 StandardError=journal
 TTYVTDisallocate=no
-Restart=always
-RestartSec=0.2
+Restart=no
 EOF
     systemctl set-default multi-user.target
     systemctl enable getty@tty1.service
