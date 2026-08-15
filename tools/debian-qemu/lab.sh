@@ -155,9 +155,15 @@ reset_overlay() {
 }
 
 copy_checkout() {
+    local lifecycle_stubs=${1:-0}
     tar -C "$REPO_ROOT" --exclude=.git --exclude=build --exclude=savedata -cf - . |
         ssh_guest "rm -rf /opt/Encore-PB2K && mkdir -p /opt/Encore-PB2K && tar -C /opt/Encore-PB2K -xf - && chown -R root:root /opt/Encore-PB2K"
-    ssh_guest 'ln -sfn /opt/Encore-PB2K /home/cabinet/Encore-PB2K; cat > /opt/Encore-PB2K/qemu-system-i386 <<'"'"'EOF'"'"'
+    ssh_guest 'ln -sfn /opt/Encore-PB2K /home/cabinet/Encore-PB2K'
+    [[ "$lifecycle_stubs" -eq 1 ]] || return 0
+    # Automated lifecycle tests deliberately avoid a lengthy QEMU build and
+    # real DRM rendering. Never install these stubs in the interactive lab:
+    # that mode exists specifically for visual validation of the real stack.
+    ssh_guest 'cat > /opt/Encore-PB2K/qemu-system-i386 <<'"'"'EOF'"'"'
 #!/bin/sh
 case " $* " in
   *" -M help "*) echo "pinball2000 Williams Pinball 2000"; exit 0 ;;
@@ -221,7 +227,7 @@ test_install() {
     local backend=${1:-cage} execution=${2:-user} run_as_root=0
     [[ "$backend" == cage ]] || die "automated lab validates cage"
     case "$execution" in user) ;; root) run_as_root=1 ;; *) die "execution must be user or root" ;; esac
-    reset_overlay; start_overlay; assert_stripped_guest; copy_checkout; enable_nonroot_escalation
+    reset_overlay; start_overlay; assert_stripped_guest; copy_checkout 1; enable_nonroot_escalation
     install_as_cabinet "$run_as_root"
     ssh_guest "test -s /etc/encore-pinball2000/session.conf; grep -qx BACKEND=cage /etc/encore-pinball2000/session.conf; grep -qx RUN_AS_ROOT=$run_as_root /etc/encore-pinball2000/session.conf; grep -q 'Restart=always' /etc/systemd/system/getty@tty1.service.d/49-encore.conf"
     ssh_guest 'systemctl reboot' >/dev/null 2>&1 || true
@@ -244,7 +250,7 @@ manual_vm() {
     reset_overlay
     start_overlay
     assert_stripped_guest
-    copy_checkout
+    copy_checkout 0
     enable_nonroot_escalation
     cat <<EOF
 
