@@ -283,9 +283,25 @@ if [[ "$backend" == display-manager ]]; then
         echo "install.sh: refusing unrelated existing /etc/sddm.conf.d/49-encore.conf" >&2
         exit 3
     fi
-elif [[ -e "$GETTY_DROPIN" ]] && ! grep -q 'encore-pinball2000-session' "$GETTY_DROPIN"; then
-    echo "install.sh: refusing unrelated existing $GETTY_DROPIN" >&2
-    exit 3
+else
+    if [[ -e "$GETTY_DROPIN" ]] && ! grep -q 'encore-pinball2000-session' "$GETTY_DROPIN"; then
+        echo "install.sh: refusing unrelated existing $GETTY_DROPIN" >&2
+        exit 3
+    fi
+    # A standalone cabinet owns tty1's login lifecycle. Detect other cabinet
+    # launchers and administrator drop-ins even when they use a different
+    # filename; silently stacking two ExecStart/ExecStopPost definitions can
+    # make one emulator hand the seat to the other's maintenance fallback.
+    for tty_dropin in /etc/systemd/system/getty@tty1.service.d/*.conf \
+                      /run/systemd/system/getty@tty1.service.d/*.conf; do
+        [[ -e "$tty_dropin" ]] || continue
+        [[ "$tty_dropin" != "$GETTY_DROPIN" ]] || continue
+        if grep -qE '^[[:space:]]*Exec(Start|StopPost)=' "$tty_dropin"; then
+            echo "install.sh: tty1 is already managed by $tty_dropin" >&2
+            echo "Remove the other cabinet integration before installing a standalone Encore profile." >&2
+            exit 3
+        fi
+    done
 fi
 if [[ "$backend" != display-manager && -e "$CABINET_SHELL" ]] &&
    ! grep -q '^# Cabinet session entry point\.' "$CABINET_SHELL"; then

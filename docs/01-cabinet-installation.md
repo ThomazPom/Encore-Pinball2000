@@ -123,6 +123,10 @@ Non-interactive profile selection is also available:
 ./install.sh --direct-console
 ```
 
+Standalone profiles own tty1 and cannot coexist with another cabinet launcher
+that manages the same getty. The installer detects conflicting persistent or
+runtime getty drop-ins and asks you to remove the other integration first.
+
 For an unprivileged direct-console session, the installer lets logind grant
 the active local login temporary access to `/dev/input/event*`. This is needed
 because SDL/KMSDRM reads evdev directly. The account is not added to the
