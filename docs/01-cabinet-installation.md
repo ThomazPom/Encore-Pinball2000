@@ -123,6 +123,11 @@ Non-interactive profile selection is also available:
 ./install.sh --direct-console
 ```
 
+For an unprivileged direct-console session, the installer lets logind grant
+the active local login temporary access to `/dev/input/event*`. This is needed
+because SDL/KMSDRM reads evdev directly. The account is not added to the
+global `input` group, and the managed udev rule is removed on uninstall.
+
 Reboot after installation. In a standalone profile, exiting Encore with F1
 ends the cabinet session and exposes a normal login prompt on tty1 for
 maintenance. For the duration of a standalone installation, a small system
