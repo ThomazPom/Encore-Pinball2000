@@ -59,10 +59,16 @@ fi
 if [[ "${1:-}" == --maintenance ]]; then
     [[ $(id -u) -eq 0 ]] || exit 1
     # ExecStopPost reaches this only after agetty/login and PAM/logind have
-    # closed the cabinet session. Replace subsequent starts during this boot
-    # with an ordinary password-backed maintenance getty.
-    install -d -m 0755 /run/systemd/system/getty@tty1.service.d
-    cat > /run/systemd/system/getty@tty1.service.d/50-encore-maintenance.conf <<'EOF'
+    # closed the cabinet session. Hand the VT to exactly the maintenance path
+    # selected at install time; the next boot still starts the cabinet target.
+    # shellcheck source=/dev/null
+    source "$CONF"
+    if [[ "${MAINTENANCE:-tty}" == display-manager ]] &&
+       systemctl cat display-manager.service >/dev/null 2>&1; then
+        systemctl --no-block start graphical.target display-manager.service
+    else
+        install -d -m 0755 /run/systemd/system/getty@tty1.service.d
+        cat > /run/systemd/system/getty@tty1.service.d/50-encore-maintenance.conf <<'EOF'
 [Service]
 ExecStart=
 ExecStart=-/sbin/agetty --noclear %I $TERM
@@ -71,7 +77,9 @@ StandardError=tty
 Restart=always
 RestartSec=0.2
 EOF
-    systemctl daemon-reload
+        systemctl daemon-reload
+        systemctl --no-block restart getty@tty1.service
+    fi
     exit 0
 fi
 

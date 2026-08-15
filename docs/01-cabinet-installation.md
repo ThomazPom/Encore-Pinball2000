@@ -132,17 +132,19 @@ the active local login temporary access to `/dev/input/event*`. This is needed
 because SDL/KMSDRM reads evdev directly. The account is not added to the
 global `input` group, and the managed udev rule is removed on uninstall.
 
-Reboot after installation. In a standalone profile, exiting Encore with F1
-ends the cabinet session and exposes a normal login prompt on tty1 for
-maintenance. For the duration of a standalone installation, a small system
+Reboot after installation. In a standalone profile, the installer asks whether
+F1 should hand the machine to the existing display manager or to a
+password-backed tty1 login. The display-manager handoff is only for the current
+boot; the next boot still returns directly to Encore. Exiting Encore with F1
+ends the cabinet session before the selected maintenance environment starts.
+For the duration of a standalone installation, a small system
 copy of the session helper is the selected account's login shell. It launches
 Encore only on tty1; SSH, other VTs and maintenance logins immediately delegate
-to the user's saved original shell. When the cabinet login exits, PAM/logind
-closes the session and getty's root `ExecStopPost` installs a runtime-only
-ordinary-getty override. Systemd then reopens tty1 with the normal password
-prompt and tty output.
-Further maintenance logouts continue to restart that ordinary getty, never the
-automatic Encore entry point, until reboot clears the runtime override.
+to the user's saved original shell. When tty maintenance is selected, the
+root `ExecStopPost` installs a runtime-only ordinary-getty override after
+PAM/logind closes the cabinet session. Further maintenance logouts restart that
+ordinary getty, never the automatic Encore entry point, until reboot clears the
+runtime override.
 
 The quiet-boot option adds only a project-owned GRUB drop-in. It requests
 `quiet`, low kernel/systemd/udev verbosity, a hidden cursor and Plymouth's
