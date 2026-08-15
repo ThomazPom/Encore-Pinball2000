@@ -32,14 +32,25 @@ manager, or XWayland.
 ```
 
 - **Existing display manager** is recommended when GDM or SDDM already owns a
-  working Wayland desktop. The installer enables autologin and uses an XDG
-  autostart entry. Encore inherits the compositor socket, audio, D-Bus and user
-  services directly from that session. Exiting Encore returns to the desktop.
+  working Wayland desktop. The installer enables autologin. A service managed
+  by the selected user's own `systemd --user` instance is attached to
+  `graphical-session.target`. GNOME/KWin and GDM/SDDM remain responsible for
+  establishing and publishing Wayland, D-Bus and audio. An `ExecStartPre`
+  readiness gate waits for the user manager to contain a live Wayland socket;
+  systemd then starts Encore with the freshly imported environment.
+  This uses no XDG-autostart race or root environment broker. Encore requests
+  both fullscreen state and window raising through SDL's portable video API.
+  A capability dispatcher additionally
+  dismisses a login overview when the running desktop publicly exposes one:
+  Mutter through `org.gnome.Shell.OverviewActive`, and KWin through its active
+  `overview` effect. It does not infer a desktop from names or configuration.
+  Sway, Hyprland, niri, Wayfire, labwc, Weston, Cage and Gamescope have no
+  equivalent startup overview to dismiss and stay on the plain SDL path.
+  Exiting Encore returns to the desktop.
 - **Cage** creates the smallest standalone single-application Wayland kiosk.
 - **Weston** provides a standalone reference Wayland kiosk.
 - **Direct console** gives SDL2 direct DRM/KMS ownership through its `KMSDRM`
-  video backend. The installer offers this profile only when the installed
-  SDL2 reports that backend.
+  video backend. The installer verifies that capability directly.
 
 The graphical profiles all run Encore as a native Wayland client. There is no
 hidden X11 fallback. If a display-manager login is not a Wayland session,
@@ -76,7 +87,16 @@ The guided setup asks for:
 2. the unprivileged cabinet account;
 3. Star Wars Episode I or Revenge from Mars;
 4. whether to start with flipscreen active (enabled by default);
-5. optional real `/dev/parport0` access when the device exists.
+5. whether to use the normal unprivileged runtime (default) or an experimental
+   root diagnostic service;
+6. whether to use the distribution's quiet boot presentation;
+7. whether to hide GRUB with a zero-second timeout when `update-grub` exists;
+8. optional real `/dev/parport0` access when the device exists.
+
+Root execution is only an A/B diagnostic escape hatch. The real PAM/logind
+user session still owns Wayland, D-Bus and audio; it publishes a private
+runtime rendezvous consumed by the optional root system service. The normal
+installation creates no privileged Encore service.
 
 That choice adds `--flipscreen`. It vertically reverses the displayed image
 relative to the normal display. F2 toggles exactly that same state while Encore
@@ -105,8 +125,26 @@ Non-interactive profile selection is also available:
 
 Reboot after installation. In a standalone profile, exiting Encore with F1
 ends the cabinet session and exposes a normal login prompt on tty1 for
-maintenance. Logging out starts a new cabinet session through the normal getty
-lifecycle.
+maintenance. For the duration of a standalone installation, a small system
+copy of the session helper is the selected account's login shell. It launches
+Encore only on tty1; SSH, other VTs and maintenance logins immediately delegate
+to the user's saved original shell. When the cabinet login exits, PAM/logind
+closes the session and getty's root `ExecStopPost` installs a runtime-only
+ordinary-getty override. Systemd then reopens tty1 with the normal password
+prompt and tty output.
+Further maintenance logouts continue to restart that ordinary getty, never the
+automatic Encore entry point, until reboot clears the runtime override.
+
+The quiet-boot option adds only a project-owned GRUB drop-in. It requests
+`quiet`, low kernel/systemd/udev verbosity, a hidden cursor and Plymouth's
+`splash` argument when Plymouth is installed. The separate GRUB choice hides
+the menu and sets its timeout to zero. The installer then runs `update-grub`.
+It does not edit `/etc/default/grub` in place.
+
+Standalone profiles keep tty1 as the real controlling terminal but send the
+automatic-login and compositor diagnostics to the journal. `agetty` invokes
+the distribution's normal `/bin/login` and PAM/logind stack directly. Encore
+does not install a custom PAM file or synthesize a user-service environment.
 
 ## Removal
 
@@ -115,10 +153,11 @@ lifecycle.
 ```
 
 The uninstaller restores the previous default boot target and tty1 enablement,
-removes the autologin and session files it created, and preserves the project,
-ROMs, updates and savedata. A `.hushlogin` created to hide standalone-login
-chatter is removed only if its device/inode identity and empty contents are
-unchanged.
+removes the autologin, GRUB drop-in, silent-handoff generator and session files
+it created, restores the account's exact original login shell, regenerates GRUB
+when required, and preserves the project, ROMs,
+updates and savedata. A `.hushlogin` created to hide standalone-login chatter
+is removed only if its device/inode identity and empty contents are unchanged.
 
 ## Manual backend checks
 
