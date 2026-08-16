@@ -20,7 +20,7 @@ Usage: ./install.sh [--display-manager|--cage|--weston|--direct-console]
   --display-manager  use the existing Wayland desktop session (recommended)
   --cage             standalone minimal Wayland kiosk
   --weston           standalone reference Wayland kiosk
-  --direct-console   SDL2 KMSDRM, with no compositor
+  --direct-console   SDL2 KMSDRM, with no compositor or display server
 EOF
 }
 
@@ -96,7 +96,7 @@ if [[ -z "$backend" ]]; then
         case "${choices[i]}" in
             cage) label="Cage — minimal Wayland kiosk" ;;
             weston) label="Weston — reference Wayland kiosk" ;;
-            direct-console) label="Framebuffer / direct console — SDL2 KMSDRM" ;;
+            direct-console) label="Direct console — SDL2 KMSDRM" ;;
         esac
         printf '%d. %s\n' "$((i + 1))" "$label"
     done
@@ -153,6 +153,13 @@ echo "Encore is designed to run as the unprivileged session user."
 echo "Root mode is a diagnostic fallback for comparing unresolved hardware issues."
 ask "Run Encore as root instead?" N && run_as_root=1
 
+cabinet_audio=0
+echo
+echo "The game has its own volume controls. For their full usable range, Encore"
+echo "can unmute the host's default output and set it to 100% at every startup."
+echo "Only the current default output is changed; no audio service or device is selected."
+ask "Allow cabinet startup to unmute the host output and set it to 100%?" Y && cabinet_audio=1
+
 maintenance=tty
 if [[ "$backend" != display-manager && -n "$dm_service" ]]; then
     maintenance=display-manager
@@ -168,6 +175,18 @@ fi
 
 quiet_boot=0
 zero_grub_timeout=0
+console_640=0
+if [[ "$backend" == direct-console ]]; then
+    if command -v update-grub >/dev/null 2>&1; then
+        echo
+        echo "KMSDRM normally scales Encore fullscreen at the display's native resolution."
+        echo "GRUB and the kernel can optionally request a physical 640x480 mode."
+        echo "Firmware, DRM/KMS, the GPU driver or a fixed-mode panel may refuse it."
+        ask "Try the experimental 640x480 boot mode?" N && console_640=1
+    else
+        echo "update-grub is unavailable; direct-console resolution will remain driver-selected." >&2
+    fi
+fi
 ask "Use the distribution's quiet boot presentation?" && quiet_boot=1
 if command -v update-grub >/dev/null 2>&1; then
     ask "Hide the GRUB menu and use a zero-second timeout?" && zero_grub_timeout=1
@@ -180,7 +199,10 @@ echo "  session user : $session_user (unprivileged)"
 echo "  game         : $game"
 echo "  flipscreen   : $([[ $start_flipped -eq 1 ]] && echo enabled || echo disabled)"
 echo "  execution    : $([[ $run_as_root -eq 1 ]] && echo 'root (diagnostic)' || echo 'session user')"
+echo "  host audio   : $([[ $cabinet_audio -eq 1 ]] && echo 'unmute and set 100% at startup' || echo unchanged)"
 [[ "$backend" == display-manager ]] || echo "  maintenance  : $maintenance"
+[[ "$backend" != direct-console ]] || \
+    echo "  display mode : $([[ $console_640 -eq 1 ]] && echo 'request 640x480 (driver may refuse)' || echo 'driver-selected')"
 echo "  quiet boot   : $([[ $quiet_boot -eq 1 ]] && echo enabled || echo disabled)"
 if command -v update-grub >/dev/null 2>&1; then
     echo "  GRUB timeout : $([[ $zero_grub_timeout -eq 1 ]] && echo hidden/zero || echo unchanged)"
@@ -322,7 +344,7 @@ if [[ "$backend" != display-manager && -e "$CABINET_SHELL" ]] &&
     echo "install.sh: refusing unrelated existing $CABINET_SHELL" >&2
     exit 3
 fi
-if [[ "$quiet_boot" -eq 1 || "$zero_grub_timeout" -eq 1 ]]; then
+if [[ "$quiet_boot" -eq 1 || "$zero_grub_timeout" -eq 1 || "$console_640" -eq 1 ]]; then
     if [[ -e "$GRUB_DROPIN" ]] &&
        ! grep -q '^# encore-pinball2000 managed boot presentation$' "$GRUB_DROPIN"; then
         echo "install.sh: refusing unrelated existing $GRUB_DROPIN" >&2
@@ -345,6 +367,8 @@ install -d -m 0700 "$STATE"
     printf 'GAME=%q\n' "$game"
     printf 'QEMU_BIN=%q\n' "$qemu_bin"
     printf 'RUN_AS_ROOT=%q\n' "$run_as_root"
+    printf 'CABINET_AUDIO=%q\n' "$cabinet_audio"
+    printf 'CONSOLE_640=%q\n' "$console_640"
     printf 'MAINTENANCE=%q\n' "$maintenance"
     printf 'ORIGINAL_SHELL=%q\n' "$original_shell"
     printf 'STANDALONE_LOGIN_SHELL=%q\n' "$([[ "$backend" == display-manager ]] && echo 0 || echo 1)"
@@ -383,7 +407,7 @@ EOF
     udevadm trigger --subsystem-match=input --action=change
 fi
 
-if [[ "$quiet_boot" -eq 1 || "$zero_grub_timeout" -eq 1 ]]; then
+if [[ "$quiet_boot" -eq 1 || "$zero_grub_timeout" -eq 1 || "$console_640" -eq 1 ]]; then
     install -d -m 0755 /etc/default/grub.d
     {
         echo '# encore-pinball2000 managed boot presentation'
@@ -412,6 +436,19 @@ GRUB_RECORDFAIL_TIMEOUT=0
 GRUB_THEME=""
 GRUB_BACKGROUND=""
 GRUB_TERMINAL_OUTPUT=console
+EOF
+        fi
+        if [[ "$console_640" -eq 1 ]]; then
+            cat <<'EOF'
+# Best-effort direct-console mode request. GRUB retains an automatic fallback,
+# and the kernel display driver remains free to reject an unsupported mode.
+GRUB_GFXMODE=640x480,auto
+GRUB_GFXPAYLOAD_LINUX=keep
+GRUB_TERMINAL_OUTPUT=gfxterm
+case " $GRUB_CMDLINE_LINUX_DEFAULT " in
+    *' video=640x480 '*) ;;
+    *) GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT video=640x480" ;;
+esac
 EOF
         fi
     } > "$GRUB_DROPIN"
