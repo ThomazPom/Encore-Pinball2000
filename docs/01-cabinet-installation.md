@@ -92,11 +92,9 @@ The guided setup asks for:
    root diagnostic service;
 6. whether cabinet startup may unmute the default host output and set it to
    100%, leaving the game's controls to manage the playing volume;
-7. for direct console, whether to make a best-effort 640×480 request through
-   GRUB and the kernel;
-8. whether to use the distribution's quiet boot presentation;
-9. whether to hide GRUB with a zero-second timeout when `update-grub` exists;
-10. optional real `/dev/parport0` access when the device exists.
+7. whether to use the distribution's quiet boot presentation;
+8. whether to hide GRUB with a zero-second timeout when `update-grub` exists;
+9. optional real `/dev/parport0` access when the device exists.
 
 Root execution is only an A/B diagnostic escape hatch. The real PAM/logind
 user session still owns Wayland, D-Bus and audio; it publishes a private
@@ -132,13 +130,6 @@ When `/dev/parport0` exists, real hardware remains disabled by default. The
 installer shows the validation sequence from
 [real LPT passthrough](46-real-lpt-passthrough.md) and enables the port only
 after the operator confirms that those checks have passed.
-
-The optional direct-console 640×480 setting is disabled by default because
-KMSDRM normally scales Encore fullscreen in the display's native mode. When
-explicitly enabled, it uses `GRUB_GFXMODE` with an
-automatic fallback, keeps that payload for Linux, and adds a generic kernel
-`video=640x480` request. It is intentionally best-effort: firmware, DRM/KMS,
-the GPU driver, or a fixed-mode panel may reject it and retain another mode.
 
 Non-interactive profile selection is also available:
 

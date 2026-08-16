@@ -175,18 +175,6 @@ fi
 
 quiet_boot=0
 zero_grub_timeout=0
-console_640=0
-if [[ "$backend" == direct-console ]]; then
-    if command -v update-grub >/dev/null 2>&1; then
-        echo
-        echo "KMSDRM normally scales Encore fullscreen at the display's native resolution."
-        echo "GRUB and the kernel can optionally request a physical 640x480 mode."
-        echo "Firmware, DRM/KMS, the GPU driver or a fixed-mode panel may refuse it."
-        ask "Try the experimental 640x480 boot mode?" N && console_640=1
-    else
-        echo "update-grub is unavailable; direct-console resolution will remain driver-selected." >&2
-    fi
-fi
 ask "Use the distribution's quiet boot presentation?" && quiet_boot=1
 if command -v update-grub >/dev/null 2>&1; then
     ask "Hide the GRUB menu and use a zero-second timeout?" && zero_grub_timeout=1
@@ -201,8 +189,6 @@ echo "  flipscreen   : $([[ $start_flipped -eq 1 ]] && echo enabled || echo disa
 echo "  execution    : $([[ $run_as_root -eq 1 ]] && echo 'root (diagnostic)' || echo 'session user')"
 echo "  host audio   : $([[ $cabinet_audio -eq 1 ]] && echo 'unmute and set 100% at startup' || echo unchanged)"
 [[ "$backend" == display-manager ]] || echo "  maintenance  : $maintenance"
-[[ "$backend" != direct-console ]] || \
-    echo "  display mode : $([[ $console_640 -eq 1 ]] && echo 'request 640x480 (driver may refuse)' || echo 'driver-selected')"
 echo "  quiet boot   : $([[ $quiet_boot -eq 1 ]] && echo enabled || echo disabled)"
 if command -v update-grub >/dev/null 2>&1; then
     echo "  GRUB timeout : $([[ $zero_grub_timeout -eq 1 ]] && echo hidden/zero || echo unchanged)"
@@ -344,7 +330,7 @@ if [[ "$backend" != display-manager && -e "$CABINET_SHELL" ]] &&
     echo "install.sh: refusing unrelated existing $CABINET_SHELL" >&2
     exit 3
 fi
-if [[ "$quiet_boot" -eq 1 || "$zero_grub_timeout" -eq 1 || "$console_640" -eq 1 ]]; then
+if [[ "$quiet_boot" -eq 1 || "$zero_grub_timeout" -eq 1 ]]; then
     if [[ -e "$GRUB_DROPIN" ]] &&
        ! grep -q '^# encore-pinball2000 managed boot presentation$' "$GRUB_DROPIN"; then
         echo "install.sh: refusing unrelated existing $GRUB_DROPIN" >&2
@@ -368,7 +354,6 @@ install -d -m 0700 "$STATE"
     printf 'QEMU_BIN=%q\n' "$qemu_bin"
     printf 'RUN_AS_ROOT=%q\n' "$run_as_root"
     printf 'CABINET_AUDIO=%q\n' "$cabinet_audio"
-    printf 'CONSOLE_640=%q\n' "$console_640"
     printf 'MAINTENANCE=%q\n' "$maintenance"
     printf 'ORIGINAL_SHELL=%q\n' "$original_shell"
     printf 'STANDALONE_LOGIN_SHELL=%q\n' "$([[ "$backend" == display-manager ]] && echo 0 || echo 1)"
@@ -407,7 +392,7 @@ EOF
     udevadm trigger --subsystem-match=input --action=change
 fi
 
-if [[ "$quiet_boot" -eq 1 || "$zero_grub_timeout" -eq 1 || "$console_640" -eq 1 ]]; then
+if [[ "$quiet_boot" -eq 1 || "$zero_grub_timeout" -eq 1 ]]; then
     install -d -m 0755 /etc/default/grub.d
     {
         echo '# encore-pinball2000 managed boot presentation'
@@ -436,19 +421,6 @@ GRUB_RECORDFAIL_TIMEOUT=0
 GRUB_THEME=""
 GRUB_BACKGROUND=""
 GRUB_TERMINAL_OUTPUT=console
-EOF
-        fi
-        if [[ "$console_640" -eq 1 ]]; then
-            cat <<'EOF'
-# Best-effort direct-console mode request. GRUB retains an automatic fallback,
-# and the kernel display driver remains free to reject an unsupported mode.
-GRUB_GFXMODE=640x480,auto
-GRUB_GFXPAYLOAD_LINUX=keep
-GRUB_TERMINAL_OUTPUT=gfxterm
-case " $GRUB_CMDLINE_LINUX_DEFAULT " in
-    *' video=640x480 '*) ;;
-    *) GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT video=640x480" ;;
-esac
 EOF
         fi
     } > "$GRUB_DROPIN"
