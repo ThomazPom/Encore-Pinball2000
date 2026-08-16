@@ -95,10 +95,16 @@ export QEMU_BIN
 # SSH, other VTs and the post-game maintenance getty must always reach the
 # original shell. In particular, graphical login managers invoke a user's
 # shell with `-c ...`; testing only the no-argument case would accidentally
-# launch the cabinet backend inside every graphical login.
+# launch the cabinet backend inside every graphical login. Weston deliberately
+# detaches its child from the controlling VT, so allow only our exact internal
+# Wayland-client invocation through that otherwise strict boundary.
 if [[ "${STANDALONE_LOGIN_SHELL:-0}" -eq 1 ]]; then
     login_tty="$(tty 2>/dev/null || true)"
-    if [[ "$login_tty" != /dev/tty1 || -e /run/systemd/system/getty@tty1.service.d/50-encore-maintenance.conf ]]; then
+    internal_wayland_client=0
+    [[ $# -eq 2 && "$1" == --client && "$2" == wayland ]] && internal_wayland_client=1
+    if [[ "$internal_wayland_client" -eq 0 &&
+          ( "$login_tty" != /dev/tty1 ||
+            -e /run/systemd/system/getty@tty1.service.d/50-encore-maintenance.conf ) ]]; then
         if (($#)); then
             exec "$ORIGINAL_SHELL" "$@"
         else
@@ -117,9 +123,66 @@ if [[ -s "$ARGS_FILE" ]]; then
     mapfile -t launch_args < "$ARGS_FILE"
 fi
 
+audio_log() {
+    if command -v logger >/dev/null 2>&1; then
+        logger -t encore-audio -- "$1"
+    else
+        printf '%s\n' "$1"
+    fi
+}
+
+prepare_cabinet_audio() {
+    if [[ "${CABINET_AUDIO:-0}" -ne 1 ]]; then
+        audio_log "[encore-audio] policy=preserve"
+        return 0
+    fi
+    # A desktop shell often restores/unmutes audio as part of login. Minimal
+    # Cage/Weston sessions have no such policy component. When explicitly
+    # authorized at install time, expose the guest's full volume range through
+    # the already-selected host output. Do not name a service or device.
+    if command -v wpctl >/dev/null 2>&1; then
+        before="$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>&1 || true)"
+        if wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0 >/dev/null 2>&1 &&
+           wpctl set-mute @DEFAULT_AUDIO_SINK@ 0 >/dev/null 2>&1; then
+            after="$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>&1 || true)"
+            printf -v message \
+                '[encore-audio] policy=cabinet tool=wpctl before=%q after=%q' \
+                "$before" "$after"
+            audio_log "$message"
+            return 0
+        fi
+    fi
+    if command -v pactl >/dev/null 2>&1; then
+        before="$(pactl get-sink-volume @DEFAULT_SINK@ 2>&1 || true); $(pactl get-sink-mute @DEFAULT_SINK@ 2>&1 || true)"
+        if pactl set-sink-volume @DEFAULT_SINK@ 100% >/dev/null 2>&1 &&
+           pactl set-sink-mute @DEFAULT_SINK@ 0 >/dev/null 2>&1; then
+            after="$(pactl get-sink-volume @DEFAULT_SINK@ 2>&1 || true); $(pactl get-sink-mute @DEFAULT_SINK@ 2>&1 || true)"
+            printf -v message \
+                '[encore-audio] policy=cabinet tool=pactl before=%q after=%q' \
+                "$before" "$after"
+            audio_log "$message"
+            return 0
+        fi
+    fi
+    if command -v amixer >/dev/null 2>&1; then
+        before="$(amixer get Master 2>&1 | tail -n 1 || true)"
+        if amixer -q sset Master 100% unmute >/dev/null 2>&1; then
+            after="$(amixer get Master 2>&1 | tail -n 1 || true)"
+            printf -v message \
+                '[encore-audio] policy=cabinet tool=amixer before=%q after=%q' \
+                "$before" "$after"
+            audio_log "$message"
+            return 0
+        fi
+    fi
+    audio_log "[encore-audio] policy=cabinet result=failed reason=no-working-host-control"
+    return 0
+}
+
 launch_encore() {
     local video="$1"
     shift
+    prepare_cabinet_audio
     if [[ "${RUN_AS_ROOT:-0}" -eq 1 ]]; then
         runtime_dir="${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is required}"
         session_dir="$runtime_dir/encore-pinball2000"

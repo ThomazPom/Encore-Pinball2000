@@ -181,6 +181,18 @@ export WAYLAND_DISPLAY=wayland-encore-lab
 exec "$@"
 EOF
 chmod 0755 /usr/local/bin/cage'
+    ssh_guest 'cat > /usr/local/bin/wpctl <<'"'"'EOF'"'"'
+#!/bin/sh
+state=/tmp/encore-lab-audio-state
+[ -f "$state" ] || printf "%s\n" "Volume: 0.50 [MUTED]" > "$state"
+case "${1:-}" in
+  get-volume) cat "$state" ;;
+  set-volume) printf "%s\n" "Volume: 1.00 [MUTED]" > "$state" ;;
+  set-mute) sed -i "s/ \[MUTED\]//" "$state" ;;
+  *) exit 2 ;;
+esac
+EOF
+chmod 0755 /usr/local/bin/wpctl'
 }
 
 assert_stripped_guest() {
@@ -206,7 +218,7 @@ expect {
 expect {
     -re {Cabinet session user[^:]*:} {
         set root_answer [expr {$env(LAB_RUN_AS_ROOT) ? "y" : "n"}]
-        foreach answer [list cabinet swe1 y $root_answer n n y] {
+        foreach answer [list cabinet swe1 y $root_answer y n n y] {
             send -- "$answer\r"
             after 150
         }
@@ -229,7 +241,7 @@ test_install() {
     case "$execution" in user) ;; root) run_as_root=1 ;; *) die "execution must be user or root" ;; esac
     reset_overlay; start_overlay; assert_stripped_guest; copy_checkout 1; enable_nonroot_escalation
     install_as_cabinet "$run_as_root"
-    ssh_guest "test -s /etc/encore-pinball2000/session.conf; grep -qx BACKEND=cage /etc/encore-pinball2000/session.conf; grep -qx RUN_AS_ROOT=$run_as_root /etc/encore-pinball2000/session.conf; grep -qx MAINTENANCE=tty /etc/encore-pinball2000/session.conf; grep -q 'Restart=no' /etc/systemd/system/getty@tty1.service.d/49-encore.conf"
+    ssh_guest "test -s /etc/encore-pinball2000/session.conf; grep -qx BACKEND=cage /etc/encore-pinball2000/session.conf; grep -qx RUN_AS_ROOT=$run_as_root /etc/encore-pinball2000/session.conf; grep -qx CABINET_AUDIO=1 /etc/encore-pinball2000/session.conf; grep -qx MAINTENANCE=tty /etc/encore-pinball2000/session.conf; grep -q 'Restart=no' /etc/systemd/system/getty@tty1.service.d/49-encore.conf"
     # A display manager and SSH invoke the account shell with `-c`. That must
     # delegate to the original shell instead of starting another cabinet
     # backend outside tty1.
@@ -244,6 +256,7 @@ test_install() {
     fi
     ssh_guest 'for i in $(seq 1 250); do test -s /run/systemd/system/getty@tty1.service.d/50-encore-maintenance.conf && systemctl is-active --quiet getty@tty1.service && exit 0; sleep .1; done; journalctl -b -u getty@tty1.service --no-pager; exit 1'
     ssh_guest 'journalctl -b --no-pager | grep -q "session opened for user cabinet"; journalctl -b --no-pager | grep -q "session closed for user cabinet"'
+    ssh_guest 'journalctl -b --no-pager | grep -Fq "[encore-audio] policy=cabinet tool=wpctl before=Volume:\\ 0.50\\ \\[MUTED\\] after=Volume:\\ 1.00"'
     ssh_guest 'cd /opt/Encore-PB2K && ./uninstall.sh'
     ssh_guest 'test ! -e /etc/encore-pinball2000/session.conf; test ! -e /etc/systemd/system/getty@tty1.service.d/49-encore.conf; test ! -e /run/systemd/system/getty@tty1.service.d/50-encore-maintenance.conf; test ! -e /var/lib/encore-pinball2000/install-mode; test "$(getent passwd cabinet | cut -d: -f7)" = /bin/bash'
     stop_vm
