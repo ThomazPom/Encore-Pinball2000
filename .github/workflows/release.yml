@@ -71,7 +71,8 @@ jobs:
           else
             tag="v0.$(date -u +%Y%m%d).${GITHUB_RUN_NUMBER}"
             if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
-              latest=$(gh release list --limit 1 --json tagName --jq '.[0].tagName // empty')
+              latest=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 \
+                --json tagName --jq '.[0].tagName // empty')
               if [[ -n "$latest" ]] &&
                  [[ "$(git rev-parse "$latest^{commit}" 2>/dev/null || true)" == "$(git rev-parse HEAD)" ]]; then
                 echo "Latest release already represents this commit; nothing to publish."
@@ -139,11 +140,12 @@ jobs:
           RELEASE_TAG: ${{ steps.publication.outputs.tag }}
           RELEASE_COMMIT: ${{ steps.publication.outputs.commit }}
         run: |
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" dist/encore-qemu-linux-x86_64.tar.gz \
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              dist/encore-qemu-linux-x86_64.tar.gz \
               dist/encore-qemu-linux-x86_64.tar.gz.sha256 --clobber
           else
-            gh release create "$RELEASE_TAG" \
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
               dist/encore-qemu-linux-x86_64.tar.gz \
               dist/encore-qemu-linux-x86_64.tar.gz.sha256 \
               --target "$RELEASE_COMMIT" --generate-notes \
