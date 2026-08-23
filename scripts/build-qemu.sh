@@ -325,6 +325,18 @@ CONFIG_ARGS=(
   --disable-werror
   --disable-plugins
   --enable-sdl
+  --audio-drv-list=sdl
+  --disable-alsa
+  --disable-oss
+  --disable-pa
+  --disable-opengl
+  --disable-dbus-display
+  --disable-curses
+  --disable-png
+  --disable-seccomp
+  --disable-capstone
+  --disable-zstd
+  --disable-bzip2
 )
 CONFIG_PROFILE="$(printf '%s\n' "${CONFIG_ARGS[@]}" | sha256sum | awk '{print $1}')"
 CONFIG_SENTINEL="$SRC/.p2k-config-profile"

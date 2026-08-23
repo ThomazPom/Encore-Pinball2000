@@ -261,20 +261,75 @@ if ! sdl_has_driver "$sdl_driver"; then
     fi
 fi
 
-qemu_bin="$session_home/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
+build_qemu="$session_home/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
+release_dir="$session_home/.cache/encore-qemu-release"
+release_qemu="$release_dir/qemu-system-i386"
+qemu_bin="$release_qemu"
+[[ -x "$build_qemu" ]] && qemu_bin="$build_qemu"
 [[ -x "$ROOT/qemu-system-i386" ]] && qemu_bin="$ROOT/qemu-system-i386"
+
 if [[ ! -x "$qemu_bin" ]]; then
-    echo "Encore's custom qemu-system-i386 has not been built yet."
-    ask "Install build dependencies and build it now?" || exit 2
-    command -v apt-get >/dev/null 2>&1 || { echo "Automatic build setup requires APT" >&2; exit 2; }
-    DEBIAN_FRONTEND=noninteractive apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        ca-certificates build-essential pkg-config git curl patch ninja-build \
-        python3 python3-venv xz-utils libsdl2-dev libglib2.0-dev \
-        libpixman-1-dev zlib1g-dev libslirp-dev libvorbis-dev libogg-dev
-    runuser -u "$session_user" -- env HOME="$session_home" \
-        "$ROOT/scripts/build-qemu.sh"
-    [[ -x "$qemu_bin" ]] || { echo "install.sh: build completed without expected binary" >&2; exit 3; }
+    echo
+    echo "How should Encore obtain its custom QEMU?"
+    echo "1. Build locally — Recommended (longer; guaranteed to match this checkout)"
+    echo "2. Download latest release — Faster (may lag behind this checkout)"
+    read -r -p "Choice [1]: " qemu_choice
+    qemu_choice="${qemu_choice:-1}"
+    [[ "$qemu_choice" == 1 || "$qemu_choice" == 2 ]] || {
+        echo "install.sh: invalid QEMU choice" >&2; exit 2; }
+
+    if [[ "$qemu_choice" == 2 ]]; then
+        command -v apt-get >/dev/null 2>&1 || {
+            echo "Automatic release setup requires APT" >&2; exit 2; }
+        DEBIAN_FRONTEND=noninteractive apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl tar coreutils
+        if runuser -u "$session_user" -- env HOME="$session_home" \
+            "$ROOT/scripts/download-qemu-release.sh" --destination "$release_dir"; then
+            if [[ -s "$release_dir/runtime-packages.txt" ]]; then
+                mapfile -t release_packages < <(
+                    sed -E 's/:[a-z0-9]+$//' "$release_dir/runtime-packages.txt" |
+                        grep -E '^[a-z0-9][a-z0-9+.-]*$' | sort -u
+                )
+                available_packages=()
+                for package_name in "${release_packages[@]}"; do
+                    apt-cache show "$package_name" >/dev/null 2>&1 &&
+                        available_packages+=("$package_name")
+                done
+                if ((${#available_packages[@]})); then
+                    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                        "${available_packages[@]}"
+                fi
+            fi
+            qemu_bin="$release_qemu"
+        else
+            echo "The published build could not be downloaded or verified." >&2
+            ask "Build locally instead?" Y || exit 2
+            qemu_choice=1
+        fi
+    fi
+
+    if [[ "$qemu_choice" == 1 ]]; then
+        command -v apt-get >/dev/null 2>&1 || {
+            echo "Automatic build setup requires APT" >&2; exit 2; }
+        DEBIAN_FRONTEND=noninteractive apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates build-essential pkg-config git curl patch ninja-build \
+            python3 python3-venv xz-utils libsdl2-dev libglib2.0-dev \
+            libpixman-1-dev zlib1g-dev libslirp-dev libvorbis-dev libogg-dev
+        runuser -u "$session_user" -- env HOME="$session_home" \
+            "$ROOT/scripts/build-qemu.sh"
+        qemu_bin="$build_qemu"
+    fi
+    [[ -x "$qemu_bin" ]] || {
+        echo "install.sh: QEMU acquisition completed without the expected binary" >&2
+        exit 3
+    }
+fi
+if ldd "$qemu_bin" 2>/dev/null | grep -q 'not found'; then
+    echo "install.sh: the selected QEMU still has missing runtime libraries:" >&2
+    ldd "$qemu_bin" | grep 'not found' >&2 || true
+    exit 3
 fi
 "$qemu_bin" -M help | grep -q pinball2000 || {
     echo "install.sh: $qemu_bin does not contain the Encore machine" >&2; exit 3; }

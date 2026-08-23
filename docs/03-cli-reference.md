@@ -209,3 +209,16 @@ files directly.
 
 Details: [quickstart](02-quickstart.md), [troubleshooting](04-troubleshooting.md)
 and [documentation index](README.md).
+
+## `scripts/download-qemu-release.sh` synopsis
+
+```sh
+scripts/download-qemu-release.sh [--destination DIR]
+```
+
+Downloads the fixed-name QEMU asset and checksum from the latest GitHub
+release. The default destination is
+`$XDG_CACHE_HOME/encore-qemu-release`, or
+`$HOME/.cache/encore-qemu-release` when `XDG_CACHE_HOME` is unset. It supports
+published x86-64 builds only. `ENCORE_RELEASE_REPOSITORY=owner/repository` can
+redirect the download for release testing.

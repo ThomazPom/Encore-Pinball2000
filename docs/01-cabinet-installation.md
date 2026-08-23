@@ -7,7 +7,7 @@ Kali systems:
 ./install.sh
 ```
 
-The installer builds Encore when necessary, configures the selected game and
+The installer obtains Encore's custom QEMU, configures the selected game and
 creates the boot session. It never installs or configures Xorg, an X11 window
 manager, or XWayland.
 
@@ -88,15 +88,24 @@ The guided setup asks for:
 1. the session profile;
 2. the unprivileged cabinet account;
 3. Star Wars Episode I or Revenge from Mars;
-4. whether to start with flipscreen active (enabled by default);
-5. whether to use the normal unprivileged runtime (default) or an experimental
+4. whether to build the custom QEMU locally (recommended and guaranteed to
+   match the checkout) or download the latest published build (faster);
+5. whether to start with flipscreen active (enabled by default);
+6. whether to use the normal unprivileged runtime (default) or an experimental
    root diagnostic service;
-6. whether cabinet startup may unmute the default host output and set it to
+7. whether cabinet startup may unmute the default host output and set it to
    100%, leaving the game's controls to manage the playing volume;
-7. whether to use the distribution's quiet boot presentation;
-8. whether to hide GRUB with a zero-second timeout when `update-grub` exists;
-9. real `/dev/parportN` access when detected (enabled by default, with an
+8. whether to use the distribution's quiet boot presentation;
+9. whether to hide GRUB with a zero-second timeout when `update-grub` exists;
+10. real `/dev/parportN` access when detected (enabled by default, with an
    opt-out for demonstration mode).
+
+The local build is the default because it uses the exact machine sources in
+the checkout. The release path downloads a fixed-name archive from the latest
+GitHub release, verifies its SHA-256 checksum, installs its declared runtime
+packages through APT and validates that the resulting executable contains the
+`pinball2000` machine. If no usable release is available, the installer offers
+to fall back to the local build.
 
 Root execution is only an A/B diagnostic escape hatch. The real PAM/logind
 user session still owns Wayland, D-Bus and audio; it publishes a private
