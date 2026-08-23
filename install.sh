@@ -12,6 +12,7 @@ GRUB_QUIET_SCRIPT=/etc/grub.d/01_encore_pinball2000_quiet
 ROOT_SERVICE=/etc/systemd/system/encore-pinball2000-root.service
 CABINET_SHELL=/usr/local/libexec/encore-pinball2000-session
 DIRECT_INPUT_RULE=/etc/udev/rules.d/70-encore-pinball2000-input.rules
+CABINET_LOCK=/var/lib/pinball2000-cabinet.lock
 
 usage() {
     cat <<'EOF'
@@ -66,6 +67,11 @@ esac
     echo "Run ./uninstall.sh before changing its profile." >&2
     exit 2
 }
+if [[ -e "$CABINET_LOCK" ]]; then
+    lock_owner="$(sed -n '1p' "$CABINET_LOCK" 2>/dev/null || true)"
+    echo "install.sh: a ${lock_owner:-unknown} cabinet integration is installed; uninstall it first." >&2
+    exit 2
+fi
 
 dm_service=""
 if systemctl cat display-manager.service >/dev/null 2>&1; then
@@ -195,6 +201,11 @@ if command -v update-grub >/dev/null 2>&1; then
 fi
 ask "Proceed?" || exit 0
 
+# savedata/ is intentionally ignored by Git and by the clean-room VM copy, so
+# a fresh checkout may not contain the directory at all. Create only the
+# writable state directory; never seed it from the developer's checkout.
+install -d -o "$session_user" -g "$session_group" -m 0755 "$ROOT/savedata"
+
 missing_packages=()
 case "$backend" in
     cage) command -v cage >/dev/null 2>&1 || missing_packages+=(cage) ;;
@@ -271,21 +282,72 @@ fi
 launch_args=()
 add_lp_group=0
 [[ "$start_flipped" -eq 0 ]] || launch_args+=(--flipscreen)
-if [[ -e /dev/parport0 ]]; then
+
+# A physical port may be numbered parport1 (or later), and ppdev may not have
+# been loaded yet even though the kernel has registered the underlying port.
+# Ask the kernel for ppdev only when sysfs proves that a parport exists.
+shopt -s nullglob
+parport_devices=(/dev/parport[0-9]*)
+kernel_parports=(/sys/class/parport/parport[0-9]*)
+if ((${#parport_devices[@]} == 0 && ${#kernel_parports[@]} > 0)); then
+    if ! command -v modprobe >/dev/null 2>&1; then
+        echo "A kernel parallel port exists, but the tool needed to load ppdev is missing."
+        if command -v apt-get >/dev/null 2>&1 && ask "Install the distribution's kmod package now?" Y; then
+            DEBIAN_FRONTEND=noninteractive apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends kmod
+        else
+            echo "install.sh: kmod is required to enable the detected parallel port" >&2
+            exit 2
+        fi
+    fi
+    modprobe ppdev || {
+        echo "install.sh: the running kernel cannot load its ppdev module" >&2
+        exit 2
+    }
+    command -v udevadm >/dev/null 2>&1 && udevadm settle 2>/dev/null || true
+    parport_devices=(/dev/parport[0-9]*)
+    ((${#parport_devices[@]} > 0)) || {
+        echo "install.sh: the kernel sees a parallel port, but ppdev created no /dev/parportN device" >&2
+        exit 2
+    }
+fi
+shopt -u nullglob
+
+real_parport=""
+if ((${#parport_devices[@]} == 1)); then
+    real_parport="${parport_devices[0]}"
+elif ((${#parport_devices[@]} > 1)); then
     echo
-    echo "Real cabinet interface detected: /dev/parport0"
-    echo "WARNING: Encore's powered-playfield validation is still pending."
-    echo "The documented sequence is: emulated benchmark, playfield power OFF,"
-    echo "real-port trace, then one low-risk device class at a time."
-    if ask "Have those checks passed, and enable /dev/parport0 at boot?" N; then
-        launch_args+=(--cabinet --lpt-device /dev/parport0)
+    echo "Parallel interfaces detected: ${parport_devices[*]}"
+    read -r -p "Real cabinet interface [${parport_devices[0]}]: " real_parport
+    real_parport="${real_parport:-${parport_devices[0]}}"
+    [[ " ${parport_devices[*]} " == *" $real_parport "* ]] || {
+        echo "install.sh: '$real_parport' is not one of the detected parallel interfaces" >&2
+        exit 2
+    }
+fi
+
+if [[ -n "$real_parport" ]]; then
+    [[ -c "$real_parport" ]] || {
+        echo "install.sh: '$real_parport' is not a character device" >&2
+        exit 2
+    }
+    echo
+    echo "Real cabinet interface detected: $real_parport"
+    echo "Enable it to communicate with the real Pinball 2000 hardware."
+    echo "Answering no keeps Encore on its emulated board for demonstration use."
+    if ask "Use the real cabinet interface?" Y; then
+        launch_args+=(--cabinet --lpt-device "$real_parport")
         if ! id -nG "$session_user" | tr ' ' '\n' | grep -qx lp; then
             add_lp_group=1
         fi
     else
-        echo "Keeping the emulated driver board. Follow docs/46-real-lpt-passthrough.md"
-        echo "before reinstalling with real cabinet I/O enabled."
+        echo "Keeping the emulated driver board."
     fi
+else
+    echo
+    echo "No Linux ppdev interface (/dev/parportN) was detected."
+    echo "Encore will use its emulated demonstration board."
 fi
 
 # Refuse path collisions before writing installation state, so a failed
@@ -369,7 +431,7 @@ systemctl is-enabled getty@tty1.service > "$STATE/getty-tty1-was-enabled" 2>/dev
 if [[ "$add_lp_group" -eq 1 ]]; then
     usermod -aG lp "$session_user"
     printf '%s\n' "$session_user" > "$STATE/lp-group-added"
-    echo "Added $session_user to group lp for /dev/parport0."
+    echo "Added $session_user to group lp for $real_parport."
 fi
 
 # SDL's KMSDRM backend opens evdev devices directly. Unlike a compositor, it
@@ -573,6 +635,7 @@ if [[ "$run_as_root" -eq 1 ]]; then
     systemctl enable encore-pinball2000-root.service
 fi
 echo
+printf '%s\n' encore > "$CABINET_LOCK"
 echo "Encore cabinet profile installed: $backend"
 echo "User: $session_user   Game: $game"
 echo "Reboot to enter the cabinet session. Run ./uninstall.sh to restore the host."

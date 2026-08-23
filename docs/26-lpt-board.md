@@ -10,6 +10,7 @@ at `0x378–0x37a`. Encore implements those registers in
 |---|---|
 | `scripts/run-qemu.sh` | Emulated board with keyboard-controlled switches. |
 | `scripts/run-qemu.sh --lpt-device none` | Disable the board interface. |
+| `scripts/run-qemu.sh --cabinet --lpt-device disconnected` | Present an open, unconnected LPT bus to the ROM without board or keyboard emulation. |
 | `scripts/run-qemu.sh --lpt-device /dev/parport0 --cabinet-purist` | Forward accesses to a real Linux `ppdev` port. |
 
 The emulated path keeps switch inputs separate from lamp and output latches.

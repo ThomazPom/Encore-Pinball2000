@@ -71,8 +71,9 @@ distribution's normal audio services automatically. No service copies the
 environment, guesses a socket, or imports a user-controlled environment into a
 root process.
 
-Real cabinet I/O normally uses `/dev/parport0`. If selected, the installer adds
-the cabinet account to the standard `lp` group instead of making Encore root.
+Real cabinet I/O uses a Linux `ppdev` character device such as
+`/dev/parport0` or `/dev/parport1`. If selected, the installer adds the cabinet
+account to the standard `lp` group instead of making Encore root.
 
 ## Installation flow
 
@@ -94,7 +95,8 @@ The guided setup asks for:
    100%, leaving the game's controls to manage the playing volume;
 7. whether to use the distribution's quiet boot presentation;
 8. whether to hide GRUB with a zero-second timeout when `update-grub` exists;
-9. optional real `/dev/parport0` access when the device exists.
+9. real `/dev/parportN` access when detected (enabled by default, with an
+   opt-out for demonstration mode).
 
 Root execution is only an A/B diagnostic escape hatch. The real PAM/logind
 user session still owns Wayland, D-Bus and audio; it publishes a private
@@ -126,10 +128,13 @@ backend, installs the appropriate runtime when requested, then checks again.
 If the custom QEMU binary is absent, it similarly offers the documented build
 dependencies and builds QEMU in the selected user's cache.
 
-When `/dev/parport0` exists, real hardware remains disabled by default. The
-installer shows the validation sequence from
-[real LPT passthrough](46-real-lpt-passthrough.md) and enables the port only
-after the operator confirms that those checks have passed.
+The installer discovers every `/dev/parportN` device rather than assuming port
+zero. When the kernel exposes a port through `/sys/class/parport` but no ppdev
+device exists yet, it attempts to load the kernel's `ppdev` module and waits
+for udev. If several ports exist, the operator chooses one. The selected path
+must be a character device. Declining the default-enabled prompt keeps the
+emulated board. Detailed electrical validation and diagnostic procedures remain in
+[real LPT passthrough](46-real-lpt-passthrough.md).
 
 Non-interactive profile selection is also available:
 
