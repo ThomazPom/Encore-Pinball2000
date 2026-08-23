@@ -50,6 +50,7 @@ jobs:
 
       - name: Check out source without submodule recursion
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git init .
           git remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
           git -c protocol.version=2 fetch --no-recurse-submodules --force origin \
