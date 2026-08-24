@@ -4,7 +4,7 @@
 # selected user's graphical-session.target.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 CONF=/etc/encore-pinball2000/session.conf
 ARGS_FILE=/etc/encore-pinball2000/launch.args
 

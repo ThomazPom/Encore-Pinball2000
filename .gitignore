@@ -1,5 +1,7 @@
 build/
 qemu-build/
+__pycache__/
+*.py[cod]
 *.o
 *.d
 *.swp

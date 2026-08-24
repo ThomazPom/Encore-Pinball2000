@@ -189,7 +189,7 @@ cd "$WORK"
 # change starts again from pristine source; variants for other versions do not
 # invalidate this build cache.
 PATCH_DIR="$ROOT/qemu/upstream-patches"
-PATCH_TOOL="$ROOT/scripts/qemu-patch-series.py"
+PATCH_TOOL="$ROOT/scripts/internal/qemu-patch-series.py"
 PATCHSET_HASH="$(python3 "$PATCH_TOOL" fingerprint \
   --patch-root "$PATCH_DIR" --version "$QEMU_VER")"
 PATCHSET_SENTINEL="$SRC/.p2k-patchset-sha256"

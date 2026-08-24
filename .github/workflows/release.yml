@@ -7,7 +7,7 @@ on:
     paths:
       - 'qemu/**'
       - 'scripts/build-qemu.sh'
-      - 'scripts/qemu-patch-series.py'
+      - 'scripts/internal/qemu-patch-series.py'
       - '.github/workflows/release.yml'
   schedule:
     - cron: '23 4 * * 1'

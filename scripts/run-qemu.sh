@@ -31,7 +31,7 @@ for __arg in "$@"; do
     for __forward in "$@"; do
       [[ "$__forward" == "--bench" ]] || __bench_args+=("$__forward")
     done
-    exec python3 "$ROOT/scripts/bench-qemu.py" "${__bench_args[@]}"
+    exec python3 "$ROOT/scripts/internal/bench-qemu.py" "${__bench_args[@]}"
   fi
 done
 
@@ -804,7 +804,7 @@ fi
 
 # Download complete ROM and update trees only when their directories are absent.
 # Existing directories are never inspected, modified, or refreshed.
-"$ROOT/scripts/fetch-assets-if-missing.sh" "$ROOT" "$ROMS_DIR" "$ROOT/updates"
+"$ROOT/scripts/internal/fetch-assets-if-missing.sh" "$ROOT" "$ROMS_DIR" "$ROOT/updates"
 
 export P2K_SPEED_TARGET_PERCENT="$SPEED_TARGET"
 export P2K_TCG_CLKINT_HOTLOOP_TARGET_HZ="$(
@@ -868,7 +868,7 @@ if [[ -n "$CONSOLE_SCRIPT" ]]; then
     exit 2
   fi
   AUTOMATION_DIR="$(mktemp -d /tmp/p2k-console-script.XXXXXX)"
-  python3 "$ROOT/scripts/run-console-script.py" "$CONSOLE_SCRIPT" --check
+  python3 "$ROOT/scripts/internal/run-console-script.py" "$CONSOLE_SCRIPT" --check
   SERIAL_PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')"
   UART_TCP="127.0.0.1:$SERIAL_PORT"
   MONITOR="unix:$AUTOMATION_DIR/monitor.sock,server=on,wait=off"
@@ -1175,11 +1175,11 @@ if [[ "${P2K_DCS_ENGINE:-adsp-hybrid-thread}" == "pb2kslib-adsp" &&
   else
     __key_args=(--game "$GAME" --roms "$ROMS_DIR")
   fi
-  __cache_key="$("$ROOT/scripts/pb2k-sound-key.py" "${__key_args[@]}")"
+  __cache_key="$("$ROOT/scripts/internal/pb2k-sound-key.py" "${__key_args[@]}")"
   __cache_file="$PB2K_ADSP_CACHE_DIR/$GAME/${__cache_key}.pcm.pb2k"
   if [[ ! -f "$__cache_file" ]]; then
     __cache_args=(
-      "$ROOT/scripts/build-pcm-cache.py"
+      "$ROOT/scripts/internal/build-pcm-cache.py"
       --qemu "$QEMU_BIN"
       --game "$GAME"
       --roms "$ROMS_DIR"
@@ -1340,7 +1340,7 @@ QEMU_PID=$!
 trap 'status=$?; if [[ -n "${QEMU_PID:-}" ]]; then kill "$QEMU_PID" 2>/dev/null; wait "$QEMU_PID" 2>/dev/null || true; fi; [[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"; [[ -n "$AUTOMATION_DIR" ]] && rm -rf "$AUTOMATION_DIR"; exit "$status"' EXIT INT TERM
 if [[ -n "$CONSOLE_SCRIPT" ]]; then
   __script_args=(
-    "$ROOT/scripts/run-console-script.py" "$CONSOLE_SCRIPT"
+    "$ROOT/scripts/internal/run-console-script.py" "$CONSOLE_SCRIPT"
     --port "$SERIAL_PORT"
     --monitor "$AUTOMATION_DIR/monitor.sock"
     --screenshot-dir "${P2K_SCREENSHOT_DIR:-/tmp}"

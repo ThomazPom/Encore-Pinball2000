@@ -20,7 +20,7 @@ PATCH_RE = re.compile(
     r"^qemu-(\d+\.\d+\.\d+(?:-rc\d+)?)"
     r"(?:_to_(\d+\.\d+\.\d+(?:-rc\d+)?))?\.patch$"
 )
-DEFAULT_PATCH_ROOT = Path(__file__).resolve().parents[1] / "qemu/upstream-patches"
+DEFAULT_PATCH_ROOT = Path(__file__).resolve().parents[2] / "qemu/upstream-patches"
 
 
 def version_key(text: str) -> tuple[int, int, int, int, int]:

@@ -492,7 +492,7 @@ Each logical patch family:
 - has version compatibility encoded in its variant filename;
 - must select exactly one zero-fuzz variant for the chosen QEMU release;
 - keeps non-P2K behavior unchanged;
-- is source-range validated with `scripts/qemu-patch-series.py`;
+- is source-range validated with `scripts/internal/qemu-patch-series.py`;
 - is compiled and boot-tested before a QEMU version is called supported.
 
 Do not teach `build-qemu.sh` to edit upstream source with line-numbered `sed`,

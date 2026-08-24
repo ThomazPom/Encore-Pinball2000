@@ -18,10 +18,10 @@ import time
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 RUNNER = ROOT / "scripts" / "run-qemu.sh"
-PROBE_SOURCE = ROOT / "scripts" / "guest-irq-probe.S"
-LOAD_SOURCE = ROOT / "scripts" / "guest-load.S"
+PROBE_SOURCE = ROOT / "scripts" / "internal" / "guest-irq-probe.S"
+LOAD_SOURCE = ROOT / "scripts" / "internal" / "guest-load.S"
 EXPECTED_IRQ_HZ = 1193182.0 / 298.0
 DATA_ADDR = 0x00FE0000
 CODE_ADDR = 0x00FF0000
