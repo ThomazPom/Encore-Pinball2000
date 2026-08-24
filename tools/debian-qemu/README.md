@@ -56,3 +56,12 @@ to make its non-root `run0` test possible, and stops there. The current checkout
 is available at `~/Encore-PB2K`, and the graphical console is left open for
 interactive install, reboot and scaling checks. Both the test user and root
 use the laboratory-only password `cabinet`.
+
+The outer VM deliberately exposes no QEMU parallel controller. After boot, the
+harness forces Linux `parport_pc` to register the otherwise unimplemented ISA
+address `0x378`, then loads `ppdev`. The guest therefore receives a genuine
+`/dev/parport0`: Encore must open it, claim it and use the normal ppdev ioctls,
+while reads reach an open virtual hardware bus with no board behind it. This
+tests the complete real-cabinet transport and lets the original ROM diagnose
+the disconnected driver board; it does not substitute Encore's software
+`disconnected` target.

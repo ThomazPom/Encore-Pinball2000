@@ -12,6 +12,7 @@ GRUB_QUIET_SCRIPT=/etc/grub.d/01_encore_pinball2000_quiet
 ROOT_SERVICE=/etc/systemd/system/encore-pinball2000-root.service
 CABINET_SHELL=/usr/local/libexec/encore-pinball2000-session
 DIRECT_INPUT_RULE=/etc/udev/rules.d/70-encore-pinball2000-input.rules
+CABINET_LOCK=/var/lib/pinball2000-cabinet.lock
 
 if [[ ${EUID} -ne 0 ]]; then
     for esc in run0 sudo pkexec; do
@@ -25,6 +26,12 @@ if [[ ${EUID} -ne 0 ]]; then
     echo "uninstall.sh: root privileges are required." >&2
     echo "Install polkitd for run0, install pkexec, or run through sudo." >&2
     exit 1
+fi
+
+lock_owner="$(sed -n '1p' "$CABINET_LOCK" 2>/dev/null || true)"
+if [[ "$lock_owner" != encore ]]; then
+    echo "uninstall.sh: cabinet lock belongs to '${lock_owner:-nobody}', not encore; nothing changed." >&2
+    exit 2
 fi
 
 if [[ ! -r "$STATE/install-mode" ]]; then
@@ -204,5 +211,8 @@ rm -f "$STATE/install-mode" "$STATE/previous-default-target" \
       "$STATE/user-service-path" "$STATE/session-shell-user" \
       "$STATE/original-shell" "$STATE/shells-line-added"
 rmdir "$STATE" 2>/dev/null || true
+if [[ "$(sed -n '1p' "$CABINET_LOCK" 2>/dev/null || true)" == encore ]]; then
+    rm -f "$CABINET_LOCK"
+fi
 
 echo "Encore cabinet integration removed. Project files, ROMs and savedata were untouched."

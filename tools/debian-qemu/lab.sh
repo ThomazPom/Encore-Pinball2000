@@ -19,7 +19,9 @@ BASE=$LAB_DIR/debian13-minimal-$BASE_TAG.qcow2
 OVERLAY=$LAB_DIR/current.qcow2
 PIDFILE=$LAB_DIR/qemu.pid
 LOG=$LAB_DIR/serial.log
-SSH_PORT=${ENCORE_QEMU_SSH_PORT:-22222}
+# Nucore's lab conventionally owns 22222. Keep Encore distinct so both labs
+# can be open while comparing the two implementations.
+SSH_PORT=${ENCORE_QEMU_SSH_PORT:-22223}
 RAM=${ENCORE_QEMU_RAM:-2048}
 CPUS=${ENCORE_QEMU_CPUS:-2}
 KERNEL_URL=${ENCORE_QEMU_KERNEL_URL:-https://deb.debian.org/debian/dists/trixie/main/installer-amd64/current/images/netboot/debian-installer/amd64/linux}
@@ -72,6 +74,25 @@ ssh_guest() {
         -o LogLevel=ERROR -o ConnectTimeout=2 root@127.0.0.1 "$@"
 }
 
+configure_open_bus_parport() {
+    # QEMU exposes no parallel controller. Force Linux parport_pc to claim the
+    # unimplemented ISA address 0x378 instead: inb() observes an open bus while
+    # Encore still exercises a real ppdev character device and its ioctls.
+    ssh_guest 'cat > /etc/modprobe.d/encore-lab-parport.conf <<'"'"'EOF'"'"'
+options parport_pc io=0x378 irq=none
+EOF
+cat > /etc/modules-load.d/encore-lab-parport.conf <<'"'"'EOF'"'"'
+parport_pc
+ppdev
+EOF
+if [ ! -c /dev/parport0 ]; then
+    modprobe parport_pc io=0x378 irq=none
+    modprobe ppdev
+    udevadm settle 2>/dev/null || true
+fi
+test -c /dev/parport0'
+}
+
 accel_args() {
     if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
         printf '%s\n' -enable-kvm -cpu host
@@ -96,9 +117,11 @@ start_overlay() {
         -m "$RAM" -smp "$CPUS" -drive "file=$OVERLAY,if=virtio,format=qcow2" \
         -netdev "user,id=net0,hostfwd=tcp:127.0.0.1:${SSH_PORT}-:22" \
         -device virtio-net-pci,netdev=net0,addr=2 \
+        -parallel none \
         -vga none -device VGA,xres=800,yres=600,addr=1 \
         "${display[@]}" -serial "file:$LOG" -daemonize -pidfile "$PIDFILE"
     wait_ssh
+    configure_open_bus_parport
 }
 
 make_initrd() {
@@ -228,7 +251,7 @@ expect {
 }
 expect {
     -re {Install[^?]*\?} { send -- "y\r"; exp_continue }
-    -re {enable /dev/parport0 at boot[^?]*\?} { send -- "n\r"; exp_continue }
+    -re {Use the real cabinet interface[^?]*\?} { send -- "y\r"; exp_continue }
     eof { set result [wait]; exit [lindex $result 3] }
     timeout { exit 124 }
 }
@@ -241,7 +264,7 @@ test_install() {
     case "$execution" in user) ;; root) run_as_root=1 ;; *) die "execution must be user or root" ;; esac
     reset_overlay; start_overlay; assert_stripped_guest; copy_checkout 1; enable_nonroot_escalation
     install_as_cabinet "$run_as_root"
-    ssh_guest "test -s /etc/encore-pinball2000/session.conf; grep -qx BACKEND=cage /etc/encore-pinball2000/session.conf; grep -qx RUN_AS_ROOT=$run_as_root /etc/encore-pinball2000/session.conf; grep -qx CABINET_AUDIO=1 /etc/encore-pinball2000/session.conf; grep -qx MAINTENANCE=tty /etc/encore-pinball2000/session.conf; grep -q 'Restart=no' /etc/systemd/system/getty@tty1.service.d/49-encore.conf"
+    ssh_guest "test -s /etc/encore-pinball2000/session.conf; grep -qx BACKEND=cage /etc/encore-pinball2000/session.conf; grep -qx RUN_AS_ROOT=$run_as_root /etc/encore-pinball2000/session.conf; grep -qx CABINET_AUDIO=1 /etc/encore-pinball2000/session.conf; grep -qx MAINTENANCE=tty /etc/encore-pinball2000/session.conf; grep -q 'Restart=no' /etc/systemd/system/getty@tty1.service.d/49-encore.conf; grep -qx -- --cabinet /etc/encore-pinball2000/launch.args; grep -qE '^/dev/parport[0-9]+$' /etc/encore-pinball2000/launch.args; id -nG cabinet | tr ' ' '\\n' | grep -qx lp; test -c \"\$(grep -E '^/dev/parport[0-9]+$' /etc/encore-pinball2000/launch.args)\"; test -d /opt/Encore-PB2K/savedata; test \"\$(stat -c %U /opt/Encore-PB2K/savedata)\" = cabinet"
     # A display manager and SSH invoke the account shell with `-c`. That must
     # delegate to the original shell instead of starting another cabinet
     # backend outside tty1.
@@ -258,7 +281,7 @@ test_install() {
     ssh_guest 'journalctl -b --no-pager | grep -q "session opened for user cabinet"; journalctl -b --no-pager | grep -q "session closed for user cabinet"'
     ssh_guest 'journalctl -b --no-pager | grep -Fq "[encore-audio] policy=cabinet tool=wpctl before=Volume:\\ 0.50\\ \\[MUTED\\] after=Volume:\\ 1.00"'
     ssh_guest 'cd /opt/Encore-PB2K && ./uninstall.sh'
-    ssh_guest 'test ! -e /etc/encore-pinball2000/session.conf; test ! -e /etc/systemd/system/getty@tty1.service.d/49-encore.conf; test ! -e /run/systemd/system/getty@tty1.service.d/50-encore-maintenance.conf; test ! -e /var/lib/encore-pinball2000/install-mode; test "$(getent passwd cabinet | cut -d: -f7)" = /bin/bash'
+    ssh_guest 'test ! -e /etc/encore-pinball2000/session.conf; test ! -e /etc/systemd/system/getty@tty1.service.d/49-encore.conf; test ! -e /run/systemd/system/getty@tty1.service.d/50-encore-maintenance.conf; test ! -e /var/lib/encore-pinball2000/install-mode; test ! -e /var/lib/pinball2000-cabinet.lock; test "$(getent passwd cabinet | cut -d: -f7)" = /bin/bash'
     stop_vm
     echo "PASS: stripped Debian install/reboot/session/maintenance/uninstall ($backend, $execution)"
 }

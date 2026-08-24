@@ -72,8 +72,8 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `-vv` | — | quiet default | Level 2: `-v` plus audio trace. | `scripts/run-qemu.sh -vv` |
 | `-vvv` | — | quiet default | Level 3: `-v` plus audio trace and DCS byte trace. | `scripts/run-qemu.sh -vvv` |
 | `--dcs-mode` | `io-handled` \| `bar4-patch` | unset | Exports `P2K_DCS_MODE`; both labels use the shared BAR4 + UART core today. | `scripts/run-qemu.sh --dcs-mode io-handled` |
-| `--cabinet`, `--cabinet-purist` | — | off | Exports `P2K_CABINET_PURIST=1`; wrapper refuses to start unless a real `--lpt-device <hostdev>` is supplied. | `scripts/run-qemu.sh --cabinet --lpt-device /dev/parport0` |
-| `--lpt-device`, `--lpt` | `emu` \| `emulated` \| `none` \| `/dev/parportN` \| `0xNNN` | `emu` | Configures driver-board path: emulated, disabled, ppdev passthrough, or custom emulated I/O port. | `scripts/run-qemu.sh --lpt-device emu` |
+| `--cabinet`, `--cabinet-purist` | — | off | Exports `P2K_CABINET_PURIST=1`; disables emulated board controls on every keyboard path except F1 shutdown. Requires a real host device or the explicit `disconnected` diagnostic target. | `scripts/run-qemu.sh --cabinet --lpt-device /dev/parport0` |
+| `--lpt-device`, `--lpt` | `emu` \| `emulated` \| `disconnected` \| `none` \| `/dev/parportN` \| `0xNNN` | `emu` | Configures the driver-board path. `disconnected` exposes an open bus (reads `0xff`, writes discarded) without emulating a board, so the ROM can diagnose missing hardware. | `scripts/run-qemu.sh --cabinet --lpt-device disconnected` |
 
 | `--lpt-trace` | file | off | Exports `P2K_LPT_TRACE_FILE`; appends LPT read/write trace lines. Parent directory must exist. | `scripts/run-qemu.sh --lpt-trace ./logs/lpt.txt` |
 | `--parport` | device | off | Alias for ppdev passthrough; device must exist. | `scripts/run-qemu.sh --parport /dev/parport0` |

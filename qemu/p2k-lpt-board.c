@@ -53,6 +53,8 @@
 /* Optional host parport passthrough (--lpt-device /dev/parportN). */
 static int     s_pp_fd = -1;
 static char    s_pp_path[256];
+static bool    s_disconnected;
+static bool    s_cabinet_purist;
 
 /* Optional per-event trace file (--lpt-trace <file>). */
 static FILE   *s_trace_fp;
@@ -398,6 +400,14 @@ static void process_data_command(uint8_t opcode, uint8_t data)
 static uint64_t p2k_lpt_read(void *opaque, hwaddr addr, unsigned size)
 {
     uint64_t v;
+    if (s_disconnected) {
+        /* Diagnostic open bus: a controller exists at the expected I/O
+         * address, but no Pinball 2000 driver-board is attached.  Do not
+         * execute any part of the software board model. */
+        v = 0xFF;
+        p2k_lpt_trace("R", addr, v);
+        return v;
+    }
 #ifdef __linux__
     if (s_pp_fd >= 0) {
         v = p2k_lpt_pp_read(s_pp_fd, addr);
@@ -436,6 +446,9 @@ static void p2k_lpt_write(void *opaque, hwaddr addr,
                           uint64_t val, unsigned size)
 {
     p2k_lpt_trace("W", addr, val);
+    if (s_disconnected) {
+        return;
+    }
 #ifdef __linux__
     if (s_pp_fd >= 0) {
         p2k_lpt_pp_write(s_pp_fd, addr, val & 0xFF);
@@ -595,6 +608,13 @@ static void p2k_lpt_screenshot(void)
 
 void p2k_lpt_host_key(int qcode, bool down)
 {
+    /* The threaded SDL renderer forwards keys directly here instead of
+     * passing through QEMU's registered input handler.  Enforce cabinet
+     * isolation at this common endpoint as well.  F1 remains a host
+     * lifecycle control so an operator can leave the cabinet session. */
+    if (s_cabinet_purist && qcode != Q_KEY_CODE_F1) {
+        return;
+    }
     if (p2k_switch_keymap_handle_key(qcode, down)) {
         return;
     }
@@ -712,6 +732,7 @@ void p2k_install_lpt_board(void)
     const char *disable  = getenv("P2K_LPT_DISABLE");
     const char *ioport_s = getenv("P2K_LPT_IOPORT");
     const char *parport  = getenv("P2K_LPT_PARPORT");
+    const char *disconnected = getenv("P2K_LPT_DISCONNECTED");
     const char *trace_fn = getenv("P2K_LPT_TRACE_FILE");
     const char *status_s = getenv("P2K_LPT_STATUS");
     unsigned    ioport   = 0x378;
@@ -756,7 +777,15 @@ void p2k_install_lpt_board(void)
         }
     }
 
-    if (parport && *parport) {
+    s_disconnected = disconnected && *disconnected &&
+                     strcmp(disconnected, "0") != 0;
+    if (s_disconnected) {
+        info_report("pinball2000: LPT DISCONNECTED diagnostic target "
+                    "(open-bus reads=0xff, writes discarded, no emulated "
+                    "driver-board)");
+    }
+
+    if (!s_disconnected && parport && *parport) {
 #ifdef __linux__
         int fd = p2k_lpt_pp_open(parport);
         if (fd < 0) {
@@ -764,6 +793,9 @@ void p2k_install_lpt_board(void)
                          "(%s) — is the device present and are you in the "
                          "'lp' group with ppdev loaded?",
                          parport, strerror(errno));
+            error_report("pinball2000: refusing to fall back to the emulated "
+                         "driver-board after an explicit real-cabinet request");
+            exit(1);
         } else {
             s_pp_fd = fd;
             snprintf(s_pp_path, sizeof(s_pp_path), "%s", parport);
@@ -775,7 +807,8 @@ void p2k_install_lpt_board(void)
         }
 #else
         error_report("pinball2000: --lpt-device <hostdev> only supported on "
-                     "Linux (ppdev). Ignoring '%s'.", parport);
+                     "Linux (ppdev). Cannot use '%s'.", parport);
+        exit(1);
 #endif
     }
 
@@ -790,19 +823,19 @@ void p2k_install_lpt_board(void)
      * parport; otherwise the switch matrix is unreachable. */
     const char *purist = getenv("P2K_CABINET_PURIST");
     bool purist_on = (purist && *purist && strcmp(purist, "0") != 0);
-    if (purist_on && s_pp_fd < 0) {
+    s_cabinet_purist = purist_on;
+    if (purist_on && s_pp_fd < 0 && !s_disconnected) {
         error_report("pinball2000: P2K_CABINET_PURIST=1 requires "
-                     "--lpt-device <hostdev> (a real parport with the "
-                     "driver-board attached). Without it, the switch "
-                     "matrix is unreachable and the game cannot be "
-                     "played.");
+                     "--lpt-device <hostdev> or the explicit disconnected "
+                     "diagnostic target. Without either, the switch matrix "
+                     "is unreachable and the game cannot be played.");
     }
     if (!purist_on) {
         qemu_input_handler_register(NULL, &p2k_lpt_input_handler);
     } else {
-        info_report("pinball2000: cabinet-purist mode — host keyboard "
-                    "input handler NOT registered; only the host parport "
-                    "drives the switch matrix.");
+        info_report("pinball2000: cabinet-purist mode — emulated board "
+                    "controls disabled on every keyboard path (F1 remains "
+                    "available for shutdown)");
     }
 
     info_report("pinball2000: LPT driver-board installed at I/O 0x%x-0x%x "

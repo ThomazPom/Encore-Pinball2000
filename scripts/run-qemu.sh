@@ -506,7 +506,7 @@ CABINET
                             must come from the driver-board over LPT
                             (P2K_CABINET_PURIST=1). Use to validate
                             that a session truly came from hardware.
-  --lpt-device emu|none|/dev/parportN|0xNNN
+  --lpt-device emu|disconnected|none|/dev/parportN|0xNNN
                             Pinball driver-board wiring. `emu` (default,
                             also `emulated`) keeps the desktop-input
                             emulated board on I/O 0x378. `none` skips
@@ -518,6 +518,11 @@ CABINET
                             and `modprobe ppdev`. `0xNNN` relocates the
                             emulated board to a custom I/O port
                             (P2K_LPT_IOPORT).
+                            `disconnected` installs only an open-bus
+                            diagnostic target: reads return 0xff, writes
+                            are discarded, and no board or keyboard input
+                            is emulated. Pair it with --cabinet to let the
+                            ROM diagnose a missing physical board.
   --lpt-trace <file>        Append every LPT read/write to <file>
                             (P2K_LPT_TRACE_FILE). Format:
                             "<ts> R|W <off>=<val>" with µs timestamps.
@@ -567,7 +572,7 @@ ENV PASSTHROUGH (advanced; see qemu/README.md for the full table)
   P2K_DCS_RAW_55_PAIR P2K_DIAG P2K_TIMING_SNAPSHOTS P2K_NO_AUTO_UPDATE
   P2K_PB2KSLIB P2K_DCS_ENGINE P2K_DCS_PCM_CPU P2K_DCS_MODE P2K_SCREENSHOT_DIR
   P2K_DISPLAY_BPP P2K_FRAMEBUFFER_THREAD P2K_QEMU_FRAMEBUFFER
-  P2K_LPT_DISABLE P2K_LPT_PARPORT
+  P2K_LPT_DISABLE P2K_LPT_PARPORT P2K_LPT_DISCONNECTED
   P2K_LPT_IOPORT P2K_LPT_TRACE_FILE P2K_DCS_PRELOAD P2K_CABINET_PURIST
   P2K_SWITCH_KEYMAP P2K_VIDEO_CAPTURE P2K_FFMPEG_BIN
 EOF
@@ -756,13 +761,14 @@ while [[ $# -gt 0 ]]; do
       # so we just record the intent for downstream forensics.
       export P2K_CABINET_PURIST=1; shift ;;
     --lpt-device|--lpt)
-      # --lpt-device accepts <none|emu|/dev/parportN|0xNNN>.
+      # --lpt-device accepts <none|emu|disconnected|/dev/parportN|0xNNN>.
       # All four modes wire to existing P2K_LPT_* env vars consumed by
       # qemu/p2k-lpt-board.c. Real hardware passthrough is Linux-only and
       # requires the host user to be in the `lp` group with ppdev loaded.
       LPT_MODE="$2"
       case "$LPT_MODE" in
         emu|emulated) ;;
+        disconnected)     export P2K_LPT_DISCONNECTED=1 ;;
         none)              export P2K_LPT_DISABLE=1 ;;
         /dev/*)            [[ -e "$LPT_MODE" ]] || { echo "[run-qemu] $1: '$LPT_MODE' does not exist" >&2; exit 2; }
                            export P2K_LPT_PARPORT="$LPT_MODE" ;;
@@ -770,7 +776,7 @@ while [[ $# -gt 0 ]]; do
         parport)           # Default probe target — must exist.
                            [[ -e /dev/parport0 ]] || { echo "[run-qemu] $1: '/dev/parport0' does not exist (load ppdev?)" >&2; exit 2; }
                            export P2K_LPT_PARPORT="/dev/parport0" ;;
-        *) echo "[run-qemu] $1: expected emu|none|/dev/parportN|0xNNN, got '$LPT_MODE'" >&2; exit 2 ;;
+        *) echo "[run-qemu] $1: expected emu|disconnected|none|/dev/parportN|0xNNN, got '$LPT_MODE'" >&2; exit 2 ;;
       esac
       shift 2 ;;
     --lpt-trace)
@@ -1018,12 +1024,14 @@ if [[ "$DISPLAY_MODE" == "none" && $FULLSCREEN -eq 1 ]]; then
   FULLSCREEN=0
 fi
 
-# --cabinet-purist requires a real --lpt-device <hostdev>; otherwise the
-# C-side install would error out at runtime. Catch it now with a clear
-# message rather than at qemu startup.
-if [[ "${P2K_CABINET_PURIST:-}" == "1" && -z "${P2K_LPT_PARPORT:-}" ]]; then
-  echo "[run-qemu] --cabinet-purist requires --lpt-device <hostdev> "\
-"(real parport with the driver-board attached)." >&2
+# Cabinet mode normally requires a real host device.  The explicit
+# disconnected target is the one exception: it exists to let the ROM observe
+# an open bus while retaining purist input semantics.
+if [[ "${P2K_CABINET_PURIST:-}" == "1" &&
+      -z "${P2K_LPT_PARPORT:-}" &&
+      "${P2K_LPT_DISCONNECTED:-}" != "1" ]]; then
+  echo "[run-qemu] --cabinet requires --lpt-device <hostdev> or "\
+"--lpt-device disconnected (diagnostic only)." >&2
   exit 2
 fi
 

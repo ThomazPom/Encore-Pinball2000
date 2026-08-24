@@ -36,18 +36,29 @@ scripts/run-qemu.sh \
   --lpt-trace /tmp/encore-lpt.csv
 ```
 
-`--cabinet-purist` refuses to start without a real parallel device. This avoids
+`--cabinet-purist` refuses to start without a real parallel device, except for
+the explicit `--lpt-device disconnected` ROM-diagnostic target. This avoids
 silently running the keyboard-backed emulated board when cabinet control was
 intended.
 
-The cabinet installer applies the same safety policy. If `/dev/parport0` is
-detected, it displays the validation sequence below and keeps emulation enabled
-unless the operator explicitly confirms that the checks have passed. It can
-also add the selected unprivileged session account to `lp`.
+The cabinet installer discovers `/dev/parportN` without assuming a particular
+port number. When a kernel parport exists but its ppdev device is absent, it
+loads `ppdev` (offering the distribution's `kmod` package if the loader is
+missing) and refuses to silently continue if no character device appears. It
+selects a single detected port automatically, asks when several exist, enables
+real cabinet I/O by default, and adds the unprivileged session account to `lp`.
+When no kernel ppdev interface exists at all, it explicitly reports that Encore
+will use the emulated demonstration board.
 
 The direct path uses `PPCLAIM`, negotiates compatibility mode, and forwards
 DATA, STATUS and CONTROL accesses with `ppdev` ioctls. It does not need a QEMU
 chardev or a separate helper process.
+
+For a reproducible ROM-level cable-disconnection test that still traverses a
+real Linux ppdev device, run `tools/test-disconnected-vport.sh`. The helper
+temporarily registers an open ISA port at `0x278`, launches cabinet-purist
+Encore through the resulting `/dev/parport0`, and removes the port when Encore
+exits. It refuses to alter an existing parallel-port configuration.
 
 ## Validate before play
 
