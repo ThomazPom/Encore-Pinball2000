@@ -25,7 +25,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--no-savedata` | — | off | Exports `P2K_NO_SAVEDATA=1` and runs from a fresh throwaway cwd with no `savedata/` subdir; savedata seeds are skipped and exit writes are discarded. | `scripts/run-qemu.sh --no-savedata` |
 | `--fresh` | — | off | Ignores existing saved device files for this boot, then replaces them with the newly initialized state on clean exit. | `scripts/run-qemu.sh --fresh` |
 | `--update` | spec | `auto` | Selects update bundle: `auto`, `latest`, `none`, version token, or explicit inner bundle dir. | `scripts/run-qemu.sh --update 0210` |
-| `--display` | backend | direct framebuffer on desktop, else `none` | Explicitly selects a QEMU display backend, validates it against `qemu-system-i386 -display help`, and disables the default direct renderer. | `scripts/run-qemu.sh --display gtk` |
+| `--display` | backend | direct framebuffer in a graphical session; otherwise explicit selection required | Explicitly selects a QEMU display backend, validates it against `qemu-system-i386 -display help`, and disables the default direct renderer. | `scripts/run-qemu.sh --display gtk` |
 | `--headless` | — | off | Shortcut for display `none` plus serial stdio unless `--uart-quiet` is used. Promotes verbosity to at least `-v`. | `scripts/run-qemu.sh --headless --game swe1` |
 | `--fullscreen` | — | off | Adds QEMU `-full-screen`; ignored with `--display none`. | `scripts/run-qemu.sh --fullscreen` |
 | `--bpp` | `16` \| `32` | `32` | `16` exports `P2K_DISPLAY_BPP=16` for native x1r5g5b5; `32` keeps ARGB8888 path. | `scripts/run-qemu.sh --bpp 16` |

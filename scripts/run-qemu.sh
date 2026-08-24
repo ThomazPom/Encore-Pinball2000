@@ -806,6 +806,15 @@ if [[ ! "$SPEED_TARGET" =~ ^[0-9]+([.][0-9]+)?$ ]] ||
   exit 2
 fi
 
+if [[ $TCG_ONLY -eq 0 && $HEADLESS -eq 0 && -z "$DISPLAY_MODE" &&
+      -z "$SDL_VIDEO_DRIVER_REQUEST" &&
+      -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+  echo "[run-qemu] no graphical session or display backend is available." >&2
+  echo "[run-qemu] Run ./install.sh for a cabinet setup, or explicitly use" >&2
+  echo "[run-qemu] --direct-console or --headless after preparing its requirements." >&2
+  exit 2
+fi
+
 # Download complete ROM and update trees only when their directories are absent.
 # Existing directories are never inspected, modified, or refreshed.
 "$ROOT/scripts/internal/fetch-assets-if-missing.sh" "$ROOT" "$ROMS_DIR" "$ROOT/updates"
