@@ -21,7 +21,6 @@ The complete archive contains:
 
 - `install.sh`, `uninstall.sh` and the complete runtime scripts;
 - user and developer documentation;
-- the update bundles tracked by the project;
 - the ready-to-run stripped `qemu-system-i386` binary;
 - release metadata and the generated Debian runtime-package list.
 
@@ -29,9 +28,9 @@ Development-only QEMU sources, build helpers, tests, forensic tools and the
 Debian laboratory remain in the source repository and are not copied into the
 end-user archive.
 
-It deliberately contains no user ROMs or savedata. The normal runner uses the
-existing asset downloader when the ROM directory is absent, while keeping the
-updates already included in the package.
+It deliberately contains no ROMs, update payloads or savedata. The normal
+runner uses the existing asset downloader when either runtime asset directory
+is absent.
 
 The smaller QEMU-only archive contains:
 

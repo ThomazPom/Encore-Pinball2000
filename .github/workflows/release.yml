@@ -144,12 +144,12 @@ jobs:
           tar -C "$package" -czf "$asset" .
           (cd dist && sha256sum "${asset##*/}" > "${asset##*/}.sha256")
 
-          # Complete end-user package. User ROMs, savedata and repository
-          # history are deliberately absent; run-qemu fetches the missing ROM
-          # tree through the existing asset path on first launch.
+          # Complete end-user package. ROMs, updates, savedata and repository
+          # history are deliberately absent; run-qemu fetches the missing
+          # runtime asset trees through the existing path on first launch.
           mkdir -p "$full_root"
           git archive HEAD \
-            README.md install.sh uninstall.sh docs updates \
+            README.md install.sh uninstall.sh docs \
             scripts/run-qemu.sh scripts/demos \
             scripts/internal/bench-qemu.py \
             scripts/internal/build-pcm-cache.py \
@@ -178,7 +178,7 @@ jobs:
           test ! -e "$verify/Encore-Pinball2000/tools"
           test ! -e "$verify/Encore-Pinball2000/scripts/tests"
           test ! -e "$verify/Encore-Pinball2000/roms"
-          test -d "$verify/Encore-Pinball2000/updates"
+          test ! -e "$verify/Encore-Pinball2000/updates"
           "$verify/Encore-Pinball2000/qemu-system-i386" -M help | grep -q pinball2000
           "$verify/Encore-Pinball2000/scripts/run-qemu.sh" --help >/dev/null
 
