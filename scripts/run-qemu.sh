@@ -18,6 +18,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT/scripts/internal/runtime-packages.sh"
+ORIGINAL_ARGS=("$@")
 
 # Preserve explicit environment selection; the CLI can replace it below.
 export P2K_DCS_ENGINE="${P2K_DCS_ENGINE:-adsp-hybrid-thread}"
@@ -73,12 +75,16 @@ SPEED_TARGET="${P2K_SPEED_TARGET_PERCENT:-100}"
 EXTRA=()
 QEMU_FB_ASYNC_DRIVER="${P2K_QEMU_FB_ASYNC_DRIVER:-auto}"
 SDL_VIDEO_DRIVER_REQUEST=""
+PREFLIGHT=0
+RUNTIME_BACKEND=""
+BACKEND_WRAPPER=""
 
 # --- QEMU binary lookup -----------------------------------------------------
 if [[ -z "${QEMU_BIN:-}" ]]; then
   QEMU_BIN="$ROOT/qemu-system-i386"
   [[ -x "$QEMU_BIN" ]] || QEMU_BIN="$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
-  [[ -x "$QEMU_BIN" ]] || QEMU_BIN="qemu-system-i386"
+  [[ -x "$QEMU_BIN" ]] || QEMU_BIN="$HOME/.cache/encore-qemu-release/qemu-system-i386"
+  [[ -x "$QEMU_BIN" ]] || QEMU_BIN=""
 fi
 
 # --- audio backend support --------------------------------------------------
@@ -275,9 +281,15 @@ DISPLAY / UX
   --wayland                 Use the direct SDL2 renderer as a native Wayland
                             client. Requires WAYLAND_DISPLAY and implies
                             --framebuffer.
+  --display-manager         Use the current Wayland display-manager session.
+  --cage                    Install/use Cage as a standalone Wayland kiosk.
+  --weston                  Install/use Weston as a standalone Wayland kiosk.
   --direct-console          Use SDL2's KMSDRM backend directly from a login VT.
                             Implies --framebuffer and removes graphical-display
                             variables; intended for cabinet sessions only.
+  --preflight               Perform the selected backend's normal package,
+                            SDL and asset preparation, then stop before
+                            starting its compositor or QEMU.
   --flipscreen              Vertically reverse the displayed image, exactly as
                             if F2 had been pressed once. F2 toggles the same
                             state at run time.
@@ -612,12 +624,28 @@ while [[ $# -gt 0 ]]; do
     --fullscreen)      FULLSCREEN=1; shift ;;
     --framebuffer)     FRAMEBUFFER_REQUEST=1; shift ;;
     --wayland)
+      RUNTIME_BACKEND=wayland
+      SDL_VIDEO_DRIVER_REQUEST=wayland
+      FRAMEBUFFER_REQUEST=1
+      shift ;;
+    --display-manager)
+      RUNTIME_BACKEND=display-manager
+      SDL_VIDEO_DRIVER_REQUEST=wayland
+      FRAMEBUFFER_REQUEST=1
+      shift ;;
+    --cage|--weston)
+      RUNTIME_BACKEND="${1#--}"
+      BACKEND_WRAPPER="$RUNTIME_BACKEND"
       SDL_VIDEO_DRIVER_REQUEST=wayland
       FRAMEBUFFER_REQUEST=1
       shift ;;
     --direct-console)
+      RUNTIME_BACKEND=direct-console
       SDL_VIDEO_DRIVER_REQUEST=KMSDRM
       FRAMEBUFFER_REQUEST=1
+      shift ;;
+    --preflight)
+      PREFLIGHT=1
       shift ;;
     --flipscreen)
       export P2K_FLIPSCREEN=1
@@ -806,18 +834,84 @@ if [[ ! "$SPEED_TARGET" =~ ^[0-9]+([.][0-9]+)?$ ]] ||
   exit 2
 fi
 
+LOCAL_VT=""
+if [[ -t 0 ]]; then
+  LOCAL_VT="$(tty 2>/dev/null || true)"
+fi
 if [[ $TCG_ONLY -eq 0 && $HEADLESS -eq 0 && -z "$DISPLAY_MODE" &&
       -z "$SDL_VIDEO_DRIVER_REQUEST" &&
       -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
-  echo "[run-qemu] no graphical session or display backend is available." >&2
-  echo "[run-qemu] Run ./install.sh for a cabinet setup, or explicitly use" >&2
-  echo "[run-qemu] --direct-console or --headless after preparing its requirements." >&2
-  exit 2
+  if [[ "$LOCAL_VT" == /dev/tty[0-9]* ]]; then
+    SDL_VIDEO_DRIVER_REQUEST=KMSDRM
+    FRAMEBUFFER_REQUEST=1
+    echo "[run-qemu] local VT detected ($LOCAL_VT); using SDL2/KMSDRM"
+  else
+    echo "[run-qemu] no graphical session or display backend is available." >&2
+    echo "[run-qemu] Use --direct-console from a local VT, or --headless." >&2
+    exit 2
+  fi
+fi
+
+if [[ -z "$RUNTIME_BACKEND" ]]; then
+  if [[ "$SDL_VIDEO_DRIVER_REQUEST" == KMSDRM ]]; then
+    RUNTIME_BACKEND=direct-console
+  elif [[ "$SDL_VIDEO_DRIVER_REQUEST" == wayland || -n "${WAYLAND_DISPLAY:-}" ]]; then
+    RUNTIME_BACKEND=wayland
+  fi
+fi
+ENCORE_SDL_DRIVER=""
+encore_prepare_runtime "$RUNTIME_BACKEND"
+
+if [[ $PREFLIGHT -eq 1 ]]; then
+  [[ -n "$RUNTIME_BACKEND" ]] || {
+    echo "[run-qemu] --preflight requires a backend option such as --cage" >&2
+    exit 2
+  }
+  sdl_driver="$ENCORE_SDL_DRIVER"
 fi
 
 # Download complete ROM and update trees only when their directories are absent.
 # Existing directories are never inspected, modified, or refreshed.
-"$ROOT/scripts/internal/fetch-assets-if-missing.sh" "$ROOT" "$ROMS_DIR" "$ROOT/updates"
+if [[ $PREFLIGHT -eq 1 && $EUID -eq 0 &&
+      -n "${ENCORE_PREFLIGHT_USER:-}" && "$ENCORE_PREFLIGHT_USER" != root ]]; then
+  preflight_home="$(getent passwd "$ENCORE_PREFLIGHT_USER" | cut -d: -f6)"
+  [[ -n "$preflight_home" ]] || {
+    echo "[run-qemu] unknown preflight asset user: $ENCORE_PREFLIGHT_USER" >&2
+    exit 2
+  }
+  runuser -u "$ENCORE_PREFLIGHT_USER" -- env HOME="$preflight_home" \
+    "$ROOT/scripts/internal/fetch-assets-if-missing.sh" \
+    "$ROOT" "$ROMS_DIR" "$ROOT/updates"
+else
+  "$ROOT/scripts/internal/fetch-assets-if-missing.sh" "$ROOT" "$ROMS_DIR" "$ROOT/updates"
+fi
+
+# A preflight deliberately stops at the last common preparation point
+# before cache generation or any other operation can start QEMU.
+if [[ $PREFLIGHT -eq 1 ]]; then
+  echo "[run-qemu] $RUNTIME_BACKEND preflight passed (SDL: $sdl_driver; assets ready)"
+  exit 0
+fi
+
+# Standalone compositors wrap the exact same launcher. The child receives the
+# compositor's Wayland environment and continues through the ordinary
+# --wayland path; only the outer backend selector is removed.
+if [[ -n "$BACKEND_WRAPPER" ]]; then
+  backend_child_args=()
+  for backend_arg in "${ORIGINAL_ARGS[@]}"; do
+    [[ "$backend_arg" == "--$BACKEND_WRAPPER" ]] || backend_child_args+=("$backend_arg")
+  done
+  case "$BACKEND_WRAPPER" in
+    cage)
+      exec cage -d -s -- "$ROOT/scripts/run-qemu.sh" \
+        --wayland "${backend_child_args[@]}"
+      ;;
+    weston)
+      exec weston --backend=drm --shell=kiosk --idle-time=0 --no-config -- \
+        "$ROOT/scripts/run-qemu.sh" --wayland "${backend_child_args[@]}"
+      ;;
+  esac
+fi
 
 export P2K_SPEED_TARGET_PERCENT="$SPEED_TARGET"
 export P2K_TCG_CLKINT_HOTLOOP_TARGET_HZ="$(

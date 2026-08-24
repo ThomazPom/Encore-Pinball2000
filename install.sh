@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Install Encore as a native Wayland or direct-console cabinet session.
-# May use: git, python3, systemd-inhibit, Cage or Weston. Missing tools are
-# reported together and APT installation is offered once.
+# Owns system integration; the runner owns emulator/backend prerequisites.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -36,35 +35,6 @@ ask() {
         read -r -p "$prompt [y/N] " answer
         [[ "$answer" =~ ^[Yy]$ ]]
     fi
-}
-
-install_binary_runtime_packages() {
-    local metadata="$1" package_name
-    local -a declared_packages missing_packages available_packages
-    [[ -s "$metadata" ]] || return 0
-    command -v apt-get >/dev/null 2>&1 || return 0
-
-    mapfile -t declared_packages < <(
-        sed -E 's/:[a-z0-9]+$//' "$metadata" |
-            grep -E '^[a-z0-9][a-z0-9+.-]*$' | sort -u
-    )
-    missing_packages=()
-    for package_name in "${declared_packages[@]}"; do
-        dpkg-query -W -f='${Status}' "$package_name" 2>/dev/null |
-            grep -q '^install ok installed$' || missing_packages+=("$package_name")
-    done
-    ((${#missing_packages[@]})) || return 0
-
-    echo "Installing runtime libraries required by the packaged Encore QEMU..."
-    DEBIAN_FRONTEND=noninteractive apt-get update
-    available_packages=()
-    for package_name in "${missing_packages[@]}"; do
-        apt-cache show "$package_name" >/dev/null 2>&1 &&
-            available_packages+=("$package_name")
-    done
-    ((${#available_packages[@]})) || return 0
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        "${available_packages[@]}"
 }
 
 case "${1:-}" in
@@ -238,15 +208,9 @@ ask "Proceed?" || exit 0
 install -d -o "$session_user" -g "$session_group" -m 0755 "$ROOT/savedata"
 
 missing_packages=()
-command -v git >/dev/null 2>&1 || missing_packages+=(git)
-case "$backend" in
-    cage) command -v cage >/dev/null 2>&1 || missing_packages+=(cage) ;;
-    weston) command -v weston >/dev/null 2>&1 || missing_packages+=(weston) ;;
-esac
-command -v python3 >/dev/null 2>&1 || missing_packages+=(python3)
 command -v systemd-inhibit >/dev/null 2>&1 || missing_packages+=(systemd)
 if ((${#missing_packages[@]})); then
-    echo "Missing runtime packages/tools: ${missing_packages[*]}"
+    echo "Missing installer package/tool: ${missing_packages[*]}"
     if command -v apt-get >/dev/null 2>&1 && ask "Install the missing Debian packages now?"; then
         DEBIAN_FRONTEND=noninteractive apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -256,111 +220,18 @@ if ((${#missing_packages[@]})); then
     fi
 fi
 
-sdl_has_driver() {
-    local wanted="$1"
-    SDL_WANTED_DRIVER="$wanted" python3 - <<'PY'
-import ctypes, ctypes.util, sys
-import os
-name = ctypes.util.find_library("SDL2-2.0") or ctypes.util.find_library("SDL2")
-if not name:
-    sys.exit(1)
-sdl = ctypes.CDLL(name)
-sdl.SDL_GetVideoDriver.restype = ctypes.c_char_p
-drivers = {sdl.SDL_GetVideoDriver(i).decode() for i in range(sdl.SDL_GetNumVideoDrivers())}
-sys.exit(0 if os.environ["SDL_WANTED_DRIVER"] in drivers else 1)
-PY
-}
-
-# Query SDL itself rather than inferring support from library filenames.
-sdl_driver=wayland
-[[ "$backend" == direct-console ]] && sdl_driver=KMSDRM
-if ! sdl_has_driver "$sdl_driver"; then
-    echo "The installed SDL2 does not expose its $sdl_driver video backend."
-    if command -v apt-get >/dev/null 2>&1 &&
-       ask "Install Debian's SDL2 and graphics runtime now?"; then
-        DEBIAN_FRONTEND=noninteractive apt-get update
-        if [[ "$sdl_driver" == wayland ]]; then
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-                libsdl2-2.0-0 libwayland-client0 libegl1 libgles2 libgl1-mesa-dri
-        else
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-                libsdl2-2.0-0 libdrm2 libgbm1 libegl1 libgles2 libgl1-mesa-dri
-        fi
-    fi
-    if ! sdl_has_driver "$sdl_driver"; then
-        echo "install.sh: SDL2 still has no $sdl_driver backend." >&2
-        exit 2
-    fi
-fi
-
 build_qemu="$session_home/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
 release_dir="$session_home/.cache/encore-qemu-release"
 release_qemu="$release_dir/qemu-system-i386"
+# The runner owns QEMU acquisition, every runtime dependency, SDL and assets.
+runtime_backend_arg="--$backend"
+ENCORE_PREFLIGHT_USER="$session_user" HOME="$session_home" \
+    "$ROOT/scripts/run-qemu.sh" "$runtime_backend_arg" --preflight
+
 qemu_bin="$release_qemu"
 [[ -x "$build_qemu" ]] && qemu_bin="$build_qemu"
 [[ -x "$ROOT/qemu-system-i386" ]] && qemu_bin="$ROOT/qemu-system-i386"
-
-if [[ ! -x "$qemu_bin" ]]; then
-    echo
-    if [[ -x "$ROOT/scripts/build-qemu.sh" ]]; then
-        echo "How should Encore obtain its custom QEMU?"
-        echo "1. Build locally — Recommended (longer; guaranteed to match this checkout)"
-        echo "2. Download latest release — Faster (may lag behind this checkout)"
-        read -r -p "Choice [1]: " qemu_choice
-        qemu_choice="${qemu_choice:-1}"
-        [[ "$qemu_choice" == 1 || "$qemu_choice" == 2 ]] || {
-            echo "install.sh: invalid QEMU choice" >&2; exit 2; }
-    else
-        echo "The packaged QEMU binary is missing; downloading a verified replacement."
-        qemu_choice=2
-    fi
-
-    if [[ "$qemu_choice" == 2 ]]; then
-        command -v apt-get >/dev/null 2>&1 || {
-            echo "Automatic release setup requires APT" >&2; exit 2; }
-        DEBIAN_FRONTEND=noninteractive apt-get update
-        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            ca-certificates curl tar coreutils
-        if runuser -u "$session_user" -- env HOME="$session_home" \
-            "$ROOT/scripts/internal/download-qemu-release.sh" --destination "$release_dir"; then
-            qemu_bin="$release_qemu"
-        else
-            echo "The published build could not be downloaded or verified." >&2
-            if [[ -x "$ROOT/scripts/build-qemu.sh" ]]; then
-                ask "Build locally instead?" Y || exit 2
-                qemu_choice=1
-            else
-                exit 2
-            fi
-        fi
-    fi
-
-    if [[ "$qemu_choice" == 1 ]]; then
-        command -v apt-get >/dev/null 2>&1 || {
-            echo "Automatic build setup requires APT" >&2; exit 2; }
-        DEBIAN_FRONTEND=noninteractive apt-get update
-        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            ca-certificates build-essential pkg-config git curl patch ninja-build \
-            python3 python3-venv xz-utils libsdl2-dev libglib2.0-dev \
-            libpixman-1-dev zlib1g-dev libslirp-dev libvorbis-dev libogg-dev
-        runuser -u "$session_user" -- env HOME="$session_home" \
-            "$ROOT/scripts/build-qemu.sh"
-        qemu_bin="$build_qemu"
-    fi
-    [[ -x "$qemu_bin" ]] || {
-        echo "install.sh: QEMU acquisition completed without the expected binary" >&2
-        exit 3
-    }
-fi
-runtime_metadata=""
-[[ "$qemu_bin" != "$ROOT/qemu-system-i386" ]] || runtime_metadata="$ROOT/runtime-packages.txt"
-[[ "$qemu_bin" != "$release_qemu" ]] || runtime_metadata="$release_dir/runtime-packages.txt"
-[[ -z "$runtime_metadata" ]] || install_binary_runtime_packages "$runtime_metadata"
-if ldd "$qemu_bin" 2>/dev/null | grep -q 'not found'; then
-    echo "install.sh: the selected QEMU still has missing runtime libraries:" >&2
-    ldd "$qemu_bin" | grep 'not found' >&2 || true
-    exit 3
-fi
+[[ -x "$qemu_bin" ]] || { echo "install.sh: runner produced no QEMU binary" >&2; exit 3; }
 "$qemu_bin" -M help | grep -q pinball2000 || {
     echo "install.sh: $qemu_bin does not contain the Encore machine" >&2; exit 3; }
 
