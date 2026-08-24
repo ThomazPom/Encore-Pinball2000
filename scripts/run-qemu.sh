@@ -75,8 +75,11 @@ QEMU_FB_ASYNC_DRIVER="${P2K_QEMU_FB_ASYNC_DRIVER:-auto}"
 SDL_VIDEO_DRIVER_REQUEST=""
 
 # --- QEMU binary lookup -----------------------------------------------------
-QEMU_BIN="${QEMU_BIN:-$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386}"
-[[ -x "$QEMU_BIN" ]] || QEMU_BIN="qemu-system-i386"
+if [[ -z "${QEMU_BIN:-}" ]]; then
+  QEMU_BIN="$ROOT/qemu-system-i386"
+  [[ -x "$QEMU_BIN" ]] || QEMU_BIN="$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
+  [[ -x "$QEMU_BIN" ]] || QEMU_BIN="qemu-system-i386"
+fi
 
 # --- audio backend support --------------------------------------------------
 AUDIO_AUTO_CANDIDATES=(sdl pa alsa oss sndio dbus)
@@ -592,7 +595,8 @@ while [[ $# -gt 0 ]]; do
       PB2K_ADSP_CACHE_WORKERS="$2"; shift 2 ;;
     --update)          UPDATE_TOKEN="$2"; shift 2 ;;
     --display)
-      __qbin="${QEMU_BIN:-$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386}"
+      __qbin="${QEMU_BIN:-$ROOT/qemu-system-i386}"
+      [[ -x "$__qbin" ]] || __qbin="$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
       [[ -x "$__qbin" ]] || __qbin="qemu-system-i386"
       __dbase="${2%%,*}"
       if ! "$__qbin" -display help 2>/dev/null | grep -qx "$__dbase"; then

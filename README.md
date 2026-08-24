@@ -42,3 +42,17 @@ software itself is running.
 
 Game ROMs and community update payloads are not supplied by Encore. Users must
 provide material they are legally entitled to use.
+
+## Download a release
+
+Download `encore-pinball2000-linux-x86_64.tar.gz` from the latest GitHub
+release, extract it, then run:
+
+```sh
+cd Encore-Pinball2000
+./install.sh
+```
+
+The archive contains Encore's installer, runner, documentation, supported
+updates and custom QEMU binary. It contains no game ROMs. On first launch, the
+runner uses the project's existing downloader when the ROM directory is absent.
