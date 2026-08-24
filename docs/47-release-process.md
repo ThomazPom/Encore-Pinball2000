@@ -1,9 +1,8 @@
 # 47 — Release process
 
-Encore publishes both a complete end-user package and its custom QEMU as a
-smaller compatibility download. The complete package can be extracted and run
-without first cloning the repository. A local QEMU build remains available and
-always uses the exact packaged sources.
+Encore publishes one complete end-user package. It can be extracted and run
+without first cloning the repository, and the installer's download helper uses
+that same archive when it only needs to refresh the custom QEMU binary.
 
 ## Automatic publication
 
@@ -32,12 +31,6 @@ It deliberately contains no ROMs, update payloads or savedata. The normal
 runner uses the existing asset downloader when either runtime asset directory
 is absent.
 
-The smaller QEMU-only archive contains:
-
-- the stripped `qemu-system-i386` binary;
-- the exact release tag, commit and build environment;
-- a generated list of Debian runtime packages.
-
 Before publication, the workflow verifies that the stripped binary starts,
 has no unresolved libraries and exposes the `pinball2000` machine. The
 installer performs the machine check again after download.
@@ -49,8 +42,6 @@ the installer use GitHub's `/releases/latest/download/` endpoint without an API
 query or a hard-coded release number:
 
 ```text
-encore-qemu-linux-x86_64.tar.gz
-encore-qemu-linux-x86_64.tar.gz.sha256
 encore-pinball2000-linux-x86_64.tar.gz
 encore-pinball2000-linux-x86_64.tar.gz.sha256
 ```
@@ -60,8 +51,9 @@ aware of every future tag.
 
 For an end-user installation, download and extract
 `encore-pinball2000-linux-x86_64.tar.gz`, enter its `Encore-Pinball2000`
-directory and run `./install.sh`. The QEMU-only asset remains the fixed endpoint
-used by older checkouts and by the installer's fast-download option.
+directory and run `./install.sh`. The installer's fast-download option retrieves
+the same archive, verifies it, and copies only QEMU and its metadata into the
+user cache.
 
 ## Manual validation
 

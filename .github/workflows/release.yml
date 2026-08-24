@@ -116,7 +116,6 @@ jobs:
         run: |
           source_bin="$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
           package=dist/package
-          asset=dist/encore-qemu-linux-x86_64.tar.gz
           full_root=dist/full/Encore-Pinball2000
           full_asset=dist/encore-pinball2000-linux-x86_64.tar.gz
           "$source_bin" -M help | grep -q pinball2000
@@ -141,9 +140,6 @@ jobs:
                 dpkg-query -S "$(readlink -f "$library")" 2>/dev/null || true
               done \
             | cut -d: -f1 | sort -u > "$package/runtime-packages.txt"
-          tar -C "$package" -czf "$asset" .
-          (cd dist && sha256sum "${asset##*/}" > "${asset##*/}.sha256")
-
           # Complete end-user package. ROMs, updates, savedata and repository
           # history are deliberately absent; run-qemu fetches the missing
           # runtime asset trees through the existing path on first launch.
@@ -191,14 +187,10 @@ jobs:
         run: |
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
-              dist/encore-qemu-linux-x86_64.tar.gz \
-              dist/encore-qemu-linux-x86_64.tar.gz.sha256 \
               dist/encore-pinball2000-linux-x86_64.tar.gz \
               dist/encore-pinball2000-linux-x86_64.tar.gz.sha256 --clobber
           else
             gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
-              dist/encore-qemu-linux-x86_64.tar.gz \
-              dist/encore-qemu-linux-x86_64.tar.gz.sha256 \
               dist/encore-pinball2000-linux-x86_64.tar.gz \
               dist/encore-pinball2000-linux-x86_64.tar.gz.sha256 \
               --target "$RELEASE_COMMIT" --generate-notes \
