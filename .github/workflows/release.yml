@@ -7,7 +7,6 @@ on:
     paths:
       - 'qemu/**'
       - 'scripts/build-qemu.sh'
-      - 'scripts/dependencies.sh'
       - 'scripts/qemu-patch-series.py'
       - '.github/workflows/release.yml'
   schedule:
@@ -37,13 +36,16 @@ jobs:
     timeout-minutes: 75
 
     steps:
-      - name: Bootstrap source checkout
+      - name: Install build and release dependencies
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
           apt-get -qq update >/tmp/apt.log 2>&1
           apt-get -qq install -y --no-install-recommends \
-            ca-certificates git \
+            ca-certificates curl git gh xz-utils file binutils \
+            build-essential ninja-build meson pkg-config python3 python3-venv \
+            libglib2.0-dev libpixman-1-dev libsdl2-dev \
+            libvorbis-dev libogg-dev libslirp-dev zlib1g-dev \
             >>/tmp/apt.log 2>&1 || { tail -n 100 /tmp/apt.log; exit 1; }
 
       - name: Check out source without submodule recursion
@@ -54,15 +56,6 @@ jobs:
           git -c protocol.version=2 fetch --no-recurse-submodules --force origin \
             '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
           git checkout --detach "$GITHUB_SHA"
-
-      - name: Install declared build and release dependencies
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          source scripts/dependencies.sh
-          apt-get -qq install -y --no-install-recommends \
-            "${ENCORE_APT_QEMU_BUILD[@]}" "${ENCORE_APT_RELEASE_TOOLS[@]}" \
-            >>/tmp/apt.log 2>&1 || { tail -n 100 /tmp/apt.log; exit 1; }
 
       - name: Resolve publication
         id: publication

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Fetch the ROM/update trees. This script may use Git and requires it even when
+# the trees are already present, keeping its prerequisite contract predictable.
 set -euo pipefail
 
 ROOT="$1"
@@ -6,16 +8,16 @@ ROMS_DIR="$2"
 UPDATES_DIR="$3"
 REPO_URL="${P2K_ASSETS_REPO:-https://github.com/ThomazPom/Encore-Pinball2000.git}"
 
+command -v git >/dev/null 2>&1 || {
+  echo "[run-qemu] missing prerequisite: git" >&2
+  exit 1
+}
+
 need_roms=0
 need_updates=0
 [[ -d "$ROMS_DIR" ]] || need_roms=1
 [[ -d "$UPDATES_DIR" ]] || need_updates=1
 (( need_roms || need_updates )) || exit 0
-
-command -v git >/dev/null 2>&1 || {
-  echo "[run-qemu] git is required to download missing ROMs/updates" >&2
-  exit 1
-}
 
 tmp="$(mktemp -d /tmp/encore-assets.XXXXXX)"
 cleanup() { rm -rf "$tmp"; }
