@@ -20,17 +20,31 @@ Useful commands:
 ./tools/debian-qemu/lab.sh prepare       # netinstall and seal the base image
 ./tools/debian-qemu/lab.sh test cage user # unprivileged lifecycle test
 ./tools/debian-qemu/lab.sh test cage root # root diagnostic A/B test
+./tools/debian-qemu/lab.sh test weston user
+./tools/debian-qemu/lab.sh test direct-console user
+./tools/debian-qemu/lab.sh test-dm user    # DM integration/restoration
+./tools/debian-qemu/lab.sh test-git        # Git absent, then offered by installer
+./tools/debian-qemu/lab.sh test-assets     # missing fetch, then present no-op
+./tools/debian-qemu/lab.sh test-acquire release
+./tools/debian-qemu/lab.sh test-acquire build
+./tools/debian-qemu/lab.sh test-alternates # opposite installer choices
+./tools/debian-qemu/lab.sh all             # complete matrix; includes a real QEMU build
 ./tools/debian-qemu/lab.sh manual        # fresh graphical VM, ready after netinst
 ./tools/debian-qemu/lab.sh shell         # SSH into the current overlay
 ./tools/debian-qemu/lab.sh stop
 ./tools/debian-qemu/lab.sh reset         # discard only the current overlay
 ```
 
-The automated path uses controlled fake Cage and QEMU executables. It tests
-the installer and system lifecycle rather than guest GPU or emulation:
-non-root elevation, PAM/logind login, inhibitor lifetime, explicit
-transition to a persistent maintenance getty, optional root execution, and
-reversible uninstall. Weston, real rendering, audio and cabinet timing remain
+The standalone lifecycle matrix uses controlled fake compositor and QEMU
+executables. It tests Cage, Weston and direct-console integration in both user
+and root modes: non-root elevation, PAM/logind login, inhibitor lifetime,
+explicit transition to a persistent maintenance getty, audio policy and
+reversible uninstall. Separate acquisition cases download the real published
+QEMU and perform a complete QEMU build inside the minimal guest. The asset
+cases exercise present and absent trees plus present and absent Git. The
+display-manager cases validate generated integration and restoration against a
+controlled SDDM service; they do not claim to render a real desktop session.
+Real compositor/DRM rendering, physical audio and cabinet timing remain
 physical-host tests.
 
 Artifacts live outside Git under `${XDG_CACHE_HOME:-~/.cache}/encore-qemu` by
