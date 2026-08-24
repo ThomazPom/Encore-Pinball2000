@@ -357,6 +357,54 @@ test_assets() {
     echo "PASS: assets absent fetch and assets present no-op"
 }
 
+download_release_in_guest() {
+    ssh_guest 'DEBIAN_FRONTEND=noninteractive apt-get update >/dev/null
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl ca-certificates tar coreutils >/dev/null
+rm -rf /home/cabinet/Encore-Pinball2000
+runuser -u cabinet -- bash -lc '\''
+set -e
+work=$(mktemp -d)
+trap "rm -rf -- $work" EXIT
+base=https://github.com/ThomazPom/Encore-Pinball2000/releases/latest/download
+cd "$work"
+curl -fL --retry 3 -O "$base/encore-pinball2000-linux-x86_64.tar.gz"
+curl -fL --retry 3 -O "$base/encore-pinball2000-linux-x86_64.tar.gz.sha256"
+sha256sum -c encore-pinball2000-linux-x86_64.tar.gz.sha256
+tar -xzf encore-pinball2000-linux-x86_64.tar.gz -C /home/cabinet
+'\'''
+}
+
+assert_release_in_guest() {
+    ssh_guest 'set -eu
+root=/home/cabinet/Encore-Pinball2000
+test -x "$root/install.sh"
+test -x "$root/uninstall.sh"
+test -x "$root/scripts/run-qemu.sh"
+test -x "$root/scripts/internal/fetch-assets-if-missing.sh"
+test -x "$root/qemu-system-i386"
+test -s "$root/runtime-packages.txt"
+test ! -e "$root/roms"
+test ! -e "$root/updates"
+test ! -e "$root/qemu"
+test ! -e "$root/tools"
+test ! -e "$root/scripts/tests"
+test ! -e "$root/scripts/build-qemu.sh"
+packages=$(sed -E "s/:[a-z0-9]+$//" "$root/runtime-packages.txt" | grep -E "^[a-z0-9][a-z0-9+.-]*$" | sort -u)
+test -n "$packages"
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $packages >/dev/null
+"$root/qemu-system-i386" -M help > /tmp/encore-release-machines
+grep -q pinball2000 /tmp/encore-release-machines
+runuser -u cabinet -- "$root/install.sh" --help >/dev/null'
+}
+
+test_release_package() {
+    reset_overlay; start_overlay; assert_stripped_guest
+    download_release_in_guest
+    assert_release_in_guest
+    stop_vm
+    echo "PASS: published release download, checksum, extraction and structure"
+}
+
 test_acquisition() {
     local acquisition=${1:-release}
     case "$acquisition" in build|release) ;; *) die "acquisition must be build or release" ;; esac
@@ -412,6 +460,26 @@ untouched; discard this experiment with: $0 reset
 EOF
 }
 
+release_vm() {
+    reset_overlay
+    start_overlay
+    assert_stripped_guest
+    enable_nonroot_escalation
+    download_release_in_guest
+    assert_release_in_guest
+    cat <<EOF
+
+Published release is verified and extracted in the 800x600 Debian VM.
+Login: cabinet / cabinet
+
+  cd ~/Encore-Pinball2000
+  ./install.sh
+
+The checkout was not copied into this guest. Discard the experiment with:
+  $0 reset
+EOF
+}
+
 case "${1:-}" in
     prepare) prepare ;;
     reset) reset_overlay ;;
@@ -422,9 +490,11 @@ case "${1:-}" in
     test-dm) prereqs; need sshpass; need expect; test_display_manager_config "${2:-user}" ;;
     test-git) prereqs; need sshpass; need expect; test_missing_git ;;
     test-assets) prereqs; test_assets ;;
+    test-release) prereqs; need sshpass; test_release_package ;;
     test-acquire) prereqs; need sshpass; need expect; test_acquisition "${2:-release}" ;;
     test-alternates) prereqs; need sshpass; need expect; test_alternate_choices ;;
     manual) prereqs; need sshpass; manual_vm ;;
+    release) prereqs; need sshpass; release_vm ;;
     all) prepare; need expect
          for backend in cage weston direct-console; do
              test_install "$backend" user
@@ -434,8 +504,9 @@ case "${1:-}" in
          test_display_manager_config root
          test_missing_git
          test_assets
+         test_release_package
          test_acquisition release
          test_acquisition build
          test_alternate_choices ;;
-    *) echo "Usage: $0 {all|prepare|reset|boot|manual|shell|stop|test {cage|weston|direct-console} [user|root]|test-dm [user|root]|test-git|test-assets|test-acquire [release|build]|test-alternates}" >&2; exit 2 ;;
+    *) echo "Usage: $0 {all|prepare|reset|boot|manual|release|shell|stop|test {cage|weston|direct-console} [user|root]|test-dm [user|root]|test-git|test-assets|test-release|test-acquire [release|build]|test-alternates}" >&2; exit 2 ;;
 esac

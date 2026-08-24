@@ -25,11 +25,13 @@ Useful commands:
 ./tools/debian-qemu/lab.sh test-dm user    # DM integration/restoration
 ./tools/debian-qemu/lab.sh test-git        # Git absent, then offered by installer
 ./tools/debian-qemu/lab.sh test-assets     # missing fetch, then present no-op
+./tools/debian-qemu/lab.sh test-release    # download/extract published package
 ./tools/debian-qemu/lab.sh test-acquire release
 ./tools/debian-qemu/lab.sh test-acquire build
 ./tools/debian-qemu/lab.sh test-alternates # opposite installer choices
 ./tools/debian-qemu/lab.sh all             # complete matrix; includes a real QEMU build
 ./tools/debian-qemu/lab.sh manual        # fresh graphical VM, ready after netinst
+./tools/debian-qemu/lab.sh release       # same VM using the published release
 ./tools/debian-qemu/lab.sh shell         # SSH into the current overlay
 ./tools/debian-qemu/lab.sh stop
 ./tools/debian-qemu/lab.sh reset         # discard only the current overlay
@@ -70,6 +72,12 @@ to make its non-root `run0` test possible, and stops there. The current checkout
 is available at `~/Encore-PB2K`, and the graphical console is left open for
 interactive install, reboot and scaling checks. Both the test user and root
 use the laboratory-only password `cabinet`.
+
+`release` follows the same interactive model without copying the checkout. It
+downloads the latest published archive inside the guest, verifies its SHA-256,
+extracts it as `~/Encore-Pinball2000`, validates the minimal package structure
+and leaves the VM open at the normal login. `test-release` performs the same
+download and validation non-interactively, then discards the overlay.
 
 The outer VM deliberately exposes no QEMU parallel controller. After boot, the
 harness forces Linux `parport_pc` to register the otherwise unimplemented ISA
