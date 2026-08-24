@@ -51,10 +51,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
-      # checkout's post-job credential cleanup also runs inside this container.
-      - name: Trust the ephemeral container checkout
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          persist-credentials: false
 
       - name: Resolve publication
         id: publication
