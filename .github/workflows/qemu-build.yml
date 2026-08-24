@@ -11,6 +11,10 @@ concurrency:
   group: qemu-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build-qemu:
     runs-on: ubuntu-latest
