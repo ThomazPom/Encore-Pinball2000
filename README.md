@@ -53,6 +53,6 @@ cd Encore-Pinball2000
 ./install.sh
 ```
 
-The archive contains Encore's installer, runner, documentation, supported
-updates and custom QEMU binary. It contains no game ROMs. On first launch, the
-runner uses the project's existing downloader when the ROM directory is absent.
+The archive contains Encore's installer, runner, documentation and custom QEMU
+binary. It contains no game ROMs or update payloads. On first launch, the runner
+uses the project's existing downloader when either asset directory is absent.
