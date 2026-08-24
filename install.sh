@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Install Encore as a native Wayland or direct-console cabinet session.
+# May use: git, python3, systemd-inhibit, Cage or Weston. Missing tools are
+# reported together and APT installation is offered once.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-source "$ROOT/scripts/dependencies.sh"
 CONF_DIR=/etc/encore-pinball2000
 STATE=/var/lib/encore-pinball2000
 GETTY_DROPIN=/etc/systemd/system/getty@tty1.service.d/49-encore.conf
@@ -14,19 +15,6 @@ ROOT_SERVICE=/etc/systemd/system/encore-pinball2000-root.service
 CABINET_SHELL=/usr/local/libexec/encore-pinball2000-session
 DIRECT_INPUT_RULE=/etc/udev/rules.d/70-encore-pinball2000-input.rules
 CABINET_LOCK=/var/lib/pinball2000-cabinet.lock
-APT_UPDATED=0
-
-apt_install() {
-    command -v apt-get >/dev/null 2>&1 || {
-        echo "install.sh: automatic package installation requires APT" >&2
-        return 2
-    }
-    if [[ "$APT_UPDATED" -eq 0 ]]; then
-        DEBIAN_FRONTEND=noninteractive apt-get update
-        APT_UPDATED=1
-    fi
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"
-}
 
 usage() {
     cat <<'EOF'
@@ -221,16 +209,19 @@ ask "Proceed?" || exit 0
 install -d -o "$session_user" -g "$session_group" -m 0755 "$ROOT/savedata"
 
 missing_packages=()
+command -v git >/dev/null 2>&1 || missing_packages+=(git)
 case "$backend" in
-    cage) command -v cage >/dev/null 2>&1 || missing_packages+=("${ENCORE_APT_COMMAND_PACKAGE[cage]}") ;;
-    weston) command -v weston >/dev/null 2>&1 || missing_packages+=("${ENCORE_APT_COMMAND_PACKAGE[weston]}") ;;
+    cage) command -v cage >/dev/null 2>&1 || missing_packages+=(cage) ;;
+    weston) command -v weston >/dev/null 2>&1 || missing_packages+=(weston) ;;
 esac
-command -v python3 >/dev/null 2>&1 || missing_packages+=("${ENCORE_APT_COMMAND_PACKAGE[python3]}")
-command -v systemd-inhibit >/dev/null 2>&1 || missing_packages+=("${ENCORE_APT_COMMAND_PACKAGE[systemd-inhibit]}")
+command -v python3 >/dev/null 2>&1 || missing_packages+=(python3)
+command -v systemd-inhibit >/dev/null 2>&1 || missing_packages+=(systemd)
 if ((${#missing_packages[@]})); then
     echo "Missing runtime packages/tools: ${missing_packages[*]}"
     if command -v apt-get >/dev/null 2>&1 && ask "Install the missing Debian packages now?"; then
-        apt_install "${missing_packages[@]}"
+        DEBIAN_FRONTEND=noninteractive apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            "${missing_packages[@]}"
     else
         echo "install.sh: required tools are missing" >&2; exit 2
     fi
@@ -258,10 +249,13 @@ if ! sdl_has_driver "$sdl_driver"; then
     echo "The installed SDL2 does not expose its $sdl_driver video backend."
     if command -v apt-get >/dev/null 2>&1 &&
        ask "Install Debian's SDL2 and graphics runtime now?"; then
+        DEBIAN_FRONTEND=noninteractive apt-get update
         if [[ "$sdl_driver" == wayland ]]; then
-            apt_install "${ENCORE_APT_SDL_WAYLAND[@]}"
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                libsdl2-2.0-0 libwayland-client0 libegl1 libgles2 libgl1-mesa-dri
         else
-            apt_install "${ENCORE_APT_SDL_KMSDRM[@]}"
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                libsdl2-2.0-0 libdrm2 libgbm1 libegl1 libgles2 libgl1-mesa-dri
         fi
     fi
     if ! sdl_has_driver "$sdl_driver"; then
@@ -288,7 +282,11 @@ if [[ ! -x "$qemu_bin" ]]; then
         echo "install.sh: invalid QEMU choice" >&2; exit 2; }
 
     if [[ "$qemu_choice" == 2 ]]; then
-        apt_install "${ENCORE_APT_DOWNLOAD[@]}" || exit 2
+        command -v apt-get >/dev/null 2>&1 || {
+            echo "Automatic release setup requires APT" >&2; exit 2; }
+        DEBIAN_FRONTEND=noninteractive apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl tar coreutils
         if runuser -u "$session_user" -- env HOME="$session_home" \
             "$ROOT/scripts/download-qemu-release.sh" --destination "$release_dir"; then
             if [[ -s "$release_dir/runtime-packages.txt" ]]; then
@@ -302,7 +300,8 @@ if [[ ! -x "$qemu_bin" ]]; then
                         available_packages+=("$package_name")
                 done
                 if ((${#available_packages[@]})); then
-                    apt_install "${available_packages[@]}"
+                    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                        "${available_packages[@]}"
                 fi
             fi
             qemu_bin="$release_qemu"
@@ -314,7 +313,13 @@ if [[ ! -x "$qemu_bin" ]]; then
     fi
 
     if [[ "$qemu_choice" == 1 ]]; then
-        apt_install "${ENCORE_APT_QEMU_BUILD[@]}" || exit 2
+        command -v apt-get >/dev/null 2>&1 || {
+            echo "Automatic build setup requires APT" >&2; exit 2; }
+        DEBIAN_FRONTEND=noninteractive apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates build-essential pkg-config git curl patch ninja-build \
+            python3 python3-venv xz-utils libsdl2-dev libglib2.0-dev \
+            libpixman-1-dev zlib1g-dev libslirp-dev libvorbis-dev libogg-dev
         runuser -u "$session_user" -- env HOME="$session_home" \
             "$ROOT/scripts/build-qemu.sh"
         qemu_bin="$build_qemu"
@@ -346,7 +351,8 @@ if ((${#parport_devices[@]} == 0 && ${#kernel_parports[@]} > 0)); then
     if ! command -v modprobe >/dev/null 2>&1; then
         echo "A kernel parallel port exists, but the tool needed to load ppdev is missing."
         if command -v apt-get >/dev/null 2>&1 && ask "Install the distribution's kmod package now?" Y; then
-            apt_install "${ENCORE_APT_COMMAND_PACKAGE[modprobe]}"
+            DEBIAN_FRONTEND=noninteractive apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends kmod
         else
             echo "install.sh: kmod is required to enable the detected parallel port" >&2
             exit 2

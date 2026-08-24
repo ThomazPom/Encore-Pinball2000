@@ -11,10 +11,6 @@ concurrency:
   group: qemu-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-defaults:
-  run:
-    shell: bash
-
 jobs:
   build-qemu:
     runs-on: ubuntu-latest
@@ -22,13 +18,16 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - name: Bootstrap source checkout
+      - name: Install build dependencies
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
           apt-get -qq update >/tmp/apt.log 2>&1
           apt-get -qq install -y --no-install-recommends \
-            ca-certificates git \
+            ca-certificates curl git xz-utils \
+            build-essential ninja-build meson pkg-config python3 python3-venv \
+            libglib2.0-dev libpixman-1-dev libsdl2-dev \
+            libvorbis-dev libogg-dev libslirp-dev zlib1g-dev \
             >>/tmp/apt.log 2>&1 || { tail -n 80 /tmp/apt.log; exit 1; }
 
       - name: Check out source without submodule recursion
@@ -38,15 +37,6 @@ jobs:
           git remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
           git -c protocol.version=2 fetch --no-recurse-submodules --force origin "$GITHUB_REF"
           git checkout --detach "$GITHUB_SHA"
-
-      - name: Install declared build dependencies
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          source scripts/dependencies.sh
-          apt-get -qq install -y --no-install-recommends \
-            "${ENCORE_APT_QEMU_BUILD[@]}" \
-            >>/tmp/apt.log 2>&1 || { tail -n 80 /tmp/apt.log; exit 1; }
 
       - name: Build QEMU
         run: |

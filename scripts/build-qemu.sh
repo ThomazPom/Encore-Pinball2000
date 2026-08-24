@@ -122,8 +122,12 @@ check_build_prerequisites() {
   if command -v apt-get >/dev/null 2>&1; then
     cat >&2 <<'EOF'
 
-Install the canonical Debian/Ubuntu/Kali build set with:
-  scripts/install-build-dependencies.sh
+Install the complete Debian/Ubuntu/Kali build set with:
+  sudo apt update
+  sudo apt install -y --no-install-recommends \
+    ca-certificates build-essential pkg-config git curl patch ninja-build \
+    python3 python3-venv xz-utils libsdl2-dev libglib2.0-dev \
+    libpixman-1-dev zlib1g-dev libslirp-dev libvorbis-dev libogg-dev
 EOF
   fi
   return 2
