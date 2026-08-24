@@ -381,6 +381,7 @@ test -x "$root/install.sh"
 test -x "$root/uninstall.sh"
 test -x "$root/scripts/run-qemu.sh"
 test -x "$root/scripts/internal/fetch-assets-if-missing.sh"
+test -r "$root/scripts/internal/runtime-packages.sh"
 test -x "$root/qemu-system-i386"
 test -s "$root/runtime-packages.txt"
 test ! -e "$root/roms"
@@ -389,9 +390,10 @@ test ! -e "$root/qemu"
 test ! -e "$root/tools"
 test ! -e "$root/scripts/tests"
 test ! -e "$root/scripts/build-qemu.sh"
-packages=$(sed -E "s/:[a-z0-9]+$//" "$root/runtime-packages.txt" | grep -E "^[a-z0-9][a-z0-9+.-]*$" | sort -u)
-test -n "$packages"
-DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $packages >/dev/null
+printf "\n" | ENCORE_PREFLIGHT_USER=cabinet \
+    script -qec "env QEMU_BIN=$root/qemu-system-i386 $root/scripts/run-qemu.sh --direct-console --preflight" /dev/null
+test -d "$root/roms"
+test -d "$root/updates"
 "$root/qemu-system-i386" -M help > /tmp/encore-release-machines
 grep -q pinball2000 /tmp/encore-release-machines
 runuser -u cabinet -- "$root/install.sh" --help >/dev/null'

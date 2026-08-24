@@ -51,7 +51,8 @@ manager, or XWayland.
 - **Weston** provides a standalone reference Wayland kiosk.
 - **Direct console** gives SDL2 direct DRM/KMS ownership through its `KMSDRM`
   video backend. It is not SDL 1.2 `fbcon`, despite Linux potentially exposing
-  a compatibility `/dev/fb0` device. The installer verifies KMSDRM directly.
+  a compatibility `/dev/fb0` device. The launcher's preflight verifies KMSDRM
+  directly.
 
 The graphical profiles all run Encore as a native Wayland client. There is no
 hidden X11 fallback. If a display-manager login is not a Wayland session,
@@ -103,9 +104,9 @@ The guided setup asks for:
 The local build is the default because it uses the exact machine sources in
 the checkout. The release path downloads a fixed-name archive from the latest
 GitHub release, verifies its SHA-256 checksum, installs its declared runtime
-packages through APT and validates that the resulting executable contains the
-`pinball2000` machine. If no usable release is available, the installer offers
-to fall back to the local build.
+packages through the same launcher preflight used by normal runs, and validates
+that the resulting executable contains the `pinball2000` machine. If no usable
+release is available, the installer offers to fall back to the local build.
 
 Root execution is only an A/B diagnostic escape hatch. The real PAM/logind
 user session still owns Wayland, D-Bus and audio; it publishes a private
@@ -132,8 +133,10 @@ is running. The cabinet installer enables it by default; declining the prompt
 leaves the normal display unchanged.
 
 Missing Cage, Weston, SDL2 or host graphics components can be installed through
-APT. The installer queries SDL itself for the required Wayland or KMSDRM
+APT. The launcher queries SDL itself for the selected Wayland or KMSDRM
 backend, installs the appropriate runtime when requested, then checks again.
+The installer invokes that same launch path with `--preflight`, which also
+prepares missing ROM/update assets but stops before the compositor or QEMU.
 If the custom QEMU binary is absent, it similarly offers the documented build
 dependencies and builds QEMU in the selected user's cache.
 
