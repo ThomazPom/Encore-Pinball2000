@@ -204,6 +204,14 @@ export WAYLAND_DISPLAY=wayland-encore-lab
 exec "$@"
 EOF
 chmod 0755 /usr/local/bin/cage'
+    ssh_guest 'cat > /usr/local/bin/weston <<'"'"'EOF'"'"'
+#!/bin/sh
+while [ "$#" -gt 0 ] && [ "$1" != -- ]; do shift; done
+[ "${1:-}" = -- ] && shift
+export WAYLAND_DISPLAY=wayland-encore-lab
+exec "$@"
+EOF
+chmod 0755 /usr/local/bin/weston'
     ssh_guest 'cat > /usr/local/bin/wpctl <<'"'"'EOF'"'"'
 #!/bin/sh
 state=/tmp/encore-lab-audio-state
@@ -227,12 +235,15 @@ enable_nonroot_escalation() {
 }
 
 install_as_cabinet() {
-    local run_as_root=${1:-0}
+    local backend=${1:-cage} run_as_root=${2:-0} acquisition=${3:-existing} preset=${4:-default}
     export LAB_SSH_PORT=$SSH_PORT
+    export LAB_BACKEND=$backend
     export LAB_RUN_AS_ROOT=$run_as_root
+    export LAB_ACQUISITION=$acquisition
+    export LAB_PRESET=$preset
     expect <<'EXPECT_EOF'
 set timeout 1200
-spawn sshpass -p cabinet ssh -tt -p $env(LAB_SSH_PORT) -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR cabinet@127.0.0.1 "cd /opt/Encore-PB2K && ./install.sh --cage"
+spawn sshpass -p cabinet ssh -tt -p $env(LAB_SSH_PORT) -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR cabinet@127.0.0.1 "cd /opt/Encore-PB2K && ./install.sh --$env(LAB_BACKEND)"
 expect {
     -re {Password:|Mot de passe[^:]*:} { send -- "cabinet\r" }
     timeout { exit 124 }
@@ -240,8 +251,13 @@ expect {
 }
 expect {
     -re {Cabinet session user[^:]*:} {
-        set root_answer [expr {$env(LAB_RUN_AS_ROOT) ? "y" : "n"}]
-        foreach answer [list cabinet swe1 y $root_answer y n n y] {
+        if {$env(LAB_PRESET) eq "alternate"} {
+            set answers [list cabinet rfm n n n display-manager y y y]
+        } else {
+            set root_answer [expr {$env(LAB_RUN_AS_ROOT) ? "y" : "n"}]
+            set answers [list cabinet swe1 y $root_answer y n n y]
+        }
+        foreach answer $answers {
             send -- "$answer\r"
             after 150
         }
@@ -250,8 +266,15 @@ expect {
     eof { exit 125 }
 }
 expect {
+    -re {Choice \[1\]:} {
+        if {$env(LAB_ACQUISITION) eq "release"} { send -- "2\r" } else { send -- "1\r" }
+        exp_continue
+    }
     -re {Install[^?]*\?} { send -- "y\r"; exp_continue }
-    -re {Use the real cabinet interface[^?]*\?} { send -- "y\r"; exp_continue }
+    -re {Use the real cabinet interface[^?]*\?} {
+        if {$env(LAB_PRESET) eq "alternate"} { send -- "n\r" } else { send -- "y\r" }
+        exp_continue
+    }
     eof { set result [wait]; exit [lindex $result 3] }
     timeout { exit 124 }
 }
@@ -260,11 +283,11 @@ EXPECT_EOF
 
 test_install() {
     local backend=${1:-cage} execution=${2:-user} run_as_root=0
-    [[ "$backend" == cage ]] || die "automated lab validates cage"
+    case "$backend" in cage|weston|direct-console) ;; *) die "backend must be cage, weston or direct-console" ;; esac
     case "$execution" in user) ;; root) run_as_root=1 ;; *) die "execution must be user or root" ;; esac
     reset_overlay; start_overlay; assert_stripped_guest; copy_checkout 1; enable_nonroot_escalation
-    install_as_cabinet "$run_as_root"
-    ssh_guest "test -s /etc/encore-pinball2000/session.conf; grep -qx BACKEND=cage /etc/encore-pinball2000/session.conf; grep -qx RUN_AS_ROOT=$run_as_root /etc/encore-pinball2000/session.conf; grep -qx CABINET_AUDIO=1 /etc/encore-pinball2000/session.conf; grep -qx MAINTENANCE=tty /etc/encore-pinball2000/session.conf; grep -q 'Restart=no' /etc/systemd/system/getty@tty1.service.d/49-encore.conf; grep -qx -- --cabinet /etc/encore-pinball2000/launch.args; grep -qE '^/dev/parport[0-9]+$' /etc/encore-pinball2000/launch.args; id -nG cabinet | tr ' ' '\\n' | grep -qx lp; test -c \"\$(grep -E '^/dev/parport[0-9]+$' /etc/encore-pinball2000/launch.args)\"; test -d /opt/Encore-PB2K/savedata; test \"\$(stat -c %U /opt/Encore-PB2K/savedata)\" = cabinet"
+    install_as_cabinet "$backend" "$run_as_root"
+    ssh_guest "test -s /etc/encore-pinball2000/session.conf; grep -qx BACKEND=$backend /etc/encore-pinball2000/session.conf; grep -qx RUN_AS_ROOT=$run_as_root /etc/encore-pinball2000/session.conf; grep -qx CABINET_AUDIO=1 /etc/encore-pinball2000/session.conf; grep -qx MAINTENANCE=tty /etc/encore-pinball2000/session.conf; grep -q 'Restart=no' /etc/systemd/system/getty@tty1.service.d/49-encore.conf; grep -qx -- --cabinet /etc/encore-pinball2000/launch.args; grep -qE '^/dev/parport[0-9]+$' /etc/encore-pinball2000/launch.args; id -nG cabinet | tr ' ' '\\n' | grep -qx lp; test -c \"\$(grep -E '^/dev/parport[0-9]+$' /etc/encore-pinball2000/launch.args)\"; test -d /opt/Encore-PB2K/savedata; test \"\$(stat -c %U /opt/Encore-PB2K/savedata)\" = cabinet"
     # A display manager and SSH invoke the account shell with `-c`. That must
     # delegate to the original shell instead of starting another cabinet
     # backend outside tty1.
@@ -284,6 +307,90 @@ test_install() {
     ssh_guest 'test ! -e /etc/encore-pinball2000/session.conf; test ! -e /etc/systemd/system/getty@tty1.service.d/49-encore.conf; test ! -e /run/systemd/system/getty@tty1.service.d/50-encore-maintenance.conf; test ! -e /var/lib/encore-pinball2000/install-mode; test ! -e /var/lib/pinball2000-cabinet.lock; test "$(getent passwd cabinet | cut -d: -f7)" = /bin/bash'
     stop_vm
     echo "PASS: stripped Debian install/reboot/session/maintenance/uninstall ($backend, $execution)"
+}
+
+test_display_manager_config() {
+    local execution=${1:-user} run_as_root=0
+    case "$execution" in user) ;; root) run_as_root=1 ;; *) die "execution must be user or root" ;; esac
+    reset_overlay; start_overlay; assert_stripped_guest; copy_checkout 1; enable_nonroot_escalation
+    ssh_guest 'cat > /etc/systemd/system/sddm.service <<'"'"'EOF'"'"'
+[Unit]
+Description=Encore lab display manager
+[Service]
+Type=oneshot
+ExecStart=/bin/true
+RemainAfterExit=yes
+[Install]
+WantedBy=graphical.target
+EOF
+ln -sfn /etc/systemd/system/sddm.service /etc/systemd/system/display-manager.service
+systemctl daemon-reload'
+    install_as_cabinet display-manager "$run_as_root"
+    ssh_guest "grep -qx BACKEND=display-manager /etc/encore-pinball2000/session.conf; grep -qx RUN_AS_ROOT=$run_as_root /etc/encore-pinball2000/session.conf; grep -qx 'User=cabinet' /etc/sddm.conf.d/49-encore.conf; test -L /home/cabinet/.config/systemd/user/graphical-session.target.wants/encore-pinball2000.service; grep -q '^ExecStart=.* --desktop$' /home/cabinet/.config/systemd/user/encore-pinball2000.service; test \"\$(systemctl get-default)\" = graphical.target"
+    ssh_guest 'cd /opt/Encore-PB2K && ./uninstall.sh'
+    ssh_guest 'test ! -e /etc/sddm.conf.d/49-encore.conf; test ! -e /home/cabinet/.config/systemd/user/encore-pinball2000.service; test ! -e /var/lib/pinball2000-cabinet.lock; test "$(systemctl get-default)" = graphical.target'
+    stop_vm
+    echo "PASS: display-manager configuration/uninstall ($execution)"
+}
+
+test_missing_git() {
+    reset_overlay; start_overlay; assert_stripped_guest
+    ssh_guest 'DEBIAN_FRONTEND=noninteractive apt-get purge -y git >/dev/null'
+    copy_checkout 1; enable_nonroot_escalation
+    install_as_cabinet cage 0
+    ssh_guest 'command -v git >/dev/null; grep -qx BACKEND=cage /etc/encore-pinball2000/session.conf'
+    ssh_guest 'cd /opt/Encore-PB2K && ./uninstall.sh'
+    stop_vm
+    echo "PASS: installer reports and installs always-required Git"
+}
+
+test_assets() {
+    need git
+    local work
+    work=$(mktemp -d /tmp/encore-assets-lab.XXXXXX)
+    "$REPO_ROOT/scripts/fetch-assets-if-missing.sh" \
+        "$REPO_ROOT" "$work/roms" "$work/updates"
+    test -d "$work/roms" && test -d "$work/updates"
+    "$REPO_ROOT/scripts/fetch-assets-if-missing.sh" \
+        "$REPO_ROOT" "$work/roms" "$work/updates"
+    rm -rf -- "$work"
+    echo "PASS: assets absent fetch and assets present no-op"
+}
+
+test_acquisition() {
+    local acquisition=${1:-release}
+    case "$acquisition" in build|release) ;; *) die "acquisition must be build or release" ;; esac
+    reset_overlay; start_overlay; assert_stripped_guest; copy_checkout 0; enable_nonroot_escalation
+    install_as_cabinet cage 0 "$acquisition"
+    if [[ "$acquisition" == release ]]; then
+        expected=/home/cabinet/.cache/encore-qemu-release/qemu-system-i386
+    else
+        expected=/home/cabinet/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386
+    fi
+    ssh_guest "test -x $expected; grep -Fqx QEMU_BIN=$expected /etc/encore-pinball2000/session.conf; $expected -M help | grep -q pinball2000"
+    ssh_guest 'cd /opt/Encore-PB2K && ./uninstall.sh'
+    stop_vm
+    echo "PASS: installer QEMU acquisition ($acquisition)"
+}
+
+test_alternate_choices() {
+    reset_overlay; start_overlay; assert_stripped_guest; copy_checkout 1; enable_nonroot_escalation
+    ssh_guest 'cat > /etc/systemd/system/sddm.service <<'"'"'EOF'"'"'
+[Unit]
+Description=Encore lab display manager
+[Service]
+Type=oneshot
+ExecStart=/bin/true
+RemainAfterExit=yes
+EOF
+ln -sfn /etc/systemd/system/sddm.service /etc/systemd/system/display-manager.service
+systemctl daemon-reload'
+    install_as_cabinet cage 0 existing alternate
+    ssh_guest 'grep -qx BACKEND=cage /etc/encore-pinball2000/session.conf; grep -qx GAME=rfm /etc/encore-pinball2000/session.conf; grep -qx CABINET_AUDIO=0 /etc/encore-pinball2000/session.conf; grep -qx MAINTENANCE=display-manager /etc/encore-pinball2000/session.conf; ! grep -qx -- --flipscreen /etc/encore-pinball2000/launch.args; ! grep -qx -- --cabinet /etc/encore-pinball2000/launch.args; test -f /etc/default/grub.d/99-encore-pinball2000.cfg; test -x /etc/grub.d/01_encore_pinball2000_quiet'
+    ssh_guest 'cd /opt/Encore-PB2K && ./uninstall.sh'
+    ssh_guest 'test ! -e /etc/default/grub.d/99-encore-pinball2000.cfg; test ! -e /etc/grub.d/01_encore_pinball2000_quiet; test ! -e /var/lib/pinball2000-cabinet.lock'
+    stop_vm
+    echo "PASS: alternate installer choices and reversible boot configuration"
 }
 
 manual_vm() {
@@ -312,7 +419,23 @@ case "${1:-}" in
     stop) stop_vm ;;
     shell) need sshpass; shift; ssh_guest "$@" ;;
     test) prereqs; need sshpass; need expect; test_install "${2:-cage}" "${3:-user}" ;;
+    test-dm) prereqs; need sshpass; need expect; test_display_manager_config "${2:-user}" ;;
+    test-git) prereqs; need sshpass; need expect; test_missing_git ;;
+    test-assets) prereqs; test_assets ;;
+    test-acquire) prereqs; need sshpass; need expect; test_acquisition "${2:-release}" ;;
+    test-alternates) prereqs; need sshpass; need expect; test_alternate_choices ;;
     manual) prereqs; need sshpass; manual_vm ;;
-    all) prepare; need expect; test_install cage user; test_install cage root ;;
-    *) echo "Usage: $0 {all|prepare|reset|boot|manual|shell|stop|test cage [user|root]}" >&2; exit 2 ;;
+    all) prepare; need expect
+         for backend in cage weston direct-console; do
+             test_install "$backend" user
+             test_install "$backend" root
+         done
+         test_display_manager_config user
+         test_display_manager_config root
+         test_missing_git
+         test_assets
+         test_acquisition release
+         test_acquisition build
+         test_alternate_choices ;;
+    *) echo "Usage: $0 {all|prepare|reset|boot|manual|shell|stop|test {cage|weston|direct-console} [user|root]|test-dm [user|root]|test-git|test-assets|test-acquire [release|build]|test-alternates}" >&2; exit 2 ;;
 esac
