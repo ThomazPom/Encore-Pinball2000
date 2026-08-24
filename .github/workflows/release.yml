@@ -148,7 +148,18 @@ jobs:
           # history are deliberately absent; run-qemu fetches the missing ROM
           # tree through the existing asset path on first launch.
           mkdir -p "$full_root"
-          git archive HEAD README.md install.sh uninstall.sh docs qemu scripts tools updates \
+          git archive HEAD \
+            README.md install.sh uninstall.sh docs updates \
+            scripts/run-qemu.sh scripts/demos \
+            scripts/internal/bench-qemu.py \
+            scripts/internal/build-pcm-cache.py \
+            scripts/internal/download-qemu-release.sh \
+            scripts/internal/encore-session.sh \
+            scripts/internal/fetch-assets-if-missing.sh \
+            scripts/internal/guest-irq-probe.S \
+            scripts/internal/guest-load.S \
+            scripts/internal/pb2k-sound-key.py \
+            scripts/internal/run-console-script.py \
             | tar -x -C "$full_root"
           install -m 0755 "$package/qemu-system-i386" "$full_root/qemu-system-i386"
           install -m 0644 "$package/build-info.txt" "$full_root/build-info.txt"
@@ -162,7 +173,12 @@ jobs:
           test -x "$verify/Encore-Pinball2000/install.sh"
           test -x "$verify/Encore-Pinball2000/uninstall.sh"
           test -x "$verify/Encore-Pinball2000/scripts/run-qemu.sh"
-          test -x "$verify/Encore-Pinball2000/scripts/build-qemu.sh"
+          test ! -e "$verify/Encore-Pinball2000/scripts/build-qemu.sh"
+          test ! -e "$verify/Encore-Pinball2000/qemu"
+          test ! -e "$verify/Encore-Pinball2000/tools"
+          test ! -e "$verify/Encore-Pinball2000/scripts/tests"
+          test ! -e "$verify/Encore-Pinball2000/roms"
+          test -d "$verify/Encore-Pinball2000/updates"
           "$verify/Encore-Pinball2000/qemu-system-i386" -M help | grep -q pinball2000
           "$verify/Encore-Pinball2000/scripts/run-qemu.sh" --help >/dev/null
 
