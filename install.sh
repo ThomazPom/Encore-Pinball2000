@@ -38,6 +38,35 @@ ask() {
     fi
 }
 
+install_binary_runtime_packages() {
+    local metadata="$1" package_name
+    local -a declared_packages missing_packages available_packages
+    [[ -s "$metadata" ]] || return 0
+    command -v apt-get >/dev/null 2>&1 || return 0
+
+    mapfile -t declared_packages < <(
+        sed -E 's/:[a-z0-9]+$//' "$metadata" |
+            grep -E '^[a-z0-9][a-z0-9+.-]*$' | sort -u
+    )
+    missing_packages=()
+    for package_name in "${declared_packages[@]}"; do
+        dpkg-query -W -f='${Status}' "$package_name" 2>/dev/null |
+            grep -q '^install ok installed$' || missing_packages+=("$package_name")
+    done
+    ((${#missing_packages[@]})) || return 0
+
+    echo "Installing runtime libraries required by the packaged Encore QEMU..."
+    DEBIAN_FRONTEND=noninteractive apt-get update
+    available_packages=()
+    for package_name in "${missing_packages[@]}"; do
+        apt-cache show "$package_name" >/dev/null 2>&1 &&
+            available_packages+=("$package_name")
+    done
+    ((${#available_packages[@]})) || return 0
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        "${available_packages[@]}"
+}
+
 case "${1:-}" in
     -h|--help) usage; exit 0 ;;
 esac
@@ -273,13 +302,18 @@ qemu_bin="$release_qemu"
 
 if [[ ! -x "$qemu_bin" ]]; then
     echo
-    echo "How should Encore obtain its custom QEMU?"
-    echo "1. Build locally — Recommended (longer; guaranteed to match this checkout)"
-    echo "2. Download latest release — Faster (may lag behind this checkout)"
-    read -r -p "Choice [1]: " qemu_choice
-    qemu_choice="${qemu_choice:-1}"
-    [[ "$qemu_choice" == 1 || "$qemu_choice" == 2 ]] || {
-        echo "install.sh: invalid QEMU choice" >&2; exit 2; }
+    if [[ -x "$ROOT/scripts/build-qemu.sh" ]]; then
+        echo "How should Encore obtain its custom QEMU?"
+        echo "1. Build locally — Recommended (longer; guaranteed to match this checkout)"
+        echo "2. Download latest release — Faster (may lag behind this checkout)"
+        read -r -p "Choice [1]: " qemu_choice
+        qemu_choice="${qemu_choice:-1}"
+        [[ "$qemu_choice" == 1 || "$qemu_choice" == 2 ]] || {
+            echo "install.sh: invalid QEMU choice" >&2; exit 2; }
+    else
+        echo "The packaged QEMU binary is missing; downloading a verified replacement."
+        qemu_choice=2
+    fi
 
     if [[ "$qemu_choice" == 2 ]]; then
         command -v apt-get >/dev/null 2>&1 || {
@@ -289,26 +323,15 @@ if [[ ! -x "$qemu_bin" ]]; then
             ca-certificates curl tar coreutils
         if runuser -u "$session_user" -- env HOME="$session_home" \
             "$ROOT/scripts/internal/download-qemu-release.sh" --destination "$release_dir"; then
-            if [[ -s "$release_dir/runtime-packages.txt" ]]; then
-                mapfile -t release_packages < <(
-                    sed -E 's/:[a-z0-9]+$//' "$release_dir/runtime-packages.txt" |
-                        grep -E '^[a-z0-9][a-z0-9+.-]*$' | sort -u
-                )
-                available_packages=()
-                for package_name in "${release_packages[@]}"; do
-                    apt-cache show "$package_name" >/dev/null 2>&1 &&
-                        available_packages+=("$package_name")
-                done
-                if ((${#available_packages[@]})); then
-                    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-                        "${available_packages[@]}"
-                fi
-            fi
             qemu_bin="$release_qemu"
         else
             echo "The published build could not be downloaded or verified." >&2
-            ask "Build locally instead?" Y || exit 2
-            qemu_choice=1
+            if [[ -x "$ROOT/scripts/build-qemu.sh" ]]; then
+                ask "Build locally instead?" Y || exit 2
+                qemu_choice=1
+            else
+                exit 2
+            fi
         fi
     fi
 
@@ -329,6 +352,10 @@ if [[ ! -x "$qemu_bin" ]]; then
         exit 3
     }
 fi
+runtime_metadata=""
+[[ "$qemu_bin" != "$ROOT/qemu-system-i386" ]] || runtime_metadata="$ROOT/runtime-packages.txt"
+[[ "$qemu_bin" != "$release_qemu" ]] || runtime_metadata="$release_dir/runtime-packages.txt"
+[[ -z "$runtime_metadata" ]] || install_binary_runtime_packages "$runtime_metadata"
 if ldd "$qemu_bin" 2>/dev/null | grep -q 'not found'; then
     echo "install.sh: the selected QEMU still has missing runtime libraries:" >&2
     ldd "$qemu_bin" | grep 'not found' >&2 || true
