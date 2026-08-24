@@ -52,6 +52,17 @@ scripts/run-qemu.sh --game swe1
 scripts/run-qemu.sh --game rfm
 ```
 
+For a faster setup using the latest published x86-64 build:
+
+```sh
+scripts/download-qemu-release.sh
+QEMU_BIN="$HOME/.cache/encore-qemu-release/qemu-system-i386" \
+  scripts/run-qemu.sh --game swe1
+```
+
+The helper verifies the release checksum. A release can trail the current
+checkout, so building locally remains the recommended correctness-first path.
+
 The build cache defaults to `$HOME/.cache/p2k-qemu-build`. The build excludes
 QEMU's default hardware-device set and includes the i386/TCG core plus Encore's
 explicit dependencies. Re-running the script copies only changed Encore files;

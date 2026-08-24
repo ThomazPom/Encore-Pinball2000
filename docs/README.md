@@ -17,6 +17,7 @@ result, or test a cabinet.
 - [Desktop controls](41-cli-keyboard-guide.md)
 - [Console scripting](42-console-scripting.md)
 - [Troubleshooting](04-troubleshooting.md)
+- [Release process](47-release-process.md)
 - [XINA serial console](06-xina-os-deep-dive.md)
 - [Savedata](09-savedata.md)
 

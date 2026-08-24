@@ -37,6 +37,7 @@ software itself is running.
 - **[Troubleshooting](docs/04-troubleshooting.md)**
 - **[Known limitations](docs/35-known-limitations.md)**
 - **[Cabinet testing](docs/46-real-lpt-passthrough.md)**
+- **[Release process](docs/47-release-process.md)**
 - **[Documentation index](docs/README.md)**
 
 Game ROMs and community update payloads are not supplied by Encore. Users must
