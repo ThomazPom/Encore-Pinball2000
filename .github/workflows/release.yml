@@ -7,7 +7,6 @@ on:
     paths:
       - 'qemu/**'
       - 'scripts/**'
-      - 'tools/**'
       - 'docs/**'
       - 'README.md'
       - 'install.sh'
