@@ -210,10 +210,10 @@ files directly.
 Details: [quickstart](02-quickstart.md), [troubleshooting](04-troubleshooting.md)
 and [documentation index](README.md).
 
-## `scripts/download-qemu-release.sh` synopsis
+## `scripts/internal/download-qemu-release.sh` synopsis
 
 ```sh
-scripts/download-qemu-release.sh [--destination DIR]
+scripts/internal/download-qemu-release.sh [--destination DIR]
 ```
 
 Downloads the fixed-name QEMU asset and checksum from the latest GitHub

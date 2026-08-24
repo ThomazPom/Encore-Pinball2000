@@ -288,7 +288,7 @@ if [[ ! -x "$qemu_bin" ]]; then
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             ca-certificates curl tar coreutils
         if runuser -u "$session_user" -- env HOME="$session_home" \
-            "$ROOT/scripts/download-qemu-release.sh" --destination "$release_dir"; then
+            "$ROOT/scripts/internal/download-qemu-release.sh" --destination "$release_dir"; then
             if [[ -s "$release_dir/runtime-packages.txt" ]]; then
                 mapfile -t release_packages < <(
                     sed -E 's/:[a-z0-9]+$//' "$release_dir/runtime-packages.txt" |
@@ -605,8 +605,8 @@ After=graphical-session-pre.target
 [Service]
 Type=simple
 WorkingDirectory=$ROOT
-ExecStartPre="$ROOT/scripts/encore-session.sh" --wait-wayland
-ExecStart="$ROOT/scripts/encore-session.sh" --desktop
+ExecStartPre="$ROOT/scripts/internal/encore-session.sh" --wait-wayland
+ExecStart="$ROOT/scripts/internal/encore-session.sh" --desktop
 Restart=no
 StandardOutput=journal
 StandardError=journal
@@ -637,7 +637,7 @@ else
     fi
     install -d -m 0755 "$(dirname "$GETTY_DROPIN")"
     install -d -m 0755 "$(dirname "$CABINET_SHELL")"
-    install -m 0755 "$ROOT/scripts/encore-session.sh" "$CABINET_SHELL"
+    install -m 0755 "$ROOT/scripts/internal/encore-session.sh" "$CABINET_SHELL"
     if ! grep -Fxq "$CABINET_SHELL" /etc/shells 2>/dev/null; then
         printf '%s\n' "$CABINET_SHELL" >> /etc/shells
         printf '%s\n' "$CABINET_SHELL" > "$STATE/shells-line-added"
@@ -673,7 +673,7 @@ After=systemd-user-sessions.service
 [Service]
 Type=simple
 WorkingDirectory=$ROOT
-ExecStart="$ROOT/scripts/encore-session.sh" --root-service
+ExecStart="$ROOT/scripts/internal/encore-session.sh" --root-service
 Restart=no
 KillMode=control-group
 TimeoutStopSec=15

@@ -67,7 +67,7 @@ delay when the guest exposes a useful state command.
 To check syntax without booting:
 
 ```sh
-python3 scripts/run-console-script.py my-session.p2k --check
+python3 scripts/internal/run-console-script.py my-session.p2k --check
 ```
 
 > [!NOTE]

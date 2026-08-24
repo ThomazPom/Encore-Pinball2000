@@ -47,7 +47,7 @@ After publication, exercise the same path used by the installer:
 
 ```sh
 tmpdir=$(mktemp -d)
-scripts/download-qemu-release.sh --destination "$tmpdir"
+scripts/internal/download-qemu-release.sh --destination "$tmpdir"
 "$tmpdir/qemu-system-i386" -M help | grep pinball2000
 rm -rf -- "$tmpdir"
 ```

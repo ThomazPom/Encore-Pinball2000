@@ -348,10 +348,10 @@ test_assets() {
     need git
     local work
     work=$(mktemp -d /tmp/encore-assets-lab.XXXXXX)
-    "$REPO_ROOT/scripts/fetch-assets-if-missing.sh" \
+    "$REPO_ROOT/scripts/internal/fetch-assets-if-missing.sh" \
         "$REPO_ROOT" "$work/roms" "$work/updates"
     test -d "$work/roms" && test -d "$work/updates"
-    "$REPO_ROOT/scripts/fetch-assets-if-missing.sh" \
+    "$REPO_ROOT/scripts/internal/fetch-assets-if-missing.sh" \
         "$REPO_ROOT" "$work/roms" "$work/updates"
     rm -rf -- "$work"
     echo "PASS: assets absent fetch and assets present no-op"

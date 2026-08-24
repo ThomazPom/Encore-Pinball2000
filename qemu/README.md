@@ -76,7 +76,7 @@ Source-test every stable release in an inclusive range against pristine QEMU
 trees:
 
 ```sh
-scripts/qemu-patch-series.py validate \
+scripts/internal/qemu-patch-series.py validate \
   --from 10.0.0 --to 10.0.8
 ```
 

@@ -55,7 +55,7 @@ scripts/run-qemu.sh --game rfm
 For a faster setup using the latest published x86-64 build:
 
 ```sh
-scripts/download-qemu-release.sh
+scripts/internal/download-qemu-release.sh
 QEMU_BIN="$HOME/.cache/encore-qemu-release/qemu-system-i386" \
   scripts/run-qemu.sh --game swe1
 ```
