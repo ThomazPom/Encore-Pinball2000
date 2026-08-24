@@ -9,12 +9,13 @@ manual desktop/development setup.
 On Debian, Ubuntu or Kali:
 
 ```sh
-sudo apt update
-sudo apt install -y --no-install-recommends ca-certificates build-essential \
-  pkg-config git curl patch ninja-build python3 python3-venv xz-utils \
-  libsdl2-dev libglib2.0-dev libpixman-1-dev zlib1g-dev libslirp-dev \
-  libvorbis-dev libogg-dev
+scripts/install-build-dependencies.sh
 ```
+
+The helper consumes the same package declaration as the installer and CI. The
+builder's prerequisite diagnostic points to this helper. It is the explicit
+host-mutating entry point; the package manifest and builder themselves never
+invoke APT.
 
 Optional GTK display, interactive serial-console helpers and video capture:
 
