@@ -4,7 +4,8 @@ set -euo pipefail
 
 DESTINATION="${XDG_CACHE_HOME:-$HOME/.cache}/encore-qemu-release"
 REPOSITORY="${ENCORE_RELEASE_REPOSITORY:-ThomazPom/Encore-Pinball2000}"
-ASSET=encore-qemu-linux-x86_64.tar.gz
+ASSET=encore-pinball2000-linux-x86_64.tar.gz
+LEGACY_ASSET=encore-qemu-linux-x86_64.tar.gz
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -32,7 +33,11 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/encore-qemu-release.XXXXXX")
 trap 'rm -rf -- "$work"' EXIT
 
 echo "[download-qemu] downloading latest published x86_64 build"
-curl -fL --retry 3 -o "$work/$ASSET" "$base/$ASSET"
+if ! curl -fL --retry 3 -o "$work/$ASSET" "$base/$ASSET"; then
+    echo "[download-qemu] complete package unavailable; trying legacy QEMU asset" >&2
+    ASSET="$LEGACY_ASSET"
+    curl -fL --retry 3 -o "$work/$ASSET" "$base/$ASSET"
+fi
 curl -fL --retry 3 -o "$work/$ASSET.sha256" "$base/$ASSET.sha256"
 (
     cd "$work"
@@ -41,7 +46,9 @@ curl -fL --retry 3 -o "$work/$ASSET.sha256" "$base/$ASSET.sha256"
 mkdir "$work/package"
 tar -xzf "$work/$ASSET" -C "$work/package"
 
-binary="$work/package/qemu-system-i386"
+release_root="$work/package/Encore-Pinball2000"
+[[ -d "$release_root" ]] || release_root="$work/package"
+binary="$release_root/qemu-system-i386"
 [[ -x "$binary" ]] || { echo "Release archive contains no executable qemu-system-i386" >&2; exit 3; }
 if ! ldd "$binary" 2>/dev/null | grep -q 'not found'; then
     "$binary" -M help | grep -q pinball2000 || {
@@ -56,8 +63,8 @@ mkdir -p "$DESTINATION"
 install -m 0755 "$binary" "$DESTINATION/qemu-system-i386.new"
 mv -f "$DESTINATION/qemu-system-i386.new" "$DESTINATION/qemu-system-i386"
 for metadata in build-info.txt runtime-packages.txt; do
-    [[ ! -f "$work/package/$metadata" ]] ||
-        install -m 0644 "$work/package/$metadata" "$DESTINATION/$metadata"
+    [[ ! -f "$release_root/$metadata" ]] ||
+        install -m 0644 "$release_root/$metadata" "$DESTINATION/$metadata"
 done
 
 echo "[download-qemu] installed $DESTINATION/qemu-system-i386"
