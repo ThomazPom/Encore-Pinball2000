@@ -1,9 +1,9 @@
 # 47 — Release process
 
-Encore publishes its custom QEMU separately from the source checkout. The
-installer can therefore offer a fast verified download without turning the
-binary into the authoritative version of the project. A local build remains
-the recommended path and always uses the exact checked-out sources.
+Encore publishes both a complete end-user package and its custom QEMU as a
+smaller compatibility download. The complete package can be extracted and run
+without first cloning the repository. A local QEMU build remains available and
+always uses the exact packaged sources.
 
 ## Automatic publication
 
@@ -17,7 +17,20 @@ version tag such as `v1.0.0` publishes that tag instead. The workflow can also
 be started manually with an optional semantic version tag; leaving it blank
 uses the dated form.
 
-The archive contains:
+The complete archive contains:
+
+- `install.sh`, `uninstall.sh` and the complete runtime scripts;
+- user and developer documentation;
+- the Encore QEMU integration sources and build path;
+- the update bundles tracked by the project;
+- the ready-to-run stripped `qemu-system-i386` binary;
+- release metadata and the generated Debian runtime-package list.
+
+It deliberately contains no user ROMs or savedata. The normal runner uses the
+existing asset downloader when the ROM directory is absent, while keeping the
+updates already included in the package.
+
+The smaller QEMU-only archive contains:
 
 - the stripped `qemu-system-i386` binary;
 - the exact release tag, commit and build environment;
@@ -36,10 +49,17 @@ query or a hard-coded release number:
 ```text
 encore-qemu-linux-x86_64.tar.gz
 encore-qemu-linux-x86_64.tar.gz.sha256
+encore-pinball2000-linux-x86_64.tar.gz
+encore-pinball2000-linux-x86_64.tar.gz.sha256
 ```
 
 This makes regular publication useful without making old installer versions
 aware of every future tag.
+
+For an end-user installation, download and extract
+`encore-pinball2000-linux-x86_64.tar.gz`, enter its `Encore-Pinball2000`
+directory and run `./install.sh`. The QEMU-only asset remains the fixed endpoint
+used by older checkouts and by the installer's fast-download option.
 
 ## Manual validation
 
