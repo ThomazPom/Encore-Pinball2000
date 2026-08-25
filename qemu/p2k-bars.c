@@ -63,8 +63,8 @@ static const MemoryRegionOps p2k_bar2_sentinel_ops = {
 static void p2k_seed_bar2_from_nvram(MemoryRegion *mr,
                                      Pinball2000MachineState *s)
 {
-    snprintf(s_bar2_save_path, sizeof(s_bar2_save_path),
-             "savedata/%s.nvram2", s->game);
+    snprintf(s_bar2_save_path, sizeof(s_bar2_save_path), "%s/%s.nvram2",
+             s->savedata_dir, s->game);
     if (p2k_no_savedata_enabled() || p2k_fresh_savedata_enabled()) {
         if (p2k_fresh_savedata_enabled()) {
             info_report("pinball2000: fresh run — BAR2 SRAM starts empty");

@@ -486,7 +486,8 @@ void p2k_install_bar3_flash(Pinball2000MachineState *s)
     memset(s_flash, 0xFF, P2K_BAR3_SIZE);
 
     const char *game = s->game ? s->game : "swe1";
-    snprintf(s_save_path, sizeof(s_save_path), "savedata/%s.flash", game);
+    snprintf(s_save_path, sizeof(s_save_path), "%s/%s.flash",
+             s->savedata_dir, game);
     bool seeded = false;
     if (!p2k_no_savedata_enabled() && !p2k_fresh_savedata_enabled()) {
         FILE *fp = fopen(s_save_path, "rb");
@@ -534,7 +535,7 @@ void p2k_install_bar3_flash(Pinball2000MachineState *s)
             warn_report("pinball2000: no savedata flash AND no update bundle "
                         "found under updates/ — XINU will likely hang at "
                         "[STARTING GAME CODE]; pass --update <dir> or place "
-                        "savedata/%s.flash", game);
+                        "%s/%s.flash", s->savedata_dir, game);
         } else {
             info_report("pinball2000: no update bundle found; using saved "
                         "BAR3 flash");

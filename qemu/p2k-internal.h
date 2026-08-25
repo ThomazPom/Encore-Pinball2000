@@ -32,6 +32,7 @@ typedef struct Pinball2000MachineState {
     X86MachineState parent;
     char            *game;          /* "swe1", "rfm", ... */
     char            *roms_dir;      /* default: <cwd>/roms */
+    char            *savedata_dir;  /* default: <cwd>/savedata */
     char            *update_path;   /* directory holding *_bootdata/im_flsh0/game/symbols.rom; NULL = no update */
     uint8_t         *bank0;         /* 16 MiB, owned by us */
     uint8_t         *bank1;         /* 16 MiB or NULL if chips absent */

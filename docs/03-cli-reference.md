@@ -21,7 +21,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 |---|---:|---|---|---|
 | `--game` | `swe1` \| `rfm` | `swe1` | Selects game ROM/update family and passes `game=` to the machine. | `scripts/run-qemu.sh --game rfm` |
 | `--roms` | directory | `<repo>/roms` | Directory containing `<game>_u100.rom`/`.bin` etc.; passed as `roms-dir=`. | `scripts/run-qemu.sh --roms /data/p2k/roms` |
-| `--savedata` | directory | `<repo>/savedata` | Uses this directory as persistent `savedata/` by running QEMU from a temporary cwd with a symlink. | `scripts/run-qemu.sh --savedata ./my-save` |
+| `--savedata` | directory | `<repo>/savedata` | Passes this persistent-state directory to the Encore machine; the binary creates it when absent. | `scripts/run-qemu.sh --savedata ./my-save` |
 | `--no-savedata` | — | off | Exports `P2K_NO_SAVEDATA=1` and runs from a fresh throwaway cwd with no `savedata/` subdir; savedata seeds are skipped and exit writes are discarded. | `scripts/run-qemu.sh --no-savedata` |
 | `--fresh` | — | off | Ignores existing saved device files for this boot, then replaces them with the newly initialized state on clean exit. | `scripts/run-qemu.sh --fresh` |
 | `--update` | spec | `auto` | Selects update bundle: `auto`, `latest`, `none`, version token, or explicit inner bundle dir. | `scripts/run-qemu.sh --update 0210` |
@@ -34,8 +34,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--display-manager` | — | off | Uses the current Wayland display-manager session. Runtime prerequisites and missing assets are prepared automatically before launch. | `scripts/run-qemu.sh --display-manager --fullscreen` |
 | `--cage` | — | off | Prepares Cage and the Wayland runtime through APT when needed, then starts Encore inside a standalone Cage kiosk. | `scripts/run-qemu.sh --cage --fullscreen` |
 | `--weston` | — | off | Prepares Weston and the Wayland runtime through APT when needed, then starts Encore inside Weston's standalone DRM kiosk. | `scripts/run-qemu.sh --weston --fullscreen` |
-| `--direct-console` | — | off | Selects SDL2's KMSDRM backend for the direct framebuffer renderer, removes graphical-display variables and implies `--framebuffer`. Run it only from an active local login VT that can own DRM/KMS. | `scripts/run-qemu.sh --direct-console --fullscreen` |
-| `--preflight` | — | off | Performs the normal package, SDL and asset preparation for the selected backend, then stops before starting a compositor or QEMU. Used by the installer with the same backend option as the real launch. | `scripts/run-qemu.sh --cage --preflight` |
+| `--preflight` | — | off | Follows the otherwise normal requested launch path, prepares every runtime dependency, permission and asset it encounters, then stops immediately before starting a compositor or QEMU. | `SDL_VIDEODRIVER=KMSDRM scripts/run-qemu.sh --preflight --fullscreen` |
 | `--flipscreen` | — | off | Vertically reverses the displayed image, exactly as if F2 had been pressed once. F2 toggles that same state at run time. | `scripts/run-qemu.sh --flipscreen` |
 | `--switch-keymap` | YAML file | `$XDG_CONFIG_HOME/encore/switch-keymap.yaml`, else `~/.config/encore/switch-keymap.yaml` | Maps A-Z keys directly to matrix switches. A missing file is initialized with an editable starter map. | `scripts/run-qemu.sh --switch-keymap ./my-switches.yaml` |
 | `--qemu-framebuffer` | — | off | Keeps the selected QEMU display backend, but reads RGB555 directly from guest RAM and expands it through a lookup table into QEMU's preferred ARGB surface instead of using address-space reads. Experimental A/B option. | `scripts/run-qemu.sh --qemu-framebuffer` |

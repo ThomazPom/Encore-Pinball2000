@@ -12,7 +12,6 @@ GRUB_DROPIN=/etc/default/grub.d/99-encore-pinball2000.cfg
 GRUB_QUIET_SCRIPT=/etc/grub.d/01_encore_pinball2000_quiet
 ROOT_SERVICE=/etc/systemd/system/encore-pinball2000-root.service
 CABINET_SHELL=/usr/local/libexec/encore-pinball2000-session
-DIRECT_INPUT_RULE=/etc/udev/rules.d/70-encore-pinball2000-input.rules
 CABINET_LOCK=/var/lib/pinball2000-cabinet.lock
 
 usage() {
@@ -202,11 +201,6 @@ if command -v update-grub >/dev/null 2>&1; then
 fi
 ask "Proceed?" || exit 0
 
-# savedata/ is intentionally ignored by Git and by the clean-room VM copy, so
-# a fresh checkout may not contain the directory at all. Create only the
-# writable state directory; never seed it from the developer's checkout.
-install -d -o "$session_user" -g "$session_group" -m 0755 "$ROOT/savedata"
-
 missing_packages=()
 command -v systemd-inhibit >/dev/null 2>&1 || missing_packages+=(systemd)
 if ((${#missing_packages[@]})); then
@@ -220,23 +214,7 @@ if ((${#missing_packages[@]})); then
     fi
 fi
 
-build_qemu="$session_home/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
-release_dir="$session_home/.cache/encore-qemu-release"
-release_qemu="$release_dir/qemu-system-i386"
-# The runner owns QEMU acquisition, every runtime dependency, SDL and assets.
-runtime_backend_arg="--$backend"
-ENCORE_PREFLIGHT_USER="$session_user" HOME="$session_home" \
-    "$ROOT/scripts/run-qemu.sh" "$runtime_backend_arg" --preflight
-
-qemu_bin="$release_qemu"
-[[ -x "$build_qemu" ]] && qemu_bin="$build_qemu"
-[[ -x "$ROOT/qemu-system-i386" ]] && qemu_bin="$ROOT/qemu-system-i386"
-[[ -x "$qemu_bin" ]] || { echo "install.sh: runner produced no QEMU binary" >&2; exit 3; }
-"$qemu_bin" -M help | grep -q pinball2000 || {
-    echo "install.sh: $qemu_bin does not contain the Encore machine" >&2; exit 3; }
-
 launch_args=()
-add_lp_group=0
 [[ "$start_flipped" -eq 0 ]] || launch_args+=(--flipscreen)
 
 # A physical port may be numbered parport1 (or later), and ppdev may not have
@@ -270,6 +248,7 @@ fi
 shopt -u nullglob
 
 real_parport=""
+use_real_parport=0
 if ((${#parport_devices[@]} == 1)); then
     real_parport="${parport_devices[0]}"
 elif ((${#parport_devices[@]} > 1)); then
@@ -293,10 +272,8 @@ if [[ -n "$real_parport" ]]; then
     echo "Enable it to communicate with the real Pinball 2000 hardware."
     echo "Answering no keeps Encore on its emulated board for demonstration use."
     if ask "Use the real cabinet interface?" Y; then
+        use_real_parport=1
         launch_args+=(--cabinet --lpt-device "$real_parport")
-        if ! id -nG "$session_user" | tr ' ' '\n' | grep -qx lp; then
-            add_lp_group=1
-        fi
     else
         echo "Keeping the emulated driver board."
     fi
@@ -305,6 +282,32 @@ else
     echo "No Linux ppdev interface (/dev/parportN) was detected."
     echo "Encore will use its emulated demonstration board."
 fi
+
+build_qemu="$session_home/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
+release_dir="$session_home/.cache/encore-qemu-release"
+release_qemu="$release_dir/qemu-system-i386"
+# The runner owns QEMU acquisition and every runtime dependency, including
+# access to a selected physical parallel port. Replay the future launch path;
+# --preflight changes only its terminal action. The following reboot makes a
+# newly granted supplementary group effective before Encore starts.
+preflight_args=(--preflight --fullscreen)
+[[ "$backend" == direct-console ]] || preflight_args+=("--$backend")
+[[ "$use_real_parport" -eq 0 ]] || preflight_args+=(--lpt-device "$real_parport")
+if [[ "$backend" == direct-console ]]; then
+    ENCORE_RUNTIME_USER="$session_user" \
+    SDL_VIDEODRIVER=KMSDRM HOME="$session_home" \
+        "$ROOT/scripts/run-qemu.sh" "${preflight_args[@]}"
+else
+    ENCORE_RUNTIME_USER="$session_user" \
+    HOME="$session_home" "$ROOT/scripts/run-qemu.sh" "${preflight_args[@]}"
+fi
+
+qemu_bin="$release_qemu"
+[[ -x "$build_qemu" ]] && qemu_bin="$build_qemu"
+[[ -x "$ROOT/qemu-system-i386" ]] && qemu_bin="$ROOT/qemu-system-i386"
+[[ -x "$qemu_bin" ]] || { echo "install.sh: runner produced no QEMU binary" >&2; exit 3; }
+"$qemu_bin" -M help | grep -q pinball2000 || {
+    echo "install.sh: $qemu_bin does not contain the Encore machine" >&2; exit 3; }
 
 # Refuse path collisions before writing installation state, so a failed
 # preflight cannot leave an installation marker behind.
@@ -384,31 +387,6 @@ chmod 0644 "$CONF_DIR/session.conf" "$CONF_DIR/launch.args"
 printf '%s\n' "$backend" > "$STATE/install-mode"
 systemctl get-default > "$STATE/previous-default-target"
 systemctl is-enabled getty@tty1.service > "$STATE/getty-tty1-was-enabled" 2>/dev/null || true
-if [[ "$add_lp_group" -eq 1 ]]; then
-    usermod -aG lp "$session_user"
-    printf '%s\n' "$session_user" > "$STATE/lp-group-added"
-    echo "Added $session_user to group lp for $real_parport."
-fi
-
-# SDL's KMSDRM backend opens evdev devices directly. Unlike a compositor, it
-# has no privileged input broker, and standard Debian intentionally does not
-# grant ordinary users permanent membership of the global input group. Mark
-# event devices for logind's active-seat ACL only in the unprivileged direct
-# console profile. The permission then follows the real PAM/login session.
-if [[ "$backend" == direct-console && "$run_as_root" -eq 0 ]]; then
-    if [[ -e "$DIRECT_INPUT_RULE" ]] &&
-       ! grep -q '^# encore-pinball2000 managed direct-console input$' "$DIRECT_INPUT_RULE"; then
-        echo "install.sh: refusing unrelated existing $DIRECT_INPUT_RULE" >&2
-        exit 3
-    fi
-    cat > "$DIRECT_INPUT_RULE" <<'EOF'
-# encore-pinball2000 managed direct-console input
-SUBSYSTEM=="input", KERNEL=="event*", TAG+="uaccess"
-EOF
-    chmod 0644 "$DIRECT_INPUT_RULE"
-    udevadm control --reload
-    udevadm trigger --subsystem-match=input --action=change
-fi
 
 if [[ "$quiet_boot" -eq 1 || "$zero_grub_timeout" -eq 1 ]]; then
     install -d -m 0755 /etc/default/grub.d

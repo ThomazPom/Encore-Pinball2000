@@ -25,8 +25,12 @@ if [[ "${1:-}" == --root-service ]]; then
     export DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_dir/bus"
     [[ -z "$wayland_display" ]] || export WAYLAND_DISPLAY="$wayland_display"
     mapfile -t launch_args < "$ARGS_FILE"
-    video_args=(--direct-console --framebuffer)
-    [[ "$BACKEND" == direct-console ]] || video_args=(--wayland --framebuffer)
+    video_args=(--framebuffer)
+    if [[ "$BACKEND" == direct-console ]]; then
+        export SDL_VIDEODRIVER=KMSDRM
+    else
+        video_args=(--wayland --framebuffer)
+    fi
     systemd-inhibit --what=idle:sleep:shutdown --mode=block \
         --why="Encore cabinet root diagnostic" -- \
         "$ROOT/scripts/run-qemu.sh" "${video_args[@]}" --fullscreen \
@@ -208,11 +212,10 @@ launch_encore() {
                 --fullscreen --game "$GAME" "${launch_args[@]}" "$@"
             ;;
         direct)
-            unset DISPLAY XAUTHORITY WAYLAND_DISPLAY
             exec systemd-inhibit --what=idle:sleep:shutdown --mode=block \
                 --why="Encore cabinet session" -- \
-                "$ROOT/scripts/run-qemu.sh" --direct-console --framebuffer \
-                --fullscreen --game "$GAME" "${launch_args[@]}" "$@"
+                "$ROOT/scripts/run-qemu.sh" --fullscreen --game "$GAME" \
+                "${launch_args[@]}" "$@"
             ;;
         *) echo "encore-session: invalid video path '$video'" >&2; return 2 ;;
     esac
