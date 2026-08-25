@@ -73,8 +73,10 @@ environment, guesses a socket, or imports a user-controlled environment into a
 root process.
 
 Real cabinet I/O uses a Linux `ppdev` character device such as
-`/dev/parport0` or `/dev/parport1`. If selected, the installer adds the cabinet
-account to the standard `lp` group instead of making Encore root.
+`/dev/parport0` or `/dev/parport1`. If selected, the runner's preflight treats
+membership of the standard `lp` group as a runtime prerequisite and prepares
+the cabinet account instead of making Encore root. The following reboot makes
+the supplementary group effective.
 
 ## Installation flow
 
@@ -135,8 +137,10 @@ leaves the normal display unchanged.
 Missing Cage, Weston, SDL2 or host graphics components can be installed through
 APT. The launcher queries SDL itself for the selected Wayland or KMSDRM
 backend, installs the appropriate runtime when requested, then checks again.
-The installer invokes that same launch path with `--preflight`, which also
-prepares missing ROM/update assets but stops before the compositor or QEMU.
+The installer invokes the future launch path with `--preflight`. The runner
+performs the same dependency, permission and ROM/update preparation, but stops
+immediately before a compositor or QEMU. Runtime video selection remains based
+on the inherited login environment.
 If the custom QEMU binary is absent, it similarly offers the documented build
 dependencies and builds QEMU in the selected user's cache.
 
@@ -161,10 +165,12 @@ Standalone profiles own tty1 and cannot coexist with another cabinet launcher
 that manages the same getty. The installer detects conflicting persistent or
 runtime getty drop-ins and asks you to remove the other integration first.
 
-For an unprivileged direct-console session, the installer lets logind grant
-the active local login temporary access to `/dev/input/event*`. This is needed
-because SDL/KMSDRM reads evdev directly. The account is not added to the
-global `input` group, and the managed udev rule is removed on uninstall.
+For an unprivileged direct-console session, the runner's preflight lets logind
+grant the active local login temporary access to `/dev/input/event*`. This is
+needed because SDL/KMSDRM reads evdev directly. Runtime preparation uses one
+privileged phase for packages and this managed udev rule, then returns to the
+ordinary user before QEMU starts. The account is not added to the global
+`input` group, and the managed rule is removed on uninstall.
 
 Reboot after installation. In a standalone profile, the installer asks whether
 F1 should hand the machine to the existing display manager or to a
@@ -215,7 +221,7 @@ scripts/run-qemu.sh --wayland --fullscreen --game swe1
 From a free local login VT with no compositor or display manager owning DRM:
 
 ```sh
-scripts/run-qemu.sh --direct-console --fullscreen --game swe1
+scripts/run-qemu.sh --fullscreen --game swe1
 ```
 
 The second command intentionally fails when SDL2 lacks KMSDRM or the current

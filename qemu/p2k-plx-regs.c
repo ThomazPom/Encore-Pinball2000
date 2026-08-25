@@ -547,7 +547,7 @@ void p2k_install_plx_regs(Pinball2000MachineState *s)
      * are kept — that's enough for plx_ee_verify() to pass. */
     if (s && s->game) {
         snprintf(s_seeprom_save_path, sizeof(s_seeprom_save_path),
-                 "savedata/%s.see", s->game);
+                 "%s/%s.see", s->savedata_dir, s->game);
         FILE *fp = (p2k_no_savedata_enabled() ||
                     p2k_fresh_savedata_enabled()) ? NULL :
                    fopen(s_seeprom_save_path, "rb");

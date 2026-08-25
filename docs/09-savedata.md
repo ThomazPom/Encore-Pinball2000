@@ -12,6 +12,13 @@ These are hardware state, not save states. QEMU still boots the game normally;
 Encore seeds each emulated device from its file and writes changed state back on
 clean exit.
 
+The runner passes the selected directory to the Encore machine as
+`savedata-dir`. Encore recursively creates that exact directory when possible
+and tests it with a temporary create/remove operation. If it is unavailable or
+not writable, Encore falls back to `$XDG_DATA_HOME/encore/savedata` (normally
+`~/.local/share/encore/savedata`) and reports the selected path. Only failure of
+both locations stops startup. `--no-savedata` deliberately creates nothing.
+
 Writes use a temporary file followed by `rename()` so an interrupted save does
 not replace the last complete file. A hard kill cannot run the exit notifiers,
 so stop Encore normally whenever possible.

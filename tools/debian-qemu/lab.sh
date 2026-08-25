@@ -17,6 +17,7 @@ if [ -n "$HOST_VARIANT" ]; then HOST_KEYMAP="$HOST_LAYOUT($HOST_VARIANT)"; else 
 BASE_TAG=$(printf '%s-%s-%s' "$HOST_LOCALE" "$HOST_LAYOUT" "${HOST_VARIANT:-default}" | tr -cs 'A-Za-z0-9._-' _)
 BASE=$LAB_DIR/debian13-minimal-$BASE_TAG.qcow2
 OVERLAY=$LAB_DIR/current.qcow2
+CHECKOUT_PENDING=$LAB_DIR/current.checkout-pending
 PIDFILE=$LAB_DIR/qemu.pid
 LOG=$LAB_DIR/serial.log
 # Nucore's lab conventionally owns 22222. Keep Encore distinct so both labs
@@ -111,7 +112,7 @@ start_overlay() {
     else
         qemu-system-x86_64 -display help 2>&1 | grep -qx gtk ||
             die "QEMU GTK display unavailable (install qemu-system-gui, or set ENCORE_QEMU_HEADLESS=1)"
-        display=(-display gtk,zoom-to-fit=on,show-tabs=off)
+        display=(-display gtk,zoom-to-fit=off,show-tabs=off)
     fi
     qemu-system-x86_64 "${accel[@]}" -machine q35 \
         -m "$RAM" -smp "$CPUS" -drive "file=$OVERLAY,if=virtio,format=qcow2" \
@@ -174,14 +175,26 @@ reset_overlay() {
     [ -f "$BASE" ] || die "base missing; run '$0 prepare'"
     rm -f "$OVERLAY"
     qemu-img create -f qcow2 -F qcow2 -b "$BASE" "$OVERLAY"
+    : > "$CHECKOUT_PENDING"
     echo "Fresh overlay: $OVERLAY"
 }
 
 copy_checkout() {
     local lifecycle_stubs=${1:-0}
+    local host_runner_sha host_runtime_sha guest_hashes
+    host_runner_sha=$(sha256sum "$REPO_ROOT/scripts/run-qemu.sh" | awk '{print $1}')
+    host_runtime_sha=$(sha256sum "$REPO_ROOT/scripts/internal/runtime-packages.sh" | awk '{print $1}')
     tar -C "$REPO_ROOT" --exclude=.git --exclude=build --exclude=savedata -cf - . |
         ssh_guest "rm -rf /opt/Encore-PB2K && mkdir -p /opt/Encore-PB2K && tar -C /opt/Encore-PB2K -xf - && chown -R root:root /opt/Encore-PB2K"
-    ssh_guest 'ln -sfn /opt/Encore-PB2K /home/cabinet/Encore-PB2K'
+    # `ln -sfn` does not replace an existing real directory: it creates the
+    # link inside it. Remove either an old checkout or link explicitly so the
+    # command advertised to the tester always reaches the checkout just copied.
+    ssh_guest 'rm -rf /home/cabinet/Encore-PB2K && ln -s /opt/Encore-PB2K /home/cabinet/Encore-PB2K'
+    guest_hashes=$(ssh_guest 'sha256sum /opt/Encore-PB2K/scripts/run-qemu.sh /opt/Encore-PB2K/scripts/internal/runtime-packages.sh | awk '\''{print $1}'\''')
+    [[ "$guest_hashes" == "$host_runner_sha"$'\n'"$host_runtime_sha" ]] ||
+        die "guest checkout differs from the current host worktree"
+    rm -f "$CHECKOUT_PENDING"
+    echo "Copied current checkout (runner ${host_runner_sha:0:12})."
     [[ "$lifecycle_stubs" -eq 1 ]] || return 0
     # Automated lifecycle tests deliberately avoid a lengthy QEMU build and
     # real DRM rendering. Never install these stubs in the interactive lab:
@@ -287,7 +300,7 @@ test_install() {
     case "$execution" in user) ;; root) run_as_root=1 ;; *) die "execution must be user or root" ;; esac
     reset_overlay; start_overlay; assert_stripped_guest; copy_checkout 1; enable_nonroot_escalation
     install_as_cabinet "$backend" "$run_as_root"
-    ssh_guest "test -s /etc/encore-pinball2000/session.conf; grep -qx BACKEND=$backend /etc/encore-pinball2000/session.conf; grep -qx RUN_AS_ROOT=$run_as_root /etc/encore-pinball2000/session.conf; grep -qx CABINET_AUDIO=1 /etc/encore-pinball2000/session.conf; grep -qx MAINTENANCE=tty /etc/encore-pinball2000/session.conf; grep -q 'Restart=no' /etc/systemd/system/getty@tty1.service.d/49-encore.conf; grep -qx -- --cabinet /etc/encore-pinball2000/launch.args; grep -qE '^/dev/parport[0-9]+$' /etc/encore-pinball2000/launch.args; id -nG cabinet | tr ' ' '\\n' | grep -qx lp; test -c \"\$(grep -E '^/dev/parport[0-9]+$' /etc/encore-pinball2000/launch.args)\"; test -d /opt/Encore-PB2K/savedata; test \"\$(stat -c %U /opt/Encore-PB2K/savedata)\" = cabinet"
+    ssh_guest "test -s /etc/encore-pinball2000/session.conf; grep -qx BACKEND=$backend /etc/encore-pinball2000/session.conf; grep -qx RUN_AS_ROOT=$run_as_root /etc/encore-pinball2000/session.conf; grep -qx CABINET_AUDIO=1 /etc/encore-pinball2000/session.conf; grep -qx MAINTENANCE=tty /etc/encore-pinball2000/session.conf; grep -q 'Restart=no' /etc/systemd/system/getty@tty1.service.d/49-encore.conf; grep -qx -- --cabinet /etc/encore-pinball2000/launch.args; grep -qE '^/dev/parport[0-9]+$' /etc/encore-pinball2000/launch.args; id -nG cabinet | tr ' ' '\\n' | grep -qx lp; test -c \"\$(grep -E '^/dev/parport[0-9]+$' /etc/encore-pinball2000/launch.args)\"; test ! -e /opt/Encore-PB2K/savedata"
     # A display manager and SSH invoke the account shell with `-c`. That must
     # delegate to the original shell instead of starting another cabinet
     # backend outside tty1.
@@ -304,7 +317,7 @@ test_install() {
     ssh_guest 'journalctl -b --no-pager | grep -q "session opened for user cabinet"; journalctl -b --no-pager | grep -q "session closed for user cabinet"'
     ssh_guest 'journalctl -b --no-pager | grep -Fq "[encore-audio] policy=cabinet tool=wpctl before=Volume:\\ 0.50\\ \\[MUTED\\] after=Volume:\\ 1.00"'
     ssh_guest 'cd /opt/Encore-PB2K && ./uninstall.sh'
-    ssh_guest 'test ! -e /etc/encore-pinball2000/session.conf; test ! -e /etc/systemd/system/getty@tty1.service.d/49-encore.conf; test ! -e /run/systemd/system/getty@tty1.service.d/50-encore-maintenance.conf; test ! -e /var/lib/encore-pinball2000/install-mode; test ! -e /var/lib/pinball2000-cabinet.lock; test "$(getent passwd cabinet | cut -d: -f7)" = /bin/bash'
+    ssh_guest 'test ! -e /etc/encore-pinball2000/session.conf; test ! -e /etc/systemd/system/getty@tty1.service.d/49-encore.conf; test ! -e /run/systemd/system/getty@tty1.service.d/50-encore-maintenance.conf; test ! -e /var/lib/encore-pinball2000/install-mode; test ! -e /var/lib/pinball2000-cabinet.lock; test "$(getent passwd cabinet | cut -d: -f7)" = /bin/bash; id -nG cabinet | tr " " "\n" | grep -qx lp'
     stop_vm
     echo "PASS: stripped Debian install/reboot/session/maintenance/uninstall ($backend, $execution)"
 }
@@ -390,8 +403,8 @@ test ! -e "$root/qemu"
 test ! -e "$root/tools"
 test ! -e "$root/scripts/tests"
 test ! -e "$root/scripts/build-qemu.sh"
-printf "\n" | ENCORE_PREFLIGHT_USER=cabinet \
-    script -qec "env QEMU_BIN=$root/qemu-system-i386 $root/scripts/run-qemu.sh --direct-console --preflight" /dev/null
+printf "\n" | ENCORE_RUNTIME_USER=cabinet \
+    script -qec "env QEMU_BIN=$root/qemu-system-i386 SDL_VIDEODRIVER=KMSDRM $root/scripts/run-qemu.sh --preflight --fullscreen" /dev/null
 test -d "$root/roms"
 test -d "$root/updates"
 "$root/qemu-system-i386" -M help > /tmp/encore-release-machines
@@ -444,11 +457,12 @@ systemctl daemon-reload'
 }
 
 manual_vm() {
-    reset_overlay
+    [[ -f "$OVERLAY" ]] || die "no overlay; run '$0 reset' first"
     start_overlay
-    assert_stripped_guest
-    copy_checkout 0
-    enable_nonroot_escalation
+    if [[ -e "$CHECKOUT_PENDING" ]]; then
+        copy_checkout 0
+        enable_nonroot_escalation
+    fi
     cat <<EOF
 
 Manual stripped-Debian VM is ready in the 800x600 QEMU window.
@@ -457,8 +471,8 @@ Login: cabinet / cabinet
   cd ~/Encore-PB2K
   ./install.sh
 
-The first password prompt is run0/pkttyagent authentication. The base image is
-untouched; discard this experiment with: $0 reset
+The overlay and its guest worktree are preserved across manual boots. Start a
+fresh experiment, with the current host checkout, using: $0 reset
 EOF
 }
 
@@ -469,6 +483,7 @@ release_vm() {
     enable_nonroot_escalation
     download_release_in_guest
     assert_release_in_guest
+    rm -f "$CHECKOUT_PENDING"
     cat <<EOF
 
 Published release is verified and extracted in the 800x600 Debian VM.

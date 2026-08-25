@@ -30,11 +30,11 @@ Useful commands:
 ./tools/debian-qemu/lab.sh test-acquire build
 ./tools/debian-qemu/lab.sh test-alternates # opposite installer choices
 ./tools/debian-qemu/lab.sh all             # complete matrix; includes a real QEMU build
-./tools/debian-qemu/lab.sh manual        # fresh graphical VM, ready after netinst
+./tools/debian-qemu/lab.sh manual        # start/resume the current graphical VM
 ./tools/debian-qemu/lab.sh release       # same VM using the published release
 ./tools/debian-qemu/lab.sh shell         # SSH into the current overlay
 ./tools/debian-qemu/lab.sh stop
-./tools/debian-qemu/lab.sh reset         # discard only the current overlay
+./tools/debian-qemu/lab.sh reset         # fresh overlay; next manual injects current checkout
 ```
 
 The standalone lifecycle matrix uses controlled fake compositor and QEMU
@@ -67,11 +67,12 @@ the disposable overlay and launches `./install.sh` as the unprivileged
 of bypassing it as root. It validates installation state and uninstall
 symmetry before discarding the VM.
 
-`manual` starts from the sealed end-of-netinstall snapshot, adds only `polkitd`
-to make its non-root `run0` test possible, and stops there. The current checkout
-is available at `~/Encore-PB2K`, and the graphical console is left open for
-interactive install, reboot and scaling checks. Both the test user and root
-use the laboratory-only password `cabinet`.
+`reset` creates an overlay from the sealed end-of-netinstall snapshot and marks
+it for one checkout injection. The next `manual` copies the current host
+worktree to `~/Encore-PB2K`, adds only `polkitd` for the non-root `run0` test,
+and opens the graphical console. Later `manual` boots preserve that overlay and
+its guest worktree exactly; they never copy the host checkout again. Both the
+test user and root use the laboratory-only password `cabinet`.
 
 `release` follows the same interactive model without copying the checkout. It
 downloads the latest published archive inside the guest, verifies its SHA-256,

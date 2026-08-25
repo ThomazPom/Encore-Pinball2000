@@ -191,12 +191,6 @@ if [[ "$mode" != display-manager ]]; then
         *) systemctl disable getty@tty1.service 2>/dev/null || true ;;
     esac
 fi
-if [[ -s "$STATE/lp-group-added" ]]; then
-    lp_user="$(sed -n '1p' "$STATE/lp-group-added")"
-    if [[ -n "$lp_user" ]] && id "$lp_user" >/dev/null 2>&1; then
-        gpasswd -d "$lp_user" lp >/dev/null 2>&1 || true
-    fi
-fi
 if [[ -f "$DIRECT_INPUT_RULE" ]] &&
    grep -q '^# encore-pinball2000 managed direct-console input$' "$DIRECT_INPUT_RULE"; then
     rm -f "$DIRECT_INPUT_RULE"
@@ -207,7 +201,7 @@ if [[ -f "$DIRECT_INPUT_RULE" ]] &&
 fi
 rm -f "$STATE/install-mode" "$STATE/previous-default-target" \
       "$STATE/getty-tty1-was-enabled" "$STATE/hushlogin-created" \
-      "$STATE/lp-group-added" "$STATE/autostart-path" \
+      "$STATE/autostart-path" \
       "$STATE/user-service-path" "$STATE/session-shell-user" \
       "$STATE/original-shell" "$STATE/shells-line-added"
 rmdir "$STATE" 2>/dev/null || true

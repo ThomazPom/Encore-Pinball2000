@@ -80,12 +80,15 @@ RUNTIME_BACKEND=""
 BACKEND_WRAPPER=""
 
 # --- QEMU binary lookup -----------------------------------------------------
-if [[ -z "${QEMU_BIN:-}" ]]; then
+resolve_qemu_bin() {
+  [[ -n "${QEMU_BIN:-}" && -x "$QEMU_BIN" ]] && return
+  QEMU_BIN=""
   QEMU_BIN="$ROOT/qemu-system-i386"
   [[ -x "$QEMU_BIN" ]] || QEMU_BIN="$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
   [[ -x "$QEMU_BIN" ]] || QEMU_BIN="$HOME/.cache/encore-qemu-release/qemu-system-i386"
   [[ -x "$QEMU_BIN" ]] || QEMU_BIN=""
-fi
+}
+resolve_qemu_bin
 
 # --- audio backend support --------------------------------------------------
 AUDIO_AUTO_CANDIDATES=(sdl pa alsa oss sndio dbus)
@@ -284,12 +287,9 @@ DISPLAY / UX
   --display-manager         Use the current Wayland display-manager session.
   --cage                    Install/use Cage as a standalone Wayland kiosk.
   --weston                  Install/use Weston as a standalone Wayland kiosk.
-  --direct-console          Use SDL2's KMSDRM backend directly from a login VT.
-                            Implies --framebuffer and removes graphical-display
-                            variables; intended for cabinet sessions only.
-  --preflight               Perform the selected backend's normal package,
-                            SDL and asset preparation, then stop before
-                            starting its compositor or QEMU.
+  --preflight               Follow the requested launch path and prepare every
+                            runtime dependency and asset it encounters, then
+                            stop immediately before a compositor or QEMU.
   --flipscreen              Vertically reverse the displayed image, exactly as
                             if F2 had been pressed once. F2 toggles the same
                             state at run time.
@@ -639,11 +639,6 @@ while [[ $# -gt 0 ]]; do
       SDL_VIDEO_DRIVER_REQUEST=wayland
       FRAMEBUFFER_REQUEST=1
       shift ;;
-    --direct-console)
-      RUNTIME_BACKEND=direct-console
-      SDL_VIDEO_DRIVER_REQUEST=KMSDRM
-      FRAMEBUFFER_REQUEST=1
-      shift ;;
     --preflight)
       PREFLIGHT=1
       shift ;;
@@ -838,6 +833,12 @@ LOCAL_VT=""
 if [[ -t 0 ]]; then
   LOCAL_VT="$(tty 2>/dev/null || true)"
 fi
+inherited_sdl_driver="${SDL_VIDEODRIVER:-}"
+if [[ -z "$SDL_VIDEO_DRIVER_REQUEST" &&
+      "${inherited_sdl_driver^^}" == KMSDRM ]]; then
+  SDL_VIDEO_DRIVER_REQUEST=KMSDRM
+  FRAMEBUFFER_REQUEST=1
+fi
 if [[ $TCG_ONLY -eq 0 && $HEADLESS -eq 0 && -z "$DISPLAY_MODE" &&
       -z "$SDL_VIDEO_DRIVER_REQUEST" &&
       -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
@@ -847,7 +848,7 @@ if [[ $TCG_ONLY -eq 0 && $HEADLESS -eq 0 && -z "$DISPLAY_MODE" &&
     echo "[run-qemu] local VT detected ($LOCAL_VT); using SDL2/KMSDRM"
   else
     echo "[run-qemu] no graphical session or display backend is available." >&2
-    echo "[run-qemu] Use --direct-console from a local VT, or --headless." >&2
+    echo "[run-qemu] Run it from a local login VT, or use --headless." >&2
     exit 2
   fi
 fi
@@ -860,26 +861,56 @@ if [[ -z "$RUNTIME_BACKEND" ]]; then
   fi
 fi
 ENCORE_SDL_DRIVER=""
-encore_prepare_runtime "$RUNTIME_BACKEND"
-
-if [[ $PREFLIGHT -eq 1 ]]; then
-  [[ -n "$RUNTIME_BACKEND" ]] || {
-    echo "[run-qemu] --preflight requires a backend option such as --cage" >&2
+runtime_root_phase=0
+if [[ $EUID -ne 0 ]] && encore_runtime_needs_root_phase "$RUNTIME_BACKEND"; then
+  runtime_owner="$(id -un)"
+  if command -v run0 >/dev/null 2>&1 && command -v pkttyagent >/dev/null 2>&1; then
+    run0 --description="Encore runtime preparation" -- \
+      bash "$ROOT/scripts/internal/runtime-packages.sh" \
+      --runtime-root-phase "$ROOT" "$RUNTIME_BACKEND" "$runtime_owner" \
+      "$HOME" "$QEMU_BIN" "${P2K_LPT_PARPORT:-}"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo bash "$ROOT/scripts/internal/runtime-packages.sh" \
+      --runtime-root-phase "$ROOT" "$RUNTIME_BACKEND" "$runtime_owner" \
+      "$HOME" "$QEMU_BIN" "${P2K_LPT_PARPORT:-}"
+  elif command -v pkexec >/dev/null 2>&1; then
+    pkexec bash "$ROOT/scripts/internal/runtime-packages.sh" \
+      --runtime-root-phase "$ROOT" "$RUNTIME_BACKEND" "$runtime_owner" \
+      "$HOME" "$QEMU_BIN" "${P2K_LPT_PARPORT:-}"
+  else
+    echo "[run-qemu] runtime preparation needs root; no supported privilege helper found" >&2
     exit 2
-  }
-  sdl_driver="$ENCORE_SDL_DRIVER"
+  fi
+  runtime_root_phase=1
+  QEMU_BIN=""
+  resolve_qemu_bin
+fi
+if [[ $runtime_root_phase -eq 0 ]]; then
+  encore_prepare_runtime "$RUNTIME_BACKEND"
+else
+  case "$RUNTIME_BACKEND" in
+    direct-console) ENCORE_SDL_DRIVER=KMSDRM ;;
+    display-manager|wayland|cage|weston) ENCORE_SDL_DRIVER=wayland ;;
+  esac
+fi
+
+if [[ $EUID -ne 0 && "${P2K_LPT_PARPORT:-}" == /dev/parport[0-9]* &&
+      ( ! -r "$P2K_LPT_PARPORT" || ! -w "$P2K_LPT_PARPORT" ) ]]; then
+  echo "[run-qemu] $P2K_LPT_PARPORT is not accessible in this login session." >&2
+  echo "[run-qemu] Log out and back in so the prepared lp membership takes effect." >&2
+  exit 2
 fi
 
 # Download complete ROM and update trees only when their directories are absent.
 # Existing directories are never inspected, modified, or refreshed.
-if [[ $PREFLIGHT -eq 1 && $EUID -eq 0 &&
-      -n "${ENCORE_PREFLIGHT_USER:-}" && "$ENCORE_PREFLIGHT_USER" != root ]]; then
-  preflight_home="$(getent passwd "$ENCORE_PREFLIGHT_USER" | cut -d: -f6)"
-  [[ -n "$preflight_home" ]] || {
-    echo "[run-qemu] unknown preflight asset user: $ENCORE_PREFLIGHT_USER" >&2
+if [[ $EUID -eq 0 && -n "${ENCORE_RUNTIME_USER:-}" &&
+      "$ENCORE_RUNTIME_USER" != root ]]; then
+  runtime_home="$(getent passwd "$ENCORE_RUNTIME_USER" | cut -d: -f6)"
+  [[ -n "$runtime_home" ]] || {
+    echo "[run-qemu] unknown runtime asset user: $ENCORE_RUNTIME_USER" >&2
     exit 2
   }
-  runuser -u "$ENCORE_PREFLIGHT_USER" -- env HOME="$preflight_home" \
+  runuser -u "$ENCORE_RUNTIME_USER" -- env HOME="$runtime_home" \
     "$ROOT/scripts/internal/fetch-assets-if-missing.sh" \
     "$ROOT" "$ROMS_DIR" "$ROOT/updates"
 else
@@ -889,7 +920,7 @@ fi
 # A preflight deliberately stops at the last common preparation point
 # before cache generation or any other operation can start QEMU.
 if [[ $PREFLIGHT -eq 1 ]]; then
-  echo "[run-qemu] $RUNTIME_BACKEND preflight passed (SDL: $sdl_driver; assets ready)"
+  echo "[run-qemu] preflight complete; stopping before runtime launch"
   exit 0
 fi
 
@@ -1298,12 +1329,10 @@ if [[ "${P2K_DCS_ENGINE:-adsp-hybrid-thread}" == "pb2kslib-adsp" &&
   fi
 fi
 
-# --- savedata cwd handling --------------------------------------------------
-# The QEMU machine reads savedata/<game>.* relative to cwd. Choose cwd
-# accordingly. --no-savedata exports the C-side read-only signal and keeps
-# the empty throwaway cwd as a second guard so any
-# cwd-relative seed probe cannot observe the repo savedata/ directory. Apply
-# the same cwd isolation when the env var was set by the caller.
+# --- savedata handling ------------------------------------------------------
+# The selected path is passed directly to the Pinball 2000 machine. In
+# --no-savedata mode an empty throwaway cwd remains a second guard against any
+# accidental legacy cwd-relative access.
 if [[ -n "${P2K_NO_SAVEDATA:-}" && "${P2K_NO_SAVEDATA:-}" != "0" ]]; then
   NO_SAVEDATA=1
 fi
@@ -1321,19 +1350,14 @@ if [[ $NO_SAVEDATA -eq 1 ]]; then
   RUN_CWD="$(mktemp -d "$ROOT/.run-qemu.XXXXXX")"
   CLEANUP="$RUN_CWD"
   trap '[[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"' EXIT
-  echo "[run-qemu] read-only savedata: P2K_NO_SAVEDATA=1; running in $RUN_CWD (no savedata/ subdir)"
+  echo "[run-qemu] read-only savedata: P2K_NO_SAVEDATA=1; running in $RUN_CWD"
 else
   if [[ $FRESH_SAVEDATA -eq 1 ]]; then
     export P2K_FRESH_SAVEDATA=1
     echo "[run-qemu] fresh savedata: ignoring existing seeds; new state will be saved on exit"
   fi
 fi
-if [[ $NO_SAVEDATA -eq 0 && "$SAVEDATA_DIR" != "$ROOT/savedata" ]]; then
-  RUN_CWD="$(mktemp -d "$ROOT/.run-qemu.XXXXXX")"
-  CLEANUP="$RUN_CWD"
-  trap '[[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"' EXIT
-  ln -s "$SAVEDATA_DIR" "$RUN_CWD/savedata"
-fi
+SAVEDATA_DIR="$(realpath -m "$SAVEDATA_DIR")"
 
 # --- assemble QEMU command line --------------------------------------------
 # Auto-append display options so QEMU never captures the host pointer
@@ -1404,7 +1428,7 @@ if [[ $TCG_ONLY -eq 1 ]]; then
 fi
 
 # --- pinball2000 machine ----------------------------------------------------
-MACHINE_OPTS="pinball2000,game=$GAME,roms-dir=$ROMS_DIR"
+MACHINE_OPTS="pinball2000,game=$GAME,roms-dir=$ROMS_DIR,savedata-dir=$SAVEDATA_DIR"
 if [[ -n "$UPDATE_DIR_ABS" ]]; then
   MACHINE_OPTS+=",update=$UPDATE_DIR_ABS"
 fi

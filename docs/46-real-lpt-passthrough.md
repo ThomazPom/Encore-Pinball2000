@@ -50,6 +50,12 @@ real cabinet I/O by default, and adds the unprivileged session account to `lp`.
 When no kernel ppdev interface exists at all, it explicitly reports that Encore
 will use the emulated demonstration board.
 
+The runner owns that `lp` preparation as a persistent runtime prerequisite,
+just like host packages. The installer supplies the selected device and user
+to `run-qemu.sh --preflight`; it does not implement group management itself.
+Consequently uninstalling the cabinet boot integration does not remove the
+runtime account from `lp`.
+
 The direct path uses `PPCLAIM`, negotiates compatibility mode, and forwards
 DATA, STATUS and CONTROL accesses with `ppdev` ioctls. It does not need a QEMU
 chardev or a separate helper process.

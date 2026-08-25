@@ -186,6 +186,57 @@ static qemu_irq p2k_irq0_tap(qemu_irq downstream)
     return qemu_allocate_irq(p2k_irq0_tap_set, tap, 0);
 }
 
+static bool p2k_savedata_directory_usable(const char *path)
+{
+    char *probe_path;
+    int probe_fd;
+
+    if (g_mkdir_with_parents(path, 0700) < 0 ||
+        !g_file_test(path, G_FILE_TEST_IS_DIR)) {
+        return false;
+    }
+
+    probe_path = g_build_filename(path,
+                                  ".encore-write-test.XXXXXX", NULL);
+    probe_fd = g_mkstemp(probe_path);
+    if (probe_fd < 0) {
+        g_free(probe_path);
+        return false;
+    }
+    close(probe_fd);
+    if (unlink(probe_path) < 0) {
+        g_free(probe_path);
+        return false;
+    }
+    g_free(probe_path);
+    return true;
+}
+
+static void p2k_prepare_savedata_directory(Pinball2000MachineState *s)
+{
+    char *fallback;
+
+    if (p2k_no_savedata_enabled()) {
+        return;
+    }
+    if (p2k_savedata_directory_usable(s->savedata_dir)) {
+        return;
+    }
+
+    fallback = g_build_filename(g_get_user_data_dir(), "encore",
+                                "savedata", NULL);
+    warn_report("pinball2000: savedata directory %s is unavailable; "
+                "falling back to %s", s->savedata_dir, fallback);
+    if (!p2k_savedata_directory_usable(fallback)) {
+        error_report("pinball2000: fallback savedata directory is unavailable: %s",
+                     fallback);
+        g_free(fallback);
+        exit(1);
+    }
+    g_free(s->savedata_dir);
+    s->savedata_dir = fallback;
+}
+
 static void pinball2000_init(MachineState *machine)
 {
     Pinball2000MachineState *s = PINBALL2000_MACHINE(machine);
@@ -203,6 +254,9 @@ static void pinball2000_init(MachineState *machine)
     }
     if (!s->roms_dir) {
         s->roms_dir = g_strdup("roms");
+    }
+    if (!s->savedata_dir) {
+        s->savedata_dir = g_strdup("savedata");
     }
 
     /* RAM: alias machine->ram (auto-allocated by mc->default_ram_id) at 0. */
@@ -275,6 +329,7 @@ static void pinball2000_init(MachineState *machine)
     p2k_install_superio();
     p2k_install_cyrix_ccr();
     p2k_install_pci_stub();
+    p2k_prepare_savedata_directory(s);
     p2k_install_plx_bars(s);
     p2k_install_plx_regs(s);
     p2k_install_bar3_flash(s);
@@ -328,6 +383,17 @@ static void p2k_set_roms_dir(Object *obj, const char *value, Error **errp)
     g_free(s->roms_dir);
     s->roms_dir = g_strdup(value);
 }
+static char *p2k_get_savedata_dir(Object *obj, Error **errp)
+{
+    Pinball2000MachineState *s = PINBALL2000_MACHINE(obj);
+    return g_strdup(s->savedata_dir ?: "");
+}
+static void p2k_set_savedata_dir(Object *obj, const char *value, Error **errp)
+{
+    Pinball2000MachineState *s = PINBALL2000_MACHINE(obj);
+    g_free(s->savedata_dir);
+    s->savedata_dir = g_strdup(value);
+}
 static char *p2k_get_update(Object *obj, Error **errp)
 {
     Pinball2000MachineState *s = PINBALL2000_MACHINE(obj);
@@ -363,6 +429,11 @@ static void pinball2000_class_init(ObjectClass *oc, P2K_CLASS_INIT_DATA data)
                                   p2k_get_roms_dir, p2k_set_roms_dir);
     object_class_property_set_description(oc, "roms-dir",
         "Directory containing game ROM chip files (default: ./roms)");
+    object_class_property_add_str(oc, "savedata-dir",
+                                  p2k_get_savedata_dir,
+                                  p2k_set_savedata_dir);
+    object_class_property_set_description(oc, "savedata-dir",
+        "Directory containing persistent cabinet state (default: ./savedata)");
     object_class_property_add_str(oc, "update",
                                   p2k_get_update, p2k_set_update);
     object_class_property_set_description(oc, "update",
