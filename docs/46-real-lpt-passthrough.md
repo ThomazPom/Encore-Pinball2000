@@ -65,9 +65,11 @@ scripts/run-qemu.sh \
   --lpt-input hybrid
 ```
 
-The overlay is additive: it can set an input bit but never clear a bit returned
-by the cabinet. Output writes, status replies and auxiliary synchronization
-remain physical. The coin-door interlock is deliberately excluded because an
+The overlay is additive at the switch level. Physical PDB inputs are
+active-low, so a keyboard closure clears its corresponding raw input bit. It
+never sets a bit and therefore cannot reopen a switch already closed by the
+cabinet. Output writes, status replies and auxiliary synchronization remain
+physical. The coin-door interlock is deliberately excluded because an
 additive overlay cannot safely represent both its open and closed states.
 
 This path is experimental until its input polarity and timing have been

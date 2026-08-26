@@ -633,9 +633,11 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
     }
 }
 
-/* Additive keyboard overlay for a real board. A set bit represents the same
- * closed-switch polarity already used by the software board. Never touch
- * protocol/status opcodes or outputs, and never clear a physical input bit. */
+/* Additive keyboard overlay for a real board. The physical PDB inputs are
+ * active-low: a closed switch clears its bit in the byte returned to XINA.
+ * The software model stores closures as positive masks, so applying the
+ * overlay means clearing those mask bits in the physical value. Never touch
+ * protocol/status opcodes or outputs, and never reopen a physical closure. */
 static uint8_t retrieve_hybrid_input_mask(uint8_t opcode)
 {
     switch (opcode) {
@@ -767,7 +769,7 @@ static uint64_t p2k_lpt_read(void *opaque, hwaddr addr, unsigned size)
         v = s_pp_fd >= 0 ? p2k_lpt_pp_read(s_pp_fd, addr) : 0xff;
         if (p2k_lpt_hybrid_input() && addr == 0 &&
             (s_rendering_flags & 0x01) && (s_rendering_flags & 0x08)) {
-            v |= retrieve_hybrid_input_mask(s_data_for_rendering);
+            v &= (uint8_t)~retrieve_hybrid_input_mask(s_data_for_rendering);
         }
         p2k_lpt_trace("R", addr, v);
         return v;
@@ -777,7 +779,7 @@ static uint64_t p2k_lpt_read(void *opaque, hwaddr addr, unsigned size)
         v = 0xff;
         if (p2k_lpt_hybrid_input() && addr == 0 &&
             (s_rendering_flags & 0x01) && (s_rendering_flags & 0x08)) {
-            v |= retrieve_hybrid_input_mask(s_data_for_rendering);
+            v &= (uint8_t)~retrieve_hybrid_input_mask(s_data_for_rendering);
         }
         p2k_lpt_trace("R", addr, v);
         return v;
