@@ -106,9 +106,10 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 state: a recognized board starts physical and the fallback starts emulated.
 Tab still obeys the requested cycle when no board was recognized; physical
 then uses an available unrecognized ppdev path or an open `0xff` bus when no
-host port exists. Changes occur only at a complete PDB command boundary. The
-software board follows the command stream in the background, so emulation
-starts from current protocol state.
+host port exists. Hybrid uses the complete emulated board when no ppdev path
+is attached, so its keyboard controls remain usable. Changes occur only at a
+complete PDB command boundary. The software board follows the command stream
+in the background, so emulation starts from current protocol state.
 
 | `--lpt-trace` | file | off | Exports `P2K_LPT_TRACE_FILE`; appends LPT read/write trace lines. Parent directory must exist. | `scripts/run-qemu.sh --lpt-trace ./logs/lpt.txt` |
 

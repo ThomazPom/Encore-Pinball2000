@@ -89,6 +89,10 @@ stops forwarding traffic and uses the complete software board, including its
 keepalive responses; the unused physical board's blanking watchdog can then
 expire.
 
+Without an attached ppdev path, hybrid falls back to the complete software
+board instead of combining keyboard closures with an unusable open bus.
+Physical remains deliberately literal and exposes the open bus in that case.
+
 Encore changes mode only at a complete PDB command boundary and keeps the
 software protocol state synchronized while hardware is active. On return to
 physical, the log confirms the first forwarded PDB05 frame. Real-cabinet
