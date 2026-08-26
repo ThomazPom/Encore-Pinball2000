@@ -765,7 +765,8 @@ static uint64_t p2k_lpt_read(void *opaque, hwaddr addr, unsigned size)
         return v;
     }
 #ifdef __linux__
-    if (s_lpt_runtime_mode != P2K_LPT_RUNTIME_EMULATED) {
+    if (s_lpt_runtime_mode == P2K_LPT_RUNTIME_PHYSICAL ||
+        (s_lpt_runtime_mode == P2K_LPT_RUNTIME_HYBRID && s_pp_fd >= 0)) {
         v = s_pp_fd >= 0 ? p2k_lpt_pp_read(s_pp_fd, addr) : 0xff;
         if (p2k_lpt_hybrid_input() && addr == 0 &&
             (s_rendering_flags & 0x01) && (s_rendering_flags & 0x08)) {
@@ -775,7 +776,7 @@ static uint64_t p2k_lpt_read(void *opaque, hwaddr addr, unsigned size)
         return v;
     }
 #else
-    if (s_lpt_runtime_mode != P2K_LPT_RUNTIME_EMULATED) {
+    if (s_lpt_runtime_mode == P2K_LPT_RUNTIME_PHYSICAL) {
         v = 0xff;
         if (p2k_lpt_hybrid_input() && addr == 0 &&
             (s_rendering_flags & 0x01) && (s_rendering_flags & 0x08)) {
@@ -1012,7 +1013,7 @@ void p2k_lpt_host_key(int qcode, bool down)
         break;
     case Q_KEY_CODE_F4:
         if (down) {
-            if (p2k_lpt_hybrid_input()) {
+            if (p2k_lpt_hybrid_input() && s_pp_fd >= 0) {
                 fprintf(stderr, "[lpt] F4 ignored in hybrid mode; physical "
                         "coin-door interlock is authoritative\n");
                 break;
@@ -1222,11 +1223,15 @@ void p2k_install_lpt_board(void)
                     s_physical_board ? s_pp_path : "open bus");
     }
     if (p2k_lpt_hybrid_input()) {
-        info_report("pinball2000: EXPERIMENTAL hybrid input — physical reads "
-                    "plus additive keyboard switch closures; host path=%s; "
-                    "physical outputs and protocol/status replies remain "
-                    "authoritative",
-                    s_physical_board ? s_pp_path : "open bus");
+        if (s_physical_board) {
+            info_report("pinball2000: EXPERIMENTAL hybrid input — physical "
+                        "reads plus additive keyboard switch closures; host "
+                        "path=%s; physical outputs and protocol/status replies "
+                        "remain authoritative", s_pp_path);
+        } else {
+            info_report("pinball2000: hybrid input has no host ppdev; using "
+                        "the complete emulated board and keyboard controls");
+        }
     }
 
     info_report("pinball2000: LPT driver-board installed at I/O 0x%x-0x%x "
@@ -1235,7 +1240,7 @@ void p2k_install_lpt_board(void)
                 p2k_lpt_hybrid_input() ?
                 (s_physical_board ?
                  "; physical board + hybrid keyboard input" :
-                 "; open physical bus + hybrid keyboard input") :
+                 "; emulated-board fallback + hybrid keyboard input") :
                 s_lpt_runtime_mode == P2K_LPT_RUNTIME_PHYSICAL ?
                 (s_physical_board ?
                  "; physical board (host F1/F2/F3/Tab only)" :
