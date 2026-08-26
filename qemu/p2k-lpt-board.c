@@ -57,8 +57,31 @@ static char    s_resolved_parport[256];
 static bool    s_disconnected;
 static bool    s_lpt_disabled;
 static bool    s_physical_board;
-static bool    s_hybrid_input;
+typedef enum P2KLptRuntimeMode {
+    P2K_LPT_RUNTIME_EMULATED,
+    P2K_LPT_RUNTIME_HYBRID,
+    P2K_LPT_RUNTIME_PHYSICAL,
+} P2KLptRuntimeMode;
+static P2KLptRuntimeMode s_lpt_runtime_mode = P2K_LPT_RUNTIME_EMULATED;
+static P2KLptRuntimeMode s_lpt_pending_mode = P2K_LPT_RUNTIME_EMULATED;
+static bool    s_lpt_mode_change_pending;
+static bool    s_lpt_waiting_for_physical_pdb05;
 static char    s_resolved_game[8];
+
+static bool p2k_lpt_hybrid_input(void)
+{
+    return s_lpt_runtime_mode == P2K_LPT_RUNTIME_HYBRID;
+}
+
+static const char *p2k_lpt_runtime_mode_name(P2KLptRuntimeMode mode)
+{
+    switch (mode) {
+    case P2K_LPT_RUNTIME_PHYSICAL: return "physical";
+    case P2K_LPT_RUNTIME_HYBRID:   return "hybrid";
+    case P2K_LPT_RUNTIME_EMULATED: return "emulated";
+    default:                       return "unknown";
+    }
+}
 
 /* Optional per-event trace file (--lpt-trace <file>). */
 static FILE   *s_trace_fp;
@@ -269,6 +292,9 @@ const char *p2k_lpt_resolve_game(const char *requested_game)
     const char *input_mode = getenv("P2K_LPT_INPUT");
     const char *explicit_path = NULL;
     bool game_auto = !requested_game || !strcmp(requested_game, "auto");
+#ifdef __linux__
+    char first_claimable_parport[64] = { 0 };
+#endif
 
     selection = (selection && *selection) ? selection : "auto";
     input_mode = (input_mode && *input_mode) ? input_mode : "physical";
@@ -277,7 +303,10 @@ const char *p2k_lpt_resolve_game(const char *requested_game)
                      "(expected physical or hybrid)", input_mode);
         exit(1);
     }
-    s_hybrid_input = !strcmp(input_mode, "hybrid");
+    s_lpt_runtime_mode = !strcmp(input_mode, "hybrid") ?
+                         P2K_LPT_RUNTIME_HYBRID :
+                         P2K_LPT_RUNTIME_PHYSICAL;
+    s_lpt_pending_mode = s_lpt_runtime_mode;
     if (!strncmp(selection, "/dev/parport", strlen("/dev/parport"))) {
         explicit_path = selection;
     } else if (strcmp(selection, "auto") && strcmp(selection, "emulated") &&
@@ -293,8 +322,8 @@ const char *p2k_lpt_resolve_game(const char *requested_game)
     s_resolved_parport[0] = '\0';
     s_lpt_disabled = !strcmp(selection, "none");
     s_disconnected = !strcmp(selection, "disconnected");
-    if (s_hybrid_input && (!strcmp(selection, "emulated") ||
-                           s_disconnected || s_lpt_disabled)) {
+    if (p2k_lpt_hybrid_input() && (!strcmp(selection, "emulated") ||
+                                  s_disconnected || s_lpt_disabled)) {
         error_report("pinball2000: hybrid LPT input requires auto, required, "
                      "or an explicit /dev/parportN device");
         exit(1);
@@ -308,6 +337,8 @@ const char *p2k_lpt_resolve_game(const char *requested_game)
         return game_auto ? "swe1" : requested_game;
     }
     if (!strcmp(selection, "emulated")) {
+        s_lpt_runtime_mode = P2K_LPT_RUNTIME_EMULATED;
+        s_lpt_pending_mode = s_lpt_runtime_mode;
         info_report("pinball2000: LPT device emulated — physical ports ignored");
         return game_auto ? "swe1" : requested_game;
     }
@@ -351,6 +382,10 @@ const char *p2k_lpt_resolve_game(const char *requested_game)
         snprintf(path, sizeof(path), "/dev/parport%u", i);
         fd = p2k_lpt_pp_open(candidate);
         if (fd < 0) continue;
+        if (!first_claimable_parport[0]) {
+            snprintf(first_claimable_parport, sizeof(first_claimable_parport),
+                     "%s", candidate);
+        }
         const char *detected = p2k_lpt_probe_playfield(fd);
         p2k_lpt_pp_close(fd);
         if (!detected) continue;
@@ -370,7 +405,18 @@ const char *p2k_lpt_resolve_game(const char *requested_game)
         error_report("pinball2000: LPT device 'required' found no recognized Pinball 2000 driver board");
         exit(1);
     }
+#ifdef __linux__
+    if (first_claimable_parport[0]) {
+        snprintf(s_resolved_parport, sizeof(s_resolved_parport), "%s",
+                 first_claimable_parport);
+        info_report("pinball2000: keeping unrecognized %s available for "
+                    "explicit runtime Tab switching",
+                    s_resolved_parport);
+    }
+#endif
     info_report("pinball2000: no recognized physical driver board; using emulated board");
+    s_lpt_runtime_mode = P2K_LPT_RUNTIME_EMULATED;
+    s_lpt_pending_mode = s_lpt_runtime_mode;
     return game_auto ? "swe1" : requested_game;
 }
 
@@ -621,6 +667,45 @@ static uint8_t retrieve_hybrid_input_mask(uint8_t opcode)
     }
 }
 
+static void p2k_lpt_apply_pending_mode(void)
+{
+    if (!s_lpt_mode_change_pending) {
+        return;
+    }
+    s_lpt_runtime_mode = s_lpt_pending_mode;
+    s_lpt_mode_change_pending = false;
+    s_lpt_waiting_for_physical_pdb05 =
+        s_lpt_runtime_mode == P2K_LPT_RUNTIME_PHYSICAL;
+    fprintf(stderr, "[lpt] runtime mode → %s%s\n",
+            p2k_lpt_runtime_mode_name(s_lpt_runtime_mode),
+            s_lpt_runtime_mode == P2K_LPT_RUNTIME_PHYSICAL ?
+            "; waiting for XINA's next complete PDB05 watchdog frame" : "");
+}
+
+static void p2k_lpt_cycle_runtime_mode(void)
+{
+    P2KLptRuntimeMode current;
+
+    current = s_lpt_mode_change_pending ? s_lpt_pending_mode :
+                                          s_lpt_runtime_mode;
+    switch (current) {
+    case P2K_LPT_RUNTIME_PHYSICAL:
+        s_lpt_pending_mode = P2K_LPT_RUNTIME_HYBRID;
+        break;
+    case P2K_LPT_RUNTIME_HYBRID:
+        s_lpt_pending_mode = P2K_LPT_RUNTIME_EMULATED;
+        break;
+    case P2K_LPT_RUNTIME_EMULATED:
+    default:
+        s_lpt_pending_mode = P2K_LPT_RUNTIME_PHYSICAL;
+        break;
+    }
+    s_lpt_mode_change_pending = true;
+    fprintf(stderr, "[lpt] Tab: %s requested; applying at the next complete "
+            "PDB command boundary\n",
+            p2k_lpt_runtime_mode_name(s_lpt_pending_mode));
+}
+
 static void process_data_command(uint8_t opcode, uint8_t data)
 {
     switch (opcode) {
@@ -628,6 +713,17 @@ static void process_data_command(uint8_t opcode, uint8_t data)
         s_rendering_data_val = data;
         s_data_flag1 = 1;
         p2k_timing_audit_note_pdb05();
+        if (s_lpt_waiting_for_physical_pdb05) {
+            s_lpt_waiting_for_physical_pdb05 = false;
+            if (s_pp_fd >= 0) {
+                fprintf(stderr, "[lpt] physical PDB05 forwarded to %s; "
+                        "board watchdog recovery traffic resumed\n",
+                        s_pp_path);
+            } else {
+                fprintf(stderr, "[lpt] physical PDB05 reached open physical "
+                        "path; no host ppdev is attached\n");
+            }
+        }
         break;
     case 0x06: s_data_val2 = data; break;
     case 0x07: s_data_val3 = data; break;
@@ -667,9 +763,19 @@ static uint64_t p2k_lpt_read(void *opaque, hwaddr addr, unsigned size)
         return v;
     }
 #ifdef __linux__
-    if (s_pp_fd >= 0) {
-        v = p2k_lpt_pp_read(s_pp_fd, addr);
-        if (s_hybrid_input && addr == 0 &&
+    if (s_lpt_runtime_mode != P2K_LPT_RUNTIME_EMULATED) {
+        v = s_pp_fd >= 0 ? p2k_lpt_pp_read(s_pp_fd, addr) : 0xff;
+        if (p2k_lpt_hybrid_input() && addr == 0 &&
+            (s_rendering_flags & 0x01) && (s_rendering_flags & 0x08)) {
+            v |= retrieve_hybrid_input_mask(s_data_for_rendering);
+        }
+        p2k_lpt_trace("R", addr, v);
+        return v;
+    }
+#else
+    if (s_lpt_runtime_mode != P2K_LPT_RUNTIME_EMULATED) {
+        v = 0xff;
+        if (p2k_lpt_hybrid_input() && addr == 0 &&
             (s_rendering_flags & 0x01) && (s_rendering_flags & 0x08)) {
             v |= retrieve_hybrid_input_mask(s_data_for_rendering);
         }
@@ -712,11 +818,9 @@ static void p2k_lpt_write(void *opaque, hwaddr addr,
         return;
     }
 #ifdef __linux__
-    if (s_pp_fd >= 0) {
+    if (s_pp_fd >= 0 &&
+        s_lpt_runtime_mode != P2K_LPT_RUNTIME_EMULATED) {
         p2k_lpt_pp_write(s_pp_fd, addr, val & 0xFF);
-        if (!s_hybrid_input) {
-            return;
-        }
     }
 #endif
     switch (addr) {
@@ -735,6 +839,7 @@ static void p2k_lpt_write(void *opaque, hwaddr addr,
         if (s_access_mode1_prev && !(newctrl & 0x01)) {
             s_lpt_dispatches++;
             process_data_command(s_data_for_rendering, s_lpt_data);
+            p2k_lpt_apply_pending_mode();
         }
         s_access_mode1_prev = newctrl & 0x01;
         s_rendering_flags = newctrl;
@@ -877,7 +982,13 @@ void p2k_lpt_host_key(int qcode, bool down)
      * isolation at this common endpoint as well. F1/F2/F3 are host-only
      * lifecycle, display and capture controls; they never inject a cabinet
      * switch and therefore remain safe with a physical or absent board. */
-    if (((s_physical_board && !s_hybrid_input) || s_disconnected ||
+    if (qcode == Q_KEY_CODE_TAB) {
+        if (down) {
+            p2k_lpt_cycle_runtime_mode();
+        }
+        return;
+    }
+    if ((s_lpt_runtime_mode == P2K_LPT_RUNTIME_PHYSICAL || s_disconnected ||
          s_lpt_disabled) &&
         qcode != Q_KEY_CODE_F1 && qcode != Q_KEY_CODE_F2 &&
         qcode != Q_KEY_CODE_F3) {
@@ -899,7 +1010,7 @@ void p2k_lpt_host_key(int qcode, bool down)
         break;
     case Q_KEY_CODE_F4:
         if (down) {
-            if (s_physical_board && s_hybrid_input) {
+            if (p2k_lpt_hybrid_input()) {
                 fprintf(stderr, "[lpt] F4 ignored in hybrid mode; physical "
                         "coin-door interlock is authoritative\n");
                 break;
@@ -1075,11 +1186,13 @@ void p2k_install_lpt_board(void)
             s_pp_fd = fd;
             snprintf(s_pp_path, sizeof(s_pp_path), "%s", parport);
             atexit(p2k_lpt_pp_atexit);
-            info_report("pinball2000: LPT board PASSTHROUGH from guest "
+            info_report("pinball2000: LPT host path ready from guest "
                         "I/O 0x%x to host %s "
-                        "(real-cabinet wiring, all reads/writes hit hardware; "
+                        "(runtime mode=%s; physical/hybrid reads and writes "
+                        "hit hardware; "
                         "IEEE-1284 compat mode, PPDATADIR mirrors CTRL bit5)",
-                        ioport, s_pp_path);
+                        ioport, s_pp_path,
+                        p2k_lpt_runtime_mode_name(s_lpt_runtime_mode));
         }
 #else
         error_report("pinball2000: --lpt-device <hostdev> only supported on "
@@ -1097,34 +1210,48 @@ void p2k_install_lpt_board(void)
     /* A successfully opened physical board is the only source of this state;
      * there is no second CLI policy or environment override. */
     s_physical_board = s_pp_fd >= 0;
-    if ((!s_physical_board || s_hybrid_input) && !s_disconnected) {
+    if (!s_disconnected) {
         qemu_input_handler_register(NULL, &p2k_lpt_input_handler);
-    } else if (s_physical_board) {
-        info_report("pinball2000: physical board active — emulated cabinet "
-                    "inputs disabled (host F1/F2/F3 remain available)");
     }
-    if (s_physical_board && s_hybrid_input) {
+    if (s_lpt_runtime_mode == P2K_LPT_RUNTIME_PHYSICAL) {
+        info_report("pinball2000: physical LPT runtime active — emulated cabinet "
+                    "inputs disabled (host path=%s; F1/F2/F3/Tab remain "
+                    "available)",
+                    s_physical_board ? s_pp_path : "open bus");
+    }
+    if (p2k_lpt_hybrid_input()) {
         info_report("pinball2000: EXPERIMENTAL hybrid input — physical reads "
-                    "plus additive keyboard switch closures; physical "
-                    "outputs and protocol/status replies remain authoritative");
+                    "plus additive keyboard switch closures; host path=%s; "
+                    "physical outputs and protocol/status replies remain "
+                    "authoritative",
+                    s_physical_board ? s_pp_path : "open bus");
     }
 
     info_report("pinball2000: LPT driver-board installed at I/O 0x%x-0x%x "
                 "(STATUS=0x%02x, edge-detect dispatch%s)",
                 ioport, ioport + 2, s_lpt_status,
-                s_physical_board && s_hybrid_input ?
-                "; physical board + hybrid keyboard input" :
-                s_physical_board ? "; physical board (host F1/F2/F3 only)" :
+                p2k_lpt_hybrid_input() ?
+                (s_physical_board ?
+                 "; physical board + hybrid keyboard input" :
+                 "; open physical bus + hybrid keyboard input") :
+                s_lpt_runtime_mode == P2K_LPT_RUNTIME_PHYSICAL ?
+                (s_physical_board ?
+                 "; physical board (host F1/F2/F3/Tab only)" :
+                 "; open physical bus (host F1/F2/F3/Tab only)") :
                 s_disconnected ? "; disconnected open bus (host F1/F2/F3 only)" :
                 "; keys: F1 quit | F2 vertical flip | F3 screenshot | "
                 "F4 door | F5/Enter pulse | F6/F9 actions | "
                 "F7/F8 flippers | Space/S start | F10/C coin | "
                 "F12 dump | Esc/Left service | Up/Down volume | "
                 "Right enter | NN then Ctrl matrix switch");
+    if (!s_disconnected && !s_lpt_disabled) {
+        info_report("pinball2000: Tab cycles live LPT mode: "
+                    "physical -> hybrid -> emulated -> physical");
+    }
 }
 
 bool p2k_lpt_blocks_emulated_input(void)
 {
-    return (s_physical_board && !s_hybrid_input) ||
+    return s_lpt_runtime_mode == P2K_LPT_RUNTIME_PHYSICAL ||
            s_disconnected || s_lpt_disabled;
 }
