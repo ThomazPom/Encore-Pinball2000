@@ -57,6 +57,7 @@ static char    s_resolved_parport[256];
 static bool    s_disconnected;
 static bool    s_lpt_disabled;
 static bool    s_physical_board;
+static bool    s_hybrid_input;
 static char    s_resolved_game[8];
 
 /* Optional per-event trace file (--lpt-trace <file>). */
@@ -265,10 +266,18 @@ static const char *p2k_lpt_probe_playfield(int fd)
 const char *p2k_lpt_resolve_game(const char *requested_game)
 {
     const char *selection = getenv("P2K_LPT_DEVICE");
+    const char *input_mode = getenv("P2K_LPT_INPUT");
     const char *explicit_path = NULL;
     bool game_auto = !requested_game || !strcmp(requested_game, "auto");
 
     selection = (selection && *selection) ? selection : "auto";
+    input_mode = (input_mode && *input_mode) ? input_mode : "physical";
+    if (strcmp(input_mode, "physical") && strcmp(input_mode, "hybrid")) {
+        error_report("pinball2000: invalid LPT input mode '%s' "
+                     "(expected physical or hybrid)", input_mode);
+        exit(1);
+    }
+    s_hybrid_input = !strcmp(input_mode, "hybrid");
     if (!strncmp(selection, "/dev/parport", strlen("/dev/parport"))) {
         explicit_path = selection;
     } else if (strcmp(selection, "auto") && strcmp(selection, "emulated") &&
@@ -284,6 +293,12 @@ const char *p2k_lpt_resolve_game(const char *requested_game)
     s_resolved_parport[0] = '\0';
     s_lpt_disabled = !strcmp(selection, "none");
     s_disconnected = !strcmp(selection, "disconnected");
+    if (s_hybrid_input && (!strcmp(selection, "emulated") ||
+                           s_disconnected || s_lpt_disabled)) {
+        error_report("pinball2000: hybrid LPT input requires auto, required, "
+                     "or an explicit /dev/parportN device");
+        exit(1);
+    }
     if (s_lpt_disabled && getenv("P2K_LPT_IOPORT")) {
         error_report("pinball2000: P2K_LPT_IOPORT has no meaning with "
                      "P2K_LPT_DEVICE=none");
@@ -572,6 +587,40 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
     }
 }
 
+/* Additive keyboard overlay for a real board. A set bit represents the same
+ * closed-switch polarity already used by the software board. Never touch
+ * protocol/status opcodes or outputs, and never clear a physical input bit. */
+static uint8_t retrieve_hybrid_input_mask(uint8_t opcode)
+{
+    switch (opcode) {
+    case 0x00: {
+        uint8_t v = s_phys8_coin_slots & 0x0f;
+        if (s_coin1_pulse > 0) {
+            v |= 0x01;
+            s_coin1_pulse--;
+        }
+        return v;
+    }
+    case 0x01:
+        return s_phys10_buttons & 0xf0;
+    case 0x03: {
+        uint8_t v = s_phys9_service & 0x0f;
+        if (s_enter_pulse > 0) {
+            v |= 0x08;
+            s_enter_pulse--;
+        }
+        return v;
+    }
+    case 0x04: {
+        int sel = calc_bitwise_sum(s_rendering_data_val);
+        int slot = (sel >= 1 && sel <= 8) ? sel : 1;
+        return p2k_matrix_slot(slot);
+    }
+    default:
+        return 0;
+    }
+}
+
 static void process_data_command(uint8_t opcode, uint8_t data)
 {
     switch (opcode) {
@@ -620,6 +669,10 @@ static uint64_t p2k_lpt_read(void *opaque, hwaddr addr, unsigned size)
 #ifdef __linux__
     if (s_pp_fd >= 0) {
         v = p2k_lpt_pp_read(s_pp_fd, addr);
+        if (s_hybrid_input && addr == 0 &&
+            (s_rendering_flags & 0x01) && (s_rendering_flags & 0x08)) {
+            v |= retrieve_hybrid_input_mask(s_data_for_rendering);
+        }
         p2k_lpt_trace("R", addr, v);
         return v;
     }
@@ -661,7 +714,9 @@ static void p2k_lpt_write(void *opaque, hwaddr addr,
 #ifdef __linux__
     if (s_pp_fd >= 0) {
         p2k_lpt_pp_write(s_pp_fd, addr, val & 0xFF);
-        return;
+        if (!s_hybrid_input) {
+            return;
+        }
     }
 #endif
     switch (addr) {
@@ -822,7 +877,8 @@ void p2k_lpt_host_key(int qcode, bool down)
      * isolation at this common endpoint as well. F1/F2/F3 are host-only
      * lifecycle, display and capture controls; they never inject a cabinet
      * switch and therefore remain safe with a physical or absent board. */
-    if ((s_physical_board || s_disconnected || s_lpt_disabled) &&
+    if (((s_physical_board && !s_hybrid_input) || s_disconnected ||
+         s_lpt_disabled) &&
         qcode != Q_KEY_CODE_F1 && qcode != Q_KEY_CODE_F2 &&
         qcode != Q_KEY_CODE_F3) {
         return;
@@ -843,6 +899,11 @@ void p2k_lpt_host_key(int qcode, bool down)
         break;
     case Q_KEY_CODE_F4:
         if (down) {
+            if (s_physical_board && s_hybrid_input) {
+                fprintf(stderr, "[lpt] F4 ignored in hybrid mode; physical "
+                        "coin-door interlock is authoritative\n");
+                break;
+            }
             s_coin_door_closed = !s_coin_door_closed;
             fprintf(stderr, "[lpt] coin door %s (interlock bit=%d)\n",
                     s_coin_door_closed ? "CLOSED" : "OPEN",
@@ -1036,17 +1097,23 @@ void p2k_install_lpt_board(void)
     /* A successfully opened physical board is the only source of this state;
      * there is no second CLI policy or environment override. */
     s_physical_board = s_pp_fd >= 0;
-    if (!s_physical_board && !s_disconnected) {
+    if ((!s_physical_board || s_hybrid_input) && !s_disconnected) {
         qemu_input_handler_register(NULL, &p2k_lpt_input_handler);
     } else if (s_physical_board) {
-        info_report("pinball2000: physical board active — emulated board "
-                    "controls disabled on every keyboard path (host controls "
-                    "F1 quit, F2 flip and F3 screenshot remain available)");
+        info_report("pinball2000: physical board active — emulated cabinet "
+                    "inputs disabled (host F1/F2/F3 remain available)");
+    }
+    if (s_physical_board && s_hybrid_input) {
+        info_report("pinball2000: EXPERIMENTAL hybrid input — physical reads "
+                    "plus additive keyboard switch closures; physical "
+                    "outputs and protocol/status replies remain authoritative");
     }
 
     info_report("pinball2000: LPT driver-board installed at I/O 0x%x-0x%x "
                 "(STATUS=0x%02x, edge-detect dispatch%s)",
                 ioport, ioport + 2, s_lpt_status,
+                s_physical_board && s_hybrid_input ?
+                "; physical board + hybrid keyboard input" :
                 s_physical_board ? "; physical board (host F1/F2/F3 only)" :
                 s_disconnected ? "; disconnected open bus (host F1/F2/F3 only)" :
                 "; keys: F1 quit | F2 vertical flip | F3 screenshot | "
@@ -1058,5 +1125,6 @@ void p2k_install_lpt_board(void)
 
 bool p2k_lpt_blocks_emulated_input(void)
 {
-    return s_physical_board || s_disconnected || s_lpt_disabled;
+    return (s_physical_board && !s_hybrid_input) ||
+           s_disconnected || s_lpt_disabled;
 }

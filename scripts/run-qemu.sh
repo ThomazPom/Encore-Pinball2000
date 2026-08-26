@@ -530,6 +530,11 @@ CABINET
                             Default: auto.
   --lpt-ioport 0xNNN       Set the guest LPT address (default: 0x378),
                            independently of emulated or physical backend.
+  --lpt-input physical|hybrid
+                           Input policy with a real board. physical accepts
+                           cabinet switches only from hardware (default).
+                           hybrid experimentally ORs keyboard switch closures
+                           into physical input reads; outputs remain physical.
   --lpt-trace <file>        Append every LPT read/write to <file>
                             (P2K_LPT_TRACE_FILE). Format:
                             "<ts> R|W <off>=<val>" with µs timestamps.
@@ -577,13 +582,14 @@ ENV PASSTHROUGH (advanced; see qemu/README.md for the full table)
   P2K_PB2KSLIB P2K_DCS_ENGINE P2K_DCS_PCM_CPU P2K_DCS_MODE P2K_SCREENSHOT_DIR
   P2K_DISPLAY_BPP P2K_FRAMEBUFFER_THREAD P2K_QEMU_FRAMEBUFFER
   P2K_LPT_DEVICE
-  P2K_LPT_IOPORT P2K_LPT_TRACE_FILE P2K_DCS_PRELOAD
+  P2K_LPT_IOPORT P2K_LPT_INPUT P2K_LPT_TRACE_FILE P2K_DCS_PRELOAD
   P2K_SWITCH_KEYMAP P2K_VIDEO_CAPTURE P2K_FFMPEG_BIN
 EOF
 }
 
 # --- arg parse --------------------------------------------------------------
 LPT_DEVICE="${P2K_LPT_DEVICE:-auto}"
+LPT_INPUT="${P2K_LPT_INPUT:-physical}"
 LPT_IOPORT_SET=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -786,6 +792,9 @@ while [[ $# -gt 0 ]]; do
       [[ "${2:-}" =~ ^(0x[0-9a-fA-F]+|[0-9]+)$ ]] || {
         echo "[run-qemu] --lpt-ioport: expected 0xNNN or a decimal address" >&2; exit 2; }
       export P2K_LPT_IOPORT="$2"; LPT_IOPORT_SET=1; shift 2 ;;
+    --lpt-input)
+      case "${2:-}" in physical|hybrid) LPT_INPUT="$2" ;; *) echo "[run-qemu] --lpt-input: expected physical or hybrid" >&2; exit 2 ;; esac
+      shift 2 ;;
     --lpt-trace)
       [[ -n "${2:-}" ]] || { echo "[run-qemu] --lpt-trace: expected <file>" >&2; exit 2; }
       LPT_TRACE_DIR="$(cd "$(dirname "$2")" 2>/dev/null && pwd)" || { echo "[run-qemu] --lpt-trace: parent dir of '$2' missing" >&2; exit 2; }
@@ -801,7 +810,14 @@ if [[ "$LPT_DEVICE" == none && $LPT_IOPORT_SET -eq 1 ]]; then
   echo "[run-qemu] --lpt-ioport has no meaning with --lpt-device none" >&2
   exit 2
 fi
+if [[ "$LPT_INPUT" == hybrid &&
+      ( "$LPT_DEVICE" == emulated || "$LPT_DEVICE" == disconnected ||
+        "$LPT_DEVICE" == none ) ]]; then
+  echo "[run-qemu] --lpt-input hybrid requires --lpt-device auto, required, or /dev/parportN" >&2
+  exit 2
+fi
 export P2K_LPT_DEVICE="$LPT_DEVICE"
+export P2K_LPT_INPUT="$LPT_INPUT"
 
 if [[ ! "$SPEED_TARGET" =~ ^[0-9]+([.][0-9]+)?$ ]] ||
    ! awk -v value="$SPEED_TARGET" 'BEGIN { exit !(value >= 25 && value <= 300) }'; then

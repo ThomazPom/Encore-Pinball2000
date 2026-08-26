@@ -33,7 +33,9 @@ sudo rmmod lp 2>/dev/null || true
 sudo usermod -aG lp "$USER"
 ```
 
-Log in again after changing group membership, then verify:
+The runner activates newly granted `lp` membership for its current process, so
+an immediate manual launch does not require a new login. Future sessions inherit
+the group normally. Verify the device with:
 
 ```sh
 ls -l /dev/parport0
@@ -51,6 +53,25 @@ An explicit device is authoritative and automatically disables emulated
 cabinet keys while retaining host-only F1 quit, F2 flip and F3 screenshot.
 Use `--lpt-device disconnected` for an artificial open-bus
 ROM diagnostic.
+
+## Experimental hybrid input
+
+This branch can add keyboard switch closures to the input bytes read from a
+physical board:
+
+```sh
+scripts/run-qemu.sh \
+  --lpt-device /dev/parport0 \
+  --lpt-input hybrid
+```
+
+The overlay is additive: it can set an input bit but never clear a bit returned
+by the cabinet. Output writes, status replies and auxiliary synchronization
+remain physical. The coin-door interlock is deliberately excluded because an
+additive overlay cannot safely represent both its open and closed states.
+
+This path is experimental until its input polarity and timing have been
+validated on a real cabinet. `--lpt-input physical` remains the default.
 
 The cabinet installer stores only the selected `auto`, `emulated`, or
 `required` policy. It does not enumerate ports. The runner prepares generic

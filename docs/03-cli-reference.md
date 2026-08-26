@@ -99,6 +99,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--dcs-mode` | `io-handled` \| `bar4-patch` | unset | Exports `P2K_DCS_MODE`; both labels use the shared BAR4 + UART core today. | `scripts/run-qemu.sh --dcs-mode io-handled` |
 | `--lpt-device` | `auto` \| `emulated` \| `required` \| `disconnected` \| `none` \| `/dev/parportN` | `auto` | Chooses automatic detection with emulated fallback, forced emulation, strict detection, an open bus, no guest LPT device, or an authoritative physical port. A silent explicitly selected cable remains attached for the guest ROM to diagnose. | `scripts/run-qemu.sh --lpt-device /dev/parport1 --game rfm` |
 | `--lpt-ioport` | address | `0x378` | Set the guest-visible LPT address independently of its emulated or physical host backend. XINA normally probes `0x3bc`, `0x378`, and `0x278`; the binary warns, but does not refuse, for another address. | `scripts/run-qemu.sh --lpt-device /dev/parport0 --lpt-ioport 0x3bc` |
+| `--lpt-input` | `physical` \| `hybrid` | `physical` | Select physical-only cabinet input or the experimental additive keyboard overlay on physical input reads. Hybrid never modifies outputs or clears physical switch bits; F4 remains physical-only. | `scripts/run-qemu.sh --lpt-device /dev/parport0 --lpt-input hybrid` |
 
 | `--lpt-trace` | file | off | Exports `P2K_LPT_TRACE_FILE`; appends LPT read/write trace lines. Parent directory must exist. | `scripts/run-qemu.sh --lpt-trace ./logs/lpt.txt` |
 
