@@ -3,6 +3,28 @@
 This page lists the options parsed by `scripts/run-qemu.sh` and
 `scripts/build-qemu.sh`.
 
+## Automatic cabinet selection
+
+The default launch is equivalent to:
+
+```bash
+scripts/run-qemu.sh --game auto --lpt-device auto
+```
+
+`--lpt-device auto` lets the Encore binary enumerate `/dev/parportN`, validate
+the Pinball 2000 board protocol and fall back to the keyboard-backed emulated
+board when no recognized hardware answers. `emulated` always ignores physical
+ports; `required` stops instead of falling back.
+
+`--game auto` identifies SWE1 or RFM from a recognized physical playfield. If
+the emulated board is selected, it uses SWE1 by default. Explicit `swe1` and
+`rfm` choices remain available for diagnosis.
+
+Enumeration, positive board recognition and playfield identification live in
+the QEMU machine, not in the shell launcher. A detected physical board also
+disables keyboard cabinet-switch emulation automatically. Host-only F1 quit,
+F2 flipscreen and F3 screenshot controls remain active.
+
 > [!WARNING]
 > The real-LPT options expose implemented code paths. Physical-cabinet
 > validation is still required before powering a playfield.
@@ -19,7 +41,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 
 | Flag | Argument | Default | Semantics | Example |
 |---|---:|---|---|---|
-| `--game` | `swe1` \| `rfm` | `swe1` | Selects game ROM/update family and passes `game=` to the machine. | `scripts/run-qemu.sh --game rfm` |
+| `--game` | `auto` \| `swe1` \| `rfm` | `auto` | Auto-identifies a recognized physical playfield; the emulated-board fallback selects SWE1. | `scripts/run-qemu.sh --game rfm` |
 | `--roms` | directory | `<repo>/roms` | Directory containing `<game>_u100.rom`/`.bin` etc.; passed as `roms-dir=`. | `scripts/run-qemu.sh --roms /data/p2k/roms` |
 | `--savedata` | directory | `<repo>/savedata` | Passes this persistent-state directory to the Encore machine; the binary creates it when absent. | `scripts/run-qemu.sh --savedata ./my-save` |
 | `--no-savedata` | — | off | Exports `P2K_NO_SAVEDATA=1` and runs from a fresh throwaway cwd with no `savedata/` subdir; savedata seeds are skipped and exit writes are discarded. | `scripts/run-qemu.sh --no-savedata` |
@@ -75,11 +97,10 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `-vv` | — | quiet default | Level 2: `-v` plus audio trace. | `scripts/run-qemu.sh -vv` |
 | `-vvv` | — | quiet default | Level 3: `-v` plus audio trace and DCS byte trace. | `scripts/run-qemu.sh -vvv` |
 | `--dcs-mode` | `io-handled` \| `bar4-patch` | unset | Exports `P2K_DCS_MODE`; both labels use the shared BAR4 + UART core today. | `scripts/run-qemu.sh --dcs-mode io-handled` |
-| `--cabinet`, `--cabinet-purist` | — | off | Exports `P2K_CABINET_PURIST=1`; disables emulated board controls on every keyboard path except F1 shutdown. Requires a real host device or the explicit `disconnected` diagnostic target. | `scripts/run-qemu.sh --cabinet --lpt-device /dev/parport0` |
-| `--lpt-device`, `--lpt` | `emu` \| `emulated` \| `disconnected` \| `none` \| `/dev/parportN` \| `0xNNN` | `emu` | Configures the driver-board path. `disconnected` exposes an open bus (reads `0xff`, writes discarded) without emulating a board, so the ROM can diagnose missing hardware. | `scripts/run-qemu.sh --cabinet --lpt-device disconnected` |
+| `--lpt-device` | `auto` \| `emulated` \| `required` \| `disconnected` \| `none` \| `/dev/parportN` | `auto` | Chooses automatic detection with emulated fallback, forced emulation, strict detection, an open bus, no guest LPT device, or an authoritative physical port. A silent explicitly selected cable remains attached for the guest ROM to diagnose. | `scripts/run-qemu.sh --lpt-device /dev/parport1 --game rfm` |
+| `--lpt-ioport` | address | `0x378` | Set the guest-visible LPT address independently of its emulated or physical host backend. XINA normally probes `0x3bc`, `0x378`, and `0x278`; the binary warns, but does not refuse, for another address. | `scripts/run-qemu.sh --lpt-device /dev/parport0 --lpt-ioport 0x3bc` |
 
 | `--lpt-trace` | file | off | Exports `P2K_LPT_TRACE_FILE`; appends LPT read/write trace lines. Parent directory must exist. | `scripts/run-qemu.sh --lpt-trace ./logs/lpt.txt` |
-| `--parport` | device | off | Alias for ppdev passthrough; device must exist. | `scripts/run-qemu.sh --parport /dev/parport0` |
 
 | `--tcg-only` | — | off | Smoke-tests host QEMU with `-M isapc`; does not boot Pinball 2000. | `scripts/run-qemu.sh --tcg-only` |
 | `--` | QEMU args | none | Forwards remaining args verbatim to QEMU. | `scripts/run-qemu.sh -- -S` |

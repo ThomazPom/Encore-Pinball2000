@@ -30,12 +30,11 @@ encore_root_prepare_runtime() {
 }
 
 encore_prepare_parport_access() {
-    local owner="${ENCORE_RUNTIME_USER:-}" device="${P2K_LPT_PARPORT:-}"
-    [[ -n "$device" && "$device" == /dev/parport[0-9]* ]] || return 0
-    [[ -c "$device" ]] || {
-        echo "[run-qemu] parallel-port device is unavailable: $device" >&2
-        return 2
-    }
+    local owner="${ENCORE_RUNTIME_USER:-}" device="${P2K_LPT_DEVICE:-auto}"
+    [[ "$device" != emulated && "$device" != disconnected &&
+       "$device" != none ]] || return 0
+    [[ "$device" == auto || "$device" == required ||
+       "$device" == /dev/parport[0-9]* ]] || return 0
     [[ -n "$owner" && "$owner" != root ]] || return 0
     id "$owner" >/dev/null 2>&1 || {
         echo "[run-qemu] parallel-port user does not exist: $owner" >&2
@@ -51,7 +50,7 @@ encore_prepare_parport_access() {
         return 2
     }
     usermod -aG lp "$owner"
-    echo "[run-qemu] added $owner to lp for $device (effective at next login)"
+    echo "[run-qemu] added $owner to lp for automatic parallel-port access"
 }
 
 encore_runtime_packages() {
@@ -163,7 +162,9 @@ encore_runtime_needs_root_phase() {
     [[ "$backend" != direct-console ]] ||
         grep -qxF "$ENCORE_DIRECT_INPUT_MARKER" "$ENCORE_DIRECT_INPUT_RULE" \
             2>/dev/null || return 0
-    if [[ "${P2K_LPT_PARPORT:-}" == /dev/parport[0-9]* ]]; then
+    if [[ "${P2K_LPT_DEVICE:-auto}" != emulated &&
+          "${P2K_LPT_DEVICE:-auto}" != disconnected &&
+          "${P2K_LPT_DEVICE:-auto}" != none ]]; then
         id -nG "$(id -un)" | tr ' ' '\n' | grep -qx lp || return 0
     fi
     if [[ -n "$backend" ]]; then
@@ -187,12 +188,12 @@ encore_runtime_needs_root_phase() {
 }
 
 encore_runtime_root_phase() {
-    local root="$1" backend="$2" owner="$3" owner_home="$4" qemu_bin="$5" lpt_device="${6:-}"
+    local root="$1" backend="$2" owner="$3" owner_home="$4" qemu_bin="$5" lpt_device="${6:-auto}"
     ROOT="$root"
     HOME="$owner_home"
     ENCORE_RUNTIME_USER="$owner"
     QEMU_BIN="$qemu_bin"
-    [[ -z "$lpt_device" ]] || export P2K_LPT_PARPORT="$lpt_device"
+    export P2K_LPT_DEVICE="$lpt_device"
     encore_prepare_runtime "$backend"
 }
 

@@ -90,7 +90,8 @@ The guided setup asks for:
 
 1. the session profile;
 2. the unprivileged cabinet account;
-3. Star Wars Episode I or Revenge from Mars;
+3. automatic game identification (default), Star Wars Episode I, or Revenge
+   from Mars;
 4. whether to build the custom QEMU locally (recommended and guaranteed to
    match the checkout) or download the latest published build (faster);
 5. whether to start with flipscreen active (enabled by default);
@@ -100,8 +101,8 @@ The guided setup asks for:
    100%, leaving the game's controls to manage the playing volume;
 8. whether to use the distribution's quiet boot presentation;
 9. whether to hide GRUB with a zero-second timeout when `update-grub` exists;
-10. real `/dev/parportN` access when detected (enabled by default, with an
-   opt-out for demonstration mode).
+10. automatic LPT with emulated fallback (default), forced emulation, or a
+    strict requirement for recognized physical hardware.
 
 The local build is the default because it uses the exact machine sources in
 the checkout. The release path downloads a fixed-name archive from the latest
@@ -144,13 +145,12 @@ on the inherited login environment.
 If the custom QEMU binary is absent, it similarly offers the documented build
 dependencies and builds QEMU in the selected user's cache.
 
-The installer discovers every `/dev/parportN` device rather than assuming port
-zero. When the kernel exposes a port through `/sys/class/parport` but no ppdev
-device exists yet, it attempts to load the kernel's `ppdev` module and waits
-for udev. If several ports exist, the operator chooses one. The selected path
-must be a character device. Declining the default-enabled prompt keeps the
-emulated board. Detailed electrical validation and diagnostic procedures remain in
-[real LPT passthrough](46-real-lpt-passthrough.md).
+The installer does not select or persist a numbered parallel port. It stores
+the chosen LPT policy. At each launch, the Encore binary enumerates the current
+`/dev/parportN` devices, accepts a positive Pinball 2000 board signature and
+identifies the connected SWE1 or RFM playfield. In automatic mode, no recognized
+board means keyboard-backed emulation. Detailed electrical validation and
+explicit-device diagnostics remain in [real LPT passthrough](46-real-lpt-passthrough.md).
 
 Non-interactive profile selection is also available:
 

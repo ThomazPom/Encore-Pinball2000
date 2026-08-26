@@ -141,9 +141,18 @@ USER_UNIT_DIR="$session_home/.config/systemd/user"
 USER_SERVICE="$USER_UNIT_DIR/encore-pinball2000.service"
 USER_WANT="$USER_UNIT_DIR/graphical-session.target.wants/encore-pinball2000.service"
 
-read -r -p "Game [swe1/rfm] (swe1): " game
-game="${game:-swe1}"
-case "$game" in swe1|rfm) ;; *) echo "Invalid game" >&2; exit 2 ;; esac
+read -r -p "Game [auto/swe1/rfm] (auto): " game
+game="${game:-auto}"
+case "$game" in auto|swe1|rfm) ;; *) echo "Invalid game" >&2; exit 2 ;; esac
+
+echo
+echo "Parallel-port policy:"
+echo "  auto      detect a real board, otherwise use keyboard emulation"
+echo "  emulated  ignore physical ports and always use keyboard emulation"
+echo "  required  require a recognized real board or stop"
+read -r -p "LPT device [auto/emulated/required] (auto): " lpt_device
+lpt_device="${lpt_device:-auto}"
+case "$lpt_device" in auto|emulated|required) ;; *) echo "Invalid LPT device" >&2; exit 2 ;; esac
 
 start_flipped=1
 echo
@@ -191,6 +200,7 @@ echo "About to install:"
 echo "  setup        : $backend"
 echo "  session user : $session_user (unprivileged)"
 echo "  game         : $game"
+echo "  LPT device   : $lpt_device"
 echo "  flipscreen   : $([[ $start_flipped -eq 1 ]] && echo enabled || echo disabled)"
 echo "  execution    : $([[ $run_as_root -eq 1 ]] && echo 'root (diagnostic)' || echo 'session user')"
 echo "  host audio   : $([[ $cabinet_audio -eq 1 ]] && echo 'unmute and set 100% at startup' || echo unchanged)"
@@ -216,72 +226,7 @@ fi
 
 launch_args=()
 [[ "$start_flipped" -eq 0 ]] || launch_args+=(--flipscreen)
-
-# A physical port may be numbered parport1 (or later), and ppdev may not have
-# been loaded yet even though the kernel has registered the underlying port.
-# Ask the kernel for ppdev only when sysfs proves that a parport exists.
-shopt -s nullglob
-parport_devices=(/dev/parport[0-9]*)
-kernel_parports=(/sys/class/parport/parport[0-9]*)
-if ((${#parport_devices[@]} == 0 && ${#kernel_parports[@]} > 0)); then
-    if ! command -v modprobe >/dev/null 2>&1; then
-        echo "A kernel parallel port exists, but the tool needed to load ppdev is missing."
-        if command -v apt-get >/dev/null 2>&1 && ask "Install the distribution's kmod package now?" Y; then
-            DEBIAN_FRONTEND=noninteractive apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends kmod
-        else
-            echo "install.sh: kmod is required to enable the detected parallel port" >&2
-            exit 2
-        fi
-    fi
-    modprobe ppdev || {
-        echo "install.sh: the running kernel cannot load its ppdev module" >&2
-        exit 2
-    }
-    command -v udevadm >/dev/null 2>&1 && udevadm settle 2>/dev/null || true
-    parport_devices=(/dev/parport[0-9]*)
-    ((${#parport_devices[@]} > 0)) || {
-        echo "install.sh: the kernel sees a parallel port, but ppdev created no /dev/parportN device" >&2
-        exit 2
-    }
-fi
-shopt -u nullglob
-
-real_parport=""
-use_real_parport=0
-if ((${#parport_devices[@]} == 1)); then
-    real_parport="${parport_devices[0]}"
-elif ((${#parport_devices[@]} > 1)); then
-    echo
-    echo "Parallel interfaces detected: ${parport_devices[*]}"
-    read -r -p "Real cabinet interface [${parport_devices[0]}]: " real_parport
-    real_parport="${real_parport:-${parport_devices[0]}}"
-    [[ " ${parport_devices[*]} " == *" $real_parport "* ]] || {
-        echo "install.sh: '$real_parport' is not one of the detected parallel interfaces" >&2
-        exit 2
-    }
-fi
-
-if [[ -n "$real_parport" ]]; then
-    [[ -c "$real_parport" ]] || {
-        echo "install.sh: '$real_parport' is not a character device" >&2
-        exit 2
-    }
-    echo
-    echo "Real cabinet interface detected: $real_parport"
-    echo "Enable it to communicate with the real Pinball 2000 hardware."
-    echo "Answering no keeps Encore on its emulated board for demonstration use."
-    if ask "Use the real cabinet interface?" Y; then
-        use_real_parport=1
-        launch_args+=(--cabinet --lpt-device "$real_parport")
-    else
-        echo "Keeping the emulated driver board."
-    fi
-else
-    echo
-    echo "No Linux ppdev interface (/dev/parportN) was detected."
-    echo "Encore will use its emulated demonstration board."
-fi
+launch_args+=(--lpt-device "$lpt_device")
 
 build_qemu="$session_home/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
 release_dir="$session_home/.cache/encore-qemu-release"
@@ -290,9 +235,8 @@ release_qemu="$release_dir/qemu-system-i386"
 # access to a selected physical parallel port. Replay the future launch path;
 # --preflight changes only its terminal action. The following reboot makes a
 # newly granted supplementary group effective before Encore starts.
-preflight_args=(--preflight --fullscreen)
+preflight_args=(--preflight --fullscreen --game "$game" --lpt-device "$lpt_device")
 [[ "$backend" == direct-console ]] || preflight_args+=("--$backend")
-[[ "$use_real_parport" -eq 0 ]] || preflight_args+=(--lpt-device "$real_parport")
 if [[ "$backend" == direct-console ]]; then
     ENCORE_RUNTIME_USER="$session_user" \
     SDL_VIDEODRIVER=KMSDRM HOME="$session_home" \

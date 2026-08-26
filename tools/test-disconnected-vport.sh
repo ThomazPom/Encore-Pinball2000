@@ -64,7 +64,6 @@ echo "Launching Encore through real ppdev with no board behind it."
 echo "The ROM should report CHECK F108 AND POWER CABLE. F1 exits."
 exec 3>&-
 "$ROOT/scripts/run-qemu.sh" \
-    --cabinet \
     --lpt-device "$PORT" \
     --game swe1 \
     --framebuffer \

@@ -53,8 +53,11 @@
 /* Optional host parport passthrough (--lpt-device /dev/parportN). */
 static int     s_pp_fd = -1;
 static char    s_pp_path[256];
+static char    s_resolved_parport[256];
 static bool    s_disconnected;
-static bool    s_cabinet_purist;
+static bool    s_lpt_disabled;
+static bool    s_physical_board;
+static char    s_resolved_game[8];
 
 /* Optional per-event trace file (--lpt-trace <file>). */
 static FILE   *s_trace_fp;
@@ -148,7 +151,213 @@ static void p2k_lpt_pp_atexit(void)
         s_pp_fd = -1;
     }
 }
+
+static bool p2k_lpt_pp_write_byte(int fd, int request, uint8_t value)
+{
+    unsigned char v = value;
+    return ioctl(fd, request, &v) == 0;
+}
+
+/* Reproduce the board command cycle used by the reference implementation.
+ * This is deliberately below the guest: auto selection must finish before
+ * pinball2000_init() loads a game ROM bank. */
+static bool p2k_lpt_probe_write(int fd, uint8_t command, uint8_t value)
+{
+    return p2k_lpt_pp_write_byte(fd, PPWDATA, command) &&
+           p2k_lpt_pp_write_byte(fd, PPWCONTROL, 0x00) &&
+           (g_usleep(100), true) &&
+           p2k_lpt_pp_write_byte(fd, PPWCONTROL, 0x04) &&
+           p2k_lpt_pp_write_byte(fd, PPWDATA, value) &&
+           p2k_lpt_pp_write_byte(fd, PPWCONTROL, 0x05) &&
+           (g_usleep(100), true) &&
+           p2k_lpt_pp_write_byte(fd, PPWCONTROL, 0x04);
+}
+
+static bool p2k_lpt_probe_read(int fd, uint8_t command, uint8_t *value)
+{
+    unsigned char v = 0xff;
+    int input = 1, output = 0;
+
+    if (!p2k_lpt_pp_write_byte(fd, PPWDATA, command) ||
+        !p2k_lpt_pp_write_byte(fd, PPWCONTROL, 0x00)) {
+        return false;
+    }
+    g_usleep(100);
+    if (!p2k_lpt_pp_write_byte(fd, PPWCONTROL, 0x04) ||
+        !p2k_lpt_pp_write_byte(fd, PPWDATA, 0x2d)) {
+        return false;
+    }
+    g_usleep(100);
+    if (ioctl(fd, PPDATADIR, &input) < 0 || ioctl(fd, PPRDATA, &v) < 0) {
+        (void)ioctl(fd, PPDATADIR, &output);
+        return false;
+    }
+    (void)ioctl(fd, PPDATADIR, &output);
+    (void)p2k_lpt_pp_write_byte(fd, PPWCONTROL, 0x04);
+    *value = v;
+    return true;
+}
+
+static unsigned p2k_lpt_low_bits(uint8_t mask, uint8_t value)
+{
+    return ctpop8((uint8_t)(~value) & mask);
+}
+
+/* Return SWE1/RFM only for the two unambiguous signatures visible in the
+ * reference binary. An open bus reads 0xff and matches neither signature. */
+static const char *p2k_lpt_probe_playfield(int fd)
+{
+    uint8_t main_rows[8] = { 0 }, aux6[8] = { 0 }, aux7[8] = { 0 };
+    unsigned primary, secondary;
+
+    for (unsigned i = 0; i < 8; i++) {
+        if (!p2k_lpt_probe_write(fd, 5, 1u << i) ||
+            !p2k_lpt_probe_read(fd, 4, &main_rows[i]) ||
+            !p2k_lpt_probe_write(fd, 5, 0)) {
+            return NULL;
+        }
+    }
+    if (!p2k_lpt_probe_write(fd, 0x0d, 0x80)) {
+        return NULL;
+    }
+    for (unsigned i = 0; i < 8; i++) {
+        if (!p2k_lpt_probe_write(fd, 5, 1u << i) ||
+            !p2k_lpt_probe_write(fd, 8, 1u << i) ||
+            !p2k_lpt_probe_write(fd, 6, 0xff) ||
+            !p2k_lpt_probe_write(fd, 5, 0) ||
+            !p2k_lpt_probe_read(fd, 0x10, &aux6[i]) ||
+            !p2k_lpt_probe_write(fd, 8, 0) ||
+            !p2k_lpt_probe_write(fd, 6, 0)) {
+            return NULL;
+        }
+    }
+    for (unsigned i = 0; i < 8; i++) {
+        if (!p2k_lpt_probe_write(fd, 5, 1u << i) ||
+            !p2k_lpt_probe_write(fd, 8, 1u << i) ||
+            !p2k_lpt_probe_write(fd, 7, 0xff) ||
+            !p2k_lpt_probe_write(fd, 5, 0) ||
+            !p2k_lpt_probe_read(fd, 0x11, &aux7[i]) ||
+            !p2k_lpt_probe_write(fd, 8, 0) ||
+            !p2k_lpt_probe_write(fd, 7, 0)) {
+            return NULL;
+        }
+    }
+    (void)p2k_lpt_probe_write(fd, 0x0d, 0);
+
+    primary = p2k_lpt_low_bits(0x04, aux6[1]) +
+              p2k_lpt_low_bits(0xc0, aux6[5]) +
+              p2k_lpt_low_bits(0x06, aux7[3]) +
+              p2k_lpt_low_bits(0xff, aux7[5]);
+    secondary = p2k_lpt_low_bits(0x80, aux6[4]) +
+                p2k_lpt_low_bits(0x80, aux7[2]) +
+                p2k_lpt_low_bits(0x80, aux7[3]);
+
+    if (primary <= 1 && secondary > 1) {
+        return "swe1";
+    }
+    if (primary > 11 && secondary <= 1) {
+        return "rfm";
+    }
+    return NULL;
+}
 #endif
+
+const char *p2k_lpt_resolve_game(const char *requested_game)
+{
+    const char *selection = getenv("P2K_LPT_DEVICE");
+    const char *explicit_path = NULL;
+    bool game_auto = !requested_game || !strcmp(requested_game, "auto");
+
+    selection = (selection && *selection) ? selection : "auto";
+    if (!strncmp(selection, "/dev/parport", strlen("/dev/parport"))) {
+        explicit_path = selection;
+    } else if (strcmp(selection, "auto") && strcmp(selection, "emulated") &&
+               strcmp(selection, "required") &&
+               strcmp(selection, "disconnected") &&
+               strcmp(selection, "none")) {
+        error_report("pinball2000: invalid LPT device '%s' "
+                     "(expected auto, emulated, required, disconnected, "
+                     "none, or /dev/parportN)",
+                     selection);
+        exit(1);
+    }
+    s_resolved_parport[0] = '\0';
+    s_lpt_disabled = !strcmp(selection, "none");
+    s_disconnected = !strcmp(selection, "disconnected");
+    if (s_lpt_disabled && getenv("P2K_LPT_IOPORT")) {
+        error_report("pinball2000: P2K_LPT_IOPORT has no meaning with "
+                     "P2K_LPT_DEVICE=none");
+        exit(1);
+    }
+    if (s_lpt_disabled || s_disconnected) {
+        return game_auto ? "swe1" : requested_game;
+    }
+    if (!strcmp(selection, "emulated")) {
+        info_report("pinball2000: LPT device emulated — physical ports ignored");
+        return game_auto ? "swe1" : requested_game;
+    }
+#ifdef __linux__
+    /* An explicit ppdev path is authoritative. Probe it only to resolve an
+     * automatic game choice; never turn a silent cable into an emulated board.
+     * This deliberately lets the guest ROM diagnose the physical failure. */
+    if (explicit_path && *explicit_path) {
+        int fd = p2k_lpt_pp_open(explicit_path);
+        const char *detected;
+
+        if (fd < 0) {
+            error_report("pinball2000: cannot open/claim explicitly selected host parport '%s' (%s)",
+                         explicit_path, strerror(errno));
+            exit(1);
+        }
+        detected = p2k_lpt_probe_playfield(fd);
+        p2k_lpt_pp_close(fd);
+        snprintf(s_resolved_parport, sizeof(s_resolved_parport), "%s",
+                 explicit_path);
+        if (detected) {
+            snprintf(s_resolved_game, sizeof(s_resolved_game), "%s", detected);
+            info_report("pinball2000: explicit %s identifies a %s playfield",
+                        explicit_path, !strcmp(detected, "swe1") ? "SWE1" : "RFM");
+            if (!game_auto && strcmp(requested_game, detected)) {
+                warn_report("pinball2000: forced game '%s' differs from detected '%s' playfield",
+                            requested_game, detected);
+            }
+            return game_auto ? s_resolved_game : requested_game;
+        }
+        info_report("pinball2000: explicit %s gave no recognizable playfield signature; preserving raw passthrough for guest diagnostics",
+                    explicit_path);
+        return game_auto ? "swe1" : requested_game;
+    }
+
+    for (unsigned i = 0; i < 32; i++) {
+        char path[64];
+        const char *candidate = path;
+        int fd;
+
+        snprintf(path, sizeof(path), "/dev/parport%u", i);
+        fd = p2k_lpt_pp_open(candidate);
+        if (fd < 0) continue;
+        const char *detected = p2k_lpt_probe_playfield(fd);
+        p2k_lpt_pp_close(fd);
+        if (!detected) continue;
+        snprintf(s_resolved_parport, sizeof(s_resolved_parport), "%s",
+                 candidate);
+        snprintf(s_resolved_game, sizeof(s_resolved_game), "%s", detected);
+        info_report("pinball2000: auto-detected %s driver board on %s",
+                    !strcmp(detected, "swe1") ? "SWE1" : "RFM", candidate);
+        if (!game_auto && strcmp(requested_game, detected)) {
+            warn_report("pinball2000: forced game '%s' differs from detected '%s' playfield",
+                        requested_game, detected);
+        }
+        return game_auto ? s_resolved_game : requested_game;
+    }
+#endif
+    if (!strcmp(selection, "required")) {
+        error_report("pinball2000: LPT device 'required' found no recognized Pinball 2000 driver board");
+        exit(1);
+    }
+    info_report("pinball2000: no recognized physical driver board; using emulated board");
+    return game_auto ? "swe1" : requested_game;
+}
 
 /* P2K rendering/switch state machine (mirrors io.c:720-742). */
 static uint8_t s_lpt_data;
@@ -610,9 +819,12 @@ void p2k_lpt_host_key(int qcode, bool down)
 {
     /* The threaded SDL renderer forwards keys directly here instead of
      * passing through QEMU's registered input handler.  Enforce cabinet
-     * isolation at this common endpoint as well.  F1 remains a host
-     * lifecycle control so an operator can leave the cabinet session. */
-    if (s_cabinet_purist && qcode != Q_KEY_CODE_F1) {
+     * isolation at this common endpoint as well. F1/F2/F3 are host-only
+     * lifecycle, display and capture controls; they never inject a cabinet
+     * switch and therefore remain safe with a physical or absent board. */
+    if ((s_physical_board || s_disconnected || s_lpt_disabled) &&
+        qcode != Q_KEY_CODE_F1 && qcode != Q_KEY_CODE_F2 &&
+        qcode != Q_KEY_CODE_F3) {
         return;
     }
     if (p2k_switch_keymap_handle_key(qcode, down)) {
@@ -729,17 +941,15 @@ static const QemuInputHandler p2k_lpt_input_handler = {
 
 void p2k_install_lpt_board(void)
 {
-    const char *disable  = getenv("P2K_LPT_DISABLE");
     const char *ioport_s = getenv("P2K_LPT_IOPORT");
-    const char *parport  = getenv("P2K_LPT_PARPORT");
-    const char *disconnected = getenv("P2K_LPT_DISCONNECTED");
+    const char *parport  = s_resolved_parport[0] ? s_resolved_parport : NULL;
     const char *trace_fn = getenv("P2K_LPT_TRACE_FILE");
     const char *status_s = getenv("P2K_LPT_STATUS");
     unsigned    ioport   = 0x378;
 
-    if (disable && *disable && strcmp(disable, "0") != 0) {
+    if (s_lpt_disabled) {
         info_report("pinball2000: LPT driver-board disabled "
-                    "(P2K_LPT_DISABLE set) — game will not boot, "
+                    "(--lpt-device none) — game will not boot, "
                     "the switch matrix is unreachable. Diagnostic only.");
         return;
     }
@@ -767,6 +977,12 @@ void p2k_install_lpt_board(void)
         }
     }
 
+    if (ioport != 0x3bc && ioport != 0x378 && ioport != 0x278) {
+        warn_report("pinball2000: guest LPT address 0x%x is not one of "
+                    "XINA's known probe addresses (0x3bc, 0x378, 0x278); "
+                    "XINA may not discover the board", ioport);
+    }
+
     if (trace_fn && *trace_fn) {
         s_trace_fp = fopen(trace_fn, "ae");
         if (!s_trace_fp) {
@@ -777,8 +993,6 @@ void p2k_install_lpt_board(void)
         }
     }
 
-    s_disconnected = disconnected && *disconnected &&
-                     strcmp(disconnected, "0") != 0;
     if (s_disconnected) {
         info_report("pinball2000: LPT DISCONNECTED diagnostic target "
                     "(open-bus reads=0xff, writes discarded, no emulated "
@@ -800,10 +1014,11 @@ void p2k_install_lpt_board(void)
             s_pp_fd = fd;
             snprintf(s_pp_path, sizeof(s_pp_path), "%s", parport);
             atexit(p2k_lpt_pp_atexit);
-            info_report("pinball2000: LPT board PASSTHROUGH to host %s "
+            info_report("pinball2000: LPT board PASSTHROUGH from guest "
+                        "I/O 0x%x to host %s "
                         "(real-cabinet wiring, all reads/writes hit hardware; "
                         "IEEE-1284 compat mode, PPDATADIR mirrors CTRL bit5)",
-                        s_pp_path);
+                        ioport, s_pp_path);
         }
 #else
         error_report("pinball2000: --lpt-device <hostdev> only supported on "
@@ -818,33 +1033,30 @@ void p2k_install_lpt_board(void)
                           "p2k.lpt-board", 3);
     memory_region_add_subregion(io, ioport, mr);
 
-    /* --cabinet-purist: trust the real driver-board protocol, no host
-     * key injection. Only meaningful when also paired with a real host
-     * parport; otherwise the switch matrix is unreachable. */
-    const char *purist = getenv("P2K_CABINET_PURIST");
-    bool purist_on = (purist && *purist && strcmp(purist, "0") != 0);
-    s_cabinet_purist = purist_on;
-    if (purist_on && s_pp_fd < 0 && !s_disconnected) {
-        error_report("pinball2000: P2K_CABINET_PURIST=1 requires "
-                     "--lpt-device <hostdev> or the explicit disconnected "
-                     "diagnostic target. Without either, the switch matrix "
-                     "is unreachable and the game cannot be played.");
-    }
-    if (!purist_on) {
+    /* A successfully opened physical board is the only source of this state;
+     * there is no second CLI policy or environment override. */
+    s_physical_board = s_pp_fd >= 0;
+    if (!s_physical_board && !s_disconnected) {
         qemu_input_handler_register(NULL, &p2k_lpt_input_handler);
-    } else {
-        info_report("pinball2000: cabinet-purist mode — emulated board "
-                    "controls disabled on every keyboard path (F1 remains "
-                    "available for shutdown)");
+    } else if (s_physical_board) {
+        info_report("pinball2000: physical board active — emulated board "
+                    "controls disabled on every keyboard path (host controls "
+                    "F1 quit, F2 flip and F3 screenshot remain available)");
     }
 
     info_report("pinball2000: LPT driver-board installed at I/O 0x%x-0x%x "
                 "(STATUS=0x%02x, edge-detect dispatch%s)",
                 ioport, ioport + 2, s_lpt_status,
-                purist_on ? "; cabinet-purist (no desktop keys)" :
+                s_physical_board ? "; physical board (host F1/F2/F3 only)" :
+                s_disconnected ? "; disconnected open bus (host F1/F2/F3 only)" :
                 "; keys: F1 quit | F2 vertical flip | F3 screenshot | "
                 "F4 door | F5/Enter pulse | F6/F9 actions | "
                 "F7/F8 flippers | Space/S start | F10/C coin | "
                 "F12 dump | Esc/Left service | Up/Down volume | "
                 "Right enter | NN then Ctrl matrix switch");
+}
+
+bool p2k_lpt_blocks_emulated_input(void)
+{
+    return s_physical_board || s_disconnected || s_lpt_disabled;
 }
