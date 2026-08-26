@@ -38,7 +38,7 @@ for __arg in "$@"; do
 done
 
 # --- defaults ---------------------------------------------------------------
-GAME=swe1
+GAME=auto
 ROMS_DIR="$ROOT/roms"
 SAVEDATA_DIR="$ROOT/savedata"
 UPDATE_TOKEN="auto"
@@ -226,7 +226,9 @@ Run Williams Pinball 2000 firmware under the custom QEMU `pinball2000`
 machine. Stock qemu-system-i386 cannot boot — see qemu/README.md.
 
 CORE LAUNCH
-  --game swe1|rfm           Game ROM bank to load. Default: swe1.
+  --game auto|swe1|rfm      Game selection. auto identifies a connected
+                            playfield, or uses SWE1 with the emulated board.
+                            Default: auto.
   --roms <dir>              ROM directory. Default: <repo>/roms.
   --savedata <dir>          Persistent savedata dir (reads
                             <dir>/<game>.{flash,nvram2,see}).
@@ -513,37 +515,24 @@ CONSOLE / DIAGNOSTICS
                             same shared BAR4 + UART core today.
 
 CABINET
-  --cabinet | --cabinet-purist
-                            Real-cabinet mode. Refuses to start without
-                            a real --lpt-device <hostdev> attached, and
-                            (when started) suppresses the desktop
-                            switch-matrix key handler so all switches
-                            must come from the driver-board over LPT
-                            (P2K_CABINET_PURIST=1). Use to validate
-                            that a session truly came from hardware.
-  --lpt-device emu|disconnected|none|/dev/parportN|0xNNN
-                            Pinball driver-board wiring. `emu` (default,
-                            also `emulated`) keeps the desktop-input
-                            emulated board on I/O 0x378. `none` skips
-                            installation entirely (P2K_LPT_DISABLE=1;
-                            game will not boot — diagnostic only).
-                            `/dev/parportN` switches the board to host
-                            parport passthrough via Linux ppdev
-                            (P2K_LPT_PARPORT) — needs the `lp` group
-                            and `modprobe ppdev`. `0xNNN` relocates the
-                            emulated board to a custom I/O port
-                            (P2K_LPT_IOPORT).
-                            `disconnected` installs only an open-bus
-                            diagnostic target: reads return 0xff, writes
-                            are discarded, and no board or keyboard input
-                            is emulated. Pair it with --cabinet to let the
-                            ROM diagnose a missing physical board.
+  --lpt-device auto|emulated|required|disconnected|none|/dev/parportN
+                            Driver-board source. auto scans /dev/parportN and
+                            falls back to keyboard-backed emulation; emulated
+                            ignores physical ports; required scans but refuses
+                            fallback. disconnected exposes an open bus; none
+                            installs no guest LPT device. A path is an
+                            authoritative ppdev override.
+                            The explicitly selected port
+                            remains connected to the guest when its cable is
+                            silent, so the ROM performs the diagnosis. A real
+                            port disables emulated cabinet keys; host controls
+                            F1 quit, F2 flip and F3 screenshot remain available.
+                            Default: auto.
+  --lpt-ioport 0xNNN       Set the guest LPT address (default: 0x378),
+                           independently of emulated or physical backend.
   --lpt-trace <file>        Append every LPT read/write to <file>
                             (P2K_LPT_TRACE_FILE). Format:
                             "<ts> R|W <off>=<val>" with µs timestamps.
-  --parport <device>        Alias for
-                            `--lpt-device <device>`.
-
 ESCAPE HATCHES
   --tcg-only                Smoke-test the host QEMU binary alone (no
                             Pinball 2000 hardware, no game boot).
@@ -587,17 +576,20 @@ ENV PASSTHROUGH (advanced; see qemu/README.md for the full table)
   P2K_DCS_RAW_55_PAIR P2K_DIAG P2K_TIMING_SNAPSHOTS P2K_NO_AUTO_UPDATE
   P2K_PB2KSLIB P2K_DCS_ENGINE P2K_DCS_PCM_CPU P2K_DCS_MODE P2K_SCREENSHOT_DIR
   P2K_DISPLAY_BPP P2K_FRAMEBUFFER_THREAD P2K_QEMU_FRAMEBUFFER
-  P2K_LPT_DISABLE P2K_LPT_PARPORT P2K_LPT_DISCONNECTED
-  P2K_LPT_IOPORT P2K_LPT_TRACE_FILE P2K_DCS_PRELOAD P2K_CABINET_PURIST
+  P2K_LPT_DEVICE
+  P2K_LPT_IOPORT P2K_LPT_TRACE_FILE P2K_DCS_PRELOAD
   P2K_SWITCH_KEYMAP P2K_VIDEO_CAPTURE P2K_FFMPEG_BIN
 EOF
 }
 
 # --- arg parse --------------------------------------------------------------
-LPT_MODE="emulated"
+LPT_DEVICE="${P2K_LPT_DEVICE:-auto}"
+LPT_IOPORT_SET=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --game)            GAME="$2"; shift 2 ;;
+    --game)
+      case "${2:-}" in auto|swe1|rfm) GAME="$2" ;; *) echo "[run-qemu] --game: expected auto, swe1, or rfm" >&2; exit 2 ;; esac
+      shift 2 ;;
     --roms)            ROMS_DIR="$2"; shift 2 ;;
     --savedata)        SAVEDATA_DIR="$2"; shift 2 ;;
     --no-savedata)     NO_SAVEDATA=1; shift ;;
@@ -781,47 +773,35 @@ while [[ $# -gt 0 ]]; do
     -v)                VERBOSITY=1; shift ;;
     -vv)               VERBOSITY=2; shift ;;
     -vvv)              VERBOSITY=3; shift ;;
-    --cabinet|--cabinet-purist)
-      # --cabinet-purist is an explicit request to trust
-      # the real board" semantics). With our wrapper there's no real
-      # cabinet bus to trust unless --lpt-device <hostdev> is also set,
-      # so we just record the intent for downstream forensics.
-      export P2K_CABINET_PURIST=1; shift ;;
-    --lpt-device|--lpt)
-      # --lpt-device accepts <none|emu|disconnected|/dev/parportN|0xNNN>.
-      # All four modes wire to existing P2K_LPT_* env vars consumed by
-      # qemu/p2k-lpt-board.c. Real hardware passthrough is Linux-only and
-      # requires the host user to be in the `lp` group with ppdev loaded.
-      LPT_MODE="$2"
-      case "$LPT_MODE" in
-        emu|emulated) ;;
-        disconnected)     export P2K_LPT_DISCONNECTED=1 ;;
-        none)              export P2K_LPT_DISABLE=1 ;;
-        /dev/*)            [[ -e "$LPT_MODE" ]] || { echo "[run-qemu] $1: '$LPT_MODE' does not exist" >&2; exit 2; }
-                           export P2K_LPT_PARPORT="$LPT_MODE" ;;
-        0x[0-9a-fA-F]*|[0-9]*) export P2K_LPT_IOPORT="$LPT_MODE" ;;
-        parport)           # Default probe target — must exist.
-                           [[ -e /dev/parport0 ]] || { echo "[run-qemu] $1: '/dev/parport0' does not exist (load ppdev?)" >&2; exit 2; }
-                           export P2K_LPT_PARPORT="/dev/parport0" ;;
-        *) echo "[run-qemu] $1: expected emu|disconnected|none|/dev/parportN|0xNNN, got '$LPT_MODE'" >&2; exit 2 ;;
+    --lpt-device)
+      case "${2:-}" in
+        auto|emulated|required|disconnected|none) LPT_DEVICE="$2" ;;
+        /dev/parport[0-9]*)
+          [[ -c "$2" ]] || { echo "[run-qemu] --lpt-device: '$2' is not an existing character device" >&2; exit 2; }
+          LPT_DEVICE="$2" ;;
+        *) echo "[run-qemu] --lpt-device: expected auto, emulated, required, disconnected, none, or an existing /dev/parportN" >&2; exit 2 ;;
       esac
       shift 2 ;;
+    --lpt-ioport)
+      [[ "${2:-}" =~ ^(0x[0-9a-fA-F]+|[0-9]+)$ ]] || {
+        echo "[run-qemu] --lpt-ioport: expected 0xNNN or a decimal address" >&2; exit 2; }
+      export P2K_LPT_IOPORT="$2"; LPT_IOPORT_SET=1; shift 2 ;;
     --lpt-trace)
       [[ -n "${2:-}" ]] || { echo "[run-qemu] --lpt-trace: expected <file>" >&2; exit 2; }
       LPT_TRACE_DIR="$(cd "$(dirname "$2")" 2>/dev/null && pwd)" || { echo "[run-qemu] --lpt-trace: parent dir of '$2' missing" >&2; exit 2; }
       export P2K_LPT_TRACE_FILE="$LPT_TRACE_DIR/$(basename "$2")"
       shift 2 ;;
-    --parport)
-      # Alias: --parport <dev> ⇒ --lpt-device <dev>
-      [[ -n "${2:-}" ]] || { echo "[run-qemu] --parport: expected <device>" >&2; exit 2; }
-      [[ -e "$2" ]] || { echo "[run-qemu] --parport: '$2' does not exist" >&2; exit 2; }
-      export P2K_LPT_PARPORT="$2"; shift 2 ;;
     --tcg-only)        TCG_ONLY=1; shift ;;
     --)                shift; EXTRA+=("$@"); break ;;
     -h|--help)         print_help; exit 0 ;;
     *) echo "Unknown arg: $1 (try --help)" >&2; exit 2 ;;
   esac
 done
+if [[ "$LPT_DEVICE" == none && $LPT_IOPORT_SET -eq 1 ]]; then
+  echo "[run-qemu] --lpt-ioport has no meaning with --lpt-device none" >&2
+  exit 2
+fi
+export P2K_LPT_DEVICE="$LPT_DEVICE"
 
 if [[ ! "$SPEED_TARGET" =~ ^[0-9]+([.][0-9]+)?$ ]] ||
    ! awk -v value="$SPEED_TARGET" 'BEGIN { exit !(value >= 25 && value <= 300) }'; then
@@ -862,21 +842,45 @@ if [[ -z "$RUNTIME_BACKEND" ]]; then
 fi
 ENCORE_SDL_DRIVER=""
 runtime_root_phase=0
+
+# usermod updates the account database, but Linux cannot mutate the
+# supplementary groups of this already-running shell. Re-enter this wrapper
+# once through sg so Encore immediately receives the refreshed lp membership;
+# the caller does not need to log out. ORIGINAL_ARGS preserves the exact CLI.
+refresh_lp_membership() {
+  local current_user reexec_cmd quoted arg
+  [[ $EUID -ne 0 && "$LPT_DEVICE" != emulated &&
+     "$LPT_DEVICE" != disconnected && "$LPT_DEVICE" != none ]] || return 0
+  id -nG | tr ' ' '\n' | grep -qx lp && return 0
+  current_user="$(id -un)"
+  id -nG "$current_user" | tr ' ' '\n' | grep -qx lp || return 0
+  command -v sg >/dev/null 2>&1 || return 0
+
+  printf -v reexec_cmd 'exec %q' "$0"
+  for arg in "${ORIGINAL_ARGS[@]}"; do
+    printf -v quoted '%q' "$arg"
+    reexec_cmd+=" $quoted"
+  done
+  echo "[run-qemu] activating refreshed lp membership for this run"
+  exec sg lp -c "$reexec_cmd"
+}
+
+refresh_lp_membership
 if [[ $EUID -ne 0 ]] && encore_runtime_needs_root_phase "$RUNTIME_BACKEND"; then
   runtime_owner="$(id -un)"
   if command -v run0 >/dev/null 2>&1 && command -v pkttyagent >/dev/null 2>&1; then
     run0 --description="Encore runtime preparation" -- \
       bash "$ROOT/scripts/internal/runtime-packages.sh" \
       --runtime-root-phase "$ROOT" "$RUNTIME_BACKEND" "$runtime_owner" \
-      "$HOME" "$QEMU_BIN" "${P2K_LPT_PARPORT:-}"
+      "$HOME" "$QEMU_BIN" "$LPT_DEVICE"
   elif command -v sudo >/dev/null 2>&1; then
     sudo bash "$ROOT/scripts/internal/runtime-packages.sh" \
       --runtime-root-phase "$ROOT" "$RUNTIME_BACKEND" "$runtime_owner" \
-      "$HOME" "$QEMU_BIN" "${P2K_LPT_PARPORT:-}"
+      "$HOME" "$QEMU_BIN" "$LPT_DEVICE"
   elif command -v pkexec >/dev/null 2>&1; then
     pkexec bash "$ROOT/scripts/internal/runtime-packages.sh" \
       --runtime-root-phase "$ROOT" "$RUNTIME_BACKEND" "$runtime_owner" \
-      "$HOME" "$QEMU_BIN" "${P2K_LPT_PARPORT:-}"
+      "$HOME" "$QEMU_BIN" "$LPT_DEVICE"
   else
     echo "[run-qemu] runtime preparation needs root; no supported privilege helper found" >&2
     exit 2
@@ -885,6 +889,7 @@ if [[ $EUID -ne 0 ]] && encore_runtime_needs_root_phase "$RUNTIME_BACKEND"; then
   QEMU_BIN=""
   resolve_qemu_bin
 fi
+refresh_lp_membership
 if [[ $runtime_root_phase -eq 0 ]]; then
   encore_prepare_runtime "$RUNTIME_BACKEND"
 else
@@ -894,10 +899,10 @@ else
   esac
 fi
 
-if [[ $EUID -ne 0 && "${P2K_LPT_PARPORT:-}" == /dev/parport[0-9]* &&
-      ( ! -r "$P2K_LPT_PARPORT" || ! -w "$P2K_LPT_PARPORT" ) ]]; then
-  echo "[run-qemu] $P2K_LPT_PARPORT is not accessible in this login session." >&2
-  echo "[run-qemu] Log out and back in so the prepared lp membership takes effect." >&2
+if [[ $EUID -ne 0 && "$LPT_DEVICE" == /dev/parport[0-9]* &&
+      ( ! -r "$LPT_DEVICE" || ! -w "$LPT_DEVICE" ) ]]; then
+  echo "[run-qemu] $LPT_DEVICE is not accessible in this login session." >&2
+  echo "[run-qemu] The refreshed lp membership did not grant access; check the device permissions." >&2
   exit 2
 fi
 
@@ -1160,17 +1165,6 @@ fi
 if [[ "$DISPLAY_MODE" == "none" && $FULLSCREEN -eq 1 ]]; then
   echo "[run-qemu] --fullscreen ignored with --display none / --headless" >&2
   FULLSCREEN=0
-fi
-
-# Cabinet mode normally requires a real host device.  The explicit
-# disconnected target is the one exception: it exists to let the ROM observe
-# an open bus while retaining purist input semantics.
-if [[ "${P2K_CABINET_PURIST:-}" == "1" &&
-      -z "${P2K_LPT_PARPORT:-}" &&
-      "${P2K_LPT_DISCONNECTED:-}" != "1" ]]; then
-  echo "[run-qemu] --cabinet requires --lpt-device <hostdev> or "\
-"--lpt-device disconnected (diagnostic only)." >&2
-  exit 2
 fi
 
 # --- audio auto-detect ------------------------------------------------------

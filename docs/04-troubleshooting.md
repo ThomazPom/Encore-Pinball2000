@@ -76,7 +76,8 @@ Open the coin door with `F4` before testing volume buttons. Insert a credit with
 
 - The graphical window must have focus.
 - `--display none` has no desktop keys.
-- `--cabinet-purist` disables desktop switch injection.
+- A detected or explicitly selected physical board disables desktop switch
+  injection automatically; host-only F1, F2 and F3 remain available.
 - Service volume/menu buttons normally require the coin door to be open (`F4`).
 
 Press `F12` to print current LPT/switch state.

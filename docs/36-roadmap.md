@@ -11,8 +11,7 @@ passthrough. The remaining goal is physical Pinball 2000 cabinet validation.
    guest clock, IRQ0, LPT rate and PDB05 gaps.
 3. Exercise coins, start, flippers, service buttons, volume and door state with
    the emulated LPT board.
-4. Verify `--cabinet-purist` refuses to start without an explicitly opened
-   `/dev/parportN` device.
+4. Verify `--lpt-device required` refuses to start without a recognized board.
 5. Capture real-port traffic with playfield power disabled.
 
 ## Physical validation

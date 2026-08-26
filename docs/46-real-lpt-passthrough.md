@@ -3,6 +3,18 @@
 Encore can pass guest parallel-port traffic directly to a Linux `ppdev` device.
 The implementation is in `qemu/p2k-lpt-board.c`.
 
+Normal use requires no port number:
+
+```bash
+scripts/run-qemu.sh --lpt-device auto --game auto
+```
+
+Encore scans `/dev/parportN` inside the binary, accepts only a recognized
+Pinball 2000 response, then identifies SWE1 or RFM. With the cable disconnected
+it returns to the emulated board. To test keyboard controls while hardware
+remains connected, use `--lpt-device emulated`. For strict cabinet validation,
+use `--lpt-device required`.
+
 > [!WARNING]
 > Real Pinball 2000 cabinet validation is still pending. Begin with playfield
 > power disabled and stop immediately if outputs behave incorrectly.
@@ -32,27 +44,23 @@ ls -l /dev/parport0
 ```sh
 scripts/run-qemu.sh \
   --lpt-device /dev/parport0 \
-  --cabinet-purist \
   --lpt-trace /tmp/encore-lpt.csv
 ```
 
-`--cabinet-purist` refuses to start without a real parallel device, except for
-the explicit `--lpt-device disconnected` ROM-diagnostic target. This avoids
-silently running the keyboard-backed emulated board when cabinet control was
-intended.
+An explicit device is authoritative and automatically disables emulated
+cabinet keys while retaining host-only F1 quit, F2 flip and F3 screenshot.
+Use `--lpt-device disconnected` for an artificial open-bus
+ROM diagnostic.
 
-The cabinet installer discovers `/dev/parportN` without assuming a particular
-port number. When a kernel parport exists but its ppdev device is absent, it
-loads `ppdev` (offering the distribution's `kmod` package if the loader is
-missing) and refuses to silently continue if no character device appears. It
-selects a single detected port automatically, asks when several exist, enables
-real cabinet I/O by default, and adds the unprivileged session account to `lp`.
-When no kernel ppdev interface exists at all, it explicitly reports that Encore
-will use the emulated demonstration board.
+The cabinet installer stores only the selected `auto`, `emulated`, or
+`required` policy. It does not enumerate ports. The runner prepares generic
+`lp` access; the Encore binary performs live enumeration and recognition on
+every launch. Connecting or disconnecting the cabinet therefore changes the
+next `auto` launch without reinstalling Encore.
 
 The runner owns that `lp` preparation as a persistent runtime prerequisite,
-just like host packages. The installer supplies the selected device and user
-to `run-qemu.sh --preflight`; it does not implement group management itself.
+just like host packages. The installer supplies the policy and user to
+`run-qemu.sh --preflight`; it does not implement detection or group management.
 Consequently uninstalling the cabinet boot integration does not remove the
 runtime account from `lp`.
 
@@ -62,13 +70,13 @@ chardev or a separate helper process.
 
 For a reproducible ROM-level cable-disconnection test that still traverses a
 real Linux ppdev device, run `tools/test-disconnected-vport.sh`. The helper
-temporarily registers an open ISA port at `0x278`, launches cabinet-purist
+temporarily registers an open ISA port at `0x278`, launches explicit ppdev
 Encore through the resulting `/dev/parport0`, and removes the port when Encore
 exits. It refuses to alter an existing parallel-port configuration.
 
 ## Validate before play
 
-1. Run the same game and update with `--lpt-device emu --bench` on the cabinet
+1. Run the same game and update with `--lpt-device emulated --bench` on the cabinet
    host to verify guest timing.
 2. Start real passthrough with `--lpt-trace` and the playfield power disabled.
 3. Confirm expected register traffic and switch reads.

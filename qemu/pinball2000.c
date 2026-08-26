@@ -252,6 +252,13 @@ static void pinball2000_init(MachineState *machine)
                      "(e.g. game=swe1)");
         exit(1);
     }
+    {
+        const char *resolved_game = p2k_lpt_resolve_game(s->game);
+        if (strcmp(resolved_game, s->game)) {
+            g_free(s->game);
+            s->game = g_strdup(resolved_game);
+        }
+    }
     if (!s->roms_dir) {
         s->roms_dir = g_strdup("roms");
     }

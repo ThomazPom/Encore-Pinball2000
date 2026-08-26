@@ -161,8 +161,10 @@ extern void (*p2k_dcs_core_audio_raw_cmd)(uint16_t cmd);
 /* p2k-lpt-board.c: minimal LPT driver-board protocol on 0x378-0x37A
  * (STATUS=0x87 signature + edge-detect dispatch, all inputs idle). */
 void p2k_install_lpt_board(void);
+const char *p2k_lpt_resolve_game(const char *requested_game);
 void p2k_lpt_host_key(int qcode, bool down);
 bool p2k_lpt_set_keymap_switch(unsigned number, bool down);
+bool p2k_lpt_blocks_emulated_input(void);
 
 /* p2k-switch-keymap.c: optional A-Z -> matrix-switch configuration. */
 void p2k_install_switch_keymap(void);

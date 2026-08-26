@@ -38,12 +38,6 @@ static const char s_default_keymap[] =
     "  t: 56\n"
     "  l: 52\n";
 
-static bool p2k_env_enabled(const char *name)
-{
-    const char *value = getenv(name);
-    return value && *value && strcmp(value, "0") != 0;
-}
-
 int p2k_switch_keymap_letter_qcode(char key)
 {
     switch (g_ascii_tolower(key)) {
@@ -300,8 +294,7 @@ void p2k_install_switch_keymap(void)
 {
     unsigned loaded;
 
-    if (s_keymap_installed || p2k_env_enabled("P2K_CABINET_PURIST") ||
-        p2k_env_enabled("P2K_LPT_DISABLE")) {
+    if (s_keymap_installed || p2k_lpt_blocks_emulated_input()) {
         return;
     }
     s_keymap_installed = true;
