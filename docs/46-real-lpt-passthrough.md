@@ -73,6 +73,31 @@ additive overlay cannot safely represent both its open and closed states.
 This path is experimental until its input polarity and timing have been
 validated on a real cabinet. `--lpt-input physical` remains the default.
 
+### Runtime switching
+
+`Tab` cycles:
+
+```text
+physical → hybrid → emulated → physical
+```
+
+`physical` forwards all board traffic. `hybrid` preserves authoritative
+physical reads and writes while adding keyboard switch closures. `emulated`
+stops forwarding traffic and uses the complete software board, including its
+keepalive responses; the unused physical board's blanking watchdog can then
+expire.
+
+Encore changes mode only at a complete PDB command boundary and keeps the
+software protocol state synchronized while hardware is active. On return to
+physical, the log confirms the first forwarded PDB05 frame. Real-cabinet
+testing must still confirm LED1 and output recovery.
+
+Automatic detection chooses only the initial state. A recognized board starts
+physical; otherwise Encore starts emulated. Tab remains authoritative after
+startup: if auto found an unrecognized but claimable ppdev port, physical uses
+it; if no host port exists, physical exposes an open `0xff` bus and discards
+writes. No second recognition gate silently cancels the user's mode change.
+
 The cabinet installer stores only the selected `auto`, `emulated`, or
 `required` policy. It does not enumerate ports. The runner prepares generic
 `lp` access; the Encore binary performs live enumeration and recognition on

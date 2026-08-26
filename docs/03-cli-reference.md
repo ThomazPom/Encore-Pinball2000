@@ -101,6 +101,15 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--lpt-ioport` | address | `0x378` | Set the guest-visible LPT address independently of its emulated or physical host backend. XINA normally probes `0x3bc`, `0x378`, and `0x278`; the binary warns, but does not refuse, for another address. | `scripts/run-qemu.sh --lpt-device /dev/parport0 --lpt-ioport 0x3bc` |
 | `--lpt-input` | `physical` \| `hybrid` | `physical` | Select physical-only cabinet input or the experimental additive keyboard overlay on physical input reads. Hybrid never modifies outputs or clears physical switch bits; F4 remains physical-only. | `scripts/run-qemu.sh --lpt-device /dev/parport0 --lpt-input hybrid` |
 
+`Tab` cycles the live path through
+`physical → hybrid → emulated → physical`. `auto` only chooses the initial
+state: a recognized board starts physical and the fallback starts emulated.
+Tab still obeys the requested cycle when no board was recognized; physical
+then uses an available unrecognized ppdev path or an open `0xff` bus when no
+host port exists. Changes occur only at a complete PDB command boundary. The
+software board follows the command stream in the background, so emulation
+starts from current protocol state.
+
 | `--lpt-trace` | file | off | Exports `P2K_LPT_TRACE_FILE`; appends LPT read/write trace lines. Parent directory must exist. | `scripts/run-qemu.sh --lpt-trace ./logs/lpt.txt` |
 
 | `--tcg-only` | — | off | Smoke-tests host QEMU with `-M isapc`; does not boot Pinball 2000. | `scripts/run-qemu.sh --tcg-only` |

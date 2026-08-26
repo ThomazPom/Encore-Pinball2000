@@ -105,9 +105,9 @@ to its pricing adjustments, so one pulse is not necessarily one credit.
 ## Modes without desktop keys
 
 - `--display none` has no graphical input window.
-- A detected or explicitly selected physical board disables this host key
-  handler; all cabinet switches must arrive from hardware. Host-only F1 quit,
-  F2 flipscreen and F3 screenshot remain active.
+- In physical mode, cabinet switches must arrive from hardware. Host-only F1
+  quit, F2 flipscreen, F3 screenshot and Tab mode cycling remain active. Tab
+  selects hybrid keyboard overlay, then full emulation, then physical again.
 - `--serial` controls COM1 in the terminal. It is separate from cabinet keys.
 
 For automated input, use the QEMU monitor `sendkey` command. For low-level
