@@ -533,8 +533,8 @@ CABINET
   --lpt-input physical|hybrid
                            Input policy with a real board. physical accepts
                            cabinet switches only from hardware (default).
-                           hybrid experimentally ORs keyboard switch closures
-                           into physical input reads; outputs remain physical.
+                           hybrid closes active-low physical input bits from
+                           the keyboard; outputs remain physical.
   --lpt-trace <file>        Append every LPT read/write to <file>
                             (P2K_LPT_TRACE_FILE). Format:
                             "<ts> R|W <off>=<val>" with µs timestamps.
