@@ -1,7 +1,7 @@
 /*
  * pinball2000 PLX9054 BAR2 (battery-backed NVRAM SRAM @ 0x11000000).
  *
- * The PRISM card exposes a 128 KiB SRAM through BAR2.  XINU reads the
+ * The PRISM card exposes 192 KiB of battery-backed SRAM through BAR2.  XINU reads the
  * factory settings, machine audits, and several resource lookup tables
  * out of this NVRAM during early init.  When the SRAM is uninitialised
  * (all zeros) the resource table comes back empty and XINU spins
@@ -11,7 +11,7 @@
  *
  * from savedata/<game>.nvram2 into its bar2_sram buffer.
  *
- * IMPORTANT: the full BAR2 PCI window is 16 MiB.  The first 128 KiB is
+ * IMPORTANT: the full BAR2 PCI window is 16 MiB.  The first 192 KiB is
  * the real SRAM; reads above it must return 0xFFFFFFFF.  This is the
  * "Phase 3 channel scan empty sentinel" — DCS-2's channel-init walks the
  * upper window looking for an empty slot, and only after finding one does
@@ -34,7 +34,9 @@
 #include "p2k-internal.h"
 
 #define P2K_BAR2_BASE        0x11000000u
-#define P2K_BAR2_SRAM_SIZE   0x00020000u   /* 128 KiB SRAM (matches encore.h BAR2_SIZE) */
+/* XINA's CMOS test reaches the complete 0x30000-byte persisted range.
+ * Exposing only 128 KiB incorrectly forces it onto temporary system RAM. */
+#define P2K_BAR2_SRAM_SIZE   P2K_BAR2_SIZE
 #define P2K_BAR2_WINDOW_SIZE 0x01000000u   /* 16 MiB full PCI BAR2 window */
 
 static MemoryRegion *s_bar2_mr;
@@ -50,7 +52,7 @@ static uint64_t p2k_bar2_sentinel_read(void *opaque, hwaddr off, unsigned sz)
 static void p2k_bar2_sentinel_write(void *opaque, hwaddr off,
                                     uint64_t val, unsigned sz)
 {
-    /* Writes above 128 KiB are silently dropped (no SRAM there). */
+    /* Writes above 192 KiB are silently dropped (no SRAM there). */
 }
 
 static const MemoryRegionOps p2k_bar2_sentinel_ops = {
@@ -148,7 +150,7 @@ void p2k_install_plx_bars(Pinball2000MachineState *s)
                           "p2k.bar2-sentinel", P2K_BAR2_WINDOW_SIZE);
     memory_region_add_subregion_overlap(sm, P2K_BAR2_BASE, sentinel, 0);
 
-    /* Real 128 KiB SRAM overlaid on top at offset 0 of the window. */
+    /* Real 192 KiB SRAM overlaid on top at offset 0 of the window. */
     MemoryRegion *bar2 = g_new(MemoryRegion, 1);
     memory_region_init_ram(bar2, NULL, "p2k.bar2-sram",
                            P2K_BAR2_SRAM_SIZE, &error_abort);

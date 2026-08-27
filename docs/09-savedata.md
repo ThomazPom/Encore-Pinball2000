@@ -4,7 +4,7 @@ Encore persists three guest-visible storage areas under `savedata/`:
 
 | File | Guest device | Size |
 |---|---|---:|
-| `<game>.nvram2` | PRISM BAR2 battery SRAM | 128 KiB |
+| `<game>.nvram2` | PRISM BAR2 battery SRAM | 192 KiB |
 | `<game>.flash` | PRISM BAR3 update flash | 4 MiB |
 | `<game>.see` | PLX serial EEPROM | 128 B |
 
