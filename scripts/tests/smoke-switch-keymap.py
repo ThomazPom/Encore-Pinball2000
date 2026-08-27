@@ -67,7 +67,8 @@ def run_case(directory: Path, name: str, yaml: str,
     log_path = directory / f"{name}.log"
     keymap.write_text(yaml)
     command = [
-        "bash", str(RUNNER), "--no-savedata", "--update", "210",
+        "bash", str(RUNNER), "--game", "swe1", "--no-savedata",
+        "--update", "210",
         "--display", "none", "--audio", "none", "--uart-quiet", "-v",
         "--switch-keymap", str(keymap), "--",
         "-qmp", f"unix:{qmp},server=on,wait=off",

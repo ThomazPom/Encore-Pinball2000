@@ -102,6 +102,11 @@ Each `F10` or `C` press starts a 60-scan coin-switch pulse. Pressing again while
 the pulse is active restarts that duration. The game awards credits according
 to its pricing adjustments, so one pulse is not necessarily one credit.
 
+Wait until the ROM has finished booting before inserting credits. Rapidly
+mashing the credit key during boot has made SWE1 2.10 enter its
+`scheduler is hung` fatal monitor in both normal HOTLOOP and `--strict`. This
+has not been observed during normal play and is not HOTLOOP-specific.
+
 ## Modes without desktop keys
 
 - `--display none` has no graphical input window.
