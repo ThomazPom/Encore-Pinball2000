@@ -79,3 +79,11 @@ Interpretation:
 The decisive future diagnostic is a guest-physical write watch on process 20's
 stack guard. It should stop at the instruction that replaces `0xaaa9`, revealing
 the writer rather than only the damaged process.
+
+## Later coin-input incident
+
+A separate 26 August reproduction caused `interval_0_25ms: scheduler is hung`
+in `coin_slot_work_` after coin-slot input was repeatedly injected during ROM
+boot. It occurred in both normal HOTLOOP and `--strict`, but it did not
+reproduce this report's `alp lhd` stack guard corruption. The two incidents
+must remain separate until a common cause is demonstrated.
