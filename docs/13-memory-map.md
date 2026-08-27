@@ -16,8 +16,8 @@ machine. All addresses below are guest physical addresses.
 | `08000000–0b7fffff` | PLX game-ROM banks 0–3 |
 | `0b800000–0bffffff` | DCS `u109/u110` ROM, when present |
 | `10000000–100000ff` | PLX registers and serial interface |
-| `11000000–1101ffff` | 128 KiB battery-backed SRAM |
-| `11020000–11ffffff` | Remaining BAR2 window; reads return all ones |
+| `11000000–1102ffff` | 192 KiB battery-backed SRAM |
+| `11030000–11ffffff` | Remaining BAR2 window; reads return all ones |
 | `12000000–123fffff` | 4 MiB update flash |
 | `13000000–13ffffff` | DCS frontend |
 | `14000000–17ffffff` | Game-ROM bank mirrors |
@@ -61,7 +61,7 @@ and the Cyrix ISA bridge at `0:18.0`.
 - Optional game banks are filled with `ff` when their chip files are absent.
 - Small device regions overlay the larger RAM or sentinel regions using QEMU
   `MemoryRegion` priority.
-- BAR2 contains 128 KiB of SRAM followed by the all-ones sentinel window.
+- BAR2 contains 192 KiB of SRAM followed by the all-ones sentinel window.
 - BAR3 implements array, status, ID, CFI and program operations rather than
   exposing its backing bytes as plain RAM.
 - BAR4 and ports `0138–013f` are two frontends to the same DCS core.
