@@ -18,6 +18,13 @@ screen_captures/
 updates/pin2000_50069_0200_*/
 updates/pin2000_50069_0201_*/
 updates/pin2000_50069_0210_*/
+updates/pin2000_50070_0200_*/
+updates/pin2000_50070_0210_*/
+updates/pin2000_50070_0220_*/
+updates/pin2000_50070_0221_*/
+updates/pin2000_50070_0222_*/
+updates/pin2000_50070_0223_*/
+updates/pin2000_50070_0224_*/
 updates/pin2000_50070_0250_*/
 updates/pin2000_50070_0260_*/
 # Keep downloaded community update archives local as well. These files are
@@ -25,6 +32,13 @@ updates/pin2000_50070_0260_*/
 updates/exe-sources/pin2000_50069_0200_*.exe
 updates/exe-sources/pin2000_50069_0201_*.exe
 updates/exe-sources/pin2000_50069_0210_*.exe
+updates/exe-sources/pin2000_50070_0200_*.exe
+updates/exe-sources/pin2000_50070_0210_*.exe
+updates/exe-sources/pin2000_50070_0220_*.exe
+updates/exe-sources/pin2000_50070_0221_*.exe
+updates/exe-sources/pin2000_50070_0222_*.exe
+updates/exe-sources/pin2000_50070_0223_*.exe
+updates/exe-sources/pin2000_50070_0224_*.exe
 updates/exe-sources/pin2000_50070_0250_*.exe
 updates/exe-sources/pin2000_50070_0260_*.exe
 tmp/cmsg_*.txt
