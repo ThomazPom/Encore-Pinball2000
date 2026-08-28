@@ -1286,6 +1286,7 @@ resolve_update_token() {
   case "$GAME" in
     swe1) gn=50069 ;;
     rfm)  gn=50070 ;;
+    auto) gn=50069 ;; # emulated-board fallback; numeric lookup tries RFM second
     *)    echo "" ; return 1 ;;
   esac
 
@@ -1325,11 +1326,16 @@ resolve_update_token() {
   fi
 
   if [[ -n "$want" ]]; then
-    for r in "${roots[@]}"; do
-      while IFS= read -r -d '' d; do
-        local inner="$d/$gn"
-        [[ -d "$inner" ]] && { echo "$inner"; return 0; }
-      done < <(find "$r" -mindepth 1 -maxdepth 1 -type d -name "pin2000_${gn}_${want}_*" -print0 2>/dev/null)
+    local candidate_gns=("$gn")
+    [[ "$GAME" != auto ]] || candidate_gns+=(50070)
+    local candidate_gn
+    for candidate_gn in "${candidate_gns[@]}"; do
+      for r in "${roots[@]}"; do
+        while IFS= read -r -d '' d; do
+          local inner="$d/$candidate_gn"
+          [[ -d "$inner" ]] && { echo "$inner"; return 0; }
+        done < <(find "$r" -mindepth 1 -maxdepth 1 -type d -name "pin2000_${candidate_gn}_${want}_*" -print0 2>/dev/null)
+      done
     done
     return 1
   fi
@@ -1375,6 +1381,14 @@ case "$UPDATE_TOKEN" in
     fi
     ;;
 esac
+
+if [[ -n "$UPDATE_DIR_ABS" && "$GAME" == auto ]]; then
+  case "$UPDATE_DIR_ABS" in
+    */50069) GAME=swe1 ;;
+    */50070) GAME=rfm ;;
+  esac
+  [[ "$GAME" == auto ]] || echo "[run-qemu] explicit update selected game: $GAME" >&2
+fi
 
 if [[ $CLEAR_PB2K_ADSP_CACHE -eq 1 ]]; then
   rm -rf -- "$PB2K_ADSP_CACHE_DIR"
