@@ -421,6 +421,9 @@ NETWORK
   --network-nat             Add the card on QEMU's user-mode NAT. XINA can
                             reach the host network and Internet without root,
                             a TAP, Docker, or host firewall changes.
+  --expose-services         Enable NAT and publish the built-in HTTP service as
+                            host TCP 8080 -> guest TCP 80. Telnet is excluded;
+                            expose it explicitly with --forward 2323:23.
   --forward <host:guest>    With --network-nat, publish a guest TCP port on
                             every host interface. Repeatable. This deliberately
                             exposes the old guest stack to the host network.
@@ -694,6 +697,17 @@ while [[ $# -gt 0 ]]; do
     --serial)          SERIAL_STDIO=1; shift ;;
     --network)         NETWORK=1; shift ;;
     --network-nat)     NETWORK=1; NETWORK_NAT=1; shift ;;
+    --expose-services)
+      for forward in "${NETWORK_FORWARDS[@]}"; do
+        [[ "${forward%%:*}" != 8080 ]] || {
+          echo "[run-qemu] --expose-services: host TCP port 8080 is already specified" >&2
+          exit 2
+        }
+      done
+      NETWORK_FORWARDS+=("8080:80")
+      NETWORK=1
+      NETWORK_NAT=1
+      shift ;;
     --forward)
       [[ "${2:-}" =~ ^([0-9]+):([0-9]+)$ ]] || {
         echo "[run-qemu] --forward: expected HOST_PORT:GUEST_PORT" >&2

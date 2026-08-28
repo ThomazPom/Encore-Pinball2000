@@ -186,6 +186,12 @@ if ask "Enable the emulated network card?" N; then
         nat)
             network_nat=1
             echo "NAT gives XINA outbound access without Docker or host network changes."
+            if ask "Expose the built-in HTTP server as host TCP 8080?" Y; then
+                network_forwards+=("8080:80")
+            fi
+            if ask "Expose the optional Telnet server as host TCP 2323?" N; then
+                network_forwards+=("2323:23")
+            fi
             echo "To expose TCP services on the LAN, enter repeatable HOST:GUEST pairs."
             read -r -p "Published TCP ports, space-separated [none] (example 8080:80): " forward_line
             for forward in $forward_line; do

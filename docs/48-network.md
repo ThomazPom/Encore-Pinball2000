@@ -70,6 +70,18 @@ Other LAN machines can then reach the guest HTTP and Telnet services through
 the host's address on TCP ports 8080 and 2323. Each mapping is deliberately
 explicit because it exposes the historical guest service to the host network.
 
+The convenience preset publishes only the built-in HTTP service:
+
+```sh
+scripts/run-qemu.sh --expose-services
+```
+
+This is equivalent to `--network-nat --forward 8080:80`. Telnet is deliberately
+excluded because it is an optional historical administration service; add
+`--forward 2323:23` only when it is intentionally enabled in the guest. The
+tournament client needs outbound access, which NAT already provides, and does
+not need an inbound forwarding rule.
+
 ## Existing Linux bridge
 
 Advanced installations can place XINA directly on a real network:
