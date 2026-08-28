@@ -154,6 +154,27 @@ read -r -p "LPT device [auto/emulated/required] (auto): " lpt_device
 lpt_device="${lpt_device:-auto}"
 case "$lpt_device" in auto|emulated|required) ;; *) echo "Invalid LPT device" >&2; exit 2 ;; esac
 
+network=0
+http_port=""
+echo
+echo "Optional Pinball 2000 network card:"
+echo "  Encore can expose the original SMC8416T-compatible Ethernet hardware"
+echo "  on an isolated virtual network. The game keeps control of its IP settings."
+if ask "Enable the emulated network card?" N; then
+    network=1
+    echo "Leave the next answer empty unless you want local access to the game's"
+    echo "built-in HTTP server. It is bound to 127.0.0.1 only."
+    read -r -p "Local HTTP port [disabled]: " http_port
+    if [[ -n "$http_port" ]]; then
+        if [[ ! "$http_port" =~ ^[0-9]+$ ]] ||
+           (( 10#$http_port < 1 || 10#$http_port > 65535 )); then
+            echo "Invalid HTTP port" >&2
+            exit 2
+        fi
+        http_port="$((10#$http_port))"
+    fi
+fi
+
 start_flipped=1
 echo
 echo "F2 vertically reverses the displayed image."
@@ -201,6 +222,8 @@ echo "  setup        : $backend"
 echo "  session user : $session_user (unprivileged)"
 echo "  game         : $game"
 echo "  LPT device   : $lpt_device"
+echo "  network      : $([[ $network -eq 1 ]] && echo 'isolated SMC8416T' || echo disabled)"
+[[ -z "$http_port" ]] || echo "  local HTTP   : http://127.0.0.1:$http_port/"
 echo "  flipscreen   : $([[ $start_flipped -eq 1 ]] && echo enabled || echo disabled)"
 echo "  execution    : $([[ $run_as_root -eq 1 ]] && echo 'root (diagnostic)' || echo 'session user')"
 echo "  host audio   : $([[ $cabinet_audio -eq 1 ]] && echo 'unmute and set 100% at startup' || echo unchanged)"
@@ -227,6 +250,10 @@ fi
 launch_args=()
 [[ "$start_flipped" -eq 0 ]] || launch_args+=(--flipscreen)
 launch_args+=(--lpt-device "$lpt_device")
+if [[ $network -eq 1 ]]; then
+    launch_args+=(--network)
+    [[ -z "$http_port" ]] || launch_args+=(--http-port "$http_port")
+fi
 
 build_qemu="$session_home/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
 release_dir="$session_home/.cache/encore-qemu-release"
@@ -236,6 +263,10 @@ release_qemu="$release_dir/qemu-system-i386"
 # --preflight changes only its terminal action. The following reboot makes a
 # newly granted supplementary group effective before Encore starts.
 preflight_args=(--preflight --fullscreen --game "$game" --lpt-device "$lpt_device")
+if [[ $network -eq 1 ]]; then
+    preflight_args+=(--network)
+    [[ -z "$http_port" ]] || preflight_args+=(--http-port "$http_port")
+fi
 [[ "$backend" == direct-console ]] || preflight_args+=("--$backend")
 if [[ "$backend" == direct-console ]]; then
     ENCORE_RUNTIME_USER="$session_user" \
