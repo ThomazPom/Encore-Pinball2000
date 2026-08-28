@@ -42,6 +42,7 @@ result, or test a cabinet.
 - [Roadmap](36-roadmap.md)
 - [Real LPT passthrough](46-real-lpt-passthrough.md)
 - [Optional network card](48-network.md)
+- [Tournament server preservation](49-tournament-server.md)
 
 ## Non-roadmap notes
 

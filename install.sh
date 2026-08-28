@@ -156,23 +156,42 @@ case "$lpt_device" in auto|emulated|required) ;; *) echo "Invalid LPT device" >&
 
 network=0
 http_port=""
+network_bridge=""
 echo
 echo "Optional Pinball 2000 network card:"
 echo "  Encore can expose the original SMC8416T-compatible Ethernet hardware"
-echo "  on an isolated virtual network. The game keeps control of its IP settings."
+echo "  either in an isolated virtual network or on an existing Linux bridge."
+echo "  The game keeps control of its IP settings."
 if ask "Enable the emulated network card?" N; then
     network=1
-    echo "Leave the next answer empty unless you want local access to the game's"
-    echo "built-in HTTP server. It is bound to 127.0.0.1 only."
-    read -r -p "Local HTTP port [disabled]: " http_port
-    if [[ -n "$http_port" ]]; then
-        if [[ ! "$http_port" =~ ^[0-9]+$ ]] ||
-           (( 10#$http_port < 1 || 10#$http_port > 65535 )); then
-            echo "Invalid HTTP port" >&2
-            exit 2
-        fi
-        http_port="$((10#$http_port))"
-    fi
+    read -r -p "Network attachment [isolated/bridge] (isolated): " network_mode
+    network_mode="${network_mode:-isolated}"
+    case "$network_mode" in
+        isolated)
+            echo "Leave the next answer empty unless you want local access to the game's"
+            echo "built-in HTTP server. It is bound to 127.0.0.1 only."
+            read -r -p "Local HTTP port [disabled]: " http_port
+            if [[ -n "$http_port" ]]; then
+                if [[ ! "$http_port" =~ ^[0-9]+$ ]] ||
+                   (( 10#$http_port < 1 || 10#$http_port > 65535 )); then
+                    echo "Invalid HTTP port" >&2
+                    exit 2
+                fi
+                http_port="$((10#$http_port))"
+            fi
+            ;;
+        bridge)
+            echo "Advanced: XINA will be directly reachable from the selected LAN."
+            echo "Encore will use an existing Linux bridge and will not configure it."
+            read -r -p "Existing Linux bridge name: " network_bridge
+            [[ "$network_bridge" =~ ^[A-Za-z0-9_.-]{1,15}$ &&
+               -d "/sys/class/net/$network_bridge/bridge" ]] || {
+                echo "Invalid or missing Linux bridge" >&2
+                exit 2
+            }
+            ;;
+        *) echo "Invalid network attachment" >&2; exit 2 ;;
+    esac
 fi
 
 start_flipped=1
@@ -222,7 +241,11 @@ echo "  setup        : $backend"
 echo "  session user : $session_user (unprivileged)"
 echo "  game         : $game"
 echo "  LPT device   : $lpt_device"
-echo "  network      : $([[ $network -eq 1 ]] && echo 'isolated SMC8416T' || echo disabled)"
+if [[ -n "$network_bridge" ]]; then
+    echo "  network      : SMC8416T on bridge $network_bridge (LAN-exposed)"
+else
+    echo "  network      : $([[ $network -eq 1 ]] && echo 'isolated SMC8416T' || echo disabled)"
+fi
 [[ -z "$http_port" ]] || echo "  local HTTP   : http://127.0.0.1:$http_port/"
 echo "  flipscreen   : $([[ $start_flipped -eq 1 ]] && echo enabled || echo disabled)"
 echo "  execution    : $([[ $run_as_root -eq 1 ]] && echo 'root (diagnostic)' || echo 'session user')"
@@ -251,8 +274,12 @@ launch_args=()
 [[ "$start_flipped" -eq 0 ]] || launch_args+=(--flipscreen)
 launch_args+=(--lpt-device "$lpt_device")
 if [[ $network -eq 1 ]]; then
-    launch_args+=(--network)
-    [[ -z "$http_port" ]] || launch_args+=(--http-port "$http_port")
+    if [[ -n "$network_bridge" ]]; then
+        launch_args+=(--network-bridge "$network_bridge")
+    else
+        launch_args+=(--network)
+        [[ -z "$http_port" ]] || launch_args+=(--http-port "$http_port")
+    fi
 fi
 
 build_qemu="$session_home/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
@@ -264,8 +291,12 @@ release_qemu="$release_dir/qemu-system-i386"
 # newly granted supplementary group effective before Encore starts.
 preflight_args=(--preflight --fullscreen --game "$game" --lpt-device "$lpt_device")
 if [[ $network -eq 1 ]]; then
-    preflight_args+=(--network)
-    [[ -z "$http_port" ]] || preflight_args+=(--http-port "$http_port")
+    if [[ -n "$network_bridge" ]]; then
+        preflight_args+=(--network-bridge "$network_bridge")
+    else
+        preflight_args+=(--network)
+        [[ -z "$http_port" ]] || preflight_args+=(--http-port "$http_port")
+    fi
 fi
 [[ "$backend" == direct-console ]] || preflight_args+=("--$backend")
 if [[ "$backend" == direct-console ]]; then

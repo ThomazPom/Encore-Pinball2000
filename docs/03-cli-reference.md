@@ -103,6 +103,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--lpt-trace` | file | off | Exports `P2K_LPT_TRACE_FILE`; appends LPT read/write trace lines. Parent directory must exist. | `scripts/run-qemu.sh --lpt-trace ./logs/lpt.txt` |
 | `--network` | — | off | Adds the SMC8416T-compatible card on an isolated QEMU user network. XINA and the game retain control of IP configuration and network startup. | `scripts/run-qemu.sh --network` |
 | `--http-port` | TCP port | off | Forwards `127.0.0.1:<port>` to the game's HTTP server at `10.0.2.15:80`; implies `--network` and never binds a public host interface. | `scripts/run-qemu.sh --http-port 8080` |
+| `--network-bridge` | bridge name | off | Attaches the card to an existing Linux bridge. Encore does not create or reconfigure the bridge. The old guest stack becomes directly reachable from that network; incompatible with `--http-port`. | `scripts/run-qemu.sh --network-bridge br0` |
 
 | `--tcg-only` | — | off | Smoke-tests host QEMU with `-M isapc`; does not boot Pinball 2000. | `scripts/run-qemu.sh --tcg-only` |
 | `--` | QEMU args | none | Forwards remaining args verbatim to QEMU. | `scripts/run-qemu.sh -- -S` |
