@@ -49,6 +49,27 @@ the Pinball 2000 page over the localhost forwarding rule.
 Network support remains optional. Encore does not assume that historical
 external Pinball 2000 services still exist.
 
+## User-mode NAT and LAN port publishing
+
+For outbound network access without Docker, a TAP, root privileges, or host
+firewall changes, use QEMU/libslirp NAT:
+
+```sh
+scripts/run-qemu.sh --network-nat
+```
+
+The guest settings remain `10.0.2.15`, `255.255.255.0`, and gateway
+`10.0.2.2`. To publish selected TCP services on every host interface, add one
+or more explicit mappings:
+
+```sh
+scripts/run-qemu.sh --network-nat --forward 8080:80 --forward 2323:23
+```
+
+Other LAN machines can then reach the guest HTTP and Telnet services through
+the host's address on TCP ports 8080 and 2323. Each mapping is deliberately
+explicit because it exposes the historical guest service to the host network.
+
 ## Existing Linux bridge
 
 Advanced installations can place XINA directly on a real network:

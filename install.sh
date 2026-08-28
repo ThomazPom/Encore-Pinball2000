@@ -156,16 +156,18 @@ lpt_device="${lpt_device:-auto}"
 case "$lpt_device" in auto|emulated|required) ;; *) echo "Invalid LPT device" >&2; exit 2 ;; esac
 
 network=0
+network_nat=0
 http_port=""
 network_bridge=""
+network_forwards=()
 echo
 echo "Optional Pinball 2000 network card:"
 echo "  Encore can expose the original SMC8416T-compatible Ethernet hardware"
-echo "  either in an isolated virtual network or on an existing Linux bridge."
+echo "  in an isolated network, through user-mode NAT, or on a Linux bridge."
 echo "  The game keeps control of its IP settings."
 if ask "Enable the emulated network card?" N; then
     network=1
-    read -r -p "Network attachment [isolated/bridge] (isolated): " network_mode
+    read -r -p "Network attachment [isolated/nat/bridge] (isolated): " network_mode
     network_mode="${network_mode:-isolated}"
     case "$network_mode" in
         isolated)
@@ -180,6 +182,29 @@ if ask "Enable the emulated network card?" N; then
                 fi
                 http_port="$((10#$http_port))"
             fi
+            ;;
+        nat)
+            network_nat=1
+            echo "NAT gives XINA outbound access without Docker or host network changes."
+            echo "To expose TCP services on the LAN, enter repeatable HOST:GUEST pairs."
+            read -r -p "Published TCP ports, space-separated [none] (example 8080:80): " forward_line
+            for forward in $forward_line; do
+                [[ "$forward" =~ ^([0-9]+):([0-9]+)$ ]] || {
+                    echo "Invalid TCP forwarding: $forward" >&2; exit 2;
+                }
+                host_port="$((10#${BASH_REMATCH[1]}))"
+                guest_port="$((10#${BASH_REMATCH[2]}))"
+                (( host_port >= 1 && host_port <= 65535 &&
+                   guest_port >= 1 && guest_port <= 65535 )) || {
+                    echo "Invalid TCP forwarding: $forward" >&2; exit 2;
+                }
+                for existing_forward in "${network_forwards[@]}"; do
+                    [[ "${existing_forward%%:*}" != "$host_port" ]] || {
+                        echo "Host TCP port $host_port is specified twice" >&2; exit 2;
+                    }
+                done
+                network_forwards+=("$host_port:$guest_port")
+            done
             ;;
         bridge)
             echo "Advanced: XINA will be directly reachable from the selected LAN."
@@ -245,6 +270,10 @@ echo "  game         : $game"
 echo "  LPT device   : $lpt_device"
 if [[ -n "$network_bridge" ]]; then
     echo "  network      : SMC8416T on bridge $network_bridge (LAN-exposed)"
+elif [[ $network_nat -eq 1 ]]; then
+    echo "  network      : user-mode NAT"
+    ((${#network_forwards[@]} == 0)) || \
+        echo "  exposed TCP  : ${network_forwards[*]} (host:guest)"
 else
     echo "  network      : $([[ $network -eq 1 ]] && echo 'isolated SMC8416T' || echo disabled)"
 fi
@@ -278,6 +307,11 @@ launch_args+=(--lpt-device "$lpt_device")
 if [[ $network -eq 1 ]]; then
     if [[ -n "$network_bridge" ]]; then
         launch_args+=(--network-bridge "$network_bridge")
+    elif [[ $network_nat -eq 1 ]]; then
+        launch_args+=(--network-nat)
+        for forward in "${network_forwards[@]}"; do
+            launch_args+=(--forward "$forward")
+        done
     else
         launch_args+=(--network)
         [[ -z "$http_port" ]] || launch_args+=(--http-port "$http_port")
@@ -295,6 +329,11 @@ preflight_args=(--preflight --fullscreen --game "$game" --lpt-device "$lpt_devic
 if [[ $network -eq 1 ]]; then
     if [[ -n "$network_bridge" ]]; then
         preflight_args+=(--network-bridge "$network_bridge")
+    elif [[ $network_nat -eq 1 ]]; then
+        preflight_args+=(--network-nat)
+        for forward in "${network_forwards[@]}"; do
+            preflight_args+=(--forward "$forward")
+        done
     else
         preflight_args+=(--network)
         [[ -z "$http_port" ]] || preflight_args+=(--http-port "$http_port")

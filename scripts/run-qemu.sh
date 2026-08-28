@@ -79,8 +79,10 @@ PREFLIGHT=0
 RUNTIME_BACKEND=""
 BACKEND_WRAPPER=""
 NETWORK=0
+NETWORK_NAT=0
 HTTP_PORT=""
 NETWORK_BRIDGE=""
+NETWORK_FORWARDS=()
 
 # --- QEMU binary lookup -----------------------------------------------------
 resolve_qemu_bin() {
@@ -416,13 +418,19 @@ NETWORK
   --network                 Add the emulated SMC8416T Ethernet card on an
                             isolated QEMU user network. XINA keeps ownership
                             of IP configuration and network startup.
+  --network-nat             Add the card on QEMU's user-mode NAT. XINA can
+                            reach the host network and Internet without root,
+                            a TAP, Docker, or host firewall changes.
+  --forward <host:guest>    With --network-nat, publish a guest TCP port on
+                            every host interface. Repeatable. This deliberately
+                            exposes the old guest stack to the host network.
   --http-port <port>        Forward 127.0.0.1:<port> to the guest's HTTP
                             server at 10.0.2.15:80. Implies --network. The
                             listener is never exposed beyond localhost.
   --network-bridge <name>   Attach the emulated card to an existing Linux
                             bridge through an Encore-managed TAP. The runner's
                             root phase creates/attaches the TAP; QEMU remains
-                            unprivileged. Incompatible with --http-port.
+                            unprivileged. Incompatible with NAT/forwarding.
 
 CONSOLE / DIAGNOSTICS
   --bench                   Run an isolated self-diagnostic using the normal
@@ -685,6 +693,29 @@ while [[ $# -gt 0 ]]; do
       esac ;;
     --serial)          SERIAL_STDIO=1; shift ;;
     --network)         NETWORK=1; shift ;;
+    --network-nat)     NETWORK=1; NETWORK_NAT=1; shift ;;
+    --forward)
+      [[ "${2:-}" =~ ^([0-9]+):([0-9]+)$ ]] || {
+        echo "[run-qemu] --forward: expected HOST_PORT:GUEST_PORT" >&2
+        exit 2
+      }
+      host_port="$((10#${BASH_REMATCH[1]}))"
+      guest_port="$((10#${BASH_REMATCH[2]}))"
+      (( host_port >= 1 && host_port <= 65535 &&
+         guest_port >= 1 && guest_port <= 65535 )) || {
+        echo "[run-qemu] --forward: ports must be from 1 to 65535" >&2
+        exit 2
+      }
+      for forward in "${NETWORK_FORWARDS[@]}"; do
+        [[ "${forward%%:*}" != "$host_port" ]] || {
+          echo "[run-qemu] --forward: host TCP port $host_port is specified twice" >&2
+          exit 2
+        }
+      done
+      NETWORK_FORWARDS+=("$host_port:$guest_port")
+      NETWORK=1
+      NETWORK_NAT=1
+      shift 2 ;;
     --network-bridge)
       [[ -n "${2:-}" && "$2" =~ ^[A-Za-z0-9_.-]{1,15}$ ]] || {
         echo "[run-qemu] --network-bridge: expected a Linux interface name" >&2
@@ -830,9 +861,17 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown arg: $1 (try --help)" >&2; exit 2 ;;
   esac
 done
+if [[ -n "$HTTP_PORT" ]]; then
+  for forward in "${NETWORK_FORWARDS[@]}"; do
+    [[ "${forward%%:*}" != "$HTTP_PORT" ]] || {
+      echo "[run-qemu] host TCP port $HTTP_PORT is used by both --http-port and --forward" >&2
+      exit 2
+    }
+  done
+fi
 if [[ -n "$NETWORK_BRIDGE" ]]; then
-  [[ -z "$HTTP_PORT" ]] || {
-    echo "[run-qemu] --http-port cannot be combined with --network-bridge" >&2
+  [[ -z "$HTTP_PORT" && ${#NETWORK_FORWARDS[@]} -eq 0 && $NETWORK_NAT -eq 0 ]] || {
+    echo "[run-qemu] NAT/port-forwarding options cannot be combined with --network-bridge" >&2
     exit 2
   }
   [[ -d "/sys/class/net/$NETWORK_BRIDGE/bridge" ]] || {
@@ -1463,11 +1502,22 @@ if [[ $NETWORK -eq 1 ]]; then
     echo "[run-qemu] network: SMC8416T via $ENCORE_NETWORK_TAP -> $NETWORK_BRIDGE"
     echo "[run-qemu] network: WARNING: XINA is directly reachable from that network"
   else
-    NETWORK_SPEC="user,id=p2knet,restrict=on"
+    if [[ $NETWORK_NAT -eq 1 ]]; then
+      NETWORK_SPEC="user,id=p2knet"
+      echo "[run-qemu] network: user-mode NAT at 10.0.2.0/24"
+    else
+      NETWORK_SPEC="user,id=p2knet,restrict=on"
+      echo "[run-qemu] network: isolated SMC8416T at 10.0.2.0/24"
+    fi
     if [[ -n "$HTTP_PORT" ]]; then
       NETWORK_SPEC+=",hostfwd=tcp:127.0.0.1:${HTTP_PORT}-10.0.2.15:80"
     fi
-    echo "[run-qemu] network: isolated SMC8416T at 10.0.2.0/24"
+    for forward in "${NETWORK_FORWARDS[@]}"; do
+      host_port="${forward%%:*}"
+      guest_port="${forward##*:}"
+      NETWORK_SPEC+=",hostfwd=tcp:0.0.0.0:${host_port}-10.0.2.15:${guest_port}"
+      echo "[run-qemu] network: WARNING: host TCP $host_port exposes XINA TCP $guest_port"
+    done
     if [[ -n "$HTTP_PORT" ]]; then
       echo "[run-qemu] network: http://127.0.0.1:${HTTP_PORT}/ → 10.0.2.15:80"
       echo "[run-qemu] network: guest requires 10.0.2.15/24, gateway 10.0.2.2 and HTTP enabled"
