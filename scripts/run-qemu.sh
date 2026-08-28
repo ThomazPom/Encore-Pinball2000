@@ -80,6 +80,7 @@ RUNTIME_BACKEND=""
 BACKEND_WRAPPER=""
 NETWORK=0
 HTTP_PORT=""
+NETWORK_BRIDGE=""
 
 # --- QEMU binary lookup -----------------------------------------------------
 resolve_qemu_bin() {
@@ -418,6 +419,10 @@ NETWORK
   --http-port <port>        Forward 127.0.0.1:<port> to the guest's HTTP
                             server at 10.0.2.15:80. Implies --network. The
                             listener is never exposed beyond localhost.
+  --network-bridge <name>   Attach the emulated card to an existing Linux
+                            bridge. Advanced and intentionally incompatible
+                            with --http-port; Encore never creates or changes
+                            the host bridge.
 
 CONSOLE / DIAGNOSTICS
   --bench                   Run an isolated self-diagnostic using the normal
@@ -680,6 +685,14 @@ while [[ $# -gt 0 ]]; do
       esac ;;
     --serial)          SERIAL_STDIO=1; shift ;;
     --network)         NETWORK=1; shift ;;
+    --network-bridge)
+      [[ -n "${2:-}" && "$2" =~ ^[A-Za-z0-9_.-]{1,15}$ ]] || {
+        echo "[run-qemu] --network-bridge: expected a Linux interface name" >&2
+        exit 2
+      }
+      NETWORK_BRIDGE="$2"
+      NETWORK=1
+      shift 2 ;;
     --http-port)
       if [[ -z "${2:-}" || ! "$2" =~ ^[0-9]+$ ]] ||
          (( 10#$2 < 1 || 10#$2 > 65535 )); then
@@ -817,6 +830,16 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown arg: $1 (try --help)" >&2; exit 2 ;;
   esac
 done
+if [[ -n "$NETWORK_BRIDGE" ]]; then
+  [[ -z "$HTTP_PORT" ]] || {
+    echo "[run-qemu] --http-port cannot be combined with --network-bridge" >&2
+    exit 2
+  }
+  [[ -d "/sys/class/net/$NETWORK_BRIDGE/bridge" ]] || {
+    echo "[run-qemu] --network-bridge: '$NETWORK_BRIDGE' is not an existing Linux bridge" >&2
+    exit 2
+  }
+fi
 if [[ "$LPT_DEVICE" == none && $LPT_IOPORT_SET -eq 1 ]]; then
   echo "[run-qemu] --lpt-ioport has no meaning with --lpt-device none" >&2
   exit 2
@@ -1434,15 +1457,35 @@ if [[ -n "$AUDIO" && "$AUDIO" != "none" ]]; then
 fi
 
 if [[ $NETWORK -eq 1 ]]; then
-  NETWORK_SPEC="user,id=p2knet,restrict=on"
-  if [[ -n "$HTTP_PORT" ]]; then
-    NETWORK_SPEC+=",hostfwd=tcp:127.0.0.1:${HTTP_PORT}-10.0.2.15:80"
+  if [[ -n "$NETWORK_BRIDGE" ]]; then
+    BRIDGE_HELPER=""
+    for helper in /usr/lib/qemu/qemu-bridge-helper \
+                  /usr/libexec/qemu-bridge-helper \
+                  /usr/local/libexec/qemu-bridge-helper; do
+      [[ -x "$helper" ]] || continue
+      BRIDGE_HELPER="$helper"
+      break
+    done
+    [[ -n "$BRIDGE_HELPER" ]] || {
+      echo "[run-qemu] network bridge requires qemu-bridge-helper" >&2
+      exit 2
+    }
+    NETWORK_SPEC="bridge,id=p2knet,br=$NETWORK_BRIDGE,helper=$BRIDGE_HELPER"
+    echo "[run-qemu] network: SMC8416T attached to host bridge $NETWORK_BRIDGE"
+    echo "[run-qemu] network: helper=$BRIDGE_HELPER (host policy must allow $NETWORK_BRIDGE)"
+    echo "[run-qemu] network: WARNING: XINA is directly reachable from that network"
+  else
+    NETWORK_SPEC="user,id=p2knet,restrict=on"
+    if [[ -n "$HTTP_PORT" ]]; then
+      NETWORK_SPEC+=",hostfwd=tcp:127.0.0.1:${HTTP_PORT}-10.0.2.15:80"
+    fi
+    echo "[run-qemu] network: isolated SMC8416T at 10.0.2.0/24"
+    if [[ -n "$HTTP_PORT" ]]; then
+      echo "[run-qemu] network: http://127.0.0.1:${HTTP_PORT}/ → 10.0.2.15:80"
+      echo "[run-qemu] network: guest requires 10.0.2.15/24, gateway 10.0.2.2 and HTTP enabled"
+    fi
   fi
   ARGS+=( -netdev "$NETWORK_SPEC" -device p2k-smc8416,netdev=p2knet )
-  echo "[run-qemu] network: isolated SMC8416T at 10.0.2.0/24"
-  if [[ -n "$HTTP_PORT" ]]; then
-    echo "[run-qemu] network: http://127.0.0.1:${HTTP_PORT}/ → 10.0.2.15:80"
-  fi
 fi
 
 # --- TCG smoke-test escape hatch -------------------------------------------
