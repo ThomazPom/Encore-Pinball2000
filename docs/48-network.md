@@ -57,17 +57,20 @@ Advanced installations can place XINA directly on a real network:
 scripts/run-qemu.sh --network-bridge br0
 ```
 
-`br0` must already be a Linux bridge and QEMU's bridge helper must permit the
-current user to attach to it. Encore deliberately does not create the bridge,
-change NetworkManager/systemd-networkd configuration, or grant bridge-helper
-permissions. Wi-Fi interfaces also commonly cannot provide a transparent
-Ethernet bridge.
+`br0` must already be a Linux bridge. During its normal root preparation phase,
+the runner creates the persistent `encore-p2k0` TAP, assigns it to the selected
+runtime user, and attaches it to that bridge. QEMU then opens the TAP as that
+unprivileged user. This does not depend on a distribution QEMU package,
+`qemu-bridge-helper`, setuid programs, or extra capabilities on the bundled
+binary.
 
-The runner locates the distribution helper in the conventional
-`/usr/lib/qemu`, `/usr/libexec/qemu`, or `/usr/local/libexec/qemu` locations
-and passes its exact path to QEMU. The host administrator remains responsible
-for `/etc/qemu/bridge.conf` and for the helper's privilege policy. Encore does
-not make a packaged helper setuid or grant it `CAP_NET_ADMIN` automatically.
+The TAP carries an Encore marker. The uninstaller removes it only when that
+marker still matches; an unrelated interface is never adopted or deleted.
+For an installed cabinet profile, a small root `oneshot` service replays this
+same runner-owned preparation at boot, before the cabinet login path starts.
+Encore deliberately does not create the bridge or change NetworkManager or
+systemd-networkd configuration. Wi-Fi interfaces also commonly cannot provide
+a transparent Ethernet bridge.
 
 This mode has no QEMU port forwarding. Give the game a static address suitable
 for that LAN and connect to it directly. `--http-port` is rejected because it

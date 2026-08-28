@@ -4,6 +4,8 @@
 ENCORE_DIRECT_INPUT_RULE=/etc/udev/rules.d/70-encore-pinball2000-input.rules
 ENCORE_DIRECT_INPUT_MARKER='# encore-pinball2000 managed direct-console input'
 ENCORE_RUNTIME_APPROVED=${ENCORE_RUNTIME_APPROVED:-0}
+ENCORE_NETWORK_TAP=encore-p2k0
+ENCORE_NETWORK_TAP_MARKER='encore-pinball2000 managed bridge tap'
 
 encore_root_prepare_runtime() {
     local prepare_input="$1"
@@ -51,6 +53,64 @@ encore_prepare_parport_access() {
     }
     usermod -aG lp "$owner"
     echo "[run-qemu] added $owner to lp for automatic parallel-port access"
+}
+
+encore_bridge_tap_needs_root() {
+    local bridge="${P2K_NETWORK_BRIDGE:-}" owner="${ENCORE_RUNTIME_USER:-$(id -un)}" owner_uid
+    [[ -n "$bridge" ]] || return 1
+    command -v ip >/dev/null 2>&1 || return 0
+    [[ -d "/sys/class/net/$ENCORE_NETWORK_TAP" ]] || return 0
+    [[ "$(cat "/sys/class/net/$ENCORE_NETWORK_TAP/ifalias" 2>/dev/null || true)" == "$ENCORE_NETWORK_TAP_MARKER" ]] || return 0
+    [[ "$(basename "$(readlink -f "/sys/class/net/$ENCORE_NETWORK_TAP/master" 2>/dev/null || true)")" == "$bridge" ]] || return 0
+    owner_uid="$(id -u "$owner" 2>/dev/null)" || return 0
+    ip tuntap show dev "$ENCORE_NETWORK_TAP" 2>/dev/null |
+        grep -Eq "(^|[[:space:]])user[[:space:]]+($owner|$owner_uid)([[:space:]]|$)" || return 0
+    ip -o link show dev "$ENCORE_NETWORK_TAP" 2>/dev/null |
+        grep -q '<[^>]*UP[^>]*>' || return 0
+    return 1
+}
+
+encore_prepare_bridge_tap() {
+    local bridge="${P2K_NETWORK_BRIDGE:-}" owner="${ENCORE_RUNTIME_USER:-$(id -un)}" owner_uid
+    [[ -n "$bridge" ]] || return 0
+    [[ -d "/sys/class/net/$bridge/bridge" ]] || {
+        echo "[run-qemu] network bridge no longer exists: $bridge" >&2
+        return 2
+    }
+    command -v ip >/dev/null 2>&1 || {
+        echo "[run-qemu] iproute2 is required for bridge networking" >&2
+        return 2
+    }
+    id "$owner" >/dev/null 2>&1 || {
+        echo "[run-qemu] bridge TAP owner does not exist: $owner" >&2
+        return 2
+    }
+    owner_uid="$(id -u "$owner")"
+    if [[ -d "/sys/class/net/$ENCORE_NETWORK_TAP" ]]; then
+        [[ "$(cat "/sys/class/net/$ENCORE_NETWORK_TAP/ifalias" 2>/dev/null || true)" == "$ENCORE_NETWORK_TAP_MARKER" ]] || {
+            echo "[run-qemu] refusing unrelated interface $ENCORE_NETWORK_TAP" >&2
+            return 3
+        }
+        if ! ip tuntap show dev "$ENCORE_NETWORK_TAP" 2>/dev/null |
+             grep -Eq "(^|[[:space:]])user[[:space:]]+($owner|$owner_uid)([[:space:]]|$)"; then
+            [[ $EUID -eq 0 ]] || return 2
+            ip link set dev "$ENCORE_NETWORK_TAP" nomaster 2>/dev/null || true
+            ip tuntap del dev "$ENCORE_NETWORK_TAP" mode tap
+        fi
+    fi
+    if [[ ! -d "/sys/class/net/$ENCORE_NETWORK_TAP" ]]; then
+        [[ $EUID -eq 0 ]] || return 2
+        ip tuntap add dev "$ENCORE_NETWORK_TAP" mode tap user "$owner"
+        ip link set dev "$ENCORE_NETWORK_TAP" alias "$ENCORE_NETWORK_TAP_MARKER"
+        echo "[run-qemu] created managed TAP $ENCORE_NETWORK_TAP for $owner"
+    fi
+    if encore_bridge_tap_needs_root; then
+        [[ $EUID -eq 0 ]] || return 2
+        ip link set dev "$ENCORE_NETWORK_TAP" nomaster 2>/dev/null || true
+        ip link set dev "$ENCORE_NETWORK_TAP" master "$bridge"
+        ip link set dev "$ENCORE_NETWORK_TAP" up
+    fi
+    echo "[run-qemu] bridge TAP: $ENCORE_NETWORK_TAP -> $bridge (owner $owner)"
 }
 
 encore_runtime_packages() {
@@ -159,6 +219,7 @@ encore_run_as_owner() {
 encore_runtime_needs_root_phase() {
     local backend="$1" package metadata
     local -a packages=(git python3) backend_packages=() qemu_packages=()
+    [[ -z "${P2K_NETWORK_BRIDGE:-}" ]] || packages+=(iproute2)
     [[ "$backend" != direct-console ]] ||
         grep -qxF "$ENCORE_DIRECT_INPUT_MARKER" "$ENCORE_DIRECT_INPUT_RULE" \
             2>/dev/null || return 0
@@ -184,16 +245,18 @@ encore_runtime_needs_root_phase() {
         dpkg-query -W -f='${Status}' "$package" 2>/dev/null |
             grep -q '^install ok installed$' || return 0
     done
+    encore_bridge_tap_needs_root && return 0
     return 1
 }
 
 encore_runtime_root_phase() {
-    local root="$1" backend="$2" owner="$3" owner_home="$4" qemu_bin="$5" lpt_device="${6:-auto}"
+    local root="$1" backend="$2" owner="$3" owner_home="$4" qemu_bin="$5" lpt_device="${6:-auto}" network_bridge="${7:-}"
     ROOT="$root"
     HOME="$owner_home"
     ENCORE_RUNTIME_USER="$owner"
     QEMU_BIN="$qemu_bin"
     export P2K_LPT_DEVICE="$lpt_device"
+    export P2K_NETWORK_BRIDGE="$network_bridge"
     encore_prepare_runtime "$backend"
 }
 
@@ -249,6 +312,7 @@ encore_acquire_qemu() {
 encore_prepare_runtime() {
     local backend="${1:-}" driver="" qemu_path metadata
     local -a packages=(git python3) backend_packages=() qemu_packages=()
+    [[ -z "${P2K_NETWORK_BRIDGE:-}" ]] || packages+=(iproute2)
     if [[ -n "$backend" ]]; then
         mapfile -t backend_packages < <(encore_runtime_packages "$backend")
         packages+=("${backend_packages[@]}")
@@ -273,6 +337,7 @@ encore_prepare_runtime() {
     fi
     encore_offer_runtime_packages "${packages[@]}"
     encore_prepare_parport_access
+    encore_prepare_bridge_tap
     encore_acquire_qemu "$ROOT"
 
     qemu_path="$QEMU_BIN"
@@ -315,6 +380,17 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
             [[ $EUID -eq 0 ]] || exit 2
             shift
             encore_runtime_root_phase "$@"
+            ;;
+        --network-tap-root)
+            [[ $EUID -eq 0 && $# -eq 3 ]] || exit 2
+            ENCORE_RUNTIME_USER="$2"
+            P2K_NETWORK_BRIDGE="$3"
+            export ENCORE_RUNTIME_USER P2K_NETWORK_BRIDGE
+            for _ in {1..300}; do
+                [[ -d "/sys/class/net/$P2K_NETWORK_BRIDGE/bridge" ]] && break
+                sleep 0.1
+            done
+            encore_prepare_bridge_tap
             ;;
         *) exit 2 ;;
     esac
