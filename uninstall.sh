@@ -10,9 +10,12 @@ MAINTENANCE_DROPIN=/run/systemd/system/getty@tty1.service.d/50-encore-maintenanc
 GRUB_DROPIN=/etc/default/grub.d/99-encore-pinball2000.cfg
 GRUB_QUIET_SCRIPT=/etc/grub.d/01_encore_pinball2000_quiet
 ROOT_SERVICE=/etc/systemd/system/encore-pinball2000-root.service
+NETWORK_TAP_SERVICE=/etc/systemd/system/encore-pinball2000-network.service
 CABINET_SHELL=/usr/local/libexec/encore-pinball2000-session
 DIRECT_INPUT_RULE=/etc/udev/rules.d/70-encore-pinball2000-input.rules
 CABINET_LOCK=/var/lib/pinball2000-cabinet.lock
+NETWORK_TAP=encore-p2k0
+NETWORK_TAP_MARKER='encore-pinball2000 managed bridge tap'
 
 if [[ ${EUID} -ne 0 ]]; then
     for esc in run0 sudo pkexec; do
@@ -44,6 +47,9 @@ mode=""
 systemctl stop encore-pinball2000-root.service 2>/dev/null || true
 systemctl disable encore-pinball2000-root.service 2>/dev/null || true
 rm -f "$ROOT_SERVICE"
+systemctl stop encore-pinball2000-network.service 2>/dev/null || true
+systemctl disable encore-pinball2000-network.service 2>/dev/null || true
+rm -f "$NETWORK_TAP_SERVICE"
 if [[ -s "$STATE/user-service-path" ]]; then
     user_service="$(sed -n '1p' "$STATE/user-service-path")"
     case "$user_service" in
@@ -198,6 +204,11 @@ if [[ -f "$DIRECT_INPUT_RULE" ]] &&
         udevadm control --reload
         udevadm trigger --subsystem-match=input --action=change
     fi
+fi
+if command -v ip >/dev/null 2>&1 &&
+   [[ -d "/sys/class/net/$NETWORK_TAP" ]] &&
+   [[ "$(cat "/sys/class/net/$NETWORK_TAP/ifalias" 2>/dev/null || true)" == "$NETWORK_TAP_MARKER" ]]; then
+    ip tuntap del dev "$NETWORK_TAP" mode tap
 fi
 rm -f "$STATE/install-mode" "$STATE/previous-default-target" \
       "$STATE/getty-tty1-was-enabled" "$STATE/hushlogin-created" \

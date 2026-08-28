@@ -420,9 +420,9 @@ NETWORK
                             server at 10.0.2.15:80. Implies --network. The
                             listener is never exposed beyond localhost.
   --network-bridge <name>   Attach the emulated card to an existing Linux
-                            bridge. Advanced and intentionally incompatible
-                            with --http-port; Encore never creates or changes
-                            the host bridge.
+                            bridge through an Encore-managed TAP. The runner's
+                            root phase creates/attaches the TAP; QEMU remains
+                            unprivileged. Incompatible with --http-port.
 
 CONSOLE / DIAGNOSTICS
   --bench                   Run an isolated self-diagnostic using the normal
@@ -840,6 +840,7 @@ if [[ -n "$NETWORK_BRIDGE" ]]; then
     exit 2
   }
 fi
+export P2K_NETWORK_BRIDGE="$NETWORK_BRIDGE"
 if [[ "$LPT_DEVICE" == none && $LPT_IOPORT_SET -eq 1 ]]; then
   echo "[run-qemu] --lpt-ioport has no meaning with --lpt-device none" >&2
   exit 2
@@ -915,15 +916,15 @@ if [[ $EUID -ne 0 ]] && encore_runtime_needs_root_phase "$RUNTIME_BACKEND"; then
     run0 --description="Encore runtime preparation" -- \
       bash "$ROOT/scripts/internal/runtime-packages.sh" \
       --runtime-root-phase "$ROOT" "$RUNTIME_BACKEND" "$runtime_owner" \
-      "$HOME" "$QEMU_BIN" "$LPT_DEVICE"
+      "$HOME" "$QEMU_BIN" "$LPT_DEVICE" "$NETWORK_BRIDGE"
   elif command -v sudo >/dev/null 2>&1; then
     sudo bash "$ROOT/scripts/internal/runtime-packages.sh" \
       --runtime-root-phase "$ROOT" "$RUNTIME_BACKEND" "$runtime_owner" \
-      "$HOME" "$QEMU_BIN" "$LPT_DEVICE"
+      "$HOME" "$QEMU_BIN" "$LPT_DEVICE" "$NETWORK_BRIDGE"
   elif command -v pkexec >/dev/null 2>&1; then
     pkexec bash "$ROOT/scripts/internal/runtime-packages.sh" \
       --runtime-root-phase "$ROOT" "$RUNTIME_BACKEND" "$runtime_owner" \
-      "$HOME" "$QEMU_BIN" "$LPT_DEVICE"
+      "$HOME" "$QEMU_BIN" "$LPT_DEVICE" "$NETWORK_BRIDGE"
   else
     echo "[run-qemu] runtime preparation needs root; no supported privilege helper found" >&2
     exit 2
@@ -1458,21 +1459,8 @@ fi
 
 if [[ $NETWORK -eq 1 ]]; then
   if [[ -n "$NETWORK_BRIDGE" ]]; then
-    BRIDGE_HELPER=""
-    for helper in /usr/lib/qemu/qemu-bridge-helper \
-                  /usr/libexec/qemu-bridge-helper \
-                  /usr/local/libexec/qemu-bridge-helper; do
-      [[ -x "$helper" ]] || continue
-      BRIDGE_HELPER="$helper"
-      break
-    done
-    [[ -n "$BRIDGE_HELPER" ]] || {
-      echo "[run-qemu] network bridge requires qemu-bridge-helper" >&2
-      exit 2
-    }
-    NETWORK_SPEC="bridge,id=p2knet,br=$NETWORK_BRIDGE,helper=$BRIDGE_HELPER"
-    echo "[run-qemu] network: SMC8416T attached to host bridge $NETWORK_BRIDGE"
-    echo "[run-qemu] network: helper=$BRIDGE_HELPER (host policy must allow $NETWORK_BRIDGE)"
+    NETWORK_SPEC="tap,id=p2knet,ifname=$ENCORE_NETWORK_TAP,script=no,downscript=no"
+    echo "[run-qemu] network: SMC8416T via $ENCORE_NETWORK_TAP -> $NETWORK_BRIDGE"
     echo "[run-qemu] network: WARNING: XINA is directly reachable from that network"
   else
     NETWORK_SPEC="user,id=p2knet,restrict=on"

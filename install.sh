@@ -11,6 +11,7 @@ MAINTENANCE_DROPIN=/run/systemd/system/getty@tty1.service.d/50-encore-maintenanc
 GRUB_DROPIN=/etc/default/grub.d/99-encore-pinball2000.cfg
 GRUB_QUIET_SCRIPT=/etc/grub.d/01_encore_pinball2000_quiet
 ROOT_SERVICE=/etc/systemd/system/encore-pinball2000-root.service
+NETWORK_TAP_SERVICE=/etc/systemd/system/encore-pinball2000-network.service
 CABINET_SHELL=/usr/local/libexec/encore-pinball2000-session
 CABINET_LOCK=/var/lib/pinball2000-cabinet.lock
 
@@ -182,7 +183,8 @@ if ask "Enable the emulated network card?" N; then
             ;;
         bridge)
             echo "Advanced: XINA will be directly reachable from the selected LAN."
-            echo "Encore will use an existing Linux bridge and will not configure it."
+            echo "Encore will create a managed TAP and attach it to an existing Linux bridge."
+            echo "The existing bridge itself is never created or reconfigured."
             read -r -p "Existing Linux bridge name: " network_bridge
             [[ "$network_bridge" =~ ^[A-Za-z0-9_.-]{1,15}$ &&
                -d "/sys/class/net/$network_bridge/bridge" ]] || {
@@ -570,7 +572,31 @@ else
     rm -f "$ROOT_SERVICE"
 fi
 
+if [[ -n "$network_bridge" ]]; then
+    cat > "$NETWORK_TAP_SERVICE" <<EOF
+[Unit]
+Description=Encore Pinball 2000 managed bridge TAP
+After=NetworkManager.service systemd-networkd.service networking.service
+Before=display-manager.service getty@tty1.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash "$ROOT/scripts/internal/runtime-packages.sh" --network-tap-root "$session_user" "$network_bridge"
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    chmod 0644 "$NETWORK_TAP_SERVICE"
+else
+    systemctl disable encore-pinball2000-network.service 2>/dev/null || true
+    rm -f "$NETWORK_TAP_SERVICE"
+fi
+
 systemctl daemon-reload
+if [[ -n "$network_bridge" ]]; then
+    systemctl enable encore-pinball2000-network.service
+fi
 if [[ "$run_as_root" -eq 1 ]]; then
     systemctl enable encore-pinball2000-root.service
 fi

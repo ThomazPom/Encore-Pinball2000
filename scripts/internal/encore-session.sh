@@ -21,6 +21,7 @@ if [[ "${1:-}" == --root-service ]]; then
     trap cleanup_root_service EXIT INT TERM
     export HOME="$(getent passwd "$SESSION_USER" | cut -d: -f6)"
     export QEMU_BIN
+    export ENCORE_RUNTIME_USER="$SESSION_USER"
     export XDG_RUNTIME_DIR="$runtime_dir"
     export DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_dir/bus"
     [[ -z "$wayland_display" ]] || export WAYLAND_DISPLAY="$wayland_display"
