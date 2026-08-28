@@ -41,6 +41,7 @@ result, or test a cabinet.
 - [Known limitations](35-known-limitations.md)
 - [Roadmap](36-roadmap.md)
 - [Real LPT passthrough](46-real-lpt-passthrough.md)
+- [Optional network card](48-network.md)
 
 ## Non-roadmap notes
 

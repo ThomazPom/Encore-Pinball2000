@@ -296,6 +296,7 @@ config PINBALL2000
     select I8254
     select MC146818RTC
     select SERIAL_ISA
+    select NE2000_ISA
 KCONFIG_EOF
 if cmp -s "$KCONFIG_NEW" "$KCONFIG"; then
   rm -f "$KCONFIG_NEW"

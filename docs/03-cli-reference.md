@@ -101,6 +101,8 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--lpt-ioport` | address | `0x378` | Set the guest-visible LPT address independently of its emulated or physical host backend. XINA normally probes `0x3bc`, `0x378`, and `0x278`; the binary warns, but does not refuse, for another address. | `scripts/run-qemu.sh --lpt-device /dev/parport0 --lpt-ioport 0x3bc` |
 
 | `--lpt-trace` | file | off | Exports `P2K_LPT_TRACE_FILE`; appends LPT read/write trace lines. Parent directory must exist. | `scripts/run-qemu.sh --lpt-trace ./logs/lpt.txt` |
+| `--network` | — | off | Adds the SMC8416T-compatible card on an isolated QEMU user network. XINA and the game retain control of IP configuration and network startup. | `scripts/run-qemu.sh --network` |
+| `--http-port` | TCP port | off | Forwards `127.0.0.1:<port>` to the game's HTTP server at `10.0.2.15:80`; implies `--network` and never binds a public host interface. | `scripts/run-qemu.sh --http-port 8080` |
 
 | `--tcg-only` | — | off | Smoke-tests host QEMU with `-M isapc`; does not boot Pinball 2000. | `scripts/run-qemu.sh --tcg-only` |
 | `--` | QEMU args | none | Forwards remaining args verbatim to QEMU. | `scripts/run-qemu.sh -- -S` |

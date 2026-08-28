@@ -12,9 +12,9 @@ encore_snap_*.png
 screen_captures/
 *.log
 
-# Community / post-Williams update bundles (mypinballs.com).
-# Encore supports them at runtime but does not redistribute them —
-# see docs/47-community-updates.md.
+# myPinballs community update bundles only.
+# Encore supports them at runtime but does not redistribute them. Other recovered
+# updates may be tracked; see docs/47-community-updates.md.
 updates/pin2000_50069_0200_*/
 updates/pin2000_50069_0201_*/
 updates/pin2000_50069_0210_*/
@@ -27,7 +27,7 @@ updates/pin2000_50070_0223_*/
 updates/pin2000_50070_0224_*/
 updates/pin2000_50070_0250_*/
 updates/pin2000_50070_0260_*/
-# Keep downloaded community update archives local as well. These files are
+# Keep the matching downloaded myPinballs archives local as well. These files are
 # supported test inputs, but must never be committed or redistributed.
 updates/exe-sources/pin2000_50069_0200_*.exe
 updates/exe-sources/pin2000_50069_0201_*.exe

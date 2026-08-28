@@ -78,6 +78,8 @@ SDL_VIDEO_DRIVER_REQUEST=""
 PREFLIGHT=0
 RUNTIME_BACKEND=""
 BACKEND_WRAPPER=""
+NETWORK=0
+HTTP_PORT=""
 
 # --- QEMU binary lookup -----------------------------------------------------
 resolve_qemu_bin() {
@@ -409,6 +411,14 @@ AUDIO
     These figures are a comparison example, not portable performance promises;
     rerun the forensic full benchmark when choosing for another host.
 
+NETWORK
+  --network                 Add the emulated SMC8416T Ethernet card on an
+                            isolated QEMU user network. XINA keeps ownership
+                            of IP configuration and network startup.
+  --http-port <port>        Forward 127.0.0.1:<port> to the guest's HTTP
+                            server at 10.0.2.15:80. Implies --network. The
+                            listener is never exposed beyond localhost.
+
 CONSOLE / DIAGNOSTICS
   --bench                   Run an isolated self-diagnostic using the normal
                             windowed display and audio defaults. Pass 1 installs
@@ -669,6 +679,16 @@ while [[ $# -gt 0 ]]; do
         *) shift 2 ;;
       esac ;;
     --serial)          SERIAL_STDIO=1; shift ;;
+    --network)         NETWORK=1; shift ;;
+    --http-port)
+      if [[ -z "${2:-}" || ! "$2" =~ ^[0-9]+$ ]] ||
+         (( 10#$2 < 1 || 10#$2 > 65535 )); then
+        echo "[run-qemu] --http-port: expected a TCP port from 1 to 65535" >&2
+        exit 2
+      fi
+      HTTP_PORT="$((10#$2))"
+      NETWORK=1
+      shift 2 ;;
     --script|--console-script)
       [[ -f "${2:-}" ]] || { echo "[run-qemu] $1: '${2:-}' is not a file" >&2; exit 2; }
       CONSOLE_SCRIPT="$(realpath "$2")"; shift 2 ;;
@@ -1411,6 +1431,18 @@ fi
 
 if [[ -n "$AUDIO" && "$AUDIO" != "none" ]]; then
   ARGS+=( -audio "driver=$AUDIO" )
+fi
+
+if [[ $NETWORK -eq 1 ]]; then
+  NETWORK_SPEC="user,id=p2knet,restrict=on"
+  if [[ -n "$HTTP_PORT" ]]; then
+    NETWORK_SPEC+=",hostfwd=tcp:127.0.0.1:${HTTP_PORT}-10.0.2.15:80"
+  fi
+  ARGS+=( -netdev "$NETWORK_SPEC" -device p2k-smc8416,netdev=p2knet )
+  echo "[run-qemu] network: isolated SMC8416T at 10.0.2.0/24"
+  if [[ -n "$HTTP_PORT" ]]; then
+    echo "[run-qemu] network: http://127.0.0.1:${HTTP_PORT}/ → 10.0.2.15:80"
+  fi
 fi
 
 # --- TCG smoke-test escape hatch -------------------------------------------
