@@ -80,9 +80,15 @@ RUNTIME_BACKEND=""
 BACKEND_WRAPPER=""
 NETWORK=0
 NETWORK_NAT=0
+NETWORK_PASST=0
+NETWORK_MIRROR=0
+NETWORK_AUTO=0
 HTTP_PORT=""
 NETWORK_BRIDGE=""
 NETWORK_FORWARDS=()
+AUTO_HOSTFWD_SPEC=""
+PASST_DIR=""
+PASST_PID=""
 
 # --- QEMU binary lookup -----------------------------------------------------
 resolve_qemu_bin() {
@@ -421,10 +427,19 @@ NETWORK
   --network-nat             Add the card on QEMU's user-mode NAT. XINA can
                             reach the host network and Internet without root,
                             a TAP, Docker, or host firewall changes.
+  --network-passt           Add the card through the unprivileged passt daemon.
+                            XINA can share the host's address, routes and DNS
+                            while passt translates traffic through host sockets.
+  --network-mirror          Experimental: mirror the host IPv4 subnet inside
+                            QEMU/libslirp while retaining QEMU's rootless NAT.
+  --network-auto            Rootless NAT independent of XINA's configured IP,
+                            mask and gateway. No guest reconfiguration needed.
   --expose-services         Enable NAT and publish the built-in HTTP service as
-                            host TCP 8080 -> guest TCP 80. Telnet is excluded;
-                            expose it explicitly with --forward 2323:23.
-  --forward <host:guest>    With --network-nat, publish a guest TCP port on
+                            host TCP 8080 -> guest TCP 80. Uses passt when
+                            selected, otherwise NAT. Telnet is excluded; expose
+                            it explicitly with --forward 2323:23.
+  --forward <host:guest>    With --network-nat or --network-passt, publish a
+                            guest TCP port on
                             every host interface. Repeatable. This deliberately
                             exposes the old guest stack to the host network.
   --http-port <port>        Forward 127.0.0.1:<port> to the guest's HTTP
@@ -697,6 +712,9 @@ while [[ $# -gt 0 ]]; do
     --serial)          SERIAL_STDIO=1; shift ;;
     --network)         NETWORK=1; shift ;;
     --network-nat)     NETWORK=1; NETWORK_NAT=1; shift ;;
+    --network-passt)   NETWORK=1; NETWORK_PASST=1; shift ;;
+    --network-mirror)  NETWORK=1; NETWORK_NAT=1; NETWORK_MIRROR=1; shift ;;
+    --network-auto)    NETWORK=1; NETWORK_NAT=1; NETWORK_AUTO=1; shift ;;
     --expose-services)
       for forward in "${NETWORK_FORWARDS[@]}"; do
         [[ "${forward%%:*}" != 8080 ]] || {
@@ -706,7 +724,6 @@ while [[ $# -gt 0 ]]; do
       done
       NETWORK_FORWARDS+=("8080:80")
       NETWORK=1
-      NETWORK_NAT=1
       shift ;;
     --forward)
       [[ "${2:-}" =~ ^([0-9]+):([0-9]+)$ ]] || {
@@ -728,7 +745,6 @@ while [[ $# -gt 0 ]]; do
       done
       NETWORK_FORWARDS+=("$host_port:$guest_port")
       NETWORK=1
-      NETWORK_NAT=1
       shift 2 ;;
     --network-bridge)
       [[ -n "${2:-}" && "$2" =~ ^[A-Za-z0-9_.-]{1,15}$ ]] || {
@@ -884,7 +900,8 @@ if [[ -n "$HTTP_PORT" ]]; then
   done
 fi
 if [[ -n "$NETWORK_BRIDGE" ]]; then
-  [[ -z "$HTTP_PORT" && ${#NETWORK_FORWARDS[@]} -eq 0 && $NETWORK_NAT -eq 0 ]] || {
+  [[ -z "$HTTP_PORT" && ${#NETWORK_FORWARDS[@]} -eq 0 &&
+     $NETWORK_NAT -eq 0 && $NETWORK_PASST -eq 0 ]] || {
     echo "[run-qemu] NAT/port-forwarding options cannot be combined with --network-bridge" >&2
     exit 2
   }
@@ -893,7 +910,23 @@ if [[ -n "$NETWORK_BRIDGE" ]]; then
     exit 2
   }
 fi
+if [[ $NETWORK_PASST -eq 1 && $NETWORK_NAT -eq 1 ]]; then
+  echo "[run-qemu] --network-passt and --network-nat are mutually exclusive" >&2
+  exit 2
+fi
+if [[ $NETWORK_AUTO -eq 1 &&
+      ( $NETWORK_MIRROR -eq 1 || $NETWORK_PASST -eq 1 || -n "$NETWORK_BRIDGE" ) ]]; then
+  echo "[run-qemu] --network-auto cannot be combined with another network transport" >&2
+  exit 2
+fi
+if [[ ${#NETWORK_FORWARDS[@]} -gt 0 && $NETWORK_PASST -eq 0 &&
+      -z "$NETWORK_BRIDGE" ]]; then
+  NETWORK_NAT=1
+fi
 export P2K_NETWORK_BRIDGE="$NETWORK_BRIDGE"
+export P2K_NETWORK_PASST="$NETWORK_PASST"
+export P2K_NETWORK_MIRROR="$NETWORK_MIRROR"
+export P2K_NETWORK_AUTO="$NETWORK_AUTO"
 if [[ "$LPT_DEVICE" == none && $LPT_IOPORT_SET -eq 1 ]]; then
   echo "[run-qemu] --lpt-ioport has no meaning with --lpt-device none" >&2
   exit 2
@@ -969,15 +1002,15 @@ if [[ $EUID -ne 0 ]] && encore_runtime_needs_root_phase "$RUNTIME_BACKEND"; then
     run0 --description="Encore runtime preparation" -- \
       bash "$ROOT/scripts/internal/runtime-packages.sh" \
       --runtime-root-phase "$ROOT" "$RUNTIME_BACKEND" "$runtime_owner" \
-      "$HOME" "$QEMU_BIN" "$LPT_DEVICE" "$NETWORK_BRIDGE"
+      "$HOME" "$QEMU_BIN" "$LPT_DEVICE" "$NETWORK_BRIDGE" "$NETWORK_PASST" "$NETWORK_MIRROR"
   elif command -v sudo >/dev/null 2>&1; then
     sudo bash "$ROOT/scripts/internal/runtime-packages.sh" \
       --runtime-root-phase "$ROOT" "$RUNTIME_BACKEND" "$runtime_owner" \
-      "$HOME" "$QEMU_BIN" "$LPT_DEVICE" "$NETWORK_BRIDGE"
+      "$HOME" "$QEMU_BIN" "$LPT_DEVICE" "$NETWORK_BRIDGE" "$NETWORK_PASST" "$NETWORK_MIRROR"
   elif command -v pkexec >/dev/null 2>&1; then
     pkexec bash "$ROOT/scripts/internal/runtime-packages.sh" \
       --runtime-root-phase "$ROOT" "$RUNTIME_BACKEND" "$runtime_owner" \
-      "$HOME" "$QEMU_BIN" "$LPT_DEVICE" "$NETWORK_BRIDGE"
+      "$HOME" "$QEMU_BIN" "$LPT_DEVICE" "$NETWORK_BRIDGE" "$NETWORK_PASST" "$NETWORK_MIRROR"
   else
     echo "[run-qemu] runtime preparation needs root; no supported privilege helper found" >&2
     exit 2
@@ -1529,29 +1562,112 @@ if [[ $NETWORK -eq 1 ]]; then
     NETWORK_SPEC="tap,id=p2knet,ifname=$ENCORE_NETWORK_TAP,script=no,downscript=no"
     echo "[run-qemu] network: SMC8416T via $ENCORE_NETWORK_TAP -> $NETWORK_BRIDGE"
     echo "[run-qemu] network: WARNING: XINA is directly reachable from that network"
+  elif [[ $NETWORK_PASST -eq 1 ]]; then
+    # passt enters its own mount/user sandbox before binding. A private /tmp
+    # directory remains reachable there; some /run/user mounts do not.
+    PASST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/encore-passt.XXXXXX")"
+    PASST_SOCKET="$PASST_DIR/network.sock"
+    PASST_PID_FILE="$PASST_DIR/passt.pid"
+    trap '[[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"; [[ -n "$PASST_DIR" ]] && rm -rf "$PASST_DIR"' EXIT INT TERM
+    PASST_TCP_SPEC=""
+    PASST_ARGS=(--socket "$PASST_SOCKET" --pid "$PASST_PID_FILE"
+      --runas "$(id -u):$(id -g)" --one-off --ipv4-only)
+    for forward in "${NETWORK_FORWARDS[@]}"; do
+      host_port="${forward%%:*}"
+      guest_port="${forward##*:}"
+      [[ -z "$PASST_TCP_SPEC" ]] || PASST_TCP_SPEC+=","
+      PASST_TCP_SPEC+="0.0.0.0/${host_port}:${guest_port}"
+      echo "[run-qemu] network: WARNING: host TCP $host_port exposes XINA TCP $guest_port"
+    done
+    if [[ -n "$HTTP_PORT" ]]; then
+      [[ -z "$PASST_TCP_SPEC" ]] || PASST_TCP_SPEC+=","
+      PASST_TCP_SPEC+="127.0.0.1/${HTTP_PORT}:80"
+      echo "[run-qemu] network: http://127.0.0.1:${HTTP_PORT}/ -> XINA TCP 80"
+    fi
+    PASST_ARGS+=(--tcp-ports "${PASST_TCP_SPEC:-none}")
+    passt "${PASST_ARGS[@]}"
+    for _ in {1..50}; do
+      [[ -S "$PASST_SOCKET" ]] && break
+      sleep 0.02
+    done
+    [[ -S "$PASST_SOCKET" ]] || {
+      echo "[run-qemu] passt failed to create its QEMU socket" >&2
+      rm -rf "$PASST_DIR"
+      PASST_DIR=""
+      exit 2
+    }
+    PASST_PID="$(cat "$PASST_PID_FILE")"
+    NETWORK_SPEC="stream,id=p2knet,server=off,addr.type=unix,addr.path=$PASST_SOCKET"
+    echo "[run-qemu] network: unprivileged passt using the host's IPv4 topology"
   else
     if [[ $NETWORK_NAT -eq 1 ]]; then
-      NETWORK_SPEC="user,id=p2knet"
-      echo "[run-qemu] network: user-mode NAT at 10.0.2.0/24"
+      if [[ $NETWORK_MIRROR -eq 1 ]]; then
+        MIRROR_ROUTE="$(ip -4 route show default | head -n1)"
+        MIRROR_GATEWAY="$(awk '{for (i=1;i<=NF;i++) if ($i=="via") print $(i+1)}' <<<"$MIRROR_ROUTE")"
+        MIRROR_IFACE="$(awk '{for (i=1;i<=NF;i++) if ($i=="dev") print $(i+1)}' <<<"$MIRROR_ROUTE")"
+        MIRROR_CIDR="$(ip -o -4 addr show dev "$MIRROR_IFACE" scope global | awk 'NR==1 {print $4}')"
+        [[ -n "$MIRROR_GATEWAY" && -n "$MIRROR_CIDR" ]] || {
+          echo "[run-qemu] --network-mirror: no usable IPv4 default route" >&2
+          exit 2
+        }
+        read -r MIRROR_NETWORK MIRROR_ADDRESS < <(python3 - "$MIRROR_CIDR" <<'PY'
+import ipaddress, sys
+i = ipaddress.ip_interface(sys.argv[1])
+print(i.network, i.ip)
+PY
+)
+        NETWORK_SPEC="user,id=p2knet,net=$MIRROR_NETWORK,host=$MIRROR_GATEWAY"
+        GUEST_NETWORK_ADDR="$MIRROR_ADDRESS"
+        echo "[run-qemu] network: mirrored Slirp $MIRROR_NETWORK via $MIRROR_GATEWAY on $MIRROR_IFACE"
+      else
+        if [[ $NETWORK_AUTO -eq 1 ]]; then
+          NETWORK_SPEC="user,id=p2knet"
+        else
+          NETWORK_SPEC="user,id=p2knet"
+        fi
+        GUEST_NETWORK_ADDR="10.0.2.15"
+        if [[ $NETWORK_AUTO -eq 1 ]]; then
+          echo "[run-qemu] network: configuration-independent user-mode NAT"
+        else
+          echo "[run-qemu] network: user-mode NAT at 10.0.2.0/24"
+        fi
+      fi
     else
       NETWORK_SPEC="user,id=p2knet,restrict=on"
+      GUEST_NETWORK_ADDR="10.0.2.15"
       echo "[run-qemu] network: isolated SMC8416T at 10.0.2.0/24"
     fi
     if [[ -n "$HTTP_PORT" ]]; then
-      NETWORK_SPEC+=",hostfwd=tcp:127.0.0.1:${HTTP_PORT}-10.0.2.15:80"
+      if [[ $NETWORK_AUTO -eq 1 ]]; then
+        AUTO_HOSTFWD_SPEC="127.0.0.1:${HTTP_PORT}:80"
+      else
+        NETWORK_SPEC+=",hostfwd=tcp:127.0.0.1:${HTTP_PORT}-${GUEST_NETWORK_ADDR}:80"
+      fi
     fi
     for forward in "${NETWORK_FORWARDS[@]}"; do
       host_port="${forward%%:*}"
       guest_port="${forward##*:}"
-      NETWORK_SPEC+=",hostfwd=tcp:0.0.0.0:${host_port}-10.0.2.15:${guest_port}"
+      if [[ $NETWORK_AUTO -eq 1 ]]; then
+        [[ -z "$AUTO_HOSTFWD_SPEC" ]] || AUTO_HOSTFWD_SPEC+="|"
+        AUTO_HOSTFWD_SPEC+="0.0.0.0:${host_port}:${guest_port}"
+      else
+        NETWORK_SPEC+=",hostfwd=tcp:0.0.0.0:${host_port}-${GUEST_NETWORK_ADDR}:${guest_port}"
+      fi
       echo "[run-qemu] network: WARNING: host TCP $host_port exposes XINA TCP $guest_port"
     done
     if [[ -n "$HTTP_PORT" ]]; then
-      echo "[run-qemu] network: http://127.0.0.1:${HTTP_PORT}/ → 10.0.2.15:80"
-      echo "[run-qemu] network: guest requires 10.0.2.15/24, gateway 10.0.2.2 and HTTP enabled"
+      echo "[run-qemu] network: http://127.0.0.1:${HTTP_PORT}/ → ${GUEST_NETWORK_ADDR}:80"
     fi
   fi
-  ARGS+=( -netdev "$NETWORK_SPEC" -device p2k-smc8416,netdev=p2knet )
+  if [[ $NETWORK_AUTO -eq 1 ]]; then
+    AUTO_DEVICE="p2k-smc8416,netdev=p2knet,proxy-arp=on,proxy-arp-all=on"
+    [[ -z "$AUTO_HOSTFWD_SPEC" ]] || AUTO_DEVICE+=",auto-hostfwd=$AUTO_HOSTFWD_SPEC"
+    ARGS+=( -netdev "$NETWORK_SPEC" -device "$AUTO_DEVICE" )
+  elif [[ $NETWORK_MIRROR -eq 1 ]]; then
+    ARGS+=( -netdev "$NETWORK_SPEC" -device p2k-smc8416,netdev=p2knet,proxy-arp=on )
+  else
+    ARGS+=( -netdev "$NETWORK_SPEC" -device p2k-smc8416,netdev=p2knet )
+  fi
 fi
 
 # --- TCG smoke-test escape hatch -------------------------------------------
@@ -1580,7 +1696,7 @@ if [[ $SERIAL_STDIO -eq 1 ]]; then
   # as the user's shell expects. nc exits → QEMU is killed.
   "$QEMU_BIN" "${ARGS[@]}" "${EXTRA[@]}" </dev/null >/dev/null 2>&1 &
   QEMU_PID=$!
-  trap '[[ -n "${QEMU_PID:-}" ]] && kill "$QEMU_PID" 2>/dev/null; [[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"' EXIT INT TERM
+  trap '[[ -n "${QEMU_PID:-}" ]] && kill "$QEMU_PID" 2>/dev/null; [[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"; [[ -n "$PASST_DIR" ]] && rm -rf "$PASST_DIR"' EXIT INT TERM
   # Wait for the TCP server to come up (QEMU takes ~1s to bind).
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     if (exec 3<>/dev/tcp/127.0.0.1/"$SERIAL_PORT") 2>/dev/null; then
@@ -1603,7 +1719,7 @@ fi
 
 "$QEMU_BIN" "${ARGS[@]}" "${EXTRA[@]}" &
 QEMU_PID=$!
-trap 'status=$?; if [[ -n "${QEMU_PID:-}" ]]; then kill "$QEMU_PID" 2>/dev/null; wait "$QEMU_PID" 2>/dev/null || true; fi; [[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"; [[ -n "$AUTOMATION_DIR" ]] && rm -rf "$AUTOMATION_DIR"; exit "$status"' EXIT INT TERM
+trap 'status=$?; if [[ -n "${QEMU_PID:-}" ]]; then kill "$QEMU_PID" 2>/dev/null; wait "$QEMU_PID" 2>/dev/null || true; fi; [[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"; [[ -n "$AUTOMATION_DIR" ]] && rm -rf "$AUTOMATION_DIR"; [[ -n "$PASST_DIR" ]] && rm -rf "$PASST_DIR"; exit "$status"' EXIT INT TERM
 if [[ -n "$CONSOLE_SCRIPT" ]]; then
   __script_args=(
     "$ROOT/scripts/internal/run-console-script.py" "$CONSOLE_SCRIPT"
@@ -1621,4 +1737,5 @@ QEMU_STATUS=$?
 trap - EXIT INT TERM
 [[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"
 [[ -n "$AUTOMATION_DIR" ]] && rm -rf "$AUTOMATION_DIR"
+[[ -n "$PASST_DIR" ]] && rm -rf "$PASST_DIR"
 exit "$QEMU_STATUS"

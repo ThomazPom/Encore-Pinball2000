@@ -220,6 +220,8 @@ encore_runtime_needs_root_phase() {
     local backend="$1" package metadata
     local -a packages=(git python3) backend_packages=() qemu_packages=()
     [[ -z "${P2K_NETWORK_BRIDGE:-}" ]] || packages+=(iproute2)
+    [[ "${P2K_NETWORK_PASST:-0}" != 1 ]] || packages+=(passt)
+    [[ "${P2K_NETWORK_MIRROR:-0}" != 1 ]] || packages+=(iproute2)
     [[ "$backend" != direct-console ]] ||
         grep -qxF "$ENCORE_DIRECT_INPUT_MARKER" "$ENCORE_DIRECT_INPUT_RULE" \
             2>/dev/null || return 0
@@ -250,13 +252,15 @@ encore_runtime_needs_root_phase() {
 }
 
 encore_runtime_root_phase() {
-    local root="$1" backend="$2" owner="$3" owner_home="$4" qemu_bin="$5" lpt_device="${6:-auto}" network_bridge="${7:-}"
+    local root="$1" backend="$2" owner="$3" owner_home="$4" qemu_bin="$5" lpt_device="${6:-auto}" network_bridge="${7:-}" network_passt="${8:-0}" network_mirror="${9:-0}"
     ROOT="$root"
     HOME="$owner_home"
     ENCORE_RUNTIME_USER="$owner"
     QEMU_BIN="$qemu_bin"
     export P2K_LPT_DEVICE="$lpt_device"
     export P2K_NETWORK_BRIDGE="$network_bridge"
+    export P2K_NETWORK_PASST="$network_passt"
+    export P2K_NETWORK_MIRROR="$network_mirror"
     encore_prepare_runtime "$backend"
 }
 
@@ -313,6 +317,8 @@ encore_prepare_runtime() {
     local backend="${1:-}" driver="" qemu_path metadata
     local -a packages=(git python3) backend_packages=() qemu_packages=()
     [[ -z "${P2K_NETWORK_BRIDGE:-}" ]] || packages+=(iproute2)
+    [[ "${P2K_NETWORK_PASST:-0}" != 1 ]] || packages+=(passt)
+    [[ "${P2K_NETWORK_MIRROR:-0}" != 1 ]] || packages+=(iproute2)
     if [[ -n "$backend" ]]; then
         mapfile -t backend_packages < <(encore_runtime_packages "$backend")
         packages+=("${backend_packages[@]}")

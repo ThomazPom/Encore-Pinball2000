@@ -78,6 +78,10 @@ void p2k_map_rom_windows(Pinball2000MachineState *s);
 /* p2k-isa-stubs.c: minimal i8042 etc. so PRISM polling loops terminate. */
 void p2k_install_isa_stubs(void);
 void p2k_isa_set_uart_irq(qemu_irq irq);
+/* Automatic Slirp forwarding: the XUART console reports XINA's active
+ * interface address and the emulated Ethernet card owns the forwards. */
+bool p2k_smc_auto_ip_requested(void);
+void p2k_smc_auto_ip_discovered(const char *address);
 void p2k_install_pci_stub(void);
 void p2k_install_plx_bars(Pinball2000MachineState *s);
 
