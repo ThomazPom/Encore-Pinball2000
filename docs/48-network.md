@@ -26,9 +26,16 @@ Configure these values through the game's normal adjustments:
 | Gateway | `10.0.2.2` |
 | HTTP Server | `Yes` when HTTP access is wanted |
 
-Restart the game after changing its network adjustments. During development,
-the XINA console command `net start` can start the configured stack without a
-full reboot.
+Restart the game after changing its network adjustments. XINA registers
+`netstart()` as a power-up hook: on the next boot it reads the saved IP address,
+mask, and gateway, then initializes the interface, routes, ARP, IP, TCP, and the
+enabled network daemons. It only performs that initialization when the Ethernet
+device is present and the configured IP address is non-zero.
+
+Changing an adjustment does not restart the active network stack. The network
+resources have no change hook calling `netstart()`, so their new values normally
+take effect at the next XINA boot. During development, the XINA console command
+`net start` can invoke the same initialization without a full reboot.
 
 ## Local HTTP access
 
@@ -81,6 +88,111 @@ excluded because it is an optional historical administration service; add
 `--forward 2323:23` only when it is intentionally enabled in the guest. The
 tournament client needs outbound access, which NAT already provides, and does
 not need an inbound forwarding rule.
+
+## Configuration-independent NAT
+
+The experimental automatic mode keeps libslirp on its unchanged default
+network while allowing XINA to retain any static IPv4 configuration:
+
+```sh
+scripts/run-qemu.sh --network-auto
+```
+
+The emulated SMC8416 answers every IPv4 ARP request with libslirp's default
+gateway MAC. XINA therefore sends every routed Ethernet frame into Slirp while
+the enclosed IP packet retains its original source and destination. Libslirp
+accepts that source address and ARPs it directly when returning traffic.
+
+Encore does not read or rewrite XINA's IP address, mask, gateway, IP headers or
+checksums. Changing the configuration in the service menu therefore does not
+restart QEMU or Slirp, but XINA also does not reconfigure its active stack at
+that moment. The saved values normally become active when `netstart()` runs at
+the next XINA boot, or when `net start` is issued manually on its console.
+
+For inbound forwarding, Encore waits for XINA's console prompt and issues the
+read-only `ifstat 1` command through the emulated XUART. Its reply contains the
+address of the live Ethernet interface initialized by `netstart()`. Encore uses
+that address to retarget the attached Slirp forwards through libslirp's public
+API. It does not inspect guest RAM, use update symbols, invoke `net start`,
+rewrite packets, or recalculate checksums.
+
+The SMC also learns the active address from the sender field of an outgoing ARP
+request or an outgoing IPv4 packet. This provides a natural fallback and lets a
+later manual `net start` update forwarding. Until XINA has an active interface,
+no inbound forward is installed.
+
+## Mirrored host topology with libslirp
+
+The experimental mirror mode keeps QEMU's built-in, unprivileged NAT but gives
+its virtual network the same IPv4 subnet and gateway as the host:
+
+```sh
+scripts/run-qemu.sh --network-mirror
+```
+
+The runner discovers the active default route at launch. XINA must be configured
+with the host's IPv4 address and mask, the real gateway, and the host's DNS
+server. For example, a host using `192.168.1.26/24` through `192.168.1.1` uses
+those same values in XINA. They are examples, not hard-coded defaults.
+
+The duplicate address is internal to libslirp: the guest is not attached
+directly to the physical LAN. Slirp translates its traffic through host sockets,
+so this works over Wi-Fi without root, TAP devices, capabilities, firewall
+rules, or a separately installed daemon. It was validated from XINA against
+both the mirrored gateway and an Internet address with no packet loss.
+
+A remote LAN client appears to XINA as a neighbour on the same subnet, while
+libslirp's inbound `hostfwd` path does not normally proxy that
+overlapping-subnet return path. Encore adds a narrow proxy-ARP filter in mirror
+mode: it answers XINA's neighbour request with libslirp's learned gateway MAC.
+The resulting IP packet is then handled by libslirp's existing NAT path. Encore
+does not rewrite IP packets or checksums and does not switch to another network
+transport when a service is exposed.
+
+This mode deliberately does not rewrite XINA's configuration inside the
+emulated Ethernet card. Doing that below the guest IP stack would require a
+second ARP/IP translation layer and checksum rewriting. XINA therefore remains
+the source of truth for its own network parameters.
+
+## Unprivileged passt transport
+
+The experimental `passt` path replaces libslirp with a separate, maintained
+user-mode networking daemon:
+
+```sh
+scripts/run-qemu.sh --network-passt
+```
+
+The runner installs the distribution's `passt` package when required, creates a
+private Unix socket, starts the daemon as the invoking user, and connects QEMU
+through its `stream` netdev. Both processes remain unprivileged. The socket and
+daemon disappear when QEMU exits.
+
+By default, `passt` derives its advertised topology from the host. XINA must be
+configured with the same IPv4 address, mask, gateway, and DNS values shown by
+`passt` when the runner starts. The apparent address sharing is intentional:
+`passt` translates the guest's Layer-2 traffic into host Layer-4 sockets rather
+than placing a second machine with that address on the physical LAN.
+
+```text
+host           192.168.1.26/24
+XINA           192.168.1.26/24
+gateway        192.168.1.1
+```
+
+The values above are only an example. They must not be hard-coded; roaming to
+another network changes the topology that `passt` presents.
+
+Explicit service mappings use the same options as NAT:
+
+```sh
+scripts/run-qemu.sh --network-passt --forward 8080:80
+```
+
+Unlike a bridge, this still translates guest traffic through host sockets and
+does not give XINA an independently owned LAN address. It can nevertheless
+share the host's normal Ethernet or Wi-Fi connectivity without TAP devices,
+raw sockets, capabilities, or firewall configuration.
 
 ## Existing Linux bridge
 

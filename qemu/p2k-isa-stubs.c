@@ -243,6 +243,8 @@ static char    *s_tx_drop_pats;        /* malloc'd copy of env */
 static char   **s_tx_drop_vec;         /* NULL-terminated */
 static unsigned s_tx_drop_n;
 static bool     s_tx_filter_inited;
+static bool     s_auto_ifstat_sent;
+static bool     s_auto_ifstat_complete;
 
 /* Bidirectional QEMU chardev frontend (e.g. -serial tcp:host:port,server,nowait).
  * TX  : every guest byte written to THR is mirrored to the chardev so
@@ -462,6 +464,40 @@ static void p2k_tx_emit(const char *buf, size_t len)
     }
 }
 
+static void p2k_uart_auto_ifstat_observe(const char *line, size_t len,
+                                         bool xinu_prompt)
+{
+    if (!s_auto_ifstat_complete && p2k_smc_auto_ip_requested() && len) {
+        char text[P2K_TX_LINE_MAX + 1];
+        const char *cursor;
+
+        memcpy(text, line, len);
+        text[len] = '\0';
+        cursor = text;
+        while ((cursor = strstr(cursor, "IP ")) != NULL) {
+            char address[INET_ADDRSTRLEN];
+            struct in_addr parsed;
+
+            cursor += 3;
+            if (sscanf(cursor, "%15[0-9.]", address) == 1 &&
+                inet_aton(address, &parsed) && parsed.s_addr != INADDR_ANY) {
+                p2k_smc_auto_ip_discovered(address);
+                s_auto_ifstat_complete = true;
+                return;
+            }
+        }
+    }
+
+    if (xinu_prompt && !s_auto_ifstat_sent &&
+        p2k_smc_auto_ip_requested()) {
+        static const uint8_t command[] = "ifstat 1\r";
+
+        s_auto_ifstat_sent = true;
+        p2k_uart_receive(NULL, command, sizeof(command) - 1);
+        info_report("pinball2000: querying XINA's active IP through XUART");
+    }
+}
+
 static void p2k_tx_push_byte(uint8_t c)
 {
     p2k_tx_filter_init();
@@ -478,6 +514,7 @@ static void p2k_tx_push_byte(uint8_t c)
     bool flush = (c == '\n') || xinu_prompt ||
                  (s_tx_line_len == sizeof(s_tx_line));
     if (!flush) return;
+    p2k_uart_auto_ifstat_observe(s_tx_line, s_tx_line_len, xinu_prompt);
     if (!p2k_tx_line_matches_drop(s_tx_line, s_tx_line_len)) {
         p2k_tx_emit(s_tx_line, s_tx_line_len);
     }
