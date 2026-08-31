@@ -206,10 +206,9 @@ void p2k_install_plx_regs(Pinball2000MachineState *s);
 void p2k_install_mem_detect(void);
 
 /* p2k-guest-extensions.c: optional volatile RAM extension. */
-extern bool p2k_guest_extensions_pending;
 void p2k_guest_extensions_init(void);
 void p2k_guest_extensions_reset(void);
-void p2k_guest_extensions_maybe_install(void);
+void p2k_guest_extensions_observe_uart_line(const char *line, size_t len);
 
 /* p2k-nic-dseg.c: BT-131 — seed SMC8216T LAN-ROM shadow at 0xD0008. */
 void p2k_install_nic_dseg(void);

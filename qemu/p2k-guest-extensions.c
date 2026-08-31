@@ -52,13 +52,6 @@ typedef struct MaskedPattern {
 static bool ge_enabled;
 static bool ge_installed;
 static bool ge_retired;
-bool p2k_guest_extensions_pending;
-static uint32_t ge_tb_count;
-static uint8_t ge_last_image_marker[64];
-static bool ge_have_image_marker;
-static bool ge_partial_image_seen;
-static unsigned ge_partial_attempts;
-static unsigned ge_stable_marker_checks;
 
 static const uint8_t shell_bytes[] = {
     0x55,0x89,0xe5,0x83,0xec,0x04,0x57,0x56,0x53,0xc7,0x45,0xfc,
@@ -219,7 +212,6 @@ static bool ge_try_install(void)
     anchor_at = find_exact(ram, GE_SCAN_LENGTH, netstart_anchor,
                            sizeof(netstart_anchor));
     if (!shell_at || !put_at || !anchor_at || anchor_at < ram + 0x2d) {
-        ge_partial_image_seen |= anchor_at != NULL;
         g_free(ram);
         return false;
     }
@@ -252,7 +244,6 @@ static bool ge_try_install(void)
         error_report("pinball2000: guest IP, mask and gateway must be supplied together");
         g_free(ram);
         ge_retired = true;
-        p2k_guest_extensions_pending = false;
         return false;
     }
     if (have_startup) {
@@ -260,7 +251,6 @@ static bool ge_try_install(void)
             error_report("pinball2000: automatic factory-reset path was not resolved");
             g_free(ram);
             ge_retired = true;
-            p2k_guest_extensions_pending = false;
             return false;
         }
         st32(payload + GE_O_STARTUP_ENABLE, 1);
@@ -294,7 +284,6 @@ static bool ge_try_install(void)
                 have_startup ? " factory-reset persistence armed" : "");
     g_free(ram);
     ge_installed = true;
-    p2k_guest_extensions_pending = false;
     return true;
 }
 
@@ -304,14 +293,8 @@ void p2k_guest_extensions_init(void)
     ge_enabled = v && *v && strcmp(v, "0");
     ge_installed = false;
     ge_retired = !ge_enabled;
-    p2k_guest_extensions_pending = ge_enabled;
-    ge_tb_count = 0;
-    ge_have_image_marker = false;
-    ge_partial_image_seen = false;
-    ge_partial_attempts = 0;
-    ge_stable_marker_checks = 0;
     if (ge_enabled) {
-        info_report("pinball2000: volatile guest extensions armed");
+        info_report("pinball2000: volatile guest extensions armed for XINA startup");
     }
 }
 
@@ -319,49 +302,22 @@ void p2k_guest_extensions_reset(void)
 {
     ge_installed = false;
     ge_retired = !ge_enabled;
-    p2k_guest_extensions_pending = ge_enabled;
-    ge_tb_count = 0;
-    ge_have_image_marker = false;
-    ge_partial_image_seen = false;
-    ge_partial_attempts = 0;
-    ge_stable_marker_checks = 0;
 }
 
-void p2k_guest_extensions_maybe_install(void)
+void p2k_guest_extensions_observe_uart_line(const char *line, size_t len)
 {
-    uint8_t marker[sizeof(ge_last_image_marker)];
-
-    if (ge_retired || ge_installed || !first_cpu) {
+    while (len && (*line == '\r' || *line == '\n')) {
+        line++;
+        len--;
+    }
+    if (ge_retired || ge_installed || len < 5 || memcmp(line, "XINA:", 5)) {
         return;
     }
-    /* PRISM first relocates base code at 0x00100000, then the update loader
-     * replaces it with the selected game image.  Scan only when that image
-     * marker changes, rather than polling the complete multi-megabyte range. */
-    if (ge_tb_count++ % 4096) {
-        return;
-    }
-    cpu_physical_memory_read(0x00100000u, marker + 0, 16);
-    cpu_physical_memory_read(0x00180000u, marker + 16, 16);
-    cpu_physical_memory_read(0x00200000u, marker + 32, 16);
-    cpu_physical_memory_read(0x00280000u, marker + 48, 16);
-    if (!ge_partial_image_seen && ge_have_image_marker &&
-        !memcmp(marker, ge_last_image_marker, sizeof(marker))) {
-        if (++ge_stable_marker_checks >= 1024) {
-            info_report("pinball2000: no network-capable guest-extension image; feature retired");
-            ge_retired = true;
-            p2k_guest_extensions_pending = false;
-        }
-        return;
-    }
-    ge_stable_marker_checks = 0;
-    memcpy(ge_last_image_marker, marker, sizeof(marker));
-    ge_have_image_marker = true;
-    if (ge_try_install()) {
-        return;
-    }
-    if (ge_partial_image_seen && ++ge_partial_attempts >= 64) {
-        info_report("pinball2000: incomplete guest-extension signatures; feature retired");
+    /* The update loader has completely materialised the selected image before
+     * its XINA banner reaches the emulated UART.  This one hardware event is
+     * before netstart, so no translated-block polling is necessary. */
+    if (!ge_try_install()) {
+        info_report("pinball2000: no compatible guest-extension image; feature retired");
         ge_retired = true;
-        p2k_guest_extensions_pending = false;
     }
 }
