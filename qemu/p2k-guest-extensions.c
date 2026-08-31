@@ -197,7 +197,8 @@ static bool ge_try_install(void)
     uint8_t *ram = g_malloc(GE_SCAN_LENGTH);
     MaskedPattern shell = { shell_bytes, shell_mask, sizeof(shell_bytes) };
     MaskedPattern put = { put_bytes, put_mask, sizeof(put_bytes) };
-    uint8_t *shell_at, *put_at, *anchor_at, *netstart, *factory_reset;
+    uint8_t *shell_at, *put_at, *anchor_at, *netstart;
+    uint8_t *factory_reset = NULL;
     uint32_t resources[3], startup[3];
     uint8_t payload[P2K_GE_PAYLOAD_SIZE];
     uint8_t hook[GE_HOOK_LENGTH] = { 0xe9, 0, 0, 0, 0, 0x90 };
@@ -216,7 +217,6 @@ static bool ge_try_install(void)
         return false;
     }
     netstart = anchor_at - 0x2d;
-    factory_reset = resolve_factory_reset(ram, GE_SCAN_LENGTH);
     if (memcmp(netstart, "\x55\x89\xe5\x83\xec\x08", GE_HOOK_LENGTH) ||
         !resolve_resources(netstart,
                            GE_SCAN_BASE + (netstart - ram), resources)) {
@@ -247,6 +247,8 @@ static bool ge_try_install(void)
         return false;
     }
     if (have_startup) {
+        factory_reset = resolve_factory_reset(ram, GE_SCAN_LENGTH);
+
         if (!factory_reset) {
             error_report("pinball2000: automatic factory-reset path was not resolved");
             g_free(ram);
