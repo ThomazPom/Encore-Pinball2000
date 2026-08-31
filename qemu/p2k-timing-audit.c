@@ -807,6 +807,9 @@ void p2k_timing_audit_note_iret(uint32_t eip)
 uint32_t p2k_tcg_cflags_override(uint32_t base);
 uint32_t p2k_tcg_cflags_override(uint32_t base)
 {
+    if (unlikely(p2k_guest_extensions_pending)) {
+        p2k_guest_extensions_maybe_install();
+    }
     if (unlikely(p2k_pdb_gap_profile_enabled)) {
         p2k_pdb_gap_note_tb();
     }

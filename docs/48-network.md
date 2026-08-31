@@ -37,6 +37,29 @@ resources have no change hook calling `netstart()`, so their new values normally
 take effect at the next XINA boot. During development, the XINA console command
 `net start` can invoke the same initialization without a full reboot.
 
+Encore can add the opt-in volatile command `setip` without rebuilding an update:
+
+```bash
+scripts/run-qemu.sh --guest-extensions --serial
+```
+
+```text
+setip 10.0.2.15 255.255.255.0 10.0.2.2
+```
+
+The command calls the game's own persistent `Resource<unsigned long>::putValue`
+implementation for `IPAddr`, `IPMask`, and `GW_IPA`. A normal reboot applies the
+new values. `--setip IP MASK GATEWAY` performs the same writes immediately before
+the original power-up `netstart`, so the selected values apply on that boot.
+
+`net start` is not a restart operation.  Calling it after the power-up network
+initialization creates another set of `httpd`, `telnetd`, `echod`, `tcpout`,
+`tcpinp`, `tcptimer`, `ip`, and `slowtimer` processes; the `net` shell command
+has no matching `stop` action.  A live-adjustment helper must therefore not
+automatically issue `net start` until a safe teardown/reconfiguration path is
+understood.  A 30 August 2026 experiment that initialized the stack twice ended
+with a `lampmgr` interrupt-stack overflow while both daemon sets were alive.
+
 ## Local HTTP access
 
 The original game contains a small HTTP server. To expose it only on the host:
@@ -234,10 +257,10 @@ must first know its own IP address, mask and gateway.
 
 Hard-coding the current resource addresses from the host would work for one
 specific update, but those addresses differ between games and releases. It
-would also bypass the game's persistence model. Encore therefore does not
-inject network adjustments today.
+would also bypass the game's persistence model. Encore does not use that
+approach: its extension resolves and calls the game's persistence API.
 
-A future compatibility helper has three possible designs:
+The implemented compatibility helper follows a fifth design:
 
 1. **Version-aware adjustment writer.** Update the same persistent resources
    as the operator menu, with signatures and read-back validation for every
@@ -250,6 +273,22 @@ A future compatibility helper has three possible designs:
 3. **New guest DHCP support.** Add a DHCP client to the historical guest code.
    This is the cleanest guest-visible result but requires patching/rebuilding
    each game and is outside the emulator's hardware boundary.
+4. **Event-driven resource observation.** Resolve the stable
+   `Resource<unsigned long>::putValue` code signature and emit a targeted TCG
+   helper when that guest function is translated.  The helper can filter
+   `IPAddr`, `IPMask`, and `GW IPA` without guest mutation or runtime polling.
+   Observation is straightforward; safely applying the values remains blocked
+   because XINA's `net start` only creates a new stack and exposes no teardown.
+5. **Volatile pre-`netstart` extension.** Resolve `ShellCmdAdd`, scalar
+   `Resource<T>::putValue`, `netstart`, and the three network Resource objects
+   from structural code signatures after the game has entered RAM. Install a
+   sub-1-KiB payload in the reserved top 64 KiB, intercept `netstart` once,
+   register `setip`, restore its original prologue, and continue into the real
+   function. Update files and saved game code remain untouched.
+
+The payload reserve is `0x00ff0000..0x00ffffff`. It does not overlap the GX
+framebuffer (`0x00800000..0x00bfffff`) and starts above XINU's highest optional
+heap ceiling (`0x00dfffff`). The normal XINU ceiling remains `0x003fffff`.
 
 The preferred direction is packet-level translation plus automatic host-side
 port discovery. It modernizes connectivity while leaving XINA's saved

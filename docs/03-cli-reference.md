@@ -80,6 +80,8 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--serial` | — | off | Interactive COM1 in current terminal via temporary TCP UART plus foreground `nc`; requires `nc`; mutually exclusive with `--serial-tcp`, `--uart-tcp`, `--headless`. | `scripts/run-qemu.sh --serial` |
 | `--script` | file | off | Validates the file, waits for XINU, then runs console commands and automation directives. Supports timed keys and matrix switches, repeats, assertions, polling, screenshots and timed audio capture. It manages a private TCP UART and QEMU monitor, then leaves the emulator running. `--console-script` is an alias. | `scripts/run-qemu.sh --script scripts/demos/start-game.p2k` |
 | `--uart-quiet` | — | off | Silences COM1/UART stderr mirror and uses `-serial null` in headless mode. Wins over `-v`. | `scripts/run-qemu.sh --uart-quiet` |
+| `--guest-extensions` | — | off | Installs Encore's transient, signature-resolved XINU extension in guest RAM. It adds the `setip` serial command without changing an update ROM. | `scripts/run-qemu.sh --guest-extensions --serial` |
+| `--setip` | `IP MASK GATEWAY` | off | Enables guest extensions and writes XINA's three persistent network Resources immediately before the original `netstart`, so the values apply during this boot. | `scripts/run-qemu.sh --network-auto --setip 10.0.2.15 255.255.255.0 10.0.2.2` |
 
 | `--uart-drop` | substring | drops `swd Debug:` by default | Repeatable line filter for UART output before stdout/TCP/stderr. | `scripts/run-qemu.sh --uart-drop NonFatal` |
 | `--uart-no-filter` | — | off | Exports empty `P2K_UART_DROP`, disabling the default `swd Debug:` filter and custom drops. | `scripts/run-qemu.sh --uart-no-filter` |

@@ -388,6 +388,37 @@ An experimental runtime mode must be labelled as such in help and docs. It
 must not silently become the default solely because one benchmark looked good.
 Promoting it requires gameplay and regression evidence, not only idle timing.
 
+### Event-driven guest function observation
+
+TCG can observe a stable guest function without modifying the guest and
+without polling at translated-block boundaries.  When the x86 translator sees
+the resolved guest PC, it can emit a QEMU helper into that one translated
+block.  The helper then runs only when the guest executes the instrumented
+function:
+
+```text
+load game image
+→ resolve a validated machine-code signature
+→ translate the block containing that PC
+→ emit gen_helper_p2k_* only at that PC
+→ call the host helper only when the guest function executes
+```
+
+This is different from the benchmark IRQ probe.  The benchmark temporarily
+rewrites six guest bytes through GDB and restores them after measurement.  A
+translation helper changes neither guest ROM nor guest RAM, but it does require
+a small maintained patch in QEMU's target translator plus a `DEF_HELPER`
+declaration and implementation.
+
+One candidate use is observing
+`Resource<unsigned long>::putValue(unsigned long)`.  Its relocation-masked
+machine-code body is present in every preserved SWE1 and RFM game image from
+1999 through 2025.  A helper could inspect the Resource argument and ignore
+everything except the stable `IPAddr`, `IPMask`, and `GW IPA` resource keys.
+That would be event-driven: no timer, periodic RAM scan, or callback at every
+TB boundary.  Any implementation must fail closed when signature or resource
+identity validation is ambiguous.
+
 Remove before merge:
 
 - unconditional debug `fprintf()` in hot paths;

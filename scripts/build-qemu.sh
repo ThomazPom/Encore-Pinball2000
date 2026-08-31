@@ -233,6 +233,7 @@ if [[ ! -f "$PATCHSET_SENTINEL" ]]; then
 fi
 
 # --- Inject our machine source ---------------------------------------------
+"$ROOT/guest-extensions/build.sh" --check
 HW_I386="$SRC/hw/i386"
 UPDATED_FILES=0
 copy_if_changed() {
