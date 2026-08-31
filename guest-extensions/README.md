@@ -13,6 +13,10 @@ physical framebuffer (`0x00800000..0x00bfffff`).
 The first extension supplies `setip <address> <mask> <gateway>` on the XINU
 serial shell.  It updates the three normal persistent resources through
 `Resource<unsigned long>::putValue`; `net start` or a reboot applies them.
+For `--setip`, the values are applied before `netstart`. If blank CMOS causes
+the game's native automatic factory reset later in that boot, a one-shot
+wrapper reapplies them after the reset so the operator UI and BAR2 persistence
+retain the same values. No polling or host-side savedata editing is involved.
 
 `extension.S` is deliberately freestanding i386 code.  `build.sh` turns it
 into the byte include consumed by QEMU.  Run `build.sh --check` to verify that

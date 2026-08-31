@@ -15,12 +15,15 @@
 .equ GE_STARTUP_GW,       GE_BASE + 0x2c
 .equ GE_ORIGINAL_LENGTH,  GE_BASE + 0x30
 .equ GE_ORIGINAL_BYTES,   GE_BASE + 0x34
-.equ GE_INSTALLED,        GE_BASE + 0x44
+.equ GE_FACTORY_RESET,    GE_BASE + 0x3c
+.equ GE_FACTORY_ORIG_LEN, GE_BASE + 0x40
+.equ GE_FACTORY_ORIGINAL, GE_BASE + 0x44
+.equ GE_INSTALLED,        GE_BASE + 0x54
 
 .section .control,"aw",@progbits
 .long 0x58454750                 /* "PGEX", filled/validated by host */
 .long 1
-.fill 17, 4, 0
+.fill 24, 4, 0
 
 .section .text,"ax",@progbits
 .global p2k_ge_bootstrap
@@ -39,8 +42,23 @@ p2k_ge_bootstrap:
     addl $16, %esp
     movl $1, GE_INSTALLED
 1:
+    call p2k_ge_apply_startup
+2:
+    /* Restore the intercepted prologue before entering real netstart. */
+    cld
+    movl GE_NETSTART, %edi
+    movl $GE_ORIGINAL_BYTES, %esi
+    movl GE_ORIGINAL_LENGTH, %ecx
+    rep movsb
+    popal
+    popfl
+    call *GE_NETSTART
+    ret
+
+.type p2k_ge_apply_startup,@function
+p2k_ge_apply_startup:
     cmpl $0, GE_STARTUP_ENABLE
-    je 2f
+    je 3f
     pushl GE_STARTUP_IP
     pushl GE_IP_RESOURCE
     call *GE_PUT_VALUE
@@ -53,16 +71,7 @@ p2k_ge_bootstrap:
     pushl GE_GW_RESOURCE
     call *GE_PUT_VALUE
     addl $8, %esp
-2:
-    /* Restore the intercepted prologue before entering real netstart. */
-    cld
-    movl GE_NETSTART, %edi
-    movl $GE_ORIGINAL_BYTES, %esi
-    movl GE_ORIGINAL_LENGTH, %ecx
-    rep movsb
-    popal
-    popfl
-    call *GE_NETSTART
+3:
     ret
 
 /* unsigned parse_ipv4(const char *s); CF=1 on malformed input. */
@@ -169,3 +178,27 @@ p2k_ge_setip:
 
 p2k_ge_setip_name:
     .asciz "setip"
+
+/* A blank BAR2 causes the game's automatic factory reset to recreate every
+ * persistent Resource after netstart.  The one-shot wrapper reapplies startup
+ * values after that native reset completes, using the same putValue path. */
+.section .factory,"ax",@progbits
+.global p2k_ge_factory_reset_wrapper
+.type p2k_ge_factory_reset_wrapper,@function
+p2k_ge_factory_reset_wrapper:
+    pushfl
+    pushal
+    cld
+    movl GE_FACTORY_RESET, %edi
+    movl $GE_FACTORY_ORIGINAL, %esi
+    movl GE_FACTORY_ORIG_LEN, %ecx
+    rep movsb
+    popal
+    popfl
+    call *GE_FACTORY_RESET
+    pushfl
+    pushal
+    call p2k_ge_apply_startup
+    popal
+    popfl
+    ret

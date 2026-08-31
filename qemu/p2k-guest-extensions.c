@@ -19,8 +19,10 @@
 #define GE_SCAN_LENGTH     0x00400000u
 #define GE_PAYLOAD_BASE    0x00ff0000u
 #define GE_ENTRY_OFFSET    0x00000100u
+#define GE_FACTORY_ENTRY_OFFSET 0x00000400u
 #define GE_MAGIC           0x58454750u
 #define GE_HOOK_LENGTH     6u
+#define GE_FACTORY_HOOK_LENGTH 9u
 
 enum {
     GE_O_MAGIC          = 0x00,
@@ -36,6 +38,9 @@ enum {
     GE_O_STARTUP_GW     = 0x2c,
     GE_O_ORIGINAL_LEN   = 0x30,
     GE_O_ORIGINAL       = 0x34,
+    GE_O_FACTORY_RESET  = 0x3c,
+    GE_O_FACTORY_ORIG_LEN = 0x40,
+    GE_O_FACTORY_ORIGINAL = 0x44,
 };
 
 typedef struct MaskedPattern {
@@ -82,6 +87,9 @@ static const uint8_t netstart_anchor[] = {
     0x89,0xf0,0x25,0,0,0xff,0,0xc1,0xe8,0x08,0x09,0xd0,
     0x81,0xe6,0,0xff,0,0,0xc1,0xe6,0x08,0x09,0xc6,
 };
+
+static const uint8_t factory_reset_message[] =
+    "*** Automatic Factory Reset underway";
 
 static uint32_t ld32(const uint8_t *p)
 {
@@ -162,15 +170,47 @@ static bool resolve_resources(const uint8_t *netstart, uint32_t ns_addr,
     return found == 3;
 }
 
+static uint8_t *resolve_factory_reset(uint8_t *ram, size_t size)
+{
+    uint8_t *message = find_exact(ram, size, factory_reset_message,
+                                  sizeof(factory_reset_message) - 1);
+    uint32_t message_addr;
+
+    if (!message) {
+        return NULL;
+    }
+    message_addr = GE_SCAN_BASE + (message - ram);
+    for (size_t off = 0; off + 15 <= size; off++) {
+        uint32_t target;
+        if (ram[off] != 0x68 || ld32(ram + off + 1) != message_addr ||
+            ram[off + 5] != 0xe8 || ram[off + 10] != 0xe8) {
+            continue;
+        }
+        target = GE_SCAN_BASE + off + 15 + (int32_t)ld32(ram + off + 11);
+        if (target < GE_SCAN_BASE || target + GE_FACTORY_HOOK_LENGTH >
+            GE_SCAN_BASE + size) {
+            continue;
+        }
+        uint8_t *fn = ram + (target - GE_SCAN_BASE);
+        if (fn[0] == 0x55 && fn[1] == 0x89 && fn[2] == 0xe5) {
+            return fn;
+        }
+    }
+    return NULL;
+}
+
 static bool ge_try_install(void)
 {
     uint8_t *ram = g_malloc(GE_SCAN_LENGTH);
     MaskedPattern shell = { shell_bytes, shell_mask, sizeof(shell_bytes) };
     MaskedPattern put = { put_bytes, put_mask, sizeof(put_bytes) };
-    uint8_t *shell_at, *put_at, *anchor_at, *netstart;
+    uint8_t *shell_at, *put_at, *anchor_at, *netstart, *factory_reset;
     uint32_t resources[3], startup[3];
     uint8_t payload[P2K_GE_PAYLOAD_SIZE];
     uint8_t hook[GE_HOOK_LENGTH] = { 0xe9, 0, 0, 0, 0, 0x90 };
+    uint8_t factory_hook[GE_FACTORY_HOOK_LENGTH] = {
+        0xe9, 0, 0, 0, 0, 0x90, 0x90, 0x90, 0x90
+    };
     bool have_startup;
 
     cpu_physical_memory_read(GE_SCAN_BASE, ram, GE_SCAN_LENGTH);
@@ -184,6 +224,7 @@ static bool ge_try_install(void)
         return false;
     }
     netstart = anchor_at - 0x2d;
+    factory_reset = resolve_factory_reset(ram, GE_SCAN_LENGTH);
     if (memcmp(netstart, "\x55\x89\xe5\x83\xec\x08", GE_HOOK_LENGTH) ||
         !resolve_resources(netstart,
                            GE_SCAN_BASE + (netstart - ram), resources)) {
@@ -215,10 +256,22 @@ static bool ge_try_install(void)
         return false;
     }
     if (have_startup) {
+        if (!factory_reset) {
+            error_report("pinball2000: automatic factory-reset path was not resolved");
+            g_free(ram);
+            ge_retired = true;
+            p2k_guest_extensions_pending = false;
+            return false;
+        }
         st32(payload + GE_O_STARTUP_ENABLE, 1);
         st32(payload + GE_O_STARTUP_IP, startup[0]);
         st32(payload + GE_O_STARTUP_MASK, startup[1]);
         st32(payload + GE_O_STARTUP_GW, startup[2]);
+        st32(payload + GE_O_FACTORY_RESET,
+             GE_SCAN_BASE + (factory_reset - ram));
+        st32(payload + GE_O_FACTORY_ORIG_LEN, GE_FACTORY_HOOK_LENGTH);
+        memcpy(payload + GE_O_FACTORY_ORIGINAL, factory_reset,
+               GE_FACTORY_HOOK_LENGTH);
     }
 
     st32(hook + 1, (GE_PAYLOAD_BASE + GE_ENTRY_OFFSET) -
@@ -226,11 +279,19 @@ static bool ge_try_install(void)
     cpu_physical_memory_write(GE_PAYLOAD_BASE, payload, sizeof(payload));
     cpu_physical_memory_write(GE_SCAN_BASE + (netstart - ram),
                               hook, sizeof(hook));
+    if (have_startup) {
+        st32(factory_hook + 1,
+             (GE_PAYLOAD_BASE + GE_FACTORY_ENTRY_OFFSET) -
+             (GE_SCAN_BASE + (factory_reset - ram) + 5));
+        cpu_physical_memory_write(GE_SCAN_BASE + (factory_reset - ram),
+                                  factory_hook, sizeof(factory_hook));
+    }
     info_report("pinball2000: guest extension installed: netstart=0x%08x "
-                "ShellCmdAdd=0x%08x resources=%08x/%08x/%08x",
+                "ShellCmdAdd=0x%08x resources=%08x/%08x/%08x%s",
                 GE_SCAN_BASE + (unsigned)(netstart - ram),
                 GE_SCAN_BASE + (unsigned)(shell_at - ram),
-                resources[0], resources[1], resources[2]);
+                resources[0], resources[1], resources[2],
+                have_startup ? " factory-reset persistence armed" : "");
     g_free(ram);
     ge_installed = true;
     p2k_guest_extensions_pending = false;
