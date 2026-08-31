@@ -52,6 +52,26 @@ cabinet keys while retaining host-only F1 quit, F2 flip and F3 screenshot.
 Use `--lpt-device disconnected` for an artificial open-bus
 ROM diagnostic.
 
+## Experimental hybrid input
+
+Keyboard switches can be added without disconnecting or replacing the real
+board:
+
+```sh
+scripts/run-qemu.sh \
+  --lpt-device /dev/parport0 \
+  --lpt-input hybrid
+```
+
+Physical PDB input is active-low, so Encore only clears the bits corresponding
+to keyboard closures. It cannot reopen a physical closure. All writes, status
+replies, output control and keepalive traffic continue through the real board.
+The physical coin-door interlock remains authoritative and F4 is ignored.
+
+There is deliberately no runtime switch to a fully emulated board: interrupting
+physical traffic could let the board watchdog expire. `physical` remains the
+default, and `hybrid` must be selected explicitly.
+
 The cabinet installer stores only the selected `auto`, `emulated`, or
 `required` policy. It does not enumerate ports. The runner prepares generic
 `lp` access; the Encore binary performs live enumeration and recognition on
