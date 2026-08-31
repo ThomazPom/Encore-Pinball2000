@@ -14,5 +14,7 @@ SECTIONS
   .control : { KEEP(*(.control)) } :control
   . = 0x00ff0100;
   .text : { *(.text*) *(.rodata*) } :code
+  . = 0x00ff0400;
+  .factory : { *(.factory*) } :code
   /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame*) }
 }

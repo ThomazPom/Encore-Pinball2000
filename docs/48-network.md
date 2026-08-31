@@ -51,6 +51,10 @@ The command calls the game's own persistent `Resource<unsigned long>::putValue`
 implementation for `IPAddr`, `IPMask`, and `GW_IPA`. A normal reboot applies the
 new values. `--setip IP MASK GATEWAY` performs the same writes immediately before
 the original power-up `netstart`, so the selected values apply on that boot.
+On blank CMOS, the game subsequently performs an automatic factory reset which
+recreates all persistent Resources. Encore resolves that native path and
+reapplies the three values once after it returns. This keeps the active network,
+operator UI and saved BAR2 state consistent without editing savedata or polling.
 
 `net start` is not a restart operation.  Calling it after the power-up network
 initialization creates another set of `httpd`, `telnetd`, `echod`, `tcpout`,
