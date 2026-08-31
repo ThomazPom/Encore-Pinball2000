@@ -205,6 +205,12 @@ void p2k_install_plx_regs(Pinball2000MachineState *s);
 /* p2k-mem-detect.c: opt-in XINU sizmem() 4 MiB -> 14 MiB override. */
 void p2k_install_mem_detect(void);
 
+/* p2k-guest-extensions.c: optional volatile RAM extension. */
+extern bool p2k_guest_extensions_pending;
+void p2k_guest_extensions_init(void);
+void p2k_guest_extensions_reset(void);
+void p2k_guest_extensions_maybe_install(void);
+
 /* p2k-nic-dseg.c: BT-131 — seed SMC8216T LAN-ROM shadow at 0xD0008. */
 void p2k_install_nic_dseg(void);
 

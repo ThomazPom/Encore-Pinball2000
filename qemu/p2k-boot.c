@@ -77,6 +77,8 @@ void p2k_post_reset(void *opaque)
         return;
     }
 
+    p2k_guest_extensions_reset();
+
     /* 1. Copy PRISM option ROM (first 32 KiB of bank0) to RAM 0x80000. */
     cpu_physical_memory_write(P2K_OPTROM_LOAD_ADDR,
                               s->bank0, P2K_OPTROM_SIZE);

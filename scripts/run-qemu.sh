@@ -89,6 +89,10 @@ NETWORK_FORWARDS=()
 AUTO_HOSTFWD_SPEC=""
 PASST_DIR=""
 PASST_PID=""
+GUEST_EXTENSIONS=0
+GUEST_IP=""
+GUEST_MASK=""
+GUEST_GATEWAY=""
 
 # --- QEMU binary lookup -----------------------------------------------------
 resolve_qemu_bin() {
@@ -249,6 +253,12 @@ CORE LAUNCH
                             throwaway dir for the run.
   --fresh                   Ignore existing savedata for this boot, then save
                             the newly initialized state normally on exit.
+  --guest-extensions        Add Encore's volatile serial-shell extensions to
+                            supported update ROMs. ROM files stay untouched.
+  --setip <ip> <mask> <gw>  Enable guest extensions and persist these XINA
+                            network resources immediately before netstart.
+                            They can later be changed from serial with:
+                            setip <ip> <mask> <gateway>.
   --update <spec>           Update bundle selection. Spec is one of:
                               auto      (default) machine auto-discovers
                                         the newest matching bundle in
@@ -617,6 +627,7 @@ ENV PASSTHROUGH (advanced; see qemu/README.md for the full table)
   P2K_DCS_RAW_55_PAIR P2K_DIAG P2K_TIMING_SNAPSHOTS P2K_NO_AUTO_UPDATE
   P2K_PB2KSLIB P2K_DCS_ENGINE P2K_DCS_PCM_CPU P2K_DCS_MODE P2K_SCREENSHOT_DIR
   P2K_DISPLAY_BPP P2K_FRAMEBUFFER_THREAD P2K_QEMU_FRAMEBUFFER
+  P2K_GUEST_EXTENSIONS P2K_GUEST_IP P2K_GUEST_MASK P2K_GUEST_GATEWAY
   P2K_LPT_DEVICE
   P2K_LPT_IOPORT P2K_LPT_TRACE_FILE P2K_DCS_PRELOAD
   P2K_SWITCH_KEYMAP P2K_VIDEO_CAPTURE P2K_FFMPEG_BIN
@@ -635,6 +646,16 @@ while [[ $# -gt 0 ]]; do
     --savedata)        SAVEDATA_DIR="$2"; shift 2 ;;
     --no-savedata)     NO_SAVEDATA=1; shift ;;
     --fresh)           FRESH_SAVEDATA=1; shift ;;
+    --guest-extensions)
+      GUEST_EXTENSIONS=1; shift ;;
+    --setip)
+      [[ $# -ge 4 ]] || {
+        echo "[run-qemu] --setip: expected IP MASK GATEWAY" >&2
+        exit 2
+      }
+      GUEST_EXTENSIONS=1
+      GUEST_IP="$2"; GUEST_MASK="$3"; GUEST_GATEWAY="$4"
+      shift 4 ;;
     --clear-pb2kslib-cache) CLEAR_PB2K_ADSP_CACHE=1; shift ;;
     --pb2kslib-cache-workers)
       PB2K_ADSP_CACHE_WORKERS="$2"; shift 2 ;;
@@ -891,6 +912,14 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown arg: $1 (try --help)" >&2; exit 2 ;;
   esac
 done
+if [[ $GUEST_EXTENSIONS -eq 1 ]]; then
+  export P2K_GUEST_EXTENSIONS=1
+  if [[ -n "$GUEST_IP" ]]; then
+    export P2K_GUEST_IP="$GUEST_IP"
+    export P2K_GUEST_MASK="$GUEST_MASK"
+    export P2K_GUEST_GATEWAY="$GUEST_GATEWAY"
+  fi
+fi
 if [[ -n "$HTTP_PORT" ]]; then
   for forward in "${NETWORK_FORWARDS[@]}"; do
     [[ "${forward%%:*}" != "$HTTP_PORT" ]] || {
