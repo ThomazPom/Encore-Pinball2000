@@ -6,6 +6,7 @@ on:
     tags: ['v*.*.*']
     paths:
       - 'qemu/**'
+      - 'guest-extensions/**'
       - 'scripts/**'
       - 'docs/**'
       - 'README.md'
@@ -118,10 +119,12 @@ jobs:
           full_root=dist/full/Encore-Pinball2000
           full_asset=dist/encore-pinball2000-linux-x86_64.tar.gz
           "$source_bin" -M help | grep -q pinball2000
+          grep -aq 'volatile guest extensions armed' "$source_bin"
           mkdir -p "$package"
           install -m 0755 "$source_bin" "$package/qemu-system-i386"
           strip --strip-unneeded "$package/qemu-system-i386"
           "$package/qemu-system-i386" -M help | grep -q pinball2000
+          grep -aq 'volatile guest extensions armed' "$package/qemu-system-i386"
           if ldd "$package/qemu-system-i386" | grep -q 'not found'; then
             ldd "$package/qemu-system-i386"
             exit 1
@@ -177,6 +180,8 @@ jobs:
           test ! -e "$verify/Encore-Pinball2000/roms"
           test ! -e "$verify/Encore-Pinball2000/updates"
           "$verify/Encore-Pinball2000/qemu-system-i386" -M help | grep -q pinball2000
+          grep -aq 'volatile guest extensions armed' \
+            "$verify/Encore-Pinball2000/qemu-system-i386"
           "$verify/Encore-Pinball2000/scripts/run-qemu.sh" --help >/dev/null
 
       - name: Publish GitHub release
