@@ -288,7 +288,9 @@ The implemented compatibility helper follows a fifth design:
    from structural code signatures after the game has entered RAM. Install a
    sub-1-KiB payload in the reserved top 64 KiB, intercept `netstart` once,
    register `setip`, restore its original prologue, and continue into the real
-   function. Update files and saved game code remain untouched.
+   function. Resolution and installation happen once when the completed game
+   emits its pre-`netstart` `XINA:` UART banner; there is no translated-block
+   polling. Update files and saved game code remain untouched.
 
 The payload reserve is `0x00ff0000..0x00ffffff`. It does not overlap the GX
 framebuffer (`0x00800000..0x00bfffff`) and starts above XINU's highest optional

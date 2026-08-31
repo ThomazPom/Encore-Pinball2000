@@ -514,6 +514,7 @@ static void p2k_tx_push_byte(uint8_t c)
     bool flush = (c == '\n') || xinu_prompt ||
                  (s_tx_line_len == sizeof(s_tx_line));
     if (!flush) return;
+    p2k_guest_extensions_observe_uart_line(s_tx_line, s_tx_line_len);
     p2k_uart_auto_ifstat_observe(s_tx_line, s_tx_line_len, xinu_prompt);
     if (!p2k_tx_line_matches_drop(s_tx_line, s_tx_line_len)) {
         p2k_tx_emit(s_tx_line, s_tx_line_len);
