@@ -34,6 +34,7 @@ typedef struct Pinball2000MachineState {
     char            *roms_dir;      /* default: <cwd>/roms */
     char            *savedata_dir;  /* default: <cwd>/savedata */
     char            *update_path;   /* directory holding *_bootdata/im_flsh0/game/symbols.rom; NULL = no update */
+    char            *pub_card_path; /* optional update directory exposed as a PUB card */
     uint8_t         *bank0;         /* 16 MiB, owned by us */
     uint8_t         *bank1;         /* 16 MiB or NULL if chips absent */
     uint8_t         *bank2;
@@ -212,6 +213,9 @@ void p2k_guest_extensions_observe_uart_line(const char *line, size_t len);
 
 /* p2k-nic-dseg.c: BT-131 — seed SMC8216T LAN-ROM shadow at 0xD0008. */
 void p2k_install_nic_dseg(void);
+
+/* p2k-pub-card.c: optional Prism Update Board flash window. */
+void p2k_install_pub_card(Pinball2000MachineState *s);
 
 /* p2k-diag.c: read-only diagnostic sampler — periodically logs PIT
  * channel programming, PIC IMR/ISR/IRR, RTC index, and IDT[0x20]/[0x28].

@@ -42,6 +42,7 @@ GAME=auto
 ROMS_DIR="$ROOT/roms"
 SAVEDATA_DIR="$ROOT/savedata"
 UPDATE_TOKEN="auto"
+PUB_CARD=""
 DISPLAY_MODE=""
 HEADLESS=0
 FULLSCREEN=0
@@ -279,6 +280,9 @@ CORE LAUNCH
                                         bundle dir (containing
                                         *_bootdata.rom + *_im_flsh0.rom +
                                         *_game.rom + *_symbols.rom).
+  --pub-card <dir>          EXPERIMENTAL: expose an update bundle through an
+                            emulated Prism Update Board for XINA's
+                            `pub ... dump` command.
 
 DISPLAY / UX
   --display <backend>       QEMU -display backend. The wrapper queries
@@ -665,6 +669,7 @@ while [[ $# -gt 0 ]]; do
     --pb2kslib-cache-workers)
       PB2K_ADSP_CACHE_WORKERS="$2"; shift 2 ;;
     --update)          UPDATE_TOKEN="$2"; shift 2 ;;
+    --pub-card)        PUB_CARD="$2"; shift 2 ;;
     --display)
       __qbin="${QEMU_BIN:-$ROOT/qemu-system-i386}"
       [[ -x "$__qbin" ]] || __qbin="$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
@@ -1729,6 +1734,15 @@ fi
 MACHINE_OPTS="pinball2000,game=$GAME,roms-dir=$ROMS_DIR,savedata-dir=$SAVEDATA_DIR"
 if [[ -n "$UPDATE_DIR_ABS" ]]; then
   MACHINE_OPTS+=",update=$UPDATE_DIR_ABS"
+fi
+if [[ -n "$PUB_CARD" ]]; then
+  [[ -d "$PUB_CARD" ]] || {
+    echo "[run-qemu] --pub-card: not a directory: $PUB_CARD" >&2
+    exit 2
+  }
+  PUB_CARD="$(cd "$PUB_CARD" && pwd)"
+  MACHINE_OPTS+=",pub-card=$PUB_CARD"
+  echo "[run-qemu] PUB card: $PUB_CARD" >&2
 fi
 ARGS=( -M "$MACHINE_OPTS" "${ARGS[@]}" )
 

@@ -355,6 +355,7 @@ static void pinball2000_init(MachineState *machine)
     p2k_install_diag(s);
     p2k_install_timing_audit(s);
     p2k_install_nic_dseg();
+    p2k_install_pub_card(s);
     p2k_install_gfxlist_watch(s);
     p2k_install_probe_cell_shim();
 
@@ -413,6 +414,17 @@ static void p2k_set_update(Object *obj, const char *value, Error **errp)
     g_free(s->update_path);
     s->update_path = (value && *value) ? g_strdup(value) : NULL;
 }
+static char *p2k_get_pub_card(Object *obj, Error **errp)
+{
+    Pinball2000MachineState *s = PINBALL2000_MACHINE(obj);
+    return g_strdup(s->pub_card_path ?: "");
+}
+static void p2k_set_pub_card(Object *obj, const char *value, Error **errp)
+{
+    Pinball2000MachineState *s = PINBALL2000_MACHINE(obj);
+    g_free(s->pub_card_path);
+    s->pub_card_path = (value && *value) ? g_strdup(value) : NULL;
+}
 
 static void pinball2000_class_init(ObjectClass *oc, P2K_CLASS_INIT_DATA data)
 {
@@ -448,6 +460,11 @@ static void pinball2000_class_init(ObjectClass *oc, P2K_CLASS_INIT_DATA data)
         "Directory holding *_bootdata.rom + *_im_flsh0.rom + *_game.rom + "
         "*_symbols.rom; assembled into BAR3 flash at boot (overrides "
         "savedata seed). Empty/unset = no update.");
+    object_class_property_add_str(oc, "pub-card",
+                                  p2k_get_pub_card, p2k_set_pub_card);
+    object_class_property_set_description(oc, "pub-card",
+        "Update bundle directory exposed through the experimental Prism "
+        "Update Board read window. Empty/unset = no PUB card.");
 }
 
 static const TypeInfo pinball2000_machine_info = {
