@@ -15,7 +15,7 @@ keeps stock, post-Williams, community and myPinballs releases distinct.
 | RFM | 0.87 | Williams/Bally | `pin2000_50070_0087_04061999_B_10000000.exe` | Missing |
 | RFM | 1.1 | Williams/Bally factory | No separate EXE established | Installed version attested |
 | RFM | 1.20 | Williams/Bally | `pin2000_50070_0120_06091999_B_10000000.exe` | EXE + extraction |
-| RFM | 1.30 | Williams/Bally | `pin2000_50070_0130_11241999_B_10000000.exe` | Missing |
+| RFM | 1.30 | Williams/Bally | `pin2000_50070_0130_11241999_B_10000000.exe` | EXE + extraction |
 | RFM | 1.40 | Williams/Bally | `pin2000_50070_0140_01312000_B_10000000.exe` | EXE + extraction |
 | RFM | 1.50 | Williams/Bally | `pin2000_50070_0150_07252000_B_10000000.exe` | EXE + extraction |
 | RFM | 1.60 | Post-Williams maintenance | `pin2000_50070_0160_09222003_B_10000000.exe` | Local EXE + extraction |
