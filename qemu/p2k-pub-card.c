@@ -8,6 +8,11 @@
  *   sound8 : bank 1, pages 0x100..0x13f (1 MiB)
  *   sound1 : bank 8, pages 0x000..0x03f (1 MiB)
  *
+ * PUB update bundles contain one 1 MiB `_sf.rom`.  The original card writer
+ * tries the 8-bit sound-flash interface and falls back to the 1-bit interface;
+ * XINA exposes those alternatives as sound8 and sound1.  They address the
+ * same programmed payload, not two independent sound ROM files.
+ *
  * This experimental model deliberately implements only the read path used by
  * XINA's `pub ... dump` command.  No normal machine behavior changes unless
  * the pinball2000 `pub-card` property names an update bundle directory.
@@ -28,8 +33,7 @@
 
 typedef struct P2KPubCard {
     uint8_t *game;
-    uint8_t *sound1;
-    uint8_t *sound8;
+    uint8_t *sound;
     uint8_t reg[4];
 } P2KPubCard;
 
@@ -43,10 +47,20 @@ static char *find_suffix(const char *dir, const char *suffix)
         return NULL;
     }
     while ((name = g_dir_read_name(d)) != NULL) {
+        char *path = g_build_filename(dir, name, NULL);
+
         if (g_str_has_suffix(name, suffix)) {
-            result = g_build_filename(dir, name, NULL);
+            result = path;
             break;
         }
+        if (g_file_test(path, G_FILE_TEST_IS_DIR)) {
+            result = find_suffix(path, suffix);
+            if (result) {
+                g_free(path);
+                break;
+            }
+        }
+        g_free(path);
     }
     g_dir_close(d);
     return result;
@@ -117,12 +131,12 @@ static uint8_t *selected_bank(P2KPubCard *card, uint32_t *offset,
     if (bank == 8) {
         *offset = page * PUB_WINDOW_SIZE;
         *capacity = PUB_SOUND_SIZE;
-        return card->sound1;
+        return card->sound;
     }
     if (bank == 1 && page >= 0x100) {
         *offset = (page - 0x100) * PUB_WINDOW_SIZE;
         *capacity = PUB_SOUND_SIZE;
-        return card->sound8;
+        return card->sound;
     }
     return NULL;
 }
@@ -187,6 +201,8 @@ void p2k_install_pub_card(Pinball2000MachineState *s)
     MemoryRegion *window;
     MemoryRegion *regs;
     size_t used = 0;
+    char *sound;
+    size_t sound_used = 0;
 
     if (!s->pub_card_path || !*s->pub_card_path) {
         return;
@@ -197,10 +213,16 @@ void p2k_install_pub_card(Pinball2000MachineState *s)
                      s->pub_card_path);
         exit(1);
     }
-    card->sound1 = g_malloc0(PUB_SOUND_SIZE);
-    card->sound8 = g_malloc0(PUB_SOUND_SIZE);
-    memset(card->sound1, 0xff, PUB_SOUND_SIZE);
-    memset(card->sound8, 0xff, PUB_SOUND_SIZE);
+    card->sound = g_malloc(PUB_SOUND_SIZE);
+    memset(card->sound, 0xff, PUB_SOUND_SIZE);
+    sound = find_suffix(s->pub_card_path, "_sf.rom");
+    if (sound && !append_file(card->sound, PUB_SOUND_SIZE, &sound_used,
+                              sound, 0)) {
+        error_report("pinball2000: cannot load PUB sound bank from %s", sound);
+        g_free(sound);
+        exit(1);
+    }
+    g_free(sound);
 
     window = g_new(MemoryRegion, 1);
     regs = g_new(MemoryRegion, 1);
@@ -213,6 +235,9 @@ void p2k_install_pub_card(Pinball2000MachineState *s)
     memory_region_add_subregion_overlap(get_system_memory(), PUB_REG_BASE,
                                         regs, 10);
     info_report("pinball2000: PUB card installed from %s "
-                "(game bank used=0x%zx/0x%x)",
-                s->pub_card_path, used, PUB_GAME_SIZE);
+                "(game=0x%zx/0x%x, sound=0x%zx/0x%x%s)",
+                s->pub_card_path, used, PUB_GAME_SIZE,
+                sound_used, PUB_SOUND_SIZE,
+                sound_used ? ", sound1/sound8 alias one _sf.rom" :
+                             ", no _sf.rom");
 }
