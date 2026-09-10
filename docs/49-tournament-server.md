@@ -19,6 +19,11 @@ mode display.
   pages and setup material survive; its server source has not been found.
 - A separate Pinball2000scores service was reported online in 2014 but its
   public domains no longer answer.
+- The Pinballworld Tournamentserver installation site survives in the Internet
+  Archive. It documents a Python 2.7 `server.py` deployment, per-cabinet player
+  files keyed by the last octet of the game IP, local-network setup and the
+  original-game/Nucore paths. Its linked `ServerEN.rar` was hosted separately;
+  a verified copy has not yet been recovered.
 - A Nucore tournament server was demonstrated in 2010 and announced for a
   future open-source release. No corresponding public source repository has
   yet been verified.
@@ -31,6 +36,13 @@ Primary surviving references:
 - <https://www.mypinballs.com/tournament/core/techsetup.jsp>
 - <https://www.mypinballs.com/tournament/core/gamesetup.jsp>
 - <https://www.pinballnews.com/shows/expo2010/index4.html>
+- <https://web.archive.org/web/20161223170430/http://pinball-tournament.servegame.com/all.html>
+
+The archived Pinballworld instructions also preserve a useful compatibility
+boundary: RFM 1.5 and SWE1 1.4 were said to work with limited functionality;
+full operation called for RFM 1.7 or newer or SWE1 1.5. The site offered RFM
+1.8 and warned that it required additional RAM in the original computer. This
+is compatibility evidence, not a recovered changelog for those ROMs.
 
 ## Recoverable wire protocol
 

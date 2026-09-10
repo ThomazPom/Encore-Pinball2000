@@ -13,7 +13,9 @@ keeps stock, post-Williams, community and myPinballs releases distinct.
 | RFM | 0.85 | Williams/Bally | `pin2000_50070_0085_04051999_B_10000000.exe` | Missing |
 | RFM | 0.86 | Williams/Bally | `pin2000_50070_0086_04061999_B_10000000.exe` | Missing |
 | RFM | 0.87 | Williams/Bally | `pin2000_50070_0087_04061999_B_10000000.exe` | Missing |
-| RFM | 1.1 | Williams/Bally factory | No separate EXE established | Installed version attested |
+| RFM | 0.90 | Williams/Bally pre-release | No separate EXE established | Installed version attested; named as predecessor of 1.00 by Williams |
+| RFM | 1.00 | Williams/Bally | No separate EXE established | Published revision history recovered |
+| RFM | 1.10 | Williams/Bally | No separate EXE established | Published revision history and installed version attested |
 | RFM | 1.20 | Williams/Bally | `pin2000_50070_0120_06091999_B_10000000.exe` | EXE + extraction |
 | RFM | 1.30 | Williams/Bally | `pin2000_50070_0130_11241999_B_10000000.exe` | EXE + extraction |
 | RFM | 1.40 | Williams/Bally | `pin2000_50070_0140_01312000_B_10000000.exe` | EXE + extraction |
@@ -21,14 +23,14 @@ keeps stock, post-Williams, community and myPinballs releases distinct.
 | RFM | 1.60 | Post-Williams maintenance | `pin2000_50070_0160_09222003_B_10000000.exe` | Local EXE + extraction |
 | RFM | 1.21 | Community/tournament server | `pin2000_50070_0121_05202016_B_10000000.exe` | Missing |
 | RFM | 1.70 | Community/tournament server | `pin2000_50070_0170_02062006_B_10000000.exe` | Missing |
-| RFM | 1.80 | Community/tournament server | `pin2000_50070_0180_04232006_B_10000000.exe` | Extraction only |
+| RFM | 1.80 | Community/tournament server | `pin2000_50070_0180_04232006_B_10000000.exe` | Local ROM ZIP + extraction; original EXE missing |
 | RFM | 1.90 | Community/tournament server | `pin2000_50070_0190_11222017_B_10000000.exe` | Missing |
 | RFM | 1.90 | Hemtoni | `rfm_190.zip` (boot timestamp 2018-03-29) | Local ZIP + assembled extraction |
 | RFM | 1.91 | Hemtoni | `rfm_191.zip` (boot timestamp 2018-05-30) | Local ZIP + assembled extraction |
 | RFM | 1.95 | Hemtoni | `rfm_195.zip` (boot timestamp 2018-03-29) | Local ZIP + assembled extraction |
 | RFM | 2.00 | myPinballs | `pin2000_50070_0200_12032018_B_10000000.exe` | Local EXE + extraction |
 | RFM | 2.10 | myPinballs | `pin2000_50070_0210_04112019_B_10000000.exe` | Local EXE + extraction |
-| RFM | 2.11 | myPinballs | Original archive name not recovered | Missing |
+| RFM | 2.11 | myPinballs | Original archive name not recovered (build dated 2019-05-10) | Missing |
 | RFM | 2.20 | myPinballs | `pin2000_50070_0220_10222019_B_10000000.exe` | Local EXE + extraction |
 | RFM | 2.21 | myPinballs | `pin2000_50070_0221_04052020_B_10000000.exe` | Local EXE + extraction |
 | RFM | 2.22 | myPinballs | `pin2000_50070_0222_06302020_B_10000000.exe` | Local EXE + extraction |
@@ -48,7 +50,7 @@ keeps stock, post-Williams, community and myPinballs releases distinct.
 | SWE1 | 1.60 | Community/tournament server | `pin2000_50069_0160_02012013_B_10000000.exe` | Missing |
 | SWE1 | 1.65 | Community/tournament server | `pin2000_50069_0165_02212018_B_10000000.exe` | Missing |
 | SWE1 | 1.66 | Hemtoni | `swep1_166.zip` (boot timestamp 2022-04-03) | Local ZIP + extraction |
-| SWE1 | 2.00 | Community/tournament server | `pin2000_50069_0200_02262016_B_10000000.exe` | Missing |
+| SWE1 | 2.00 | Community/tournament server; rewritten 1.30 “Questionmark Mission” test build, not a chronological 2.x successor | `pin2000_50069_0200_02262016_B_10000000.exe` | Missing |
 | SWE1 | 2.00 | myPinballs | `pin2000_50069_0200_04112025_B_10000000.exe` | Local EXE + extraction |
 | SWE1 | 2.01 | myPinballs | `pin2000_50069_0201_05012025_B_10000000.exe` | Local EXE + extraction |
 | SWE1 | 2.10 | myPinballs | `pin2000_50069_0210_10312025_B_10000000.exe` | Local EXE + extraction |
@@ -59,9 +61,11 @@ keeps stock, post-Williams, community and myPinballs releases distinct.
   tournament server, but game ID 50072 is not ordinary RFM 50070.
 - The same server listed separate PUB-card utilities. PUB tools are not copies
   of the corresponding game-update EXEs.
-- The myPinballs Update Manager shows RFM 2.11 dated 5 October 2019, but every
-  possible filename date through the RFM 2.20 release was checked without
-  recovering its archive.
+- RFM 2.11 is attested with a 10 May 2019 build date. This fits between RFM
+  2.10 (11 April 2019) and 2.20 (22 October 2019); it cannot belong to the
+  myPinballs SWE1 line, which began in 2025. Its updater and release notes have
+  not yet been recovered, and the author's current continuous changelog omits
+  this intermediate build.
 - Build dates are not always archive dates. RFM 2.10 displays 31 December 2018
   in the manager but its verified archive is dated 11 April 2019.
 - SWE1 0.40 is not merely a suspected filename: multiple cabinet owners have
@@ -78,6 +82,10 @@ keeps stock, post-Williams, community and myPinballs releases distinct.
   image shared by RFM 1.40 through 1.80. XINA validated that image and all three
   recovered boot/game/symbol sets before starting versions 1.90, 1.91 and 1.95.
   Their outer directory dates come from the embedded boot timestamps.
+- RFM 1.80 is canonically stored under `04232006`: its boot and game images
+  are dated 23 April 2006. The former `0180_09222003` directory was a
+  byte-identical, incorrectly named duplicate; 22 September 2003 belongs to
+  RFM 1.60 and the duplicate has been removed.
 
 ## Repository policy
 

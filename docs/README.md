@@ -43,6 +43,7 @@ result, or test a cabinet.
 - [Real LPT passthrough](46-real-lpt-passthrough.md)
 - [Optional network card](48-network.md)
 - [Tournament server preservation](49-tournament-server.md)
+- [RFM and SWE1 game-code changelogs](50-game-changelogs.md)
 
 ## Non-roadmap notes
 
