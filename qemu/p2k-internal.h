@@ -31,6 +31,7 @@ static inline bool p2k_fresh_savedata_enabled(void)
 typedef struct Pinball2000MachineState {
     X86MachineState parent;
     char            *game;          /* "swe1", "rfm", ... */
+    char            *rom_revision;  /* optional bank-0 filename suffix (e.g. "r2") */
     char            *roms_dir;      /* default: <cwd>/roms */
     char            *savedata_dir;  /* default: <cwd>/savedata */
     char            *update_path;   /* directory holding *_bootdata/im_flsh0/game/symbols.rom; NULL = no update */

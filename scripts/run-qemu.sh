@@ -274,6 +274,8 @@ CORE LAUNCH
                                         base-ROM compatibility support
                                         (probe-cell shim, etc.) to this
                                         mode only.
+                              r2        RFM 0.80 revision-2 prototype ROMs;
+                                        no update bundle is staged.
                               0210      short version code (also accepts
                                         "210", "2.10"); resolved against
                                         ./updates/pin2000_<gid>_<vvvv>_*
@@ -986,6 +988,14 @@ if [[ $NETWORK_PASST -eq 1 && $NETWORK_NAT -eq 1 ]]; then
   echo "[run-qemu] --network-passt and --network-nat are mutually exclusive" >&2
   exit 2
 fi
+if [[ "$UPDATE_TOKEN" == r2 ]]; then
+  if [[ "$GAME" == auto ]]; then
+    GAME=rfm
+  elif [[ "$GAME" != rfm ]]; then
+    echo "[run-qemu] ERROR: --update r2 is only available for RFM" >&2
+    exit 2
+  fi
+fi
 if [[ $NETWORK_AUTO -eq 1 &&
       ( $NETWORK_MIRROR -eq 1 || $NETWORK_PASST -eq 1 || -n "$NETWORK_BRIDGE" ) ]]; then
   echo "[run-qemu] --network-auto cannot be combined with another network transport" >&2
@@ -1389,10 +1399,11 @@ if [[ -n "${P2K_DCS_AUDIO_CAPTURE:-}" && "$AUDIO" == "none" ]]; then
 fi
 
 # --- update token resolution ------------------------------------------------
-# UPDATE_TOKEN ∈ {auto, latest, none, <short-code>, <dir>}
+# UPDATE_TOKEN ∈ {auto, latest, none, r2, <short-code>, <dir>}
 # Output: UPDATE_DIR_ABS (empty → no -M update=...; or P2K_NO_AUTO_UPDATE=1
 # in base-ROM mode).
 UPDATE_DIR_ABS=""
+ROM_REVISION=""
 
 resolve_update_token() {
   local token="$1" gn=""
@@ -1464,6 +1475,11 @@ case "$UPDATE_TOKEN" in
     export P2K_NO_AUTO_UPDATE=1
     echo "[run-qemu] --update none → base-ROM mode (P2K_NO_AUTO_UPDATE=1)" >&2
     ;;
+  r2)
+    ROM_REVISION=r2
+    export P2K_NO_AUTO_UPDATE=1
+    echo "[run-qemu] --update r2 → RFM 0.80 revision-2 base ROMs" >&2
+    ;;
   auto|"")
     # Default. Leave -M update= unset; the machine auto-discovers in
     # ./updates and falls back to base ROMs if nothing matches.
@@ -1523,7 +1539,8 @@ if [[ "${P2K_DCS_ENGINE:-adsp-hybrid-thread}" == "pb2kslib-adsp" &&
       "$PB2K_ADSP_CACHE_WORKERS" -gt 1 &&
       -z "${P2K_PB2K_ADSP_WORKER:-}" ]]; then
   __cache_update="$UPDATE_DIR_ABS"
-  if [[ -z "$__cache_update" && "$UPDATE_TOKEN" != "none" ]]; then
+  if [[ -z "$__cache_update" && "$UPDATE_TOKEN" != "none" &&
+        "$UPDATE_TOKEN" != "r2" ]]; then
     __cache_update="$(resolve_update_token latest || true)"
   fi
   if [[ -n "$__cache_update" ]]; then
@@ -1778,6 +1795,9 @@ fi
 
 # --- pinball2000 machine ----------------------------------------------------
 MACHINE_OPTS="pinball2000,game=$GAME,roms-dir=$ROMS_DIR,savedata-dir=$SAVEDATA_DIR"
+if [[ -n "$ROM_REVISION" ]]; then
+  MACHINE_OPTS+=",rom-revision=$ROM_REVISION"
+fi
 if [[ -n "$UPDATE_DIR_ABS" ]]; then
   MACHINE_OPTS+=",update=$UPDATE_DIR_ABS"
 fi

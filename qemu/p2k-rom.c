@@ -16,7 +16,8 @@
 
 static int p2k_load_chip_sized(uint8_t *bank, int which_chip,
                                const char *roms_dir, const char *game,
-                               int chipnum, size_t bank_size)
+                               int chipnum, const char *revision,
+                               size_t bank_size)
 {
     char path[512];
     char alt[512];
@@ -24,12 +25,12 @@ static int p2k_load_chip_sized(uint8_t *bank, int which_chip,
     FILE *fp = NULL;
 
     for (int i = 0; suffixes[i] && !fp; i++) {
-        snprintf(path, sizeof(path), "%s/%s_u%d%s",
-                 roms_dir, game, chipnum, suffixes[i]);
+        snprintf(path, sizeof(path), "%s/%s_u%d%s%s",
+                 roms_dir, game, chipnum, revision ?: "", suffixes[i]);
         fp = fopen(path, "rb");
         if (!fp) {
-            snprintf(alt, sizeof(alt), "%s/%s/u%d%s",
-                     roms_dir, game, chipnum, suffixes[i]);
+            snprintf(alt, sizeof(alt), "%s/%s/u%d%s%s",
+                     roms_dir, game, chipnum, revision ?: "", suffixes[i]);
             fp = fopen(alt, "rb");
             if (fp) {
                 snprintf(path, sizeof(path), "%s", alt);
@@ -60,13 +61,14 @@ static int p2k_load_chip_sized(uint8_t *bank, int which_chip,
 }
 
 static int p2k_load_chip(uint8_t *bank, int which_chip,
-                         const char *roms_dir, const char *game, int chipnum)
+                         const char *roms_dir, const char *game, int chipnum,
+                         const char *revision)
 {
     int rc = p2k_load_chip_sized(bank, which_chip, roms_dir, game, chipnum,
-                                 P2K_BANK_SIZE);
+                                 revision, P2K_BANK_SIZE);
     if (rc < 0) {
-        error_report("pinball2000: missing ROM chip %s_u%d.{rom,bin} in %s",
-                     game, chipnum, roms_dir);
+        error_report("pinball2000: missing ROM chip %s_u%d%s.{rom,bin} in %s",
+                     game, chipnum, revision ?: "", roms_dir);
     }
     return rc;
 }
@@ -74,8 +76,10 @@ static int p2k_load_chip(uint8_t *bank, int which_chip,
 int p2k_load_bank0(Pinball2000MachineState *s)
 {
     s->bank0 = g_malloc0(P2K_BANK_SIZE);
-    if (p2k_load_chip(s->bank0, 0, s->roms_dir, s->game, 100) < 0) return -1;
-    if (p2k_load_chip(s->bank0, 1, s->roms_dir, s->game, 101) < 0) return -1;
+    if (p2k_load_chip(s->bank0, 0, s->roms_dir, s->game, 100,
+                      s->rom_revision) < 0) return -1;
+    if (p2k_load_chip(s->bank0, 1, s->roms_dir, s->game, 101,
+                      s->rom_revision) < 0) return -1;
     return 0;
 }
 
@@ -85,8 +89,8 @@ static uint8_t *p2k_try_load_bank(const char *roms_dir, const char *game,
                                   int chip_a, int chip_b, int bank_idx)
 {
     uint8_t *bank = g_malloc0(P2K_BANK_SIZE);
-    if (p2k_load_chip(bank, 0, roms_dir, game, chip_a) < 0 ||
-        p2k_load_chip(bank, 1, roms_dir, game, chip_b) < 0) {
+    if (p2k_load_chip(bank, 0, roms_dir, game, chip_a, NULL) < 0 ||
+        p2k_load_chip(bank, 1, roms_dir, game, chip_b, NULL) < 0) {
         info_report("pinball2000: bank%d (chips u%d/u%d) absent — skipping",
                     bank_idx, chip_a, chip_b);
         g_free(bank);
@@ -106,9 +110,9 @@ void p2k_load_dcs_rom(Pinball2000MachineState *s)
 {
     /* DCS sound ROM = chips u109 + u110 interleaved into 8 MiB. */
     s->dcs_rom = g_malloc0(P2K_DCS_BANK_SIZE);
-    if (p2k_load_chip_sized(s->dcs_rom, 0, s->roms_dir, s->game, 109,
+    if (p2k_load_chip_sized(s->dcs_rom, 0, s->roms_dir, s->game, 109, NULL,
                             P2K_DCS_BANK_SIZE) < 0 ||
-        p2k_load_chip_sized(s->dcs_rom, 1, s->roms_dir, s->game, 110,
+        p2k_load_chip_sized(s->dcs_rom, 1, s->roms_dir, s->game, 110, NULL,
                             P2K_DCS_BANK_SIZE) < 0) {
         info_report("pinball2000: DCS sound ROM (u109/u110) absent — silent");
         g_free(s->dcs_rom);

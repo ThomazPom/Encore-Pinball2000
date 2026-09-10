@@ -16,6 +16,11 @@ roms/swe1/u100.bin
 
 RFM uses the `rfm` prefix. `--roms DIR` changes the ROM root.
 
+The preserved RFM 0.80 revision-2 prototype uses
+`rfm_u100r2.rom`/`rfm_u101r2.rom`. Select it with `--update r2`; despite the
+CLI spelling, this changes the physical bank-0 ROM pair and disables BAR3
+update staging. Banks 1–3 and the sound ROMs retain the ordinary RFM files.
+
 | Chips | Contents | Required |
 |---|---|---|
 | `u100/u101` | Game bank 0 and boot image | Yes |
@@ -93,6 +98,7 @@ The launcher provides four ways to select the directory:
 | Selection | Behavior |
 |---|---|
 | no option / `--update auto` | Choose the highest available version and install it when saved flash differs |
+| `--update r2` | RFM-only prototype base-ROM mode using `u100r2/u101r2`; no update is staged |
 | `--update latest` | Resolve and apply the highest installed version |
 | `--update VERSION` | Resolve a matching installed version |
 | `--update DIRECTORY` | Apply that inner game-number directory directly |
