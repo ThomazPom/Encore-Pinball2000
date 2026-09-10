@@ -153,23 +153,8 @@ static void p2k_dcs_uart_write(void *opaque, hwaddr addr,
      * conflict with legacy 16550 use because byte writes to the data
      * register are otherwise ignored.
      *
-     * A-B verified 2026-04-30 (commit-time) on the SWE1 ROM:
-     *   - default boot (auto-update path) : 0 byte-pair commands ever
-     *     observed; all DCS traffic goes via word writes / BAR4. The
-     *     byte-pair branch is dead code on this path, so leaving it
-     *     unconditional is harmless for normal update boots.
-     *   - --update none / --update none --no-savedata WITHOUT the
-     *     probe-cell shim: 9+ byte-pair commands fire (the legacy
-     *     UART fallback) — historical observation pre-shim.
-     *   - With the probe-cell shim active (which it is by default
-     *     under P2K_NO_AUTO_UPDATE), --update none also goes through
-     *     BAR4 with 0 byte-pair commands. The byte-pair path is
-     *     therefore dead code on BOTH supported boots today, but is
-     *     kept available because real silicon supports it.
-     *   - With P2K_DCS_NO_BYTE_PAIR=1 the byte-pair path is disabled
-     *     entirely (forensic A/B knob).
-     * Conclusion: the byte-pair path is real silicon ROM behavior; we
-     * keep it on by default and only disable via env knob for A/B. */
+     * The byte-pair path is real silicon ROM behavior. Keep it enabled by
+     * default and allow P2K_DCS_NO_BYTE_PAIR=1 only for forensic A/B work. */
     if (off == 4 && size == 1) {
         if (p2k_dcs_no_byte_pair()) {
             s_dcs_byte_pair_skipped++;

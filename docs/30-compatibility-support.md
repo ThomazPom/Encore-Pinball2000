@@ -28,13 +28,8 @@ available for diagnosing an older update that wedges with the native limit.
 
 ## Base-ROM DCS detection
 
-The base software checks a relocated cell before initializing DCS.
-`qemu/p2k-probe-cell-shim.c` supplies the staged values used by that check. The
-helper activates when `--update none` sets `P2K_NO_AUTO_UPDATE=1`.
-
-> [!NOTE]
-> Runs with a selected or automatically discovered update do not activate the
-> base-ROM probe-cell helper.
+Base-ROM boots use the same emulated DCS devices as update boots. No periodic
+guest-memory patch or compatibility timer is required.
 
 Details: [architecture](10-architecture.md) and
 [boot path](14-boot-recipe.md).

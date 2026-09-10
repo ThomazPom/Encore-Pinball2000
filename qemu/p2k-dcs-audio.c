@@ -164,7 +164,7 @@ typedef struct DcsAudio {
     uint64_t      cmd_by_bar4;
     uint64_t      cmd_by_uart_w;
     uint64_t      cmd_by_uart_bp;
-    uint64_t      cmd_by_compat;       /* "compat:*" museum-mode bridges */
+    uint64_t      cmd_by_compat;       /* compatibility-source commands */
     uint64_t      cmd_by_other;
 
     /* "played-but-never-rendered" detector.  We snapshot the played

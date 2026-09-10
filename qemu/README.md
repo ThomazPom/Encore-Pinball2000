@@ -25,7 +25,7 @@ Development rules, hook placement and validation requirements:
 | `p2k-smc8416.c` | Optional SMC8416T-compatible ISA network card and shared packet RAM |
 | `p2k-gx.c`, `p2k-gp-blt.c`, `p2k-display.c`, `p2k-video-capture.c`, `p2k-vsync.c` | Graphics, compressed video capture and display timing |
 | `p2k-isa-stubs.c`, `p2k-superio.c`, `p2k-cyrix-ccr.c` | Board-specific I/O surfaces |
-| `p2k-mem-detect.c`, `p2k-probe-cell-shim.c` | Narrow software compatibility support |
+| `p2k-mem-detect.c` | Opt-in software compatibility support |
 | `p2k-clkint-hotloop.c`, `p2k-timing-audit.c`, `p2k-diag.c` | Clock delivery and diagnostics |
 
 ## Build
@@ -103,8 +103,6 @@ Not every file in this directory is a complete chip model:
   large structural change and currently offers no cabinet or runtime benefit.
 - `p2k-mem-detect.c` retains an opt-in, signature-matched XINU memory-size
   override (`P2K_MEM_DETECT_PATCH=1`) for diagnosing older updates.
-- `p2k-probe-cell-shim.c` performs a bounded base-ROM-only compatibility
-  update; normal update boots do not activate it.
 - `p2k-plx-regs.c` and the ISA, SuperIO and GX files model the behavior used by
   the software, not every feature of their physical chips.
 

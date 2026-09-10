@@ -224,14 +224,6 @@ void p2k_install_pub_card(Pinball2000MachineState *s);
  * No effect on guest execution. */
 void p2k_install_diag(Pinball2000MachineState *s);
 
-/* p2k-probe-cell-shim.c: STRICTLY GATED guest-data scribble for
- * --update none / P2K_NO_AUTO_UPDATE parity. Implements the required
- * "watchdog/probe-cell @ pci_watchdog_bone()" RAM_WR32 maintenance.
- * Active ONLY when P2K_NO_AUTO_UPDATE is set. NEVER active on normal
- * update boots. Documented as a temporary compatibility bridge. */
-void p2k_install_probe_cell_shim(void);
-
-
 /* p2k-timing-audit.c: single-line timing panel. Reports expected PIT
  * cadence separately from observed IRQ0 line, clkint-entry, and PIC EOI
  * counters. Default ON (initial line @3 s, exit line at shutdown). With
