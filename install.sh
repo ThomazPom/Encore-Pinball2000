@@ -37,6 +37,20 @@ ask() {
     fi
 }
 
+valid_ipv4() {
+    local value="$1" octet
+    local -a octets
+    IFS=. read -r -a octets <<<"$value"
+    ((${#octets[@]} == 4)) || return 1
+    for octet in "${octets[@]}"; do
+        [[ "$octet" =~ ^[0-9]+$ ]] && ((10#$octet <= 255)) || return 1
+    done
+}
+
+valid_tcp_port() {
+    [[ "$1" =~ ^[0-9]+$ ]] && ((10#$1 >= 1 && 10#$1 <= 65535))
+}
+
 case "${1:-}" in
     -h|--help) usage; exit 0 ;;
 esac
@@ -156,62 +170,32 @@ lpt_device="${lpt_device:-auto}"
 case "$lpt_device" in auto|emulated|required) ;; *) echo "Invalid LPT device" >&2; exit 2 ;; esac
 
 network=0
-network_nat=0
-http_port=""
+network_mode=""
 network_bridge=""
 network_forwards=()
+network_local_forwards=()
+network_setip=0
+guest_ip=""
+guest_mask=""
+guest_gateway=""
 echo
 echo "Optional Pinball 2000 network card:"
 echo "  Encore can expose the original SMC8416T-compatible Ethernet hardware"
-echo "  in an isolated network, through user-mode NAT, or on a Linux bridge."
-echo "  The game keeps control of its IP settings."
+echo "  through automatic NAT, an isolated network, passt, or a Linux bridge."
 if ask "Enable the emulated network card?" N; then
     network=1
-    read -r -p "Network attachment [isolated/nat/bridge] (isolated): " network_mode
-    network_mode="${network_mode:-isolated}"
+    echo
+    echo "Network attachment:"
+    echo "  auto      recommended; Encore adapts to the IP used by Pinball 2000"
+    echo "  mirror    advanced; Pinball 2000 must match the host IPv4 network"
+    echo "  nat       conventional QEMU NAT using 10.0.2.0/24"
+    echo "  passt     unprivileged host-network integration"
+    echo "  isolated  virtual network with no outside access"
+    echo "  bridge    direct attachment to an existing Linux bridge"
+    read -r -p "Network attachment [auto/mirror/nat/passt/isolated/bridge] (auto): " network_mode
+    network_mode="${network_mode:-auto}"
     case "$network_mode" in
-        isolated)
-            echo "Leave the next answer empty unless you want local access to the game's"
-            echo "built-in HTTP server. It is bound to 127.0.0.1 only."
-            read -r -p "Local HTTP port [disabled]: " http_port
-            if [[ -n "$http_port" ]]; then
-                if [[ ! "$http_port" =~ ^[0-9]+$ ]] ||
-                   (( 10#$http_port < 1 || 10#$http_port > 65535 )); then
-                    echo "Invalid HTTP port" >&2
-                    exit 2
-                fi
-                http_port="$((10#$http_port))"
-            fi
-            ;;
-        nat)
-            network_nat=1
-            echo "NAT gives XINA outbound access without Docker or host network changes."
-            if ask "Expose the built-in HTTP server as host TCP 8080?" Y; then
-                network_forwards+=("8080:80")
-            fi
-            if ask "Expose the optional Telnet server as host TCP 2323?" N; then
-                network_forwards+=("2323:23")
-            fi
-            echo "To expose TCP services on the LAN, enter repeatable HOST:GUEST pairs."
-            read -r -p "Published TCP ports, space-separated [none] (example 8080:80): " forward_line
-            for forward in $forward_line; do
-                [[ "$forward" =~ ^([0-9]+):([0-9]+)$ ]] || {
-                    echo "Invalid TCP forwarding: $forward" >&2; exit 2;
-                }
-                host_port="$((10#${BASH_REMATCH[1]}))"
-                guest_port="$((10#${BASH_REMATCH[2]}))"
-                (( host_port >= 1 && host_port <= 65535 &&
-                   guest_port >= 1 && guest_port <= 65535 )) || {
-                    echo "Invalid TCP forwarding: $forward" >&2; exit 2;
-                }
-                for existing_forward in "${network_forwards[@]}"; do
-                    [[ "${existing_forward%%:*}" != "$host_port" ]] || {
-                        echo "Host TCP port $host_port is specified twice" >&2; exit 2;
-                    }
-                done
-                network_forwards+=("$host_port:$guest_port")
-            done
-            ;;
+        auto|mirror|nat|passt|isolated) ;;
         bridge)
             echo "Advanced: XINA will be directly reachable from the selected LAN."
             echo "Encore will create a managed TAP and attach it to an existing Linux bridge."
@@ -225,6 +209,111 @@ if ask "Enable the emulated network card?" N; then
             ;;
         *) echo "Invalid network attachment" >&2; exit 2 ;;
     esac
+
+    if [[ "$network_mode" != bridge ]]; then
+        echo
+        if [[ "$network_mode" == auto ]]; then
+            echo "XINA needs an IP address, netmask and gateway to start its network stack."
+            echo "In automatic mode their exact values have almost no practical impact:"
+            echo "Encore adapts to the active guest address and they do not need to match"
+            echo "your home or cabinet network. Press Enter to accept the safe defaults."
+        elif [[ "$network_mode" == mirror ]]; then
+            echo "Mirror mode requires Pinball 2000's IP, mask and gateway to match"
+            echo "the host network. Incorrect or stale values prevent networking."
+        else
+            echo "The following optional values configure XINA before its network starts."
+        fi
+        configure_ip=0
+        if [[ "$network_mode" == auto || "$network_mode" == mirror ]]; then
+            configure_ip=1
+        elif ask "Configure Pinball 2000 IP settings at startup?" Y; then
+            configure_ip=1
+        fi
+        if [[ $configure_ip -eq 1 ]]; then
+            network_setip=1
+            default_ip=10.0.2.15
+            default_mask=255.255.255.0
+            default_gateway=10.0.2.2
+            if [[ "$network_mode" == mirror ]] && command -v ip >/dev/null 2>&1; then
+                default_route="$(ip -4 route show default 2>/dev/null | head -n1 || true)"
+                mirror_iface="$(awk '{for(i=1;i<=NF;i++)if($i=="dev")print $(i+1)}' <<<"$default_route")"
+                detected_gateway="$(awk '{for(i=1;i<=NF;i++)if($i=="via")print $(i+1)}' <<<"$default_route")"
+                mirror_cidr=""
+                [[ -z "$mirror_iface" ]] || \
+                    mirror_cidr="$(ip -o -4 addr show dev "$mirror_iface" scope global 2>/dev/null | awk 'NR==1{print $4}' || true)"
+                if [[ -n "$mirror_cidr" && -n "$detected_gateway" ]] &&
+                   command -v python3 >/dev/null 2>&1; then
+                    detected_mask="$(python3 - "$mirror_cidr" <<'PY'
+import ipaddress, sys
+print(ipaddress.ip_interface(sys.argv[1]).netmask)
+PY
+)"
+                    default_ip="${mirror_cidr%/*}"
+                    default_mask="$detected_mask"
+                    default_gateway="$detected_gateway"
+                else
+                    echo "Host IPv4 settings could not be detected; enter them manually."
+                fi
+            fi
+            read -r -p "Pinball 2000 IP address [$default_ip]: " guest_ip
+            guest_ip="${guest_ip:-$default_ip}"
+            read -r -p "Pinball 2000 netmask [$default_mask]: " guest_mask
+            guest_mask="${guest_mask:-$default_mask}"
+            read -r -p "Pinball 2000 gateway [$default_gateway]: " guest_gateway
+            guest_gateway="${guest_gateway:-$default_gateway}"
+            valid_ipv4 "$guest_ip" && valid_ipv4 "$guest_mask" &&
+                valid_ipv4 "$guest_gateway" || {
+                echo "Invalid IPv4 settings" >&2; exit 2;
+            }
+        fi
+
+        if ask "Expose Pinball 2000 TCP services?" N; then
+            echo
+            echo "Exposure scope:"
+            echo "  local    only programs on this cabinet can connect — Recommended"
+            echo "  network  other devices can connect through the cabinet's IP address"
+            read -r -p "Scope [local/network] (local): " forward_scope
+            forward_scope="${forward_scope:-local}"
+            [[ "$forward_scope" == local || "$forward_scope" == network ]] || {
+                echo "Invalid exposure scope" >&2; exit 2;
+            }
+            if [[ "$forward_scope" == network ]]; then
+                echo "WARNING: XINA provides historical services without modern security."
+                echo "Expose them only on a trusted local network."
+            fi
+
+            add_installer_forward() {
+                local host_port="$1" guest_port="$2" existing
+                valid_tcp_port "$host_port" && valid_tcp_port "$guest_port" || {
+                    echo "TCP ports must be from 1 to 65535" >&2; exit 2;
+                }
+                host_port="$((10#$host_port))"
+                guest_port="$((10#$guest_port))"
+                for existing in "${network_forwards[@]}" "${network_local_forwards[@]}"; do
+                    [[ -z "$existing" || "${existing%%:*}" != "$host_port" ]] || {
+                        echo "Host TCP port $host_port is specified twice" >&2; exit 2;
+                    }
+                done
+                if [[ "$forward_scope" == local ]]; then
+                    network_local_forwards+=("$host_port:$guest_port")
+                else
+                    network_forwards+=("$host_port:$guest_port")
+                fi
+            }
+
+            ask "Expose the built-in web interface (host 8080 -> Pinball 2000 80)?" Y &&
+                add_installer_forward 8080 80
+            ask "Expose the Telnet console (host 2323 -> Pinball 2000 23)?" N &&
+                add_installer_forward 2323 23
+            while ask "Add another TCP service?" N; do
+                echo "  Host port: the port opened on this cabinet."
+                echo "  Pinball 2000 port: the service port inside the emulated machine."
+                read -r -p "Host TCP port: " host_port
+                read -r -p "Pinball 2000 guest TCP port: " guest_port
+                add_installer_forward "$host_port" "$guest_port"
+            done
+        fi
+    fi
 fi
 
 start_flipped=1
@@ -276,14 +365,17 @@ echo "  game         : $game"
 echo "  LPT device   : $lpt_device"
 if [[ -n "$network_bridge" ]]; then
     echo "  network      : SMC8416T on bridge $network_bridge (LAN-exposed)"
-elif [[ $network_nat -eq 1 ]]; then
-    echo "  network      : user-mode NAT"
-    ((${#network_forwards[@]} == 0)) || \
-        echo "  exposed TCP  : ${network_forwards[*]} (host:guest)"
+elif [[ $network -eq 1 ]]; then
+    echo "  network      : $network_mode"
 else
-    echo "  network      : $([[ $network -eq 1 ]] && echo 'isolated SMC8416T' || echo disabled)"
+    echo "  network      : disabled"
 fi
-[[ -z "$http_port" ]] || echo "  local HTTP   : http://127.0.0.1:$http_port/"
+[[ $network_setip -eq 0 ]] || \
+    echo "  XINA IPv4    : $guest_ip mask $guest_mask gateway $guest_gateway"
+((${#network_local_forwards[@]} == 0)) || \
+    echo "  local TCP    : ${network_local_forwards[*]} (host:guest)"
+((${#network_forwards[@]} == 0)) || \
+    echo "  network TCP  : ${network_forwards[*]} (host:guest)"
 echo "  flipscreen   : $([[ $start_flipped -eq 1 ]] && echo enabled || echo disabled)"
 echo "  execution    : $([[ $run_as_root -eq 1 ]] && echo 'root (diagnostic)' || echo 'session user')"
 echo "  host audio   : $([[ $cabinet_audio -eq 1 ]] && echo 'unmute and set 100% at startup' || echo unchanged)"
@@ -311,17 +403,22 @@ launch_args=()
 [[ "$start_flipped" -eq 0 ]] || launch_args+=(--flipscreen)
 launch_args+=(--lpt-device "$lpt_device")
 if [[ $network -eq 1 ]]; then
-    if [[ -n "$network_bridge" ]]; then
-        launch_args+=(--network-bridge "$network_bridge")
-    elif [[ $network_nat -eq 1 ]]; then
-        launch_args+=(--network-nat)
-        for forward in "${network_forwards[@]}"; do
-            launch_args+=(--forward "$forward")
-        done
-    else
-        launch_args+=(--network)
-        [[ -z "$http_port" ]] || launch_args+=(--http-port "$http_port")
-    fi
+    case "$network_mode" in
+        auto) launch_args+=(--network-auto) ;;
+        mirror) launch_args+=(--network-mirror) ;;
+        nat) launch_args+=(--network-nat) ;;
+        passt) launch_args+=(--network-passt) ;;
+        isolated) launch_args+=(--network) ;;
+        bridge) launch_args+=(--network-bridge "$network_bridge") ;;
+    esac
+    [[ $network_setip -eq 0 ]] || \
+        launch_args+=(--setip "$guest_ip" "$guest_mask" "$guest_gateway")
+    for forward in "${network_local_forwards[@]}"; do
+        launch_args+=(--forward-local "$forward")
+    done
+    for forward in "${network_forwards[@]}"; do
+        launch_args+=(--forward "$forward")
+    done
 fi
 
 build_qemu="$session_home/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
@@ -333,17 +430,22 @@ release_qemu="$release_dir/qemu-system-i386"
 # newly granted supplementary group effective before Encore starts.
 preflight_args=(--preflight --fullscreen --game "$game" --lpt-device "$lpt_device")
 if [[ $network -eq 1 ]]; then
-    if [[ -n "$network_bridge" ]]; then
-        preflight_args+=(--network-bridge "$network_bridge")
-    elif [[ $network_nat -eq 1 ]]; then
-        preflight_args+=(--network-nat)
-        for forward in "${network_forwards[@]}"; do
-            preflight_args+=(--forward "$forward")
-        done
-    else
-        preflight_args+=(--network)
-        [[ -z "$http_port" ]] || preflight_args+=(--http-port "$http_port")
-    fi
+    case "$network_mode" in
+        auto) preflight_args+=(--network-auto) ;;
+        mirror) preflight_args+=(--network-mirror) ;;
+        nat) preflight_args+=(--network-nat) ;;
+        passt) preflight_args+=(--network-passt) ;;
+        isolated) preflight_args+=(--network) ;;
+        bridge) preflight_args+=(--network-bridge "$network_bridge") ;;
+    esac
+    [[ $network_setip -eq 0 ]] || \
+        preflight_args+=(--setip "$guest_ip" "$guest_mask" "$guest_gateway")
+    for forward in "${network_local_forwards[@]}"; do
+        preflight_args+=(--forward-local "$forward")
+    done
+    for forward in "${network_forwards[@]}"; do
+        preflight_args+=(--forward "$forward")
+    done
 fi
 [[ "$backend" == direct-console ]] || preflight_args+=("--$backend")
 if [[ "$backend" == direct-console ]]; then
@@ -566,7 +668,12 @@ else
     fi
     install -d -m 0755 "$(dirname "$GETTY_DROPIN")"
     install -d -m 0755 "$(dirname "$CABINET_SHELL")"
-    install -m 0755 "$ROOT/scripts/internal/encore-session.sh" "$CABINET_SHELL"
+    cabinet_shell_source="$ROOT/scripts/internal/encore-session.sh"
+    [[ -s "$cabinet_shell_source" ]] || {
+        echo "install.sh: cabinet session helper is missing or empty" >&2
+        exit 3
+    }
+    install -m 0755 "$cabinet_shell_source" "$CABINET_SHELL"
     if ! grep -Fxq "$CABINET_SHELL" /etc/shells 2>/dev/null; then
         printf '%s\n' "$CABINET_SHELL" >> /etc/shells
         printf '%s\n' "$CABINET_SHELL" > "$STATE/shells-line-added"
@@ -647,6 +754,12 @@ if [[ "$run_as_root" -eq 1 ]]; then
 fi
 echo
 printf '%s\n' encore > "$CABINET_LOCK"
+
+# Do not report a reboot-ready installation while recently created helpers,
+# unit files, and state records still exist only in the kernel's write cache.
+# This matters in cabinet labs (and on real machines after a hard reboot): ext4
+# may otherwise recover the directory entries while leaving tiny files empty.
+sync
 echo "Encore cabinet profile installed: $backend"
 echo "User: $session_user   Game: $game"
 echo "Reboot to enter the cabinet session. Run ./uninstall.sh to restore the host."
