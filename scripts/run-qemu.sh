@@ -268,12 +268,8 @@ CORE LAUNCH
                                         if no bundle is found.
                               latest    explicitly resolve to the highest
                                         version bundle for this game.
-                              none      base-ROM mode — no update
-                                        bundle is staged. Sets
-                                        P2K_NO_AUTO_UPDATE=1, isolating
-                                        base-ROM compatibility support
-                                        (probe-cell shim, etc.) to this
-                                        mode only.
+                              none      base-ROM mode — no update bundle is
+                                        staged or auto-discovered.
                               r2        RFM 0.80 revision-2 prototype ROMs;
                                         no update bundle is staged.
                               0210      short version code (also accepts
@@ -1469,9 +1465,7 @@ resolve_update_token() {
 
 case "$UPDATE_TOKEN" in
   none)
-    # Museum / base mode. The C code's auto-discover is suppressed; the
-    # Base-ROM compatibility helpers arm only under
-    # this env (see qemu/p2k-probe-cell-shim.c, qemu/p2k-dcs-core.c).
+    # Base-ROM mode: suppress the C code's update auto-discovery.
     export P2K_NO_AUTO_UPDATE=1
     echo "[run-qemu] --update none → base-ROM mode (P2K_NO_AUTO_UPDATE=1)" >&2
     ;;

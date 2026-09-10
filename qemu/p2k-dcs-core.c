@@ -100,13 +100,11 @@ static const char *s_dcs_source_tag = "?";
  *
  * In BOTH modes the game ends up with `dcs_mode == 1` and writes its DCS
  * commands via the BAR4 MMIO device.  There is no separate "I/O-port-only
- * DCS data path" in the reference.  The two modes only differ in HOW the
- * natural DCS-detect probe at 0x1A2ABC is satisfied:
+ * DCS data path. The two modes now reach the same emulated hardware:
  *
- *  - io-handled (DEFAULT, what the reference shipped): no CPU .text patch.
- *      The probe cell is primed so the natural probe returns 1 ("device
- *      present"); the game then writes dcs_mode=1 through its own code
- *      and uses BAR4 normally.  The 0x138-0x13F UART overlay still
+ *  - io-handled (DEFAULT): no CPU .text or guest-data patch. The game
+ *      detects the emulated device and uses BAR4 normally. The
+ *      0x138-0x13F UART overlay still
  *      handles any I/O-port DCS traffic the game emits (byte-pair outb
  *      sequences and word writes/reads).
  *
@@ -354,21 +352,8 @@ void p2k_dcs_core_write_cmd(uint16_t cmd)
     }
 
     /* --- Legacy raw-pair diagnostic + experimental knob ---
-     *
-     * Before the probe-cell shim landed, SWE1 base 0.40 in --update none
-     * fell back to UART byte-pair where it emitted unwrapped 0x55AA +
-     * 0x609F mixer-ctrl pairs. We auto-enabled this raw-pair routing as
-     * a museum-mode compatibility bridge.
-     *
-     * With the probe-cell shim now correctly returning DCS PRESENT,
-     * --update none uses the real BAR4 path with proper ACE1-wrapped
-     * mixer commands. The unwrapped raw 0x55XX path is therefore dead
-     * in BOTH default and museum boots.
-     *
-     * We keep the diagnostic counters and the explicit P2K_DCS_RAW_55_PAIR
-     * env knob (off by default in both modes) for forensic A/B work
-     * against historical bundles that might still emit unwrapped pairs.
-     */
+     * Keep the counters and explicit P2K_DCS_RAW_55_PAIR environment knob
+     * for forensic A/B work against bundles that emit unwrapped pairs. */
     if (s_core.raw55_armed) {
         info_report("dcs-core: raw-pair candidate hdr=0x%04x data1=0x%04x "
                     "src=%s (cnt_raw_55xx=%u cnt_in_ace1_55xx=%u "

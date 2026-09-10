@@ -542,7 +542,7 @@ void p2k_install_bar3_flash(Pinball2000MachineState *s)
         }
     } else if (!seeded) {
         info_report("pinball2000: P2K_NO_AUTO_UPDATE set — leaving BAR3 "
-                    "all-0xFF (explicit base/museum image path)");
+                    "all-0xFF (explicit base-ROM path)");
     }
 
     MemoryRegion *mr = g_new(MemoryRegion, 1);
