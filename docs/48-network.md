@@ -104,6 +104,19 @@ Other LAN machines can then reach the guest HTTP and Telnet services through
 the host's address on TCP ports 8080 and 2323. Each mapping is deliberately
 explicit because it exposes the historical guest service to the host network.
 
+Use `--forward-local` for the same repeatable `HOST:GUEST` mapping without
+exposing the listener beyond the cabinet itself:
+
+```sh
+scripts/run-qemu.sh --network-auto \
+  --forward-local 8080:80 \
+  --forward-local 2323:23
+```
+
+Here the host port is where a client connects on the cabinet, while the guest
+port is the TCP service inside Pinball 2000. Both forwarding options may be
+repeated as many times as needed. Host ports must be unique.
+
 The convenience preset publishes only the built-in HTTP service:
 
 ```sh

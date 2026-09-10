@@ -152,6 +152,21 @@ identifies the connected SWE1 or RFM playfield. In automatic mode, no recognized
 board means keyboard-backed emulation. Detailed electrical validation and
 explicit-device diagnostics remain in [real LPT passthrough](46-real-lpt-passthrough.md).
 
+Networking is optional. When enabled, automatic NAT is recommended. XINA still
+needs an IP address, mask and gateway to initialize its network stack, so the
+installer always supplies safe defaults. Their exact values have almost no
+practical impact in automatic mode: Encore adapts to the active guest address,
+and they do not need to match the cabinet's physical network. Mirror mode is advanced;
+its XINA address, mask and gateway must match the detected host network or the
+guest will not connect.
+
+The installer can publish any number of TCP services. For every mapping it
+distinguishes the host port (where clients connect on the cabinet) from the
+Pinball 2000 guest port (the service inside XINA), and asks whether listeners
+are restricted to `127.0.0.1` or exposed on the local network. HTTP 8080→80
+and Telnet 2323→23 are offered only as convenient presets; arbitrary mappings
+remain repeatable. Local-only exposure is the default.
+
 Non-interactive profile selection is also available:
 
 ```sh

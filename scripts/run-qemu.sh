@@ -87,6 +87,7 @@ NETWORK_AUTO=0
 HTTP_PORT=""
 NETWORK_BRIDGE=""
 NETWORK_FORWARDS=()
+NETWORK_LOCAL_FORWARDS=()
 AUTO_HOSTFWD_SPEC=""
 PASST_DIR=""
 PASST_PID=""
@@ -452,10 +453,13 @@ NETWORK
                             host TCP 8080 -> guest TCP 80. Uses passt when
                             selected, otherwise NAT. Telnet is excluded; expose
                             it explicitly with --forward 2323:23.
-  --forward <host:guest>    With --network-nat or --network-passt, publish a
+  --forward <host:guest>    With user-mode NAT, automatic NAT, or passt, publish a
                             guest TCP port on
                             every host interface. Repeatable. This deliberately
                             exposes the old guest stack to the host network.
+  --forward-local <host:guest>
+                            Publish a guest TCP port on 127.0.0.1 only.
+                            Repeatable and compatible with automatic NAT.
   --http-port <port>        Forward 127.0.0.1:<port> to the guest's HTTP
                             server at 10.0.2.15:80. Implies --network. The
                             listener is never exposed beyond localhost.
@@ -747,8 +751,8 @@ while [[ $# -gt 0 ]]; do
     --network-mirror)  NETWORK=1; NETWORK_NAT=1; NETWORK_MIRROR=1; shift ;;
     --network-auto)    NETWORK=1; NETWORK_NAT=1; NETWORK_AUTO=1; shift ;;
     --expose-services)
-      for forward in "${NETWORK_FORWARDS[@]}"; do
-        [[ "${forward%%:*}" != 8080 ]] || {
+      for forward in "${NETWORK_FORWARDS[@]}" "${NETWORK_LOCAL_FORWARDS[@]}"; do
+        [[ -z "$forward" || "${forward%%:*}" != 8080 ]] || {
           echo "[run-qemu] --expose-services: host TCP port 8080 is already specified" >&2
           exit 2
         }
@@ -768,13 +772,34 @@ while [[ $# -gt 0 ]]; do
         echo "[run-qemu] --forward: ports must be from 1 to 65535" >&2
         exit 2
       }
-      for forward in "${NETWORK_FORWARDS[@]}"; do
-        [[ "${forward%%:*}" != "$host_port" ]] || {
+      for forward in "${NETWORK_FORWARDS[@]}" "${NETWORK_LOCAL_FORWARDS[@]}"; do
+        [[ -z "$forward" || "${forward%%:*}" != "$host_port" ]] || {
           echo "[run-qemu] --forward: host TCP port $host_port is specified twice" >&2
           exit 2
         }
       done
       NETWORK_FORWARDS+=("$host_port:$guest_port")
+      NETWORK=1
+      shift 2 ;;
+    --forward-local)
+      [[ "${2:-}" =~ ^([0-9]+):([0-9]+)$ ]] || {
+        echo "[run-qemu] --forward-local: expected HOST_PORT:GUEST_PORT" >&2
+        exit 2
+      }
+      host_port="$((10#${BASH_REMATCH[1]}))"
+      guest_port="$((10#${BASH_REMATCH[2]}))"
+      (( host_port >= 1 && host_port <= 65535 &&
+         guest_port >= 1 && guest_port <= 65535 )) || {
+        echo "[run-qemu] --forward-local: ports must be from 1 to 65535" >&2
+        exit 2
+      }
+      for forward in "${NETWORK_FORWARDS[@]}" "${NETWORK_LOCAL_FORWARDS[@]}"; do
+        [[ -z "$forward" || "${forward%%:*}" != "$host_port" ]] || {
+          echo "[run-qemu] host TCP port $host_port is specified twice" >&2
+          exit 2
+        }
+      done
+      NETWORK_LOCAL_FORWARDS+=("$host_port:$guest_port")
       NETWORK=1
       shift 2 ;;
     --network-bridge)
@@ -937,7 +962,8 @@ if [[ $GUEST_EXTENSIONS -eq 1 ]]; then
   fi
 fi
 if [[ -n "$HTTP_PORT" ]]; then
-  for forward in "${NETWORK_FORWARDS[@]}"; do
+  for forward in "${NETWORK_FORWARDS[@]}" "${NETWORK_LOCAL_FORWARDS[@]}"; do
+    [[ -n "$forward" ]] || continue
     [[ "${forward%%:*}" != "$HTTP_PORT" ]] || {
       echo "[run-qemu] host TCP port $HTTP_PORT is used by both --http-port and --forward" >&2
       exit 2
@@ -946,6 +972,7 @@ if [[ -n "$HTTP_PORT" ]]; then
 fi
 if [[ -n "$NETWORK_BRIDGE" ]]; then
   [[ -z "$HTTP_PORT" && ${#NETWORK_FORWARDS[@]} -eq 0 &&
+     ${#NETWORK_LOCAL_FORWARDS[@]} -eq 0 &&
      $NETWORK_NAT -eq 0 && $NETWORK_PASST -eq 0 ]] || {
     echo "[run-qemu] NAT/port-forwarding options cannot be combined with --network-bridge" >&2
     exit 2
@@ -964,7 +991,8 @@ if [[ $NETWORK_AUTO -eq 1 &&
   echo "[run-qemu] --network-auto cannot be combined with another network transport" >&2
   exit 2
 fi
-if [[ ${#NETWORK_FORWARDS[@]} -gt 0 && $NETWORK_PASST -eq 0 &&
+if [[ $(( ${#NETWORK_FORWARDS[@]} + ${#NETWORK_LOCAL_FORWARDS[@]} )) -gt 0 &&
+      $NETWORK_PASST -eq 0 &&
       -z "$NETWORK_BRIDGE" ]]; then
   NETWORK_NAT=1
 fi
@@ -1631,6 +1659,13 @@ if [[ $NETWORK -eq 1 ]]; then
       PASST_TCP_SPEC+="0.0.0.0/${host_port}:${guest_port}"
       echo "[run-qemu] network: WARNING: host TCP $host_port exposes XINA TCP $guest_port"
     done
+    for forward in "${NETWORK_LOCAL_FORWARDS[@]}"; do
+      host_port="${forward%%:*}"
+      guest_port="${forward##*:}"
+      [[ -z "$PASST_TCP_SPEC" ]] || PASST_TCP_SPEC+=","
+      PASST_TCP_SPEC+="127.0.0.1/${host_port}:${guest_port}"
+      echo "[run-qemu] network: localhost TCP $host_port -> XINA TCP $guest_port"
+    done
     if [[ -n "$HTTP_PORT" ]]; then
       [[ -z "$PASST_TCP_SPEC" ]] || PASST_TCP_SPEC+=","
       PASST_TCP_SPEC+="127.0.0.1/${HTTP_PORT}:80"
@@ -1706,6 +1741,17 @@ PY
         NETWORK_SPEC+=",hostfwd=tcp:0.0.0.0:${host_port}-${GUEST_NETWORK_ADDR}:${guest_port}"
       fi
       echo "[run-qemu] network: WARNING: host TCP $host_port exposes XINA TCP $guest_port"
+    done
+    for forward in "${NETWORK_LOCAL_FORWARDS[@]}"; do
+      host_port="${forward%%:*}"
+      guest_port="${forward##*:}"
+      if [[ $NETWORK_AUTO -eq 1 ]]; then
+        [[ -z "$AUTO_HOSTFWD_SPEC" ]] || AUTO_HOSTFWD_SPEC+="|"
+        AUTO_HOSTFWD_SPEC+="127.0.0.1:${host_port}:${guest_port}"
+      else
+        NETWORK_SPEC+=",hostfwd=tcp:127.0.0.1:${host_port}-${GUEST_NETWORK_ADDR}:${guest_port}"
+      fi
+      echo "[run-qemu] network: localhost TCP $host_port -> XINA TCP $guest_port"
     done
     if [[ -n "$HTTP_PORT" ]]; then
       echo "[run-qemu] network: http://127.0.0.1:${HTTP_PORT}/ → ${GUEST_NETWORK_ADDR}:80"
