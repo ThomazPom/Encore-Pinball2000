@@ -46,7 +46,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--savedata` | directory | `<repo>/savedata` | Passes this persistent-state directory to the Encore machine; the binary creates it when absent. | `scripts/run-qemu.sh --savedata ./my-save` |
 | `--no-savedata` | — | off | Exports `P2K_NO_SAVEDATA=1` and runs from a fresh throwaway cwd with no `savedata/` subdir; savedata seeds are skipped and exit writes are discarded. | `scripts/run-qemu.sh --no-savedata` |
 | `--fresh` | — | off | Ignores existing saved device files for this boot, then replaces them with the newly initialized state on clean exit. | `scripts/run-qemu.sh --fresh` |
-| `--update` | spec | `auto` | Selects update bundle: `auto`, `latest`, `none`, version token, or explicit inner bundle dir. | `scripts/run-qemu.sh --update 0210` |
+| `--update` | spec | `auto` | Selects an update bundle, base-ROM mode, or the RFM R2 prototype ROMs. | `scripts/run-qemu.sh --update 0210` |
 | `--display` | backend | direct framebuffer in a graphical session; KMSDRM on a local VT | Explicitly selects a QEMU display backend, validates it against `qemu-system-i386 -display help`, and disables the default direct renderer. | `scripts/run-qemu.sh --display gtk` |
 | `--headless` | — | off | Shortcut for display `none` plus serial stdio unless `--uart-quiet` is used. Promotes verbosity to at least `-v`. | `scripts/run-qemu.sh --headless --game swe1` |
 | `--fullscreen` | — | off | Adds QEMU `-full-screen`; ignored with `--display none`. | `scripts/run-qemu.sh --fullscreen` |
@@ -143,6 +143,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `auto` | Default. The machine discovers the newest available update and installs it when saved update flash differs. | `scripts/run-qemu.sh --update auto` |
 | `latest` | Wrapper resolves the highest version directory for the selected game. | `scripts/run-qemu.sh --game rfm --update latest` |
 | `none` | Base-ROM mode. Exports `P2K_NO_AUTO_UPDATE=1`; no update bundle is staged. | `scripts/run-qemu.sh --update none --no-savedata` |
+| `r2` | Loads the RFM 0.80 revision-2 prototype `u100r2/u101r2` pair and stages no BAR3 update. `--game auto` resolves to RFM; explicit SWE1 is rejected. | `scripts/run-qemu.sh --game rfm --update r2` |
 | `0210`, `210`, `2.10`, `2.1` | Short version token resolved against `updates/pin2000_<gid>_<vvvv>_*/<gid>/`. | `scripts/run-qemu.sh --game swe1 --update 2.10` |
 | `<dir>` | Explicit path to inner bundle directory containing `*_bootdata.rom`, `*_im_flsh0.rom`, `*_game.rom`, and `*_symbols.rom`. | `scripts/run-qemu.sh --update /data/p2k/update/50069` |
 

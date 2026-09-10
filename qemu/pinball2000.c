@@ -381,6 +381,17 @@ static void p2k_set_game(Object *obj, const char *value, Error **errp)
     g_free(s->game);
     s->game = g_strdup(value);
 }
+static char *p2k_get_rom_revision(Object *obj, Error **errp)
+{
+    Pinball2000MachineState *s = PINBALL2000_MACHINE(obj);
+    return g_strdup(s->rom_revision ?: "");
+}
+static void p2k_set_rom_revision(Object *obj, const char *value, Error **errp)
+{
+    Pinball2000MachineState *s = PINBALL2000_MACHINE(obj);
+    g_free(s->rom_revision);
+    s->rom_revision = (value && *value) ? g_strdup(value) : NULL;
+}
 static char *p2k_get_roms_dir(Object *obj, Error **errp)
 {
     Pinball2000MachineState *s = PINBALL2000_MACHINE(obj);
@@ -445,6 +456,11 @@ static void pinball2000_class_init(ObjectClass *oc, P2K_CLASS_INIT_DATA data)
     object_class_property_add_str(oc, "game", p2k_get_game, p2k_set_game);
     object_class_property_set_description(oc, "game",
         "Game ROM bank to load (e.g. swe1, rfm)");
+    object_class_property_add_str(oc, "rom-revision",
+                                  p2k_get_rom_revision,
+                                  p2k_set_rom_revision);
+    object_class_property_set_description(oc, "rom-revision",
+        "Optional suffix for bank-0 ROM chips (e.g. r2 loads u100r2/u101r2)");
     object_class_property_add_str(oc, "roms-dir",
                                   p2k_get_roms_dir, p2k_set_roms_dir);
     object_class_property_set_description(oc, "roms-dir",
