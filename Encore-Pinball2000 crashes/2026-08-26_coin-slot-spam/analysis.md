@@ -60,3 +60,42 @@ This is not currently considered a normal-use issue: waiting for the ROM to
 finish booting before inserting credits avoids the known trigger. The root
 cause—game code, the duration/retrigger semantics of the emulated coin switch,
 or another board-emulation interaction—has not yet been isolated.
+
+## Follow-up investigation — 11 September 2026
+
+The historical failure remains valid, but controlled attempts did not make it
+deterministic:
+
+- SWE1 2.00 survived 600 rapid coin events during boot, 120 spaced coin
+  events after boot, 500 rapid coin events after boot, and 100 repeated Start
+  events;
+- SWE1 2.10 survived the same 600-event boot burst;
+- SWE1 2.10 also survived 160 coin events at 120 ms intervals during boot in
+  both normal HOTLOOP and `--strict` timing modes;
+- a separate three-minute SWE1 2.00 timing/LPT benchmark completed without a
+  guest fatal.
+
+The boot bursts were verified at the emulated board: all 600 key events
+reached the coin-slot handler. These are negative reproduction results, not a
+claim that the old failure cannot recur.
+
+A symbol-guided binary comparison also found no structural change from SWE1
+2.00 to 2.10 in:
+
+- `CoinSlotDebounceSetup`;
+- `CoinSlotInit`;
+- `CoinSlotWork_2ms`;
+- `CoinSlotWorkAwardProcess`;
+- `CoinSlotWork_16ms`.
+
+Each function has the same size and normalized instruction sequence in both
+updates. Every direct call made by those functions resolves to the same symbol
+in both builds. Their identified direct callers are likewise the same. Raw
+byte differences in these routines are address relocations caused by the
+larger 2.10 image, not changed control flow.
+
+This evidence does not support blaming either HOTLOOP or an obvious 2.10
+rewrite of the coin-processing routines. The remaining candidates are a
+probabilistic guest bug shared by both versions, an indirect change in global
+state or startup ordering, or an emulation interaction requiring a narrower
+timing/state combination than repeated coin input alone.
