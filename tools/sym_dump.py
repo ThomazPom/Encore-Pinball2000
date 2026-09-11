@@ -18,9 +18,9 @@ File layout (verified for SWE1 v1.5 / v2.1, RFM v1.6 / v2.6):
     +0x1C  entries[num_entries] = (u32 name_off, u32 addr)
     +end   small zero pad, then string table (NUL-terminated cstrings)
 
-`str_base` is found by trying offsets just past the entries array and
-keeping the first one that resolves several entries to printable
-strings.  Reverse lookup is done by scanning the file for `name\\0` and
+`str_base` is found by trying offsets just past the entries array and keeping
+the candidate that resolves the largest sample of entries to complete
+printable strings.  Reverse lookup is done by scanning for `name\\0` and
 keeping the occurrence whose `(pos - str_base)` matches a real entry.
 
 NB: production RFM v1.6/v2.6 and SWE1 v1.5 ship STRIPPED tables
@@ -48,28 +48,34 @@ def parse(path):
             break
         n += 1
     end = HDR + n * 8
-    # Anchor str_base by trying byte offsets just past the entries
-    # and picking the one for which entry-0..7 resolve to printable strings.
+    # Anchor str_base by scoring byte offsets just past the entries.  Picking
+    # the first superficially printable candidate is insufficient: padding can
+    # make a wrong offset land in the middle of several real names (observed on
+    # SWE1 2.00).  The real base resolves nearly every sampled entry to a
+    # complete printable C string.
     by_no = {}
     for i in range(n):
         no, addr = struct.unpack_from("<II", d, HDR + i * 8)
         by_no.setdefault(no, []).append(addr)
     str_base = None
+    best_score = -1
     for cand in range(end, end + 256):
-        ok = 0
-        for j in range(min(8, n)):
+        score = 0
+        for j in range(min(128, n)):
             nj, _ = struct.unpack_from("<II", d, HDR + j * 8)
             pj = cand + nj
-            if pj <= 0 or pj >= len(d):
-                break
-            c = d[pj]
-            if not (ord('A') <= c <= ord('z') or c == ord('_') or c == ord('~')):
-                break
-            ok += 1
-        if ok >= 6:
+            if pj < cand or pj >= len(d):
+                continue
+            endj = d.find(b"\x00", pj, min(len(d), pj + 512))
+            if endj < 0 or endj == pj:
+                continue
+            raw = d[pj:endj]
+            if all(0x20 <= c < 0x7f for c in raw):
+                score += 1
+        if score > best_score:
+            best_score = score
             str_base = cand
-            break
-    if str_base is None:
+    if str_base is None or best_score < min(6, n):
         raise RuntimeError("could not anchor string table base")
     return d, n, str_base, by_no, {"chk": chk, "n_hdr": n_hdr, "str_sz": str_sz, "base": base}
 
