@@ -27,14 +27,15 @@
  *                                        QEMU_CLOCK_VIRTUAL since arm)
  *   host_slow=<yes/no>                  (scale < 0.95)
  *
- * Cadence:
- *   - one initial line ~3 s after machine arm (gives PIT ch0 + IDT[0x20]
- *     time to be programmed)
+ * Cadence (diagnostics are opt-in):
  *   - if `P2K_DIAG=1` (or `run-qemu.sh -v`): a full report every 3 s
  *   - if `P2K_TIMING_SNAPSHOTS=1`: a lightweight benchmark report every 3 s
  *   - one final line at machine exit / QEMU shutdown
  *
- * Disable entirely with `P2K_NO_TIMING_AUDIT=1`.
+ * A normal run keeps only the small amount of IRQ state required by the
+ * functional PIT-deadline/hot-loop mechanism.  It creates no report timer,
+ * exit notifier, latency histogram, PDB-gap sample, or audit output.
+ * Disable the complete timing mechanism with `P2K_NO_TIMING_AUDIT=1`.
  *
  * Notes:
  *   - irq0_edges_pit_expected is only the PIT-derived expected edge count.
@@ -88,6 +89,7 @@ static int64_t  p2k_audit_arm_wall_ns;     /* QEMU_CLOCK_REALTIME at arm */
 static int64_t  p2k_audit_arm_vtime_ns;    /* QEMU_CLOCK_VIRTUAL  at arm */
 static bool     p2k_audit_periodic;        /* true => arm follow-up */
 static bool     p2k_audit_light_snapshots; /* benchmark-safe periodic subset */
+static bool     p2k_audit_detailed;        /* opt-in latency/histogram collection */
 static uint64_t p2k_audit_seq;
 
 static uint64_t p2k_audit_irq0_raised;
@@ -586,6 +588,11 @@ static void p2k_dwell_reset(P2KDwell *d)
 void p2k_timing_audit_note_irq0_raised(void)
 {
     int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    p2k_audit_latest_raise_ns = now;
+    p2k_audit_irq0_raised++;
+    if (!p2k_audit_detailed) {
+        return;
+    }
     /* iret -> raise gap (closes a complete IRQ0 cycle). Only push when
      * we have a previous IRET timestamp; the first raise after boot
      * has no predecessor. */
@@ -605,8 +612,6 @@ void p2k_timing_audit_note_irq0_raised(void)
     }
     p2k_ts_first_tb_after_iret_ns = 0;
     p2k_first_tb_pending = false;
-    p2k_audit_latest_raise_ns = now;
-    p2k_audit_irq0_raised++;
 }
 
 uint64_t p2k_timing_audit_get_irq0_raised(void)
@@ -621,7 +626,7 @@ uint64_t p2k_timing_audit_get_irq0_serviced(void)
 
 void p2k_timing_audit_note_intack(int intno)
 {
-    if (intno != 0x20) {
+    if (!p2k_audit_detailed || intno != 0x20) {
         return;
     }
     int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
@@ -687,7 +692,7 @@ static void p2k_clkint_dump_oneshot(uint32_t base)
 
 void p2k_timing_audit_note_pic_eoi(bool master, int irq, uint8_t ocw2)
 {
-    if (master && irq == 0) {
+    if (p2k_audit_detailed && master && irq == 0) {
         int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
         p2k_audit_eoi_seen++;
 
@@ -710,6 +715,11 @@ void p2k_timing_audit_note_pic_eoi(bool master, int irq, uint8_t ocw2)
 
 void p2k_timing_audit_note_clkint_enter(uint64_t eip)
 {
+    p2k_in_clkint = true;
+    p2k_audit_clkint_entered++;
+    if (!p2k_audit_detailed) {
+        return;
+    }
     int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     int64_t now_wall = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
 
@@ -751,9 +761,7 @@ void p2k_timing_audit_note_clkint_enter(uint64_t eip)
     }
 
     p2k_ts_entry_ns = now;
-    p2k_in_clkint = true;
     p2k_clkint_dump_oneshot((uint32_t)eip);
-    p2k_audit_clkint_entered++;
 }
 
 void p2k_timing_audit_note_iret(uint32_t eip)
@@ -762,17 +770,19 @@ void p2k_timing_audit_note_iret(uint32_t eip)
         return;
     }
     int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    /* EOI -> IRET dwell (handler work after EOI + return path). */
-    if (p2k_ts_eoi_ns && now >= p2k_ts_eoi_ns) {
-        p2k_dwell_push(&p2k_dw_eoi_iret,
-                       (uint64_t)(now - p2k_ts_eoi_ns) / 1000ull);
+    if (p2k_audit_detailed) {
+        /* EOI -> IRET dwell (handler work after EOI + return path). */
+        if (p2k_ts_eoi_ns && now >= p2k_ts_eoi_ns) {
+            p2k_dwell_push(&p2k_dw_eoi_iret,
+                           (uint64_t)(now - p2k_ts_eoi_ns) / 1000ull);
+        }
+        p2k_ts_eoi_ns = 0;
+        p2k_ts_iret_ns = now;
+        p2k_first_tb_pending = true;
+        p2k_ts_first_tb_after_iret_ns = 0;
+        p2k_iret_seen_after_clkint++;
     }
-    p2k_ts_eoi_ns = 0;
-    p2k_ts_iret_ns = now;
-    p2k_first_tb_pending = true;
-    p2k_ts_first_tb_after_iret_ns = 0;
     p2k_in_clkint = false;
-    p2k_iret_seen_after_clkint++;
 
     /* After the IRQ0 IRET, arm a short virtual-clock timer aimed at the
      * next projected i8254 deadline (latest_raise_ns + pit_period_ns) and
@@ -852,6 +862,9 @@ uint32_t p2k_tcg_cflags_override(uint32_t base)
 
 void p2k_timing_audit_note_pdb05(void)
 {
+    if (!p2k_audit_detailed) {
+        return;
+    }
     int64_t now_v = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     int64_t now_w = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
     uint64_t gap_v_us = 0;
@@ -1593,6 +1606,10 @@ void p2k_install_timing_audit(Pinball2000MachineState *s)
                          p2k_audit_light_snapshots;
     p2k_pdb_gap_profile_enabled =
         p2k_audit_env_truthy("P2K_PROFILE_PDB_GAPS");
+    p2k_audit_detailed = p2k_audit_periodic ||
+                         p2k_pdb_gap_profile_enabled ||
+                         p2k_audit_env_truthy("P2K_PROFILE_STALLS") ||
+                         p2k_audit_env_truthy("P2K_DUMP_CLKINT");
     if (p2k_pdb_gap_profile_enabled) {
         const char *threshold = getenv("P2K_PROFILE_PDB_GAP_US");
         const char *after = getenv("P2K_PROFILE_PDB_AFTER_MS");
@@ -1613,18 +1630,21 @@ void p2k_install_timing_audit(Pinball2000MachineState *s)
                     (unsigned long long)p2k_pdb_gap_threshold_us,
                     (unsigned long long)(p2k_pdb_gap_after_us / 1000ull));
     }
-    p2k_audit_timer        = timer_new_ns(QEMU_CLOCK_VIRTUAL,
-                                          p2k_audit_tick, NULL);
     p2k_pit_deadline_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,
                                           p2k_pit_deadline_cb, NULL);
-    timer_mod(p2k_audit_timer,
-              qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + P2K_AUDIT_INITIAL_NS);
-    qemu_add_exit_notifier(&p2k_audit_exit_notifier);
     p2k_stall_profile_init();
-    info_report("pinball2000: timing-audit armed (initial @3s, %s; "
-                "disable with P2K_NO_TIMING_AUDIT=1)",
-                p2k_audit_light_snapshots ?
-                    "light snapshots every 3s" :
-                p2k_audit_periodic ?
-                    "full snapshots every 3s" : "exit only");
+    if (p2k_audit_detailed) {
+        p2k_audit_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,
+                                       p2k_audit_tick, NULL);
+        timer_mod(p2k_audit_timer,
+                  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
+                  P2K_AUDIT_INITIAL_NS);
+        qemu_add_exit_notifier(&p2k_audit_exit_notifier);
+        info_report("pinball2000: timing-audit armed (initial @3s, %s; "
+                    "disable with P2K_NO_TIMING_AUDIT=1)",
+                    p2k_audit_light_snapshots ?
+                        "light snapshots every 3s" :
+                    p2k_audit_periodic ?
+                        "full snapshots every 3s" : "exit only");
+    }
 }

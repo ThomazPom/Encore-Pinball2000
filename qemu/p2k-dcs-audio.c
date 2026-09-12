@@ -1063,7 +1063,7 @@ static void dcs_audio_callback(void *opaque, int avail_bytes)
  * (event source, full triple, computed channel/vol/pan, lookup key,
  * pb2k entry name if found, sample frames, voice slot). */
 #define TRACE_EVT(a, fmt, ...) do {                            \
-    if ((a)->trace || (a)->cmd_count <= 64) {                  \
+    if ((a)->trace) {                                          \
         info_report("dcs-audio: " fmt, ##__VA_ARGS__);         \
     }                                                          \
 } while (0)
