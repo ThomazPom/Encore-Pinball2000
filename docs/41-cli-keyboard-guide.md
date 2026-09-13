@@ -7,8 +7,10 @@ Until that toggle, the keyboard is electrically absent from XINA, so its
 automatic keyboard-function menu does not appear during normal cabinet boot.
 
 In `XINA KEYBOARD` mode, keys are delivered exclusively as PC keyboard scan
-codes. They are not duplicated as cabinet switches. F3 opens XINA's keyboard
-shell, where commands such as `help` and `fupdate enable` can be typed.
+codes. They are not duplicated as cabinet switches. Plain F1/F2/F3 therefore
+retain their original XINA functions; Alt+F1/F2/F3 invoke Encore's quit, flip
+and screenshot actions. F3 opens XINA's keyboard shell, where commands such as
+`help` and `fupdate enable` can be typed.
 
 ## Gameplay and emulator controls
 
@@ -23,7 +25,7 @@ shell, where commands such as `help` and `fupdate enable` can be typed.
 | `F2` | Toggle vertical display flip |
 | `F3` | Save a screenshot under `--screenshot-dir` (default `/tmp`) |
 | `F12` | Print LPT registers and switch state |
-| `F1` | Request a clean shutdown |
+| `F1` | Request a clean shutdown (`Alt+F1` in XINA keyboard mode) |
 | `Ctrl+Alt+F` | Toggle SDL fullscreen through QEMU |
 
 ## Custom A-Z switch bindings
