@@ -95,6 +95,8 @@ typedef struct P2KDisplayState {
 static P2KDisplayState s_disp;
 static QemuMutex s_status_lock;
 static char s_status[96];
+static char s_input_notice[96];
+static int64_t s_input_notice_until_ms;
 static void p2k_display_update(void *opaque);
 
 void p2k_display_set_status(const char *status)
@@ -109,6 +111,27 @@ void p2k_display_refresh_status(void)
     /* Status is painted by the next QEMU or direct-SDL refresh. */
 }
 
+void p2k_display_show_input_mode(const char *mode)
+{
+    qemu_mutex_lock(&s_status_lock);
+    snprintf(s_input_notice, sizeof(s_input_notice), "%s", mode ? mode : "");
+    s_input_notice_until_ms = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + 2500;
+    qemu_mutex_unlock(&s_status_lock);
+}
+
+static void p2k_display_get_banner(char *text, size_t size)
+{
+    qemu_mutex_lock(&s_status_lock);
+    if (s_input_notice[0] &&
+        qemu_clock_get_ms(QEMU_CLOCK_REALTIME) < s_input_notice_until_ms) {
+        snprintf(text, size, "%s", s_input_notice);
+    } else {
+        s_input_notice[0] = '\0';
+        snprintf(text, size, "%s", s_status);
+    }
+    qemu_mutex_unlock(&s_status_lock);
+}
+
 /* Compact 5x7 font for the generation banner. */
 static const uint8_t *status_glyph(char c)
 {
@@ -116,11 +139,18 @@ static const uint8_t *status_glyph(char c)
 #define GLYPH(ch,a,b,c,d,e,f,g) case ch: { static const uint8_t r[7] = {a,b,c,d,e,f,g}; return r; }
     switch (c) {
     GLYPH('A',14,17,17,31,17,17,17) GLYPH('B',30,17,17,30,17,17,30)
+    GLYPH('C',14,17,16,16,16,17,14) GLYPH('D',30,17,17,17,17,17,30)
     GLYPH('E',31,16,16,30,16,16,31) GLYPH('G',14,17,16,23,17,17,15)
+    GLYPH('F',31,16,16,30,16,16,16) GLYPH('H',17,17,17,31,17,17,17)
     GLYPH('I',31,4,4,4,4,4,31)      GLYPH('K',17,18,20,24,20,18,17)
+    GLYPH('J',7,2,2,2,2,18,12)       GLYPH('M',17,27,21,21,17,17,17)
     GLYPH('L',16,16,16,16,16,16,31) GLYPH('N',17,25,21,19,17,17,17)
+    GLYPH('O',14,17,17,17,17,17,14) GLYPH('Q',14,17,17,17,21,18,13)
     GLYPH('P',30,17,17,30,16,16,16) GLYPH('R',30,17,17,30,20,18,17)
     GLYPH('S',15,16,16,14,1,1,30)   GLYPH('T',31,4,4,4,4,4,4)
+    GLYPH('U',17,17,17,17,17,17,14) GLYPH('V',17,17,17,17,17,10,4)
+    GLYPH('W',17,17,17,21,21,21,10) GLYPH('X',17,17,10,4,10,17,17)
+    GLYPH('Y',17,17,10,4,4,4,4)     GLYPH('Z',31,1,2,4,8,16,31)
     GLYPH('0',14,17,19,21,25,17,14) GLYPH('1',4,12,4,4,4,4,14)
     GLYPH('2',14,17,1,2,4,8,31)     GLYPH('3',30,1,1,14,1,1,30)
     GLYPH('4',2,6,10,18,31,2,2)     GLYPH('5',31,16,16,30,1,1,30)
@@ -135,9 +165,7 @@ static const uint8_t *status_glyph(char c)
 static void draw_status_pixels(void *dst_raw, bool bpp16, uint16_t white16)
 {
     char text[sizeof(s_status)];
-    qemu_mutex_lock(&s_status_lock);
-    memcpy(text, s_status, sizeof(text));
-    qemu_mutex_unlock(&s_status_lock);
+    p2k_display_get_banner(text, sizeof(text));
     if (!text[0]) return;
 
     int width = MIN(SCREEN_W, 16 + (int)strlen(text) * 12);
@@ -164,9 +192,7 @@ static void draw_status_sdl(P2KDisplayState *s)
 {
     char text[sizeof(s_status)];
 
-    qemu_mutex_lock(&s_status_lock);
-    memcpy(text, s_status, sizeof(text));
-    qemu_mutex_unlock(&s_status_lock);
+    p2k_display_get_banner(text, sizeof(text));
     if (!text[0]) {
         return;
     }
@@ -469,7 +495,9 @@ static void p2k_sdl_events(P2KDisplayState *s)
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
         if (ev.type == SDL_QUIT) {
-            p2k_queue_host_key(Q_KEY_CODE_F1, true);
+            /* Window close is always a host lifecycle request, independent
+             * of whether Tab selected cabinet keys or the XINA keyboard. */
+            p2k_lpt_host_key(Q_KEY_CODE_F1, true);
         } else if (ev.type == SDL_KEYDOWN || ev.type == SDL_KEYUP) {
             bool down = ev.type == SDL_KEYDOWN;
             SDL_Keycode sym = ev.key.keysym.sym;

@@ -1,13 +1,18 @@
 # 41 — Desktop controls
 
-Encore converts selected host keys into cabinet switch-matrix activity through
-`qemu/p2k-lpt-board.c`. These are cabinet controls, not PC keyboard input sent
-to XINA.
+With an emulated driver board, Encore starts in cabinet-key mode. Press `Tab`
+to toggle between that mapping and the emulated AT keyboard connected to
+XINA's real i8042 driver. A temporary banner identifies the selected mode.
+
+In `XINA KEYBOARD` mode, keys are delivered exclusively as PC keyboard scan
+codes. They are not duplicated as cabinet switches. F3 opens XINA's keyboard
+shell, where commands such as `help` and `fupdate enable` can be typed.
 
 ## Gameplay and emulator controls
 
 | Key | Action |
 |---|---|
+| `Tab` | Toggle `CABINET KEYS` / `XINA KEYBOARD` |
 | `Space` / `S` | Start |
 | `F10` / `C` | Hold coin-slot 1 contact closed |
 | `F4` | Open or close the coin door |
@@ -110,14 +115,16 @@ has not been observed during normal play and is not HOTLOOP-specific.
 ## Modes without desktop keys
 
 - `--display none` has no graphical input window.
-- A detected or explicitly selected physical board normally disables cabinet
-  keys; host-only F1 quit, F2 flipscreen and F3 screenshot remain active.
-  `--lpt-input hybrid` explicitly adds keyboard closures to physical switch
+- A detected or explicitly selected physical board leaves the AT keyboard as
+  the only keyboard input path. `--lpt-input hybrid` explicitly restores the
+  two-mode Tab router so keyboard closures can supplement physical switch
   reads without replacing hardware outputs or keepalive.
 - `--serial` controls COM1 in the terminal. It is separate from cabinet keys.
 
-For automated input, use the QEMU monitor `sendkey` command. For low-level
-state, press `F12` or enable `--lpt-trace`.
+For automated cabinet input, use the QEMU monitor `sendkey` command normally.
+Send `tab` first when the test intends to type into XINA's AT keyboard. For
+low-level cabinet state, press `F12` in cabinet-key mode or enable
+`--lpt-trace`.
 
 Details: [LPT board](26-lpt-board.md) and
 [CLI reference](03-cli-reference.md).

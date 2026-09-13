@@ -986,17 +986,46 @@ void p2k_lpt_host_key(int qcode, bool down)
     }
 }
 
-static void p2k_lpt_key_event(DeviceState *dev, QemuConsole *src,
-                              InputEvent *evt)
+static QemuInputHandlerState *s_input_router;
+static bool s_xina_keyboard;
+
+static void p2k_input_router_event(DeviceState *dev, QemuConsole *src,
+                                   InputEvent *evt)
 {
     InputKeyEvent *key = evt->u.key.data;
-    p2k_lpt_host_key(qemu_input_key_value_to_qcode(key->key), key->down);
+    QKeyCode qcode = qemu_input_key_value_to_qcode(key->key);
+
+    if (qcode == Q_KEY_CODE_TAB) {
+        if (key->down) {
+            s_xina_keyboard = !s_xina_keyboard;
+            if (s_xina_keyboard) {
+                info_report("pinball2000: input mode: XINA AT keyboard");
+                p2k_display_show_input_mode("XINA KEYBOARD");
+            } else {
+                info_report("pinball2000: input mode: Encore cabinet keys");
+                p2k_display_show_input_mode("CABINET KEYS");
+            }
+        }
+        return;
+    }
+
+    if (!s_xina_keyboard) {
+        p2k_lpt_host_key(qcode, key->down);
+        return;
+    }
+
+    /* The router normally owns the head of QEMU's handler list. Move it to
+     * the tail for this synchronous event so the upstream PS/2 keyboard is
+     * selected, then immediately reclaim Tab and the next event. */
+    qemu_input_handler_deactivate(s_input_router);
+    qemu_input_event_send_impl(src, evt);
+    qemu_input_handler_activate(s_input_router);
 }
 
-static const QemuInputHandler p2k_lpt_input_handler = {
-    .name  = "pinball2000 cabinet",
+static const QemuInputHandler p2k_input_router_handler = {
+    .name  = "pinball2000 input router",
     .mask  = INPUT_EVENT_MASK_KEY,
-    .event = p2k_lpt_key_event,
+    .event = p2k_input_router_event,
 };
 
 void p2k_install_lpt_board(void)
@@ -1097,7 +1126,10 @@ void p2k_install_lpt_board(void)
      * there is no second CLI policy or environment override. */
     s_physical_board = s_pp_fd >= 0;
     if ((!s_physical_board || s_hybrid_input) && !s_disconnected) {
-        qemu_input_handler_register(NULL, &p2k_lpt_input_handler);
+        s_xina_keyboard = false;
+        s_input_router = qemu_input_handler_register(
+            NULL, &p2k_input_router_handler);
+        qemu_input_handler_activate(s_input_router);
     } else if (s_physical_board) {
         info_report("pinball2000: physical board active — emulated board "
                     "controls disabled on every keyboard path (host controls "
