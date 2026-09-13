@@ -32,6 +32,7 @@
 #include "hw/boards.h"
 #include "hw/i386/x86.h"
 #include "hw/isa/isa.h"
+#include "hw/input/i8042.h"
 #include "hw/intc/i8259.h"
 #include "hw/isa/i8259_internal.h"
 #include "hw/timer/i8254.h"
@@ -286,6 +287,11 @@ static void pinball2000_init(MachineState *machine)
     i8259 = i8259_init(isa_bus, x86_allocate_cpu_irq());
     i8259[0] = p2k_irq0_tap(i8259[0]);
     isa_bus_register_input_irqs(isa_bus, i8259);
+
+    /* The production GXM-AV exposes an AT keyboard through an
+     * i8042-compatible controller at 0x60/0x64 on IRQ1.  Use QEMU's
+     * complete i8042 + PS/2 keyboard model rather than a polling stub. */
+    isa_create_simple(isa_bus, TYPE_I8042);
 
     if (p2k_clkint_hotloop_uses_pit_stub()) {
         pit_stub = g_new0(MemoryRegion, 1);

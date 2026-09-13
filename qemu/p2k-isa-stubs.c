@@ -7,7 +7,6 @@
  * loops terminate.  Each stub mimics the legacy I/O port handler.
  *
  * Currently provided:
- *   0x60 / 0x64       i8042 keyboard controller (always idle)
  *   0x61              system-control port B (bit 4 toggles each read)
  *   0x70 / 0x71       CMOS index/data (zeroed)
  *   0x80              POST code (write-only side-effect, read returns 0)
@@ -31,59 +30,6 @@
 #include "chardev/char.h"
 
 #include "p2k-internal.h"
-
-/* ---------- i8042 keyboard ------------------------------------------------
- *
- * Minimal AT-style controller, ported from the legacy I/O port handlers.
- *
- *   port 0x60 (data):
- *     read   -> outbuf, clears OBF
- *     write  -> ignored (placeholder until we model PS/2 cmds)
- *
- *   port 0x64 (status/cmd):
- *     read   -> kbc_status (initial 0x14: self-test passed, IBF clear)
- *     write  -> latch a sensible response into outbuf and set OBF.
- *               0xAA  controller self-test       outbuf := 0x55
- *               0xAB  interface test             outbuf := 0x00
- *               otherwise outbuf stays as-is, but OBF is asserted so
- *               polling loops complete.
- */
-
-static uint8_t s_kbc_status = 0x14;   /* self-test passed, IBF clear */
-static uint8_t s_kbc_outbuf = 0x55;
-
-static uint64_t p2k_kbd_read(void *opaque, hwaddr addr, unsigned size)
-{
-    uint8_t port = (uint8_t)(uintptr_t)opaque;
-    if (port == 0x60) {
-        s_kbc_status &= ~0x01u;   /* OBF cleared on data read */
-        return s_kbc_outbuf;
-    }
-    return s_kbc_status;          /* port 0x64 status */
-}
-
-static void p2k_kbd_write(void *opaque, hwaddr addr,
-                          uint64_t val, unsigned size)
-{
-    uint8_t port = (uint8_t)(uintptr_t)opaque;
-    if (port == 0x64) {
-        switch (val & 0xFF) {
-        case 0xAA: s_kbc_outbuf = 0x55; break;  /* self-test OK */
-        case 0xAB: s_kbc_outbuf = 0x00; break;  /* interface test OK */
-        case 0x20: /* read CCB */ s_kbc_outbuf = 0x45; break;
-        case 0xD1: case 0xFE: default: break;
-        }
-        s_kbc_status = 0x15;  /* OBF + self-test passed */
-    }
-    /* port 0x60 data writes — ignored (no real PS/2 device). */
-}
-
-static const MemoryRegionOps p2k_kbd_ops = {
-    .read       = p2k_kbd_read,
-    .write      = p2k_kbd_write,
-    .endianness = DEVICE_LITTLE_ENDIAN,
-    .impl       = { .min_access_size = 1, .max_access_size = 1 },
-};
 
 /* ---------- system-control port B (0x61) ---------------------------------- *
  * Bit 4 toggles every read on real hardware (refresh-clock derived).
@@ -640,9 +586,7 @@ void p2k_install_isa_stubs(void)
         s_uart_be_inited = true;
     }
 
-    p2k_iostub(io, "p2k.i8042-data",   0x60,  1, &p2k_kbd_ops);
     p2k_iostub(io, "p2k.port61",       0x61,  1, &p2k_port61_ops);
-    p2k_iostub(io, "p2k.i8042-status", 0x64,  1, &p2k_kbd_ops);
     /* CMOS: default OFF (upstream mc146818 owns 0x70/0x71 -- see
      * pinball2000.c). Opt-in to legacy hand-rolled CMOS with
      * P2K_USE_MC146818=0. The hand-rolled implementation had XINA
@@ -657,7 +601,7 @@ void p2k_install_isa_stubs(void)
     p2k_iostub(io, "p2k.com2",         0x2F8, 8, &p2k_uart_ops);
     p2k_iostub(io, "p2k.com1",         0x3F8, 8, &p2k_uart_ops);
 
-    info_report("pinball2000: installed ISA stubs (kbd/0x61/cmos/post/com1/com2)%s%s",
+    info_report("pinball2000: installed ISA stubs (0x61/cmos/post/com1/com2)%s%s",
                 s_uart_to_stderr ? " [UART->stderr]" : "",
                 s_uart_be_inited ? " [UART<->chardev bidir]" : "");
 }
