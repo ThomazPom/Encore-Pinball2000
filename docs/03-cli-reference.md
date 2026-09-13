@@ -23,8 +23,9 @@ the emulated board is selected, it uses SWE1 by default. Explicit `swe1` and
 Enumeration, positive board recognition and playfield identification live in
 the QEMU machine, not in the shell launcher. With emulation, `Tab` switches
 the host keyboard between cabinet controls (the default) and XINA's emulated
-AT keyboard. A detected physical board disables the cabinet-key router and
-leaves the AT keyboard active; explicit hybrid input restores the router.
+AT keyboard. With a detected physical board, cabinet-key injection is disabled
+and the AT keyboard also remains unplugged until `Tab`; explicit hybrid input
+allows the cabinet-key side of the same router to supplement physical input.
 
 > [!WARNING]
 > The real-LPT options expose implemented code paths. Physical-cabinet

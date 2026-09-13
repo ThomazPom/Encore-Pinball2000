@@ -1127,16 +1127,16 @@ void p2k_install_lpt_board(void)
     /* A successfully opened physical board is the only source of this state;
      * there is no second CLI policy or environment override. */
     s_physical_board = s_pp_fd >= 0;
-    if ((!s_physical_board || s_hybrid_input) && !s_disconnected) {
+    if (!s_disconnected) {
         s_xina_keyboard = false;
         s_input_router = qemu_input_handler_register(
             NULL, &p2k_input_router_handler);
         qemu_input_handler_activate(s_input_router);
-    } else if (s_physical_board) {
-        p2k_set_xina_keyboard_connected(true);
+    }
+    if (s_physical_board) {
         info_report("pinball2000: physical board active — emulated board "
-                    "controls disabled on every keyboard path (host controls "
-                    "F1 quit, F2 flip and F3 screenshot remain available)");
+                    "controls disabled; AT keyboard initially unplugged "
+                    "(Tab connects it; host F1/F2/F3 remain available)");
     }
     if (s_disconnected) {
         p2k_set_xina_keyboard_connected(true);
@@ -1152,7 +1152,7 @@ void p2k_install_lpt_board(void)
                 ioport, ioport + 2, s_lpt_status,
                 s_physical_board && s_hybrid_input ?
                 "; physical board + hybrid keyboard input" :
-                s_physical_board ? "; physical board (host F1/F2/F3 only)" :
+                s_physical_board ? "; physical board (Tab enables AT keyboard)" :
                 s_disconnected ? "; disconnected open bus (host F1/F2/F3 only)" :
                 "; keys: F1 quit | F2 vertical flip | F3 screenshot | "
                 "F4 door | F5/Enter pulse | F6/F9 actions | "

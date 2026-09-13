@@ -117,10 +117,10 @@ has not been observed during normal play and is not HOTLOOP-specific.
 ## Modes without desktop keys
 
 - `--display none` has no graphical input window.
-- A detected or explicitly selected physical board leaves the AT keyboard as
-  the only keyboard input path. `--lpt-input hybrid` explicitly restores the
-  two-mode Tab router so keyboard closures can supplement physical switch
-  reads without replacing hardware outputs or keepalive.
+- A detected or explicitly selected physical board supplies the cabinet input
+  and leaves the AT keyboard unplugged until `Tab`. `--lpt-input hybrid`
+  additionally lets the cabinet-key side of the router supplement physical
+  switch reads without replacing hardware outputs or keepalive.
 - `--serial` controls COM1 in the terminal. It is separate from cabinet keys.
 
 For automated cabinet input, use the QEMU monitor `sendkey` command normally.
