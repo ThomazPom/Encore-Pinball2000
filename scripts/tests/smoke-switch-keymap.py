@@ -153,12 +153,16 @@ def main() -> None:
             "switches:\n  c: 13 trailing-garbage\n  C: 14\n",
             [
                 key_events(("c", True)),
+                key_events(("c", True)),
+                key_events(("c", True)),
                 key_events(("c", False)),
                 key_events(("f1", True)),
             ],
         )
         require(invalid, r"invalid switch keymap")
-        require(invalid, r"coin slot 1 pulse fired")
+        require(invalid, r"coin slot 1 contact CLOSED.*coin slot 1 contact open")
+        if invalid.count("coin slot 1 contact CLOSED") != 1:
+            raise AssertionError("repeated key-down retriggered the coin contact")
         if re.search(r"loaded \d+ switch key binding", invalid):
             raise AssertionError("invalid keymap was partially loaded")
 
