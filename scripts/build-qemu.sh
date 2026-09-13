@@ -293,6 +293,7 @@ config PINBALL2000
     default y
     depends on I386
     select ISA_BUS
+    select PCKBD
     select I8259
     select I8254
     select MC146818RTC

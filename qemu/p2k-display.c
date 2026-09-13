@@ -307,7 +307,10 @@ typedef struct P2KHostKey {
 static void p2k_host_key_bh(void *opaque)
 {
     P2KHostKey *key = opaque;
-    p2k_lpt_host_key(key->qcode, key->down);
+    /* Enter QEMU's input core so every emulated input device sees the same
+     * event.  In particular this feeds the upstream PS/2 keyboard behind
+     * the i8042; the registered cabinet handler continues to receive it too. */
+    qemu_input_event_send_key_qcode(NULL, key->qcode, key->down);
     g_free(key);
 }
 
@@ -480,10 +483,6 @@ static void p2k_sdl_events(P2KDisplayState *s)
                 SDL_SetWindowFullscreen(s->window,
                     (flags & SDL_WINDOW_FULLSCREEN_DESKTOP) ? 0 :
                     SDL_WINDOW_FULLSCREEN_DESKTOP);
-                continue;
-            }
-            if (down && sym == SDLK_F3) {
-                p2k_sdl_screenshot(s);
                 continue;
             }
             p2k_queue_host_key(p2k_sdl_qcode(sym), down);
