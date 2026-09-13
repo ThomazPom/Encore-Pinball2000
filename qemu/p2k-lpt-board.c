@@ -418,7 +418,6 @@ static uint8_t s_phys10_buttons;     /* Physical[10] bits 4-7 (flippers/actions)
 static uint8_t s_phys9_service;      /* Physical[9]  bits 0-3 (service menu) */
 static uint8_t s_phys8_coin_slots;   /* Physical[8]  bits 0-3 (coin slots) */
 static int     s_enter_pulse;        /* F5 short-press: ~60 LPT frames high */
-static int     s_coin1_pulse;        /* C/F10: guaranteed scan-visible pulse */
 
 /* Digits select a standard matrix switch (column, row).  The last complete
  * number stays selected; every Ctrl hold closes it for that exact duration. */
@@ -550,12 +549,7 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
 {
     switch (opcode) {
     case 0x00: {                                      /* Physical[8] coin slots */
-        uint8_t v = s_phys8_coin_slots & 0x0f;
-        if (s_coin1_pulse > 0) {
-            v |= 0x01;
-            s_coin1_pulse--;
-        }
-        return v;
+        return s_phys8_coin_slots & 0x0f;
     }
     case 0x01: {                                      /* Physical[10] flippers + door */
         uint8_t v = s_phys10_buttons & 0xF0;
@@ -596,12 +590,7 @@ static uint8_t retrieve_hybrid_input_mask(uint8_t opcode)
 {
     switch (opcode) {
     case 0x00: {
-        uint8_t v = s_phys8_coin_slots & 0x0f;
-        if (s_coin1_pulse > 0) {
-            v |= 0x01;
-            s_coin1_pulse--;
-        }
-        return v;
+        return s_phys8_coin_slots & 0x0f;
     }
     case 0x01:
         return s_phys10_buttons & 0xf0;
@@ -962,13 +951,21 @@ void p2k_lpt_host_key(int qcode, bool down)
         break;
     }
     case Q_KEY_CODE_F10:
-    case Q_KEY_CODE_C:                               /* coin slot 1 */
+    case Q_KEY_CODE_C: {                             /* coin slot 1 */
+        bool was_down = (s_phys8_coin_slots & 0x01) != 0;
+
         if (down) {
-            s_coin1_pulse = 60;
-            fprintf(stderr, "[lpt] coin slot 1 pulse fired (~60 frames, "
-                    "door=%s)\n", s_coin_door_closed ? "CLOSED" : "OPEN");
+            s_phys8_coin_slots |= 0x01;
+        } else {
+            s_phys8_coin_slots &= ~0x01;
+        }
+        if (was_down != down) {
+            fprintf(stderr, "[lpt] coin slot 1 contact %s (door=%s)\n",
+                    down ? "CLOSED" : "open",
+                    s_coin_door_closed ? "CLOSED" : "OPEN");
         }
         break;
+    }
     case Q_KEY_CODE_F11:                             /* scripted PCM capture */
         p2k_dcs_audio_capture_set(down);
         break;

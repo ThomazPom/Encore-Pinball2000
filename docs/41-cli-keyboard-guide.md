@@ -9,7 +9,7 @@ to XINA.
 | Key | Action |
 |---|---|
 | `Space` / `S` | Start |
-| `F10` / `C` | Pulse coin slot 1 |
+| `F10` / `C` | Hold coin-slot 1 contact closed |
 | `F4` | Open or close the coin door |
 | `F7` / `F8` | Left/right flipper |
 | `F6` / `F9` | Left/right action button |
