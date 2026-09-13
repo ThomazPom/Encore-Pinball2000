@@ -1148,19 +1148,18 @@ void p2k_install_lpt_board(void)
     /* A successfully opened physical board is the only source of this state;
      * there is no second CLI policy or environment override. */
     s_physical_board = s_pp_fd >= 0;
-    if (!s_disconnected) {
-        s_xina_keyboard = false;
-        s_input_router = qemu_input_handler_register(
-            NULL, &p2k_input_router_handler);
-        qemu_input_handler_activate(s_input_router);
-    }
+    /* Emulated, physical and deliberately disconnected cabinets all boot
+     * without an AT keyboard. The router always owns Tab so it can model
+     * plugging one in later; p2k_lpt_host_key() suppresses cabinet-key
+     * injection when the physical/open-bus modes make it inappropriate. */
+    s_xina_keyboard = false;
+    s_input_router = qemu_input_handler_register(
+        NULL, &p2k_input_router_handler);
+    qemu_input_handler_activate(s_input_router);
     if (s_physical_board) {
         info_report("pinball2000: physical board active — emulated board "
                     "controls disabled; AT keyboard initially unplugged "
                     "(Tab connects it; host F1/F2/F3 remain available)");
-    }
-    if (s_disconnected) {
-        p2k_set_xina_keyboard_connected(true);
     }
     if (s_physical_board && s_hybrid_input) {
         info_report("pinball2000: EXPERIMENTAL hybrid input — physical board "
@@ -1174,7 +1173,7 @@ void p2k_install_lpt_board(void)
                 s_physical_board && s_hybrid_input ?
                 "; physical board + hybrid keyboard input" :
                 s_physical_board ? "; physical board (Tab enables AT keyboard)" :
-                s_disconnected ? "; disconnected open bus (host F1/F2/F3 only)" :
+                s_disconnected ? "; disconnected open bus (Tab enables AT keyboard)" :
                 "; keys: F1 quit | F2 vertical flip | F3 screenshot | "
                 "F4 door | F5/Enter pulse | F6/F9 actions | "
                 "F7/F8 flippers | Space/S start | F10/C coin | "

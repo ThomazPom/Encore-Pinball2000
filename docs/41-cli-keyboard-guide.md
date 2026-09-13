@@ -123,6 +123,8 @@ has not been observed during normal play and is not HOTLOOP-specific.
   and leaves the AT keyboard unplugged until `Tab`. `--lpt-input hybrid`
   additionally lets the cabinet-key side of the router supplement physical
   switch reads without replacing hardware outputs or keepalive.
+- The diagnostic `--lpt-device disconnected` mode follows the same keyboard
+  lifecycle: open-bus LPT and no AT keyboard until `Tab`.
 - `--serial` controls COM1 in the terminal. It is separate from cabinet keys.
 
 For automated cabinet input, use the QEMU monitor `sendkey` command normally.
