@@ -182,9 +182,9 @@ Delivered by the QEMU machine, not the wrapper:
 
 | Key | Action |
 |---|---|
-| `F1` | Quit / shutdown request |
-| `F2` | Toggle vertical flipscreen; `--flipscreen` starts with that state active |
-| `F3` | Screenshot to `<screenshot-dir>/p2k_screen_<ts>.jpg`, with `.ppm` fallback |
+| `F1` | Quit / shutdown request (`Alt+F1` in XINA keyboard mode) |
+| `F2` | Toggle vertical flipscreen (`Alt+F2` in XINA keyboard mode); `--flipscreen` starts with that state active |
+| `F3` | Screenshot to `<screenshot-dir>/p2k_screen_<ts>.jpg` (`Alt+F3` in XINA keyboard mode), with `.ppm` fallback |
 | `F4` | Toggle coin door |
 | `F5`, `Enter`, `KP-Enter` | ~60-frame Enter pulse |
 | `F6`, `F9` | Left / right action buttons |

@@ -988,12 +988,21 @@ void p2k_lpt_host_key(int qcode, bool down)
 
 static QemuInputHandlerState *s_input_router;
 static bool s_xina_keyboard;
+static bool s_keyboard_alt[2];
+static bool s_keyboard_host_fn[3];
 
 static void p2k_input_router_event(DeviceState *dev, QemuConsole *src,
                                    InputEvent *evt)
 {
     InputKeyEvent *key = evt->u.key.data;
     QKeyCode qcode = qemu_input_key_value_to_qcode(key->key);
+    int host_fn = qcode == Q_KEY_CODE_F1 ? 0 :
+                  qcode == Q_KEY_CODE_F2 ? 1 :
+                  qcode == Q_KEY_CODE_F3 ? 2 : -1;
+
+    if (qcode == Q_KEY_CODE_ALT || qcode == Q_KEY_CODE_ALT_R) {
+        s_keyboard_alt[qcode == Q_KEY_CODE_ALT_R] = key->down;
+    }
 
     if (qcode == Q_KEY_CODE_TAB) {
         if (key->down) {
@@ -1011,6 +1020,18 @@ static void p2k_input_router_event(DeviceState *dev, QemuConsole *src,
     }
 
     if (!s_xina_keyboard) {
+        p2k_lpt_host_key(qcode, key->down);
+        return;
+    }
+
+    /* Once the real keyboard is plugged into XINA, plain F1/F2/F3 belong to
+     * the original OS. Alt preserves access to Encore's three host actions
+     * without stealing the faithful keys. Remember swallowed key-downs so a
+     * release after Alt is released cannot leak into the guest. */
+    if (host_fn >= 0 &&
+        ((key->down && (s_keyboard_alt[0] || s_keyboard_alt[1])) ||
+         (!key->down && s_keyboard_host_fn[host_fn]))) {
+        s_keyboard_host_fn[host_fn] = key->down;
         p2k_lpt_host_key(qcode, key->down);
         return;
     }

@@ -48,7 +48,8 @@ scripts/run-qemu.sh \
 ```
 
 An explicit device is authoritative and automatically disables emulated
-cabinet keys while retaining host-only F1 quit, F2 flip and F3 screenshot.
+cabinet keys. Tab plugs in XINA's keyboard; while it is active, Encore's host
+actions remain available as Alt+F1 quit, Alt+F2 flip and Alt+F3 screenshot.
 Use `--lpt-device disconnected` for an artificial open-bus
 ROM diagnostic.
 
