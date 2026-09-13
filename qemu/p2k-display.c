@@ -371,6 +371,7 @@ static int p2k_sdl_qcode(SDL_Keycode sym)
     case SDLK_F12: return Q_KEY_CODE_F12;
     case SDLK_RETURN: return Q_KEY_CODE_RET;
     case SDLK_KP_ENTER: return Q_KEY_CODE_KP_ENTER;
+    case SDLK_TAB: return Q_KEY_CODE_TAB;
     case SDLK_ESCAPE: return Q_KEY_CODE_ESC;
     case SDLK_LEFT: return Q_KEY_CODE_LEFT;
     case SDLK_RIGHT: return Q_KEY_CODE_RIGHT;
