@@ -582,8 +582,8 @@ CABINET
                             The explicitly selected port
                             remains connected to the guest when its cable is
                             silent, so the ROM performs the diagnosis. A real
-                            port disables emulated cabinet keys; host controls
-                            F1 quit, F2 flip and F3 screenshot remain available.
+                            port disables emulated cabinet keys and leaves the
+                            XINA AT keyboard active.
                             Default: auto.
   --lpt-ioport 0xNNN       Set the guest LPT address (default: 0x378),
                            independently of emulated or physical backend.
@@ -600,7 +600,11 @@ ESCAPE HATCHES
   --                        Pass remaining args straight to qemu-system-i386.
   -h, --help                Show this help.
 
-KEY BINDINGS (delivered by the QEMU machine, not by this wrapper)
+KEY BINDINGS (CABINET KEYS mode unless noted)
+  Tab                       With an emulated board, toggle between CABINET
+                            KEYS (default) and XINA KEYBOARD. A temporary
+                            on-screen banner confirms the selected mode.
+                            Physical-only input leaves XINA keyboard active.
   F1                        Quit / shutdown request
   F4                        Toggle coin door
   F5 / Enter / KP-Enter     ~60-frame Enter pulse
