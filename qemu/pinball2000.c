@@ -238,6 +238,34 @@ static void p2k_prepare_savedata_directory(Pinball2000MachineState *s)
     s->savedata_dir = fallback;
 }
 
+static ISAKBDState *p2k_i8042;
+
+void p2k_set_xina_keyboard_connected(bool connected)
+{
+    KBDState *kbd;
+
+    if (!p2k_i8042) {
+        return;
+    }
+
+    kbd = &p2k_i8042->kbd;
+    if (connected) {
+        /* XINA programs this command byte during KBInit.  When the keyboard
+         * was absent at boot those writes correctly went nowhere, so restore
+         * that resulting controller state as the keyboard is plugged in. */
+        device_cold_reset(DEVICE(p2k_i8042));
+        kbd->mode = 0x69; /* IRQ1, unlocked, mouse disabled, set-1 translate */
+        ps2_keyboard_set_translation(&kbd->ps2kbd, true);
+        p2k_isa_fake_keyboard_set_enabled(false);
+        memory_region_set_enabled(&p2k_i8042->io[0], true);
+        memory_region_set_enabled(&p2k_i8042->io[1], true);
+    } else {
+        memory_region_set_enabled(&p2k_i8042->io[0], false);
+        memory_region_set_enabled(&p2k_i8042->io[1], false);
+        p2k_isa_fake_keyboard_set_enabled(true);
+    }
+}
+
 static void pinball2000_init(MachineState *machine)
 {
     Pinball2000MachineState *s = PINBALL2000_MACHINE(machine);
@@ -291,7 +319,10 @@ static void pinball2000_init(MachineState *machine)
     /* The production GXM-AV exposes an AT keyboard through an
      * i8042-compatible controller at 0x60/0x64 on IRQ1.  Use QEMU's
      * complete i8042 + PS/2 keyboard model rather than a polling stub. */
-    isa_create_simple(isa_bus, TYPE_I8042);
+    p2k_i8042 = I8042(isa_create_simple(isa_bus, TYPE_I8042));
+    /* An AT keyboard is optional on the real machine.  Cabinet mode begins
+     * with it physically absent; the input router can plug it in on demand. */
+    p2k_set_xina_keyboard_connected(false);
 
     if (p2k_clkint_hotloop_uses_pit_stub()) {
         pit_stub = g_new0(MemoryRegion, 1);

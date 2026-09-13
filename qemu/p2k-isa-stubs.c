@@ -7,6 +7,7 @@
  * loops terminate.  Each stub mimics the legacy I/O port handler.
  *
  * Currently provided:
+ *   0x60 / 0x64       absent-keyboard i8042 façade (switchable)
  *   0x61              system-control port B (bit 4 toggles each read)
  *   0x70 / 0x71       CMOS index/data (zeroed)
  *   0x80              POST code (write-only side-effect, read returns 0)
@@ -30,6 +31,63 @@
 #include "chardev/char.h"
 
 #include "p2k-internal.h"
+
+/* ---------- absent AT keyboard (0x60/0x64) ------------------------------ *
+ *
+ * The controller exists on every GXM-AV, while the external AT keyboard is
+ * optional.  This minimal façade is the already-proven no-keyboard boot
+ * behaviour: controller self-tests complete, keyboard data commands receive
+ * no reply, and therefore XINA's periodic 0xEE probe reports no keyboard.
+ * Tab atomically swaps these regions for QEMU's full i8042/PS2 model.
+ */
+
+static uint8_t s_kbc_status = 0x14;
+static uint8_t s_kbc_outbuf = 0x55;
+static MemoryRegion *s_kbc_data_mr;
+static MemoryRegion *s_kbc_status_mr;
+
+static uint64_t p2k_kbd_read(void *opaque, hwaddr addr, unsigned size)
+{
+    uint8_t port = (uint8_t)(uintptr_t)opaque;
+
+    if (port == 0x60) {
+        s_kbc_status &= ~0x01u;
+        return s_kbc_outbuf;
+    }
+    return s_kbc_status;
+}
+
+static void p2k_kbd_write(void *opaque, hwaddr addr,
+                          uint64_t val, unsigned size)
+{
+    uint8_t port = (uint8_t)(uintptr_t)opaque;
+
+    if (port != 0x64) {
+        return; /* no keyboard is connected */
+    }
+    switch (val & 0xff) {
+    case 0xaa: s_kbc_outbuf = 0x55; break;
+    case 0xab: s_kbc_outbuf = 0x00; break;
+    case 0x20: s_kbc_outbuf = 0x45; break;
+    default: break;
+    }
+    s_kbc_status = 0x15;
+}
+
+static const MemoryRegionOps p2k_kbd_ops = {
+    .read       = p2k_kbd_read,
+    .write      = p2k_kbd_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .impl       = { .min_access_size = 1, .max_access_size = 1 },
+};
+
+void p2k_isa_fake_keyboard_set_enabled(bool enabled)
+{
+    if (s_kbc_data_mr) {
+        memory_region_set_enabled(s_kbc_data_mr, enabled);
+        memory_region_set_enabled(s_kbc_status_mr, enabled);
+    }
+}
 
 /* ---------- system-control port B (0x61) ---------------------------------- *
  * Bit 4 toggles every read on real hardware (refresh-clock derived).
@@ -548,6 +606,17 @@ static void p2k_iostub(MemoryRegion *io, const char *name,
 void p2k_install_isa_stubs(void)
 {
     MemoryRegion *io = get_system_io();
+
+    s_kbc_data_mr = g_new(MemoryRegion, 1);
+    memory_region_init_io(s_kbc_data_mr, NULL, &p2k_kbd_ops,
+                          (void *)(uintptr_t)0x60,
+                          "p2k.i8042-absent-data", 1);
+    memory_region_add_subregion_overlap(io, 0x60, s_kbc_data_mr, 1);
+    s_kbc_status_mr = g_new(MemoryRegion, 1);
+    memory_region_init_io(s_kbc_status_mr, NULL, &p2k_kbd_ops,
+                          (void *)(uintptr_t)0x64,
+                          "p2k.i8042-absent-status", 1);
+    memory_region_add_subregion_overlap(io, 0x64, s_kbc_status_mr, 1);
 
     /* UART/XINA mirror to host stderr is ON by default so Fatal/NonFatal/
      * monitor output is visible during bring-up without remembering an

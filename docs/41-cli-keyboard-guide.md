@@ -3,6 +3,8 @@
 With an emulated driver board, Encore starts in cabinet-key mode. Press `Tab`
 to toggle between that mapping and the emulated AT keyboard connected to
 XINA's real i8042 driver. A temporary banner identifies the selected mode.
+Until that toggle, the keyboard is electrically absent from XINA, so its
+automatic keyboard-function menu does not appear during normal cabinet boot.
 
 In `XINA KEYBOARD` mode, keys are delivered exclusively as PC keyboard scan
 codes. They are not duplicated as cabinet switches. F3 opens XINA's keyboard

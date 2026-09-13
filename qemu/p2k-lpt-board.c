@@ -998,6 +998,7 @@ static void p2k_input_router_event(DeviceState *dev, QemuConsole *src,
     if (qcode == Q_KEY_CODE_TAB) {
         if (key->down) {
             s_xina_keyboard = !s_xina_keyboard;
+            p2k_set_xina_keyboard_connected(s_xina_keyboard);
             if (s_xina_keyboard) {
                 info_report("pinball2000: input mode: XINA AT keyboard");
                 p2k_display_show_input_mode("XINA KEYBOARD");
@@ -1037,6 +1038,7 @@ void p2k_install_lpt_board(void)
     unsigned    ioport   = 0x378;
 
     if (s_lpt_disabled) {
+        p2k_set_xina_keyboard_connected(true);
         info_report("pinball2000: LPT driver-board disabled "
                     "(--lpt-device none) — game will not boot, "
                     "the switch matrix is unreachable. Diagnostic only.");
@@ -1131,9 +1133,13 @@ void p2k_install_lpt_board(void)
             NULL, &p2k_input_router_handler);
         qemu_input_handler_activate(s_input_router);
     } else if (s_physical_board) {
+        p2k_set_xina_keyboard_connected(true);
         info_report("pinball2000: physical board active — emulated board "
                     "controls disabled on every keyboard path (host controls "
                     "F1 quit, F2 flip and F3 screenshot remain available)");
+    }
+    if (s_disconnected) {
+        p2k_set_xina_keyboard_connected(true);
     }
     if (s_physical_board && s_hybrid_input) {
         info_report("pinball2000: EXPERIMENTAL hybrid input — physical board "
