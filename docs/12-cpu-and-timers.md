@@ -4,15 +4,16 @@ Encore runs one QEMU TCG `486` CPU with 16 MiB of RAM. The game programs a
 QEMU i8254 PIT and i8259 PIC, installs its own XINU interrupt handler, and
 acknowledges IRQ0 through its normal EOI/IRET path.
 
-Encore provides three IRQ0 delivery modes. Adaptive HOTLOOP-only is the
-default because it keeps game time close to real time on modern hosts.
+Encore provides three IRQ0 delivery modes. Natural i8254/i8259 delivery is the
+default. Long normal-speed controls kept it at the requested game-clock rate
+without HOTLOOP's handler-rate feedback.
 
 ## Runtime modes
 
 | Command | IRQ0 source | Intended use |
 |---|---|---|
-| `scripts/run-qemu.sh` | Adaptive HOTLOOP-only | Normal play and cabinet testing. |
-| `scripts/run-qemu.sh --strict` | Natural i8254 PIT only | Diagnostic comparison without HOTLOOP assistance. |
+| `scripts/run-qemu.sh` or `scripts/run-qemu.sh --strict` | Natural i8254 PIT only | Normal play and cabinet testing. |
+| `scripts/run-qemu.sh --hotloop` | Adaptive HOTLOOP-only | Diagnostic comparison with the former default. |
 | `scripts/run-qemu.sh --with-pit` | Adaptive HOTLOOP plus natural PIT | Controlled timing comparison. |
 
 All three modes feed QEMU's i8259 interrupt controller and enter the guest's IDT
@@ -26,12 +27,12 @@ executing translated blocks. On affected hosts, XINU therefore receives fewer
 timer interrupts than intended and commands such as `sleep 10` take too long in
 wall time.
 
-HOTLOOP avoids that slowdown by pacing normal i8259 IRQ0 pulses from a
+HOTLOOP was introduced to avoid that slowdown by pacing normal i8259 IRQ0 pulses from a
 host-wall-clock timer. QEMU's i8259 arbitrates the request,
 the x86 CPU enters the guest's IDT vector, and XINU performs its normal EOI and
 IRET.
 
-In the default HOTLOOP-only mode, the IRQ0 tap suppresses natural PIT IRQ0
+In explicit HOTLOOP-only mode, the IRQ0 tap suppresses natural PIT IRQ0
 edges so there is one controlled source. The guest still programs and reads the
 PIT normally; only delivery of its IRQ0 wire is replaced.
 
@@ -45,7 +46,7 @@ Implementation:
 
 ## Adaptive rate control
 
-The target at normal speed is approximately 4,003.97 guest `clkint` entries per
+The experimental HOTLOOP target at normal speed is approximately 4,003.97 guest `clkint` entries per
 second. HOTLOOP measures the achieved rate and adjusts its minimum re-raise gap.
 This compensates for host scheduling, display and DCS workload.
 
@@ -68,8 +69,8 @@ scripts/run-qemu.sh --speed-target 100
 scripts/run-qemu.sh --speed-target 120
 ```
 
-In HOTLOOP modes, the percentage scales the adaptive `clkint` target. In
-`--strict`, the wrapper scales the PIT input clock presented to the guest.
+In HOTLOOP modes, the percentage scales the adaptive `clkint` target. In the
+default strict mode, the wrapper scales the PIT input clock presented to the guest.
 `100` is the default.
 
 This control scales the game clock, not audio pitch or MediaGX instruction
@@ -81,7 +82,7 @@ Use the built-in self-diagnostic:
 
 ```sh
 scripts/run-qemu.sh --bench
-scripts/run-qemu.sh --bench --strict
+scripts/run-qemu.sh --bench --hotloop
 scripts/run-qemu.sh --bench --with-pit
 ```
 
@@ -130,8 +131,8 @@ in the measured window. It is useful only together with game-clock speed:
 - A low cumulative value during boot can be harmless.
 - A steady-state value near 100% with `sleep 10` near ten seconds means game
   time is correct.
-- `--strict` results depend on how the host schedules TCG and can run slower
-  than wall time.
+- Results depend on how the host schedules TCG; use `--bench` on the target
+  host before selecting the experimental `--hotloop` fallback.
 - Values above 100% mean the requested mode is overspeeding the guest.
 
 `--bench` uses only the clean guest-side probe window for IRQ results and only
