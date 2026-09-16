@@ -359,10 +359,11 @@ AUDIO
                             `driver=auto`. The DCS code path is
                             unchanged.
   --no-audio                Force DCS audio off (overrides --audio).
-  --strict                  Disable HOTLOOP IRQ0 delivery and use the
-                            natural i8254+i8259 path.
+  --strict                  Use the default natural i8254+i8259 IRQ0 path.
+  --hotloop                 Enable adaptive host-wall-clock HOTLOOP instead
+                            of the default natural i8254+i8259 path.
   --with-pit                Let HOTLOOP and the natural i8254 both
-                            supply IRQ0. Default is HOTLOOP-only.
+                            supply IRQ0. Diagnostic comparison only.
   --legacy-hotloop          Select the retained TB-boundary HOTLOOP instead
                             of host-wall-clock pacing for temporary A/B tests.
   --speed-target <percent>  Deliberate game-clock speed, 25..300 (default
@@ -878,12 +879,19 @@ while [[ $# -gt 0 ]]; do
     --strict)
       # Disable HOTLOOP and use natural i8254 + i8259 delivery.
       export P2K_TCG_CLKINT_HOTLOOP=0; shift ;;
+    --hotloop)
+      # Explicit opt-in to the former adaptive HOTLOOP-only default.
+      export P2K_TCG_CLKINT_HOTLOOP=1
+      unset P2K_TCG_CLKINT_HOTLOOP_WITH_PIT || true
+      shift ;;
     --with-pit)
       # Combined mode: HOTLOOP and the natural i8254 both raise IRQ0.
+      export P2K_TCG_CLKINT_HOTLOOP=1
       export P2K_TCG_CLKINT_HOTLOOP_WITH_PIT=1
       unset P2K_TCG_CLKINT_HOTLOOP_NO_PIT || true
       shift ;;
     --legacy-hotloop)
+      export P2K_TCG_CLKINT_HOTLOOP=1
       export P2K_HOTLOOP_HOST_TIMER=0
       shift ;;
     --speed-target)
@@ -1174,9 +1182,9 @@ export P2K_TCG_CLKINT_HOTLOOP_TARGET_HZ="$(
   awk -v percent="$SPEED_TARGET" 'BEGIN { printf "%.6f", 4003.966443 * percent / 100.0 }'
 )"
 
-# When neither --strict nor --with-pit is given, use HOTLOOP-only.
-# the TCG hook. --with-pit remains available for A/B comparisons.
-if [[ -z "${P2K_TCG_CLKINT_HOTLOOP_WITH_PIT:-}" && "${P2K_TCG_CLKINT_HOTLOOP:-1}" != "0" ]]; then
+# Explicit HOTLOOP without --with-pit owns IRQ0 delivery exclusively.
+# Strict natural PIT delivery remains the default when HOTLOOP is unset.
+if [[ -z "${P2K_TCG_CLKINT_HOTLOOP_WITH_PIT:-}" && "${P2K_TCG_CLKINT_HOTLOOP:-0}" != "0" ]]; then
   export P2K_TCG_CLKINT_HOTLOOP_NO_PIT=1
 fi
 
@@ -1184,7 +1192,7 @@ fi
 # retain the established defaults exactly. Combined PIT+HOTLOOP keeps the
 # broad 100 ms ceiling so a fast natural PIT can make HOTLOOP nearly dormant.
 if [[ "$SPEED_TARGET" != "100" && "$SPEED_TARGET" != "100.0" &&
-      "${P2K_TCG_CLKINT_HOTLOOP:-1}" != "0" ]]; then
+      "${P2K_TCG_CLKINT_HOTLOOP:-0}" != "0" ]]; then
   __target_period_ns="$(awk -v hz="$P2K_TCG_CLKINT_HOTLOOP_TARGET_HZ" \
     'BEGIN { printf "%.0f", 1000000000.0 / hz }')"
   if [[ -z "${P2K_TCG_CLKINT_HOTLOOP_GAP_LOW_NS:-}" ]]; then
@@ -1203,7 +1211,7 @@ fi
 # One 145 µs starting gap passed the sequential timing matrix, including
 # repeated RFM headless + --with-pit boots. The adaptive controller then owns
 # steady-state pacing. Explicit P2K_TCG_CLKINT_HOTLOOP_MIN_GAP_NS wins.
-if [[ -z "${P2K_TCG_CLKINT_HOTLOOP_MIN_GAP_NS:-}" && "${P2K_TCG_CLKINT_HOTLOOP:-1}" != "0" ]]; then
+if [[ -z "${P2K_TCG_CLKINT_HOTLOOP_MIN_GAP_NS:-}" && "${P2K_TCG_CLKINT_HOTLOOP:-0}" != "0" ]]; then
   export P2K_TCG_CLKINT_HOTLOOP_MIN_GAP_NS="$(
     awk -v percent="$SPEED_TARGET" 'BEGIN { printf "%.0f", 14500000.0 / percent }'
   )"

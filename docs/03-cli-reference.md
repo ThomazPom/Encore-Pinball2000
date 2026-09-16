@@ -67,8 +67,9 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--audio` | `auto` \| `none` \| QEMU audio driver | `auto` | Autodetects the first QEMU-supported/host-available backend in order: `sdl`, `pa`, `alsa`, `oss`, `sndio`, `dbus`; falls back to `none` with a warning. Explicit backends are validated against QEMU `-audio help`. | `scripts/run-qemu.sh --audio alsa` |
 | `--no-audio` | — | off | Forces DCS audio off; overrides `--audio`. | `scripts/run-qemu.sh --no-audio` |
 | `--speed-target` | percent | `100` | Deliberate XINU game-clock speed from 25 through 300. Scales PIT and/or HOTLOOP according to timing mode. | `scripts/run-qemu.sh --speed-target 75` |
-| `--strict` | — | off | Disables HOTLOOP and uses the natural i8254/i8259 IRQ0 path. Intended for diagnostic comparison. | `scripts/run-qemu.sh --strict` |
-| `--with-pit` | — | off | Runs adaptive HOTLOOP together with the natural PIT. | `scripts/run-qemu.sh --with-pit` |
+| `--strict` | — | on | Uses the natural i8254/i8259 IRQ0 path. This is the default; the flag remains available for explicit scripts. | `scripts/run-qemu.sh --strict` |
+| `--hotloop` | — | off | Enables the former adaptive host-wall-clock HOTLOOP-only mode for diagnostic comparison. | `scripts/run-qemu.sh --hotloop` |
+| `--with-pit` | — | off | Runs adaptive HOTLOOP together with the natural PIT for diagnostic comparison. | `scripts/run-qemu.sh --with-pit` |
 | `--bench` | — | off | Runs isolated guest-IRQ and LPT/PDB passes after cabinet input and 10 seconds of guest warmup. The first pass temporarily probes XINU's live `clkint` entry in RAM; the second is completely unpatched. Requires `gdb`, `as`, `ld`, and `objcopy`. | `scripts/run-qemu.sh --bench` |
 | `--bench-long` | — | off | With `--bench`, uses the former 30-second warmup for final validation. It does not change the measured window. | `scripts/run-qemu.sh --bench --bench-long` |
 

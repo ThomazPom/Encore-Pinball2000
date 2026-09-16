@@ -86,14 +86,14 @@ static bool     s_jitter_reset_done;
 static bool p2k_hotloop_env_on(void)
 {
     if (unlikely(s_hotloop_state < 0)) {
-        /* HOTLOOP is ON by default. Explicitly disable with
-         * P2K_TCG_CLKINT_HOTLOOP=0 to fall back to strict natural
-         * i8254 + i8259 delivery (44% delivery, sleep 10 = 23 s). */
+        /* Strict natural i8254 + i8259 delivery is the production default.
+         * HOTLOOP is retained as an explicit diagnostic/compatibility mode
+         * with P2K_TCG_CLKINT_HOTLOOP=1. */
         const char *v = getenv("P2K_TCG_CLKINT_HOTLOOP");
         if (v && *v) {
             s_hotloop_state = (v[0] == '1') ? 1 : 0;
         } else {
-            s_hotloop_state = 1;
+            s_hotloop_state = 0;
         }
         /* Default rate-limit: 145 µs (6.9 kHz raw) at boot, throttled
          * by the adaptive PI controller to 250 µs (4003.97 Hz nominal
