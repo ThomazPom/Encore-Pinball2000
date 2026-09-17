@@ -26,7 +26,7 @@ export P2K_DCS_ENGINE="${P2K_DCS_ENGINE:-adsp-hybrid-thread}"
 
 # --bench is an orchestration mode, not a QEMU machine option.  Dispatch it
 # before normal argument parsing and forward every other option (game, update,
-# strict, etc.) to the isolated self-diagnostic runner.
+# display, etc.) to the isolated self-diagnostic runner.
 for __arg in "$@"; do
   if [[ "$__arg" == "--bench" ]]; then
     __bench_args=()
@@ -221,15 +221,8 @@ print_help() {
             next
           }
           /^    scripts\/run-qemu/ { print bright_cyan $0 reset; next }
-          /^    HOTLOOP adsp-thread with/ { print bright_cyan $0 reset; next }
-          /^  Faithful ADSP timing candidates/ { print bold $0 reset; next }
-          /^    Example steady-state results/ { print bold $0 reset; next }
-          /^      Configuration/ { print bold $0 reset; next }
-          /^      HOTLOOP.*FAIL$/ { print red $0 reset; next }
-          /^      HOTLOOP adsp-thread PCM CPU2/ { print bright_green $0 reset; next }
-          /^      HOTLOOP/ { print green $0 reset; next }
-          /^    Plain pb2kslib/ || /^    Qualification gates/ ||
-          /^    These figures/ { print yellow $0 reset; next }
+          /^  DCS engine examples/ { print bold $0 reset; next }
+          /^    Plain pb2kslib/ { print yellow $0 reset; next }
           /^Run Williams Pinball 2000/ || /^machine\. Stock/ {
             print dim $0 reset; next
           }
@@ -359,18 +352,15 @@ AUDIO
                             `driver=auto`. The DCS code path is
                             unchanged.
   --no-audio                Force DCS audio off (overrides --audio).
-  --strict                  Use the default natural i8254+i8259 IRQ0 path.
-  --hotloop                 Enable adaptive host-wall-clock HOTLOOP instead
-                            of the default natural i8254+i8259 path.
-  --with-pit                Let HOTLOOP and the natural i8254 both
-                            supply IRQ0. Diagnostic comparison only.
-  --legacy-hotloop          Select the retained TB-boundary HOTLOOP instead
-                            of host-wall-clock pacing for temporary A/B tests.
+  --strict                  Compatibility alias for the sole natural
+                            i8254+i8259 IRQ0 path.
+  --irq0-stack-trace        Log record-low XINU stack margin at IRQ0 intack.
+                            Diagnostic only; does not alter guest execution.
+  --irq0-stack-guard ADDR   Restrict that trace to one XINU stack guard.
+  --irq0-stack-dump FILE    Dump its 8 KiB stack once margin reaches 128 B.
   --speed-target <percent>  Deliberate game-clock speed, 25..300 (default
-                            100). Scales the i8254 PIT divisor in strict and
-                            combo modes and the adaptive HOTLOOP target in
-                            HOTLOOP modes. Example: 75 = three-quarter speed,
-                            120 = 1.2x speed.
+                            100). Scales the i8254 PIT divisor. Example:
+                            75 = three-quarter speed, 120 = 1.2x speed.
   --pb2kslib <path>         Override pb2kslib container path
                             (P2K_PB2KSLIB=<path>). Default lookup is
                             <roms_dir>/<game>_sound.bin. No directory walks.
@@ -402,37 +392,20 @@ AUDIO
                             Adds ~1 s startup cost; eliminates first-
                             trigger decode hitch.
 
-  Faithful ADSP timing candidates currently under validation:
+  DCS engine examples:
     scripts/run-qemu.sh --dcs-engine pb2kslib-adsp
-                            Host-clock HOTLOOP with update-derived PCM.
+                            Use persistent update-derived PCM.
     scripts/run-qemu.sh --dcs-engine adsp-thread
-                            Host-clock HOTLOOP with live DSP emulation.
-    scripts/run-qemu.sh --with-pit --dcs-engine pb2kslib-adsp
-                            HOTLOOP plus natural PIT with update-derived PCM.
-    scripts/run-qemu.sh --with-pit --dcs-engine adsp-thread
-                            HOTLOOP plus natural PIT with live DSP emulation.
+                            Use live DSP emulation.
     scripts/run-qemu.sh --dcs-engine adsp-thread --dcs-pcm-cpu 2
-                            Host-clock HOTLOOP with the dcs-pcm worker pinned.
+                            Pin the dcs-pcm worker.
     scripts/run-qemu.sh --dcs-engine adsp-clock-thread --dcs-pcm-cpu 3
                             Fixed-slice DSP clock with optional pinning.
     scripts/run-qemu.sh --dcs-engine adsp-hybrid-thread
                             Default event-gated eight-frame producer.
 
     Plain pb2kslib is excluded because a fixed library can omit sounds added
-    by newer updates. Strict real-ADSP modes currently fail the IRQ-jitter gate.
-
-    Refreshed steady-state results (SWE1 2.00, this host):
-      Configuration                 Delivery IRQ/s Mean Sigma p50 p95 p99 Worst DATA/s PDB/s P50 P95 P99 Worst    Status
-      HOTLOOP pb2kslib-adsp          100.07%  4007  250     7 249 254 277   474  42558  4004 249 254 274  410 us   PASS
-      HOTLOOP adsp-thread            100.10%  4008  250     7 249 255 275   362  42562  4004 248 255 275  407 us   PASS
-      HOTLOOP+PIT pb2kslib-adsp      100.16%  4010  249    16 248 265 296   681  42559  4004 248 260 285  2.63 ms  FAIL
-      HOTLOOP+PIT adsp-thread        100.60%  4028  248    53 242 300 480  1470  42563  4004 248 255 274  537 us   FAIL
-      HOTLOOP adsp-thread PCM CPU2   100.11%  4008  249     7 249 255 276   392  42560  4004 248 256 276  830 us   PASS
-      Timing columns after IRQ/s and PDB/s are microseconds unless marked ms.
-
-    Qualification gates: IRQ sigma < 10 us and PDB worst <= 2 ms.
-    These figures are a comparison example, not portable performance promises;
-    rerun the forensic full benchmark when choosing for another host.
+    by newer updates.
 
 NETWORK
   --network                 Add the emulated SMC8416T Ethernet card on an
@@ -877,23 +850,21 @@ while [[ $# -gt 0 ]]; do
       esac ;;
     --no-audio)        AUDIO="none"; unset P2K_DCS_AUDIO || true; shift ;;
     --strict)
-      # Disable HOTLOOP and use natural i8254 + i8259 delivery.
-      export P2K_TCG_CLKINT_HOTLOOP=0; shift ;;
-    --hotloop)
-      # Explicit opt-in to the former adaptive HOTLOOP-only default.
-      export P2K_TCG_CLKINT_HOTLOOP=1
-      unset P2K_TCG_CLKINT_HOTLOOP_WITH_PIT || true
+      # Compatibility alias: natural i8254 + i8259 is the only IRQ0 path.
       shift ;;
-    --with-pit)
-      # Combined mode: HOTLOOP and the natural i8254 both raise IRQ0.
-      export P2K_TCG_CLKINT_HOTLOOP=1
-      export P2K_TCG_CLKINT_HOTLOOP_WITH_PIT=1
-      unset P2K_TCG_CLKINT_HOTLOOP_NO_PIT || true
+    --irq0-stack-trace)
+      export P2K_IRQ0_STACK_TRACE=1
       shift ;;
-    --legacy-hotloop)
-      export P2K_TCG_CLKINT_HOTLOOP=1
-      export P2K_HOTLOOP_HOST_TIMER=0
-      shift ;;
+    --irq0-stack-guard)
+      [[ $# -ge 2 && "$2" =~ ^(0x)?[0-9a-fA-F]+$ ]] ||
+        { echo "[run-qemu] --irq0-stack-guard requires a hexadecimal guest address" >&2; exit 2; }
+      export P2K_IRQ0_STACK_TRACE=1 P2K_IRQ0_STACK_GUARD="$2"
+      shift 2 ;;
+    --irq0-stack-dump)
+      [[ $# -ge 2 && -n "$2" ]] ||
+        { echo "[run-qemu] --irq0-stack-dump requires a path" >&2; exit 2; }
+      export P2K_IRQ0_STACK_TRACE=1 P2K_IRQ0_STACK_DUMP="$2"
+      shift 2 ;;
     --speed-target)
       [[ -n "${2:-}" ]] || { echo "[run-qemu] --speed-target: expected percent" >&2; exit 2; }
       SPEED_TARGET="$2"; shift 2 ;;
@@ -1178,44 +1149,6 @@ if [[ -n "$BACKEND_WRAPPER" ]]; then
 fi
 
 export P2K_SPEED_TARGET_PERCENT="$SPEED_TARGET"
-export P2K_TCG_CLKINT_HOTLOOP_TARGET_HZ="$(
-  awk -v percent="$SPEED_TARGET" 'BEGIN { printf "%.6f", 4003.966443 * percent / 100.0 }'
-)"
-
-# Explicit HOTLOOP without --with-pit owns IRQ0 delivery exclusively.
-# Strict natural PIT delivery remains the default when HOTLOOP is unset.
-if [[ -z "${P2K_TCG_CLKINT_HOTLOOP_WITH_PIT:-}" && "${P2K_TCG_CLKINT_HOTLOOP:-0}" != "0" ]]; then
-  export P2K_TCG_CLKINT_HOTLOOP_NO_PIT=1
-fi
-
-# Scale HOTLOOP's useful search range around the requested period. At 100%
-# retain the established defaults exactly. Combined PIT+HOTLOOP keeps the
-# broad 100 ms ceiling so a fast natural PIT can make HOTLOOP nearly dormant.
-if [[ "$SPEED_TARGET" != "100" && "$SPEED_TARGET" != "100.0" &&
-      "${P2K_TCG_CLKINT_HOTLOOP:-0}" != "0" ]]; then
-  __target_period_ns="$(awk -v hz="$P2K_TCG_CLKINT_HOTLOOP_TARGET_HZ" \
-    'BEGIN { printf "%.0f", 1000000000.0 / hz }')"
-  if [[ -z "${P2K_TCG_CLKINT_HOTLOOP_GAP_LOW_NS:-}" ]]; then
-    export P2K_TCG_CLKINT_HOTLOOP_GAP_LOW_NS="$(( __target_period_ns / 5 ))"
-  fi
-  if [[ -z "${P2K_TCG_CLKINT_HOTLOOP_GAP_HIGH_NS:-}" ]]; then
-    if [[ -n "${P2K_TCG_CLKINT_HOTLOOP_WITH_PIT:-}" ]]; then
-      export P2K_TCG_CLKINT_HOTLOOP_GAP_HIGH_NS=100000000
-    else
-      export P2K_TCG_CLKINT_HOTLOOP_GAP_HIGH_NS="$(( __target_period_ns * 4 ))"
-    fi
-  fi
-fi
-
-# --- HOTLOOP initial gap ---------------------------------------------------
-# One 145 µs starting gap passed the sequential timing matrix, including
-# repeated RFM headless + --with-pit boots. The adaptive controller then owns
-# steady-state pacing. Explicit P2K_TCG_CLKINT_HOTLOOP_MIN_GAP_NS wins.
-if [[ -z "${P2K_TCG_CLKINT_HOTLOOP_MIN_GAP_NS:-}" && "${P2K_TCG_CLKINT_HOTLOOP:-0}" != "0" ]]; then
-  export P2K_TCG_CLKINT_HOTLOOP_MIN_GAP_NS="$(
-    awk -v percent="$SPEED_TARGET" 'BEGIN { printf "%.0f", 14500000.0 / percent }'
-  )"
-fi
 
 # --- verbosity → diag/trace tier mapping -----------------------------------
 # Default (level 0) is QUIET: the hand-rolled UART in p2k-isa-stubs.c
@@ -1290,8 +1223,13 @@ if [[ $VERBOSITY -ge 3 ]]; then export P2K_DCS_BYTE_TRACE=1; fi
 # retain QEMU info lines for their machine-readable report without enabling
 # the heavier -v diagnostic path.
 if [[ $VERBOSITY -lt 1 && "${P2K_TIMING_SNAPSHOTS:-0}" != "1" ]]; then
-  exec 2> >(grep -v --line-buffered -E \
-    '^qemu-system-i386: (info|warning):' >&2)
+  if [[ "${P2K_IRQ0_STACK_TRACE:-0}" == "1" ]]; then
+    exec 2> >(sed -u \
+      '/^qemu-system-i386: \(info\|warning\):/ {/p2k IRQ0 stack precursor/!d;}' >&2)
+  else
+    exec 2> >(grep -v --line-buffered -E \
+      '^qemu-system-i386: (info|warning):' >&2)
+  fi
 fi
 
 # --- display defaults -------------------------------------------------------

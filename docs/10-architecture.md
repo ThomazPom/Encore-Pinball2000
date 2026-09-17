@@ -42,7 +42,7 @@ and real-mode option-ROM discovery.
 | DCS protocol and playback | `p2k-dcs*.c`, `p2k-adsp2105-core.c` |
 | Cabinet I/O | `p2k-lpt-board.c` |
 | COM1, RTC and probe ports | `p2k-isa-stubs.c`, `p2k-superio.c` |
-| Timing diagnostics and HOTLOOP | `p2k-timing-audit.c`, `p2k-clkint-hotloop.c` |
+| Natural PIT timing and diagnostics | `pinball2000.c`, `p2k-timing-audit.c` |
 
 ## Important boundaries
 
@@ -50,8 +50,8 @@ and real-mode option-ROM discovery.
 - BAR4 and I/O-port DCS frontends share one protocol core.
 - Audio engines consume the same DCS commands but render content differently.
 - Savedata files represent guest-visible hardware, not whole-machine snapshots.
-- Adaptive HOTLOOP raises IRQ0 through QEMU's PIC path; the guest scheduler
-  advances from the delivered timer interrupts.
+- The i8254 raises IRQ0 through QEMU's i8259 path; the guest scheduler advances
+  from the delivered timer interrupts.
 
 ## Compatibility support
 

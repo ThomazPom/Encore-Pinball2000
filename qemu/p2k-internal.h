@@ -286,44 +286,8 @@ uint64_t p2k_lpt_get_dispatches(void);
  * derives per-interval FPS from the delta. */
 uint64_t p2k_display_get_frames(void);
 
-/* pinball2000.c: deliberate game-clock scaling shared by PIT, HOTLOOP,
+/* pinball2000.c: deliberate game-clock scaling shared by the PIT,
  * diagnostics and the CLI. 100.0 is physical cabinet timing. */
 double p2k_speed_target_percent(void);
-
-/* p2k-clkint-hotloop.c: HOTLOOP-based
- * IRQ0 delivery. See qemu/p2k-clkint-hotloop.c and
- * docs/12-cpu-and-timers.md for the mechanism. */
-
-/* Accessors used by sibling p2k modules (defined in p2k-timing-audit.c). */
-bool     p2k_audit_in_clkint(void);
-uint64_t p2k_audit_pit_period_ns(void);
-uint64_t p2k_audit_clkint_entered_count(void);
-
-/* HOTLOOP IRQ0 delivery API. */
-bool     p2k_clkint_hotloop_enabled(void);
-bool     p2k_clkint_hotloop_no_pit(void);
-bool     p2k_clkint_hotloop_uses_host_timer(void);
-void     p2k_clkint_hotloop_connect_irq(qemu_irq irq0);
-bool     p2k_clkint_hotloop_uses_pit_stub(void);
-void     p2k_clkint_hotloop_pit_write(hwaddr addr, uint64_t value);
-void     p2k_clkint_hotloop_maybe_raise(CPUState *cs);
-uint64_t p2k_clkint_hotloop_count_reraises(void);
-uint64_t p2k_clkint_hotloop_count_skipped_pending(void);
-uint64_t p2k_clkint_hotloop_count_skipped_isr(void);
-uint64_t p2k_clkint_hotloop_count_skipped_imr(void);
-uint64_t p2k_clkint_hotloop_count_skipped_if0(void);
-uint64_t p2k_clkint_hotloop_count_skipped_shadow(void);
-uint64_t p2k_clkint_hotloop_count_skipped_in_clkint(void);
-uint64_t p2k_clkint_hotloop_count_skipped_min_gap(void);
-int64_t  p2k_clkint_hotloop_current_gap_ns(void);
-double   p2k_clkint_hotloop_measured_hz(void);
-bool     p2k_clkint_hotloop_adaptive_enabled(void);
-void     p2k_hotloop_note_swallowed_edge(void);
-uint64_t p2k_hotloop_swallowed_edges_count(void);
-int64_t  p2k_clkint_hotloop_jitter_min_ns(void);
-int64_t  p2k_clkint_hotloop_jitter_max_ns(void);
-uint64_t p2k_clkint_hotloop_jitter_count(void);
-uint64_t p2k_clkint_hotloop_jitter_mean_ns(void);
-uint64_t p2k_clkint_hotloop_jitter_stddev_us(void);
 
 #endif /* HW_PINBALL2000_INTERNAL_H */

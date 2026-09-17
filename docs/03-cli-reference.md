@@ -66,10 +66,11 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--qemu-framebuffer-async-driver` | `auto` \| `wayland` \| `x11` \| `software` | `auto` | Selects the SDL presentation path used by `--qemu-framebuffer-async`. `auto` prefers accelerated X11 and otherwise uses software SDL; `wayland` exercises the native accelerated context-handoff path. | `scripts/run-qemu.sh --qemu-framebuffer-async --qemu-framebuffer-async-driver wayland` |
 | `--audio` | `auto` \| `none` \| QEMU audio driver | `auto` | Autodetects the first QEMU-supported/host-available backend in order: `sdl`, `pa`, `alsa`, `oss`, `sndio`, `dbus`; falls back to `none` with a warning. Explicit backends are validated against QEMU `-audio help`. | `scripts/run-qemu.sh --audio alsa` |
 | `--no-audio` | — | off | Forces DCS audio off; overrides `--audio`. | `scripts/run-qemu.sh --no-audio` |
-| `--speed-target` | percent | `100` | Deliberate XINU game-clock speed from 25 through 300. Scales PIT and/or HOTLOOP according to timing mode. | `scripts/run-qemu.sh --speed-target 75` |
-| `--strict` | — | on | Uses the natural i8254/i8259 IRQ0 path. This is the default; the flag remains available for explicit scripts. | `scripts/run-qemu.sh --strict` |
-| `--hotloop` | — | off | Enables the former adaptive host-wall-clock HOTLOOP-only mode for diagnostic comparison. | `scripts/run-qemu.sh --hotloop` |
-| `--with-pit` | — | off | Runs adaptive HOTLOOP together with the natural PIT for diagnostic comparison. | `scripts/run-qemu.sh --with-pit` |
+| `--speed-target` | percent | `100` | Deliberate XINU game-clock speed from 25 through 300. Scales the natural i8254 PIT divisor. | `scripts/run-qemu.sh --speed-target 75` |
+| `--strict` | — | on | Compatibility alias for Encore's sole natural i8254/i8259 IRQ0 path. | `scripts/run-qemu.sh --strict` |
+| `--irq0-stack-trace` | — | off | Logs record-low XINU process-stack margin immediately before IRQ0 interrupt entry. Observation only. | `scripts/run-qemu.sh --irq0-stack-trace` |
+| `--irq0-stack-guard` | guest address | unset | Restricts IRQ0 stack-margin tracing to one XINU stack guard address. | `scripts/run-qemu.sh --irq0-stack-guard 0x003f3ffc` |
+| `--irq0-stack-dump` | path | unset | With stack tracing, dumps the 8 KiB stack once observed margin reaches 128 bytes. | `scripts/run-qemu.sh --irq0-stack-dump /tmp/irq0-stack.bin` |
 | `--bench` | — | off | Runs isolated guest-IRQ and LPT/PDB passes after cabinet input and 10 seconds of guest warmup. The first pass temporarily probes XINU's live `clkint` entry in RAM; the second is completely unpatched. Requires `gdb`, `as`, `ld`, and `objcopy`. | `scripts/run-qemu.sh --bench` |
 | `--bench-long` | — | off | With `--bench`, uses the former 30-second warmup for final validation. It does not change the measured window. | `scripts/run-qemu.sh --bench --bench-long` |
 

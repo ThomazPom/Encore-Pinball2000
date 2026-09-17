@@ -53,32 +53,6 @@ typedef struct P2KIrq0Tap {
     int last_level;
 } P2KIrq0Tap;
 
-/* Single global tap (one PIT ch0 → master IRQ0 path on this board).
- * See docs/12-cpu-and-timers.md. */
-static P2KIrq0Tap *p2k_irq0_tap_state;
-
-static uint64_t p2k_hotloop_pit_read(void *opaque, hwaddr addr,
-                                     unsigned size)
-{
-    return 0;
-}
-
-static void p2k_hotloop_pit_write(void *opaque, hwaddr addr, uint64_t value,
-                                  unsigned size)
-{
-    p2k_clkint_hotloop_pit_write(addr, value);
-}
-
-static const MemoryRegionOps p2k_hotloop_pit_ops = {
-    .read = p2k_hotloop_pit_read,
-    .write = p2k_hotloop_pit_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
-    .valid.min_access_size = 1,
-    .valid.max_access_size = 1,
-    .impl.min_access_size = 1,
-    .impl.max_access_size = 1,
-};
-
 double p2k_speed_target_percent(void)
 {
     static double percent;
@@ -94,7 +68,7 @@ double p2k_speed_target_percent(void)
 
 /* Strong override for upstream's identity weak hook. Scaling the channel-0
  * divisor changes the real i8254 cadence while preserving the complete
- * PIT -> i8259 -> x86 -> XINU interrupt path used by strict mode. */
+ * PIT -> i8259 -> x86 -> XINU interrupt path. */
 int p2k_pit_scale_count(int channel, int count)
 {
     if (channel != 0) {
@@ -121,48 +95,6 @@ static void p2k_irq0_tap_set(void *opaque, int n, int level)
     }
     tap->last_level = level;
 
-    /* HOTLOOP-only mode (P2K_TCG_CLKINT_HOTLOOP_NO_PIT=1): swallow the
-     * PIT-natural IRQ0 line at the tap so that only HOTLOOP-driven raises
-     * no isa-pit at all). Audit still records the rising edge count so
-     * we can see what we suppressed.
-     *
-     * Late engagement: we do NOT swallow PIT edges until XINU has taken
-     * enough natural clkints to be past BIOS/optrom/DCS-init and into a
-     * stable scheduler state. Empirically, engaging swallow at boot
-     * leaves the guest with imr=0xff permanently (delivery drops to 0%
-     * and stays there) because early XINU init depends on natural PIT
-     * arrival to advance its state machine. Engagement threshold
-     * matches HOTLOOP's own prime N (default 800). */
-    /* Exclusive HOTLOOP-only (NO_PIT) mode: HOTLOOP owns IRQ0 delivery
-     * end-to-end. Drop the line at the tap so neither i8259 IRR nor
-     * CPU_INTERRUPT_HARD ever reflects a natural IRQ0 edge. Audit
-     * still counted the rising edge above (as an "expected" delivery);
-     * a separate swallowed-edge counter records suppressions.
-     *
-     * Engages from the first PIT edge -- HOTLOOP starts firing at the
-     * first TB boundary check with all gates passing, so the guest is
-     * never starved of clkints. The historical "wait for 800 natural
-     * clkints before swallowing" defensive workaround has been removed
-     * along with the priming knob in p2k-clkint-hotloop.c: both were
-     * defenses against the over-eager IF=0 gate that has since been
-     * fixed. */
-    if (p2k_clkint_hotloop_no_pit()) {
-        if (rising) {
-            p2k_hotloop_note_swallowed_edge();
-        }
-        /* Do NOT propagate the level to downstream -- see comment
-         * further down about why calling qemu_set_irq(downstream, 0)
-         * would clobber HOTLOOP's IRR bit 0 set. */
-        tap->last_level = 0;
-        /* Kick vCPU so TCG yields and HOTLOOP's TB-boundary check runs
-         * at PIT cadence even without natural raise. */
-        if (rising && first_cpu &&
-            !p2k_clkint_hotloop_uses_host_timer()) {
-            cpu_exit(first_cpu);
-        }
-        return;
-    }
-
     qemu_set_irq(tap->downstream, level);
     /* Sample AFTER the downstream raise so PIC IRR / CPU HARD reflect this
      * edge: the classifier wants to attribute the *reason this raise will
@@ -182,8 +114,6 @@ static qemu_irq p2k_irq0_tap(qemu_irq downstream)
     P2KIrq0Tap *tap = g_new0(P2KIrq0Tap, 1);
 
     tap->downstream = downstream;
-    p2k_irq0_tap_state = tap;
-    p2k_clkint_hotloop_connect_irq(downstream);
     return qemu_allocate_irq(p2k_irq0_tap_set, tap, 0);
 }
 
@@ -272,7 +202,6 @@ static void pinball2000_init(MachineState *machine)
     X86MachineState *x86ms = X86_MACHINE(machine);
     MemoryRegion *system_memory = get_system_memory();
     MemoryRegion *ram_alias;
-    MemoryRegion *pit_stub;
     ISABus *isa_bus;
     qemu_irq *i8259;
 
@@ -324,16 +253,7 @@ static void pinball2000_init(MachineState *machine)
      * with it physically absent; the input router can plug it in on demand. */
     p2k_set_xina_keyboard_connected(false);
 
-    if (p2k_clkint_hotloop_uses_pit_stub()) {
-        pit_stub = g_new0(MemoryRegion, 1);
-        memory_region_init_io(pit_stub, OBJECT(machine),
-                              &p2k_hotloop_pit_ops, NULL,
-                              "p2k.clock-ports", 4);
-        memory_region_add_subregion(get_system_io(), 0x40, pit_stub);
-        s->pit = NULL;
-    } else {
-        s->pit = i8254_pit_init(isa_bus, 0x40, 0, NULL);
-    }
+    s->pit = i8254_pit_init(isa_bus, 0x40, 0, NULL);
 
     /* Load game ROM bank0 (chips u100 + u101 interleaved). */
     if (p2k_load_bank0(s) < 0) {

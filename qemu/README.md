@@ -26,7 +26,7 @@ Development rules, hook placement and validation requirements:
 | `p2k-gx.c`, `p2k-gp-blt.c`, `p2k-display.c`, `p2k-video-capture.c`, `p2k-vsync.c` | Graphics, compressed video capture and display timing |
 | `p2k-isa-stubs.c`, `p2k-superio.c`, `p2k-cyrix-ccr.c` | Board-specific I/O surfaces |
 | `p2k-mem-detect.c` | Opt-in software compatibility support |
-| `p2k-clkint-hotloop.c`, `p2k-timing-audit.c`, `p2k-diag.c` | Clock delivery and diagnostics |
+| `pinball2000.c`, `p2k-timing-audit.c`, `p2k-diag.c` | Natural PIT delivery and timing diagnostics |
 
 ## Build
 
@@ -57,19 +57,12 @@ the build before compilation.
 | Patch | Why it exists | Maintenance status |
 |---|---|---|
 | `mediagx-instructions` | Implements the gated MediaGX display-driver instructions missing from stock i386 TCG | Required CPU support. `CPU_WRITE` includes an empirically established scratchpad side effect in addition to the documented internal-register write. |
-| `irq-observation` | Observes clkint entry, interrupt acknowledgement, IRET and PIC EOI | Required for current timing control and diagnostics. It crosses several QEMU interrupt paths, so benchmark its overhead after an upgrade. |
-| `tcg-cflags-override` | Gives the machine a callback at the TCG execution-loop boundary | Used by `--legacy-hotloop` and TB-boundary diagnostics. Default host-timer HOTLOOP returns before using its legacy delivery path. This is the most upgrade-sensitive family. |
-| `pit-speed-target` | Scales the i8254 channel divisor for `--speed-target` | Required for speed control in PIT-backed modes. The weak default leaves other machines unchanged. |
+| `irq-observation` | Observes clkint entry, interrupt acknowledgement, IRET and PIC EOI | Required for timing diagnostics. It crosses several QEMU interrupt paths, so benchmark its overhead after an upgrade. |
+| `tcg-cflags-override` | Gives the machine a callback at the TCG execution-loop boundary | Used by timing diagnostics. This is the most upgrade-sensitive family. |
+| `pit-speed-target` | Scales the i8254 channel divisor for `--speed-target` | Required for deliberate game-clock control. The weak default leaves other machines unchanged. |
 
-> [!IMPORTANT]
-> Do not remove `irq-observation` as “diagnostics only”: HOTLOOP's adaptive
-> controller reads the observed clkint count.
-
-`irq-observation` supplies the clkint-entry count used by default HOTLOOP, HOTLOOP with
-`--with-pit`, and HOTLOOP `--speed-target` control. It also supplies the guest
-IRQ observations reported by `-v` and `--bench`. Plain `--strict` execution
-does not need the count for clock control, although `--strict --bench` and
-`--strict -v` still use it for measurement.
+`irq-observation` supplies the guest IRQ observations reported by `-v` and
+`--bench`. It never controls the IRQ0 source rate.
 
 ## Validate a QEMU release range
 

@@ -84,11 +84,6 @@ def run_engine(engine: str, args: argparse.Namespace, output: Path) -> Path:
         "--monitor", f"unix:{sock_path},server=on,wait=off",
         "-v",
     ]
-    if args.strict:
-        command.append("--strict")
-    if args.with_pit:
-        command.append("--with-pit")
-
     print(f"[comparison] {engine}: {args.duration:.0f}s -> {log_path}", flush=True)
     started = time.monotonic()
     with log_path.open("w", encoding="utf-8") as log:
@@ -158,13 +153,8 @@ def summarize(log_path: Path, warmup: float) -> dict[str, float | int | str]:
     final_timing = next((line for line in reversed(timing) if " exit |" in line), timing[-1])
 
     cadence = [line for line in lines if "p2k-clkint-entry " in line]
-    if not cadence:
-        cadence = [line for line in lines if "p2k-clkint-hotloop " in line]
     final_cadence = (next((line for line in reversed(cadence) if " exit |" in line), cadence[-1])
                      if cadence else None)
-    hotloop = [line for line in lines if "p2k-clkint-hotloop " in line]
-    final_hotloop = (next((line for line in reversed(hotloop) if " exit |" in line), hotloop[-1])
-                     if hotloop else None)
 
     pdb_windows = []
     snap_wall = None
@@ -186,8 +176,6 @@ def summarize(log_path: Path, warmup: float) -> dict[str, float | int | str]:
         "window_max": max(current),
         "window_last": current[-1],
         "windows": len(current),
-        "gap_us": field(final_hotloop, "gap_ns") / 1000.0 if final_hotloop else None,
-        "measured_hz": field(final_hotloop, "measured_hz") if final_hotloop else None,
         "jitter_n": field(final_cadence, "n", int) if final_cadence else None,
         "jitter_mean": field(final_cadence, "mean_us") if final_cadence else None,
         "jitter_min": field(final_cadence, "min_us") if final_cadence else None,
@@ -205,16 +193,14 @@ def report(rows: list[dict[str, float | int | str]], warmup: float) -> str:
     out = [
         f"Full `snap` windows at wall >= {warmup:g} s; partial `exit` window excluded.",
         "",
-        "| Engine | Cumulative delivery | Current weighted | Window mean | Current range | Last full | Windows | Gap | Last measured Hz |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Engine | Cumulative delivery | Current weighted | Window mean | Current range | Last full | Windows |",
+        "|---|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
-        gap = f"{row['gap_us']:.1f} us" if row["gap_us"] is not None else "—"
-        measured = f"{row['measured_hz']:.0f}" if row["measured_hz"] is not None else "—"
         out.append(
             f"| {row['engine']} | {row['cumulative']:.1f}% | {row['weighted']:.2f}% | "
             f"{row['window_mean']:.2f}% | {row['window_min']:.1f}–{row['window_max']:.1f}% | "
-            f"{row['window_last']:.1f}% | {row['windows']} | {gap} | {measured} |"
+            f"{row['window_last']:.1f}% | {row['windows']} |"
         )
     out.extend([
         "",
@@ -245,7 +231,6 @@ def report(rows: list[dict[str, float | int | str]], warmup: float) -> str:
     out.extend([
         "",
         "`Current weighted` is sum(current services) / sum(current raises), not a mean of percentages.",
-        "`Last measured Hz` is the final short adaptive-controller sample, not a run-wide mean.",
     ])
     return "\n".join(out) + "\n"
 
@@ -259,10 +244,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--update", default="0210")
     parser.add_argument("--engine", action="append", choices=ENGINES,
                         help="engine to run (repeatable; default: all engines)")
-    parser.add_argument("--strict", action="store_true",
-                        help="run every selected engine with natural PIT timing")
-    parser.add_argument("--with-pit", action="store_true",
-                        help="run every selected engine with HOTLOOP plus natural PIT")
     parser.add_argument("--output", type=Path, help="artifact directory (default: timestamped /tmp directory)")
     parser.add_argument("--parse-only", type=Path, metavar="DIR", help="summarize existing logs without running QEMU")
     return parser.parse_args()
@@ -271,8 +252,6 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     engines = tuple(dict.fromkeys(args.engine or ENGINES))
-    if args.strict and args.with_pit:
-        raise SystemExit("--strict and --with-pit are mutually exclusive")
     if args.duration <= args.input_delay:
         raise SystemExit("--duration must be greater than --input-delay")
     if args.warmup >= args.duration and not args.parse_only:

@@ -97,8 +97,7 @@ static uint64_t p2k_audit_clkint_entered;
 static uint64_t p2k_audit_eoi_seen;
 static uint32_t p2k_audit_clkint_pc;
 
-/* Handler-entry cadence, independent of which source raised IRQ0. This fills
- * the same steady timing fields for strict, HOTLOOP, and HOTLOOP+PIT. */
+/* Handler-entry cadence for the natural PIT/i8259 IRQ0 path. */
 static int64_t  p2k_clkint_entry_last_wall_ns;
 static uint64_t p2k_clkint_entry_n;
 static uint64_t p2k_clkint_entry_sum_ns;
@@ -118,6 +117,8 @@ static int64_t  p2k_clkint_entry_max_ns;
  * actually executing the handler", and is meaningful regardless of
  * coalescence. */
 static int64_t  p2k_audit_latest_raise_ns;
+static int64_t  p2k_audit_latest_raise_wall_ns;
+static uint64_t p2k_audit_latest_raise_seq;
 #define P2K_AUDIT_LAT_WINDOW  4096u
 static uint32_t p2k_audit_lat_us[P2K_AUDIT_LAT_WINDOW];
 static uint32_t p2k_audit_lat_n;          /* total samples (saturates) */
@@ -158,9 +159,19 @@ static int64_t  p2k_ts_eoi_ns;
 static int64_t  p2k_ts_iret_ns;
 static int64_t  p2k_ts_first_tb_after_iret_ns;
 static bool     p2k_first_tb_pending;
-static bool     p2k_in_clkint;
+/* Depth, rather than a boolean, is intentional: IRQ0 can nest while the
+ * previous clkint is still active. These counters are observation only. */
+static uint32_t p2k_clkint_depth;
+static uint32_t p2k_clkint_max_depth;
+static uint64_t p2k_nested_clkint_total;
+static bool     p2k_guest_tb_seen_after_iret = true;
 static uint64_t p2k_intack_seen_irq0;
 static uint64_t p2k_iret_seen_after_clkint;
+static bool p2k_irq0_stack_trace;
+static uint32_t p2k_irq0_stack_min_margin[256];
+static uint32_t p2k_irq0_stack_trace_guard;
+static uint64_t p2k_irq0_stack_samples;
+static bool p2k_irq0_stack_dumped;
 
 /* EOI EIP histogram (top hot EIPs at the moment of `out 0x20, 0x20`).
  * Reveals where in the clkint body the EOI is written: useful to
@@ -442,7 +453,7 @@ static void p2k_pdb_gap_record(uint64_t wall_us, uint64_t vtime_us,
             event->data_writes = data_writes - p2k_pdb_gap_data_last;
             event->dispatches = dispatches - p2k_pdb_gap_dispatch_last;
             event->frames = frames - p2k_pdb_gap_frames_last;
-            event->in_clkint = p2k_in_clkint;
+            event->in_clkint = p2k_clkint_depth != 0;
             p2k_pdb_gap_copy_tb(event);
 
             CPUState *cs = qemu_get_cpu(0);
@@ -589,6 +600,9 @@ void p2k_timing_audit_note_irq0_raised(void)
 {
     int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     p2k_audit_latest_raise_ns = now;
+    p2k_audit_latest_raise_wall_ns =
+        qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+    p2k_audit_latest_raise_seq++;
     p2k_audit_irq0_raised++;
     if (!p2k_audit_detailed) {
         return;
@@ -626,7 +640,71 @@ uint64_t p2k_timing_audit_get_irq0_serviced(void)
 
 void p2k_timing_audit_note_intack(int intno)
 {
-    if (!p2k_audit_detailed || intno != 0x20) {
+    if (intno != 0x20) {
+        return;
+    }
+
+    /* Opt-in precursor detector for XINU's 8 KiB process stacks. Sample
+     * immediately before the CPU pushes its interrupt frame. Record-low
+     * logging keeps long runs small and never changes guest execution. */
+    if (p2k_irq0_stack_trace && current_cpu) {
+        CPUX86State *env = &X86_CPU(current_cpu)->env;
+        uint32_t esp = (uint32_t)env->regs[R_ESP];
+        uint32_t eip = (uint32_t)env->eip;
+
+        if (esp >= 0x00200000u && esp < 0x00400000u) {
+            uint32_t guard = (esp & ~0x1fffu) - 4u;
+            uint32_t margin = esp - guard;
+            unsigned slot = (guard - 0x001ffffcu) / 0x2000u;
+
+            p2k_irq0_stack_samples++;
+            if ((!p2k_irq0_stack_trace_guard ||
+                 guard == p2k_irq0_stack_trace_guard) &&
+                margin < p2k_irq0_stack_min_margin[slot]) {
+                p2k_irq0_stack_min_margin[slot] = margin;
+                PICCommonState *pic = isa_pic ? (PICCommonState *)isa_pic
+                                              : NULL;
+                int64_t now_v = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+                int64_t now_w = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+                int64_t raise_v_us = p2k_audit_latest_raise_ns
+                    ? (now_v - p2k_audit_latest_raise_ns) / 1000 : -1;
+                int64_t raise_w_us = p2k_audit_latest_raise_wall_ns
+                    ? (now_w - p2k_audit_latest_raise_wall_ns) / 1000 : -1;
+                info_report("p2k IRQ0 stack precursor: samples=%llu "
+                            "margin=%u esp=0x%08x eip=0x%08x "
+                            "eflags=0x%08x depth=%u stack_guard=0x%08x "
+                            "source=pit raise_seq=%llu "
+                            "raise_v_us=%lld raise_wall_us=%lld "
+                            "tb_after_iret=%u imr=%02x irr=%02x isr=%02x",
+                            (unsigned long long)p2k_irq0_stack_samples,
+                            margin, esp, eip, (uint32_t)env->eflags,
+                            p2k_clkint_depth, guard,
+                            (unsigned long long)p2k_audit_latest_raise_seq,
+                            (long long)raise_v_us, (long long)raise_w_us,
+                            p2k_guest_tb_seen_after_iret,
+                            pic ? pic->imr : 0xff,
+                            pic ? pic->irr : 0xff,
+                            pic ? pic->isr : 0xff);
+
+                const char *dump = getenv("P2K_IRQ0_STACK_DUMP");
+                if (!p2k_irq0_stack_dumped && margin <= 128u &&
+                    dump && *dump) {
+                    uint8_t image[0x2000];
+                    cpu_physical_memory_read(guard + 4u, image,
+                                             sizeof(image));
+                    FILE *f = fopen(dump, "wb");
+                    if (f) {
+                        fwrite(image, 1, sizeof(image), f);
+                        fclose(f);
+                        info_report("p2k IRQ0 stack precursor: dumped stack "
+                                    "to %s", dump);
+                    }
+                    p2k_irq0_stack_dumped = true;
+                }
+            }
+        }
+    }
+    if (!p2k_audit_detailed) {
         return;
     }
     int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
@@ -697,7 +775,8 @@ void p2k_timing_audit_note_pic_eoi(bool master, int irq, uint8_t ocw2)
         p2k_audit_eoi_seen++;
 
         /* entry -> EOI dwell (handler work before EOI). */
-        if (p2k_in_clkint && p2k_ts_entry_ns && now >= p2k_ts_entry_ns) {
+        if (p2k_clkint_depth != 0 && p2k_ts_entry_ns &&
+            now >= p2k_ts_entry_ns) {
             p2k_dwell_push(&p2k_dw_entry_eoi,
                            (uint64_t)(now - p2k_ts_entry_ns) / 1000ull);
         }
@@ -715,7 +794,11 @@ void p2k_timing_audit_note_pic_eoi(bool master, int irq, uint8_t ocw2)
 
 void p2k_timing_audit_note_clkint_enter(uint64_t eip)
 {
-    p2k_in_clkint = true;
+    if (p2k_clkint_depth > 0) {
+        p2k_nested_clkint_total++;
+    }
+    p2k_clkint_depth++;
+    p2k_clkint_max_depth = MAX(p2k_clkint_max_depth, p2k_clkint_depth);
     p2k_audit_clkint_entered++;
     if (!p2k_audit_detailed) {
         return;
@@ -766,7 +849,7 @@ void p2k_timing_audit_note_clkint_enter(uint64_t eip)
 
 void p2k_timing_audit_note_iret(uint32_t eip)
 {
-    if (!p2k_in_clkint) {
+    if (p2k_clkint_depth == 0) {
         return;
     }
     int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
@@ -782,7 +865,8 @@ void p2k_timing_audit_note_iret(uint32_t eip)
         p2k_ts_first_tb_after_iret_ns = 0;
         p2k_iret_seen_after_clkint++;
     }
-    p2k_in_clkint = false;
+    p2k_clkint_depth--;
+    p2k_guest_tb_seen_after_iret = false;
 
     /* After the IRQ0 IRET, arm a short virtual-clock timer aimed at the
      * next projected i8254 deadline (latest_raise_ns + pit_period_ns) and
@@ -832,6 +916,7 @@ uint32_t p2k_tcg_cflags_override(uint32_t base)
         p2k_ts_first_tb_after_iret_ns = now;
         p2k_first_tb_pending = false;
     }
+    p2k_guest_tb_seen_after_iret = true;
     /* Diagnostic only (off by default): unconditionally forbid TB chaining
      * on every TB, with NO synthetic tick injection at all -- i.e. the
      * plain hardware-faithful natural i8259/i8254 IRQ0 path, but with the
@@ -850,13 +935,6 @@ uint32_t p2k_tcg_cflags_override(uint32_t base)
         return base | CF_NO_GOTO_TB | CF_NO_GOTO_PTR;
     }
 
-    /* HOTLOOP IRQ0 delivery. See qemu/p2k-clkint-hotloop.c. This
-     * runs at every TB boundary; cheap fast-path when the env is unset.
-     * We pass first_cpu since this hook is called from the vCPU thread's
-     * cpu_exec_loop and the guest has a single CPU on this machine. */
-    if (unlikely(p2k_clkint_hotloop_enabled())) {
-        p2k_clkint_hotloop_maybe_raise(first_cpu);
-    }
     return base;
 }
 
@@ -1044,26 +1122,6 @@ static void p2k_pit_deadline_arm(int64_t now_v)
     p2k_pit_deadline_arms++;
 }
 
-/* Accessors for sibling p2k modules (e.g. p2k-clkint-hotloop.c) that
- * need to know whether the guest is currently inside the IRQ0 handler
- * and what PIT period the i8254 model is currently programmed for.
- * Both are vCPU-thread / iothread safe to read (single-writer, racy
- * read at worst yields a stale value by one cycle, never corrupted). */
-bool p2k_audit_in_clkint(void)
-{
-    return p2k_in_clkint;
-}
-
-uint64_t p2k_audit_pit_period_ns(void)
-{
-    return p2k_pit_period_ns();
-}
-
-uint64_t p2k_audit_clkint_entered_count(void)
-{
-    return p2k_audit_clkint_entered;
-}
-
 bool p2k_clkint_tcg_match_pc(uint64_t pc, uint64_t cs_base)
 {
     if (!p2k_audit_state || pc < cs_base) {
@@ -1165,6 +1223,7 @@ static void p2k_audit_emit(const char *tag)
      * cover the same interval. */
     static uint64_t prev_delivery_raised;
     static uint64_t prev_delivery_serviced;
+    static uint64_t prev_nested_clkint;
     static int64_t prev_delivery_wall_ns;
     uint64_t delivery_raised_delta =
         (p2k_audit_irq0_raised >= prev_delivery_raised)
@@ -1180,10 +1239,16 @@ static void p2k_audit_emit(const char *tag)
         ? (double)(now_w - prev_delivery_wall_ns) / 1.0e9 : wall_s;
     double current_clkint_hz = delivery_window_s > 0.001
         ? (double)delivery_serviced_delta / delivery_window_s : 0.0;
+    uint64_t nested_clkint_delta =
+        (p2k_nested_clkint_total >= prev_nested_clkint)
+        ? p2k_nested_clkint_total - prev_nested_clkint : 0;
+    double nested_clkint_hz = delivery_window_s > 0.001
+        ? (double)nested_clkint_delta / delivery_window_s : 0.0;
     double speed_target_pct = p2k_speed_target_percent();
     double current_speed_pct = 100.0 * current_clkint_hz / 4003.966443;
     prev_delivery_raised = p2k_audit_irq0_raised;
     prev_delivery_serviced = serviced;
+    prev_nested_clkint = p2k_nested_clkint_total;
     prev_delivery_wall_ns = now_w;
 
     info_report("p2k-timing #%llu %s | clock=QEMU_CLOCK_VIRTUAL icount=%s "
@@ -1193,6 +1258,8 @@ static void p2k_audit_emit(const char *tag)
                 "clkint_entered=%llu "
                 "eoi_seen=%llu delivery=%.1f%% current_delivery=%.1f%% "
                 "current_irq0_raised=%llu current_clkint_entered=%llu "
+                "nested_clkint=%llu current_nested_clkint=%llu "
+                "nested_clkint_hz=%.1f clkint_depth=%u max_clkint_depth=%u "
                 "speed_target=%.2f%% current_clkint_hz=%.1f current_speed=%.2f%% "
                 "imr=%02x irr=%02x isr=%02x base=%02x "
                 "idt20=0x%08x handler=%s clkint_hook=0x%08x "
@@ -1208,6 +1275,9 @@ static void p2k_audit_emit(const char *tag)
                 delivery, current_delivery,
                 (unsigned long long)delivery_raised_delta,
                 (unsigned long long)delivery_serviced_delta,
+                (unsigned long long)p2k_nested_clkint_total,
+                (unsigned long long)nested_clkint_delta,
+                nested_clkint_hz, p2k_clkint_depth, p2k_clkint_max_depth,
                 speed_target_pct, current_clkint_hz, current_speed_pct,
                 imr, irr, isr, base,
                 idt20, handler, p2k_audit_clkint_pc,
@@ -1279,15 +1349,6 @@ static void p2k_audit_emit(const char *tag)
         light_prev_data = data;
         light_prev_ctrl = ctrl;
         light_prev_disp = disp;
-        if (p2k_clkint_hotloop_enabled()) {
-            info_report("p2k-clkint-hotloop %s | jitter: n=%llu "
-                        "max_us=%lld",
-                        tag,
-                        (unsigned long long)
-                            p2k_clkint_hotloop_jitter_count(),
-                        (long long)
-                            (p2k_clkint_hotloop_jitter_max_ns() / 1000));
-        }
         p2k_audit_seq++;
         return;
     }
@@ -1406,37 +1467,6 @@ static void p2k_audit_emit(const char *tag)
                 (unsigned long long)p2k_pit_deadline_arms,
                 (unsigned long long)p2k_pit_deadline_fires,
                 (unsigned long long)p2k_pit_period_ns_cached);
-
-    if (p2k_clkint_hotloop_enabled()) {
-        uint64_t hotloop_reraises = p2k_clkint_hotloop_count_reraises();
-        uint64_t clkint_entered = p2k_audit_clkint_entered_count();
-        uint64_t pit_driven = (clkint_entered > hotloop_reraises)
-                              ? clkint_entered - hotloop_reraises : 0;
-        info_report("p2k-clkint-hotloop %s | "
-                    "reraises=%llu (PIT-driven irq0 => %llu) | "
-                    "adaptive=%s gap_ns=%lld measured_hz=%.1f | "
-                    "jitter: n=%llu mean_us=%llu min_us=%lld max_us=%lld stddev_us=%llu | "
-                    "skipped: pending=%llu isr=%llu imr=%llu if0=%llu "
-                    "shadow=%llu in_clkint=%llu min_gap=%llu",
-                    tag,
-                    (unsigned long long)hotloop_reraises,
-                    (unsigned long long)pit_driven,
-                    p2k_clkint_hotloop_adaptive_enabled() ? "on" : "off",
-                    (long long)p2k_clkint_hotloop_current_gap_ns(),
-                    p2k_clkint_hotloop_measured_hz(),
-                    (unsigned long long)p2k_clkint_hotloop_jitter_count(),
-                    (unsigned long long)(p2k_clkint_hotloop_jitter_mean_ns() / 1000),
-                    (long long)(p2k_clkint_hotloop_jitter_min_ns() / 1000),
-                    (long long)(p2k_clkint_hotloop_jitter_max_ns() / 1000),
-                    (unsigned long long)p2k_clkint_hotloop_jitter_stddev_us(),
-                    (unsigned long long)p2k_clkint_hotloop_count_skipped_pending(),
-                    (unsigned long long)p2k_clkint_hotloop_count_skipped_isr(),
-                    (unsigned long long)p2k_clkint_hotloop_count_skipped_imr(),
-                    (unsigned long long)p2k_clkint_hotloop_count_skipped_if0(),
-                    (unsigned long long)p2k_clkint_hotloop_count_skipped_shadow(),
-                    (unsigned long long)p2k_clkint_hotloop_count_skipped_in_clkint(),
-                    (unsigned long long)p2k_clkint_hotloop_count_skipped_min_gap());
-    }
 
     /* LPT/driverboard activity. Per Erikie's pinside msg #36, the rate
      * of LPT writes hitting the driverboard (target ~16 kHz) is the
@@ -1602,6 +1632,18 @@ void p2k_install_timing_audit(Pinball2000MachineState *s)
     p2k_audit_arm_vtime_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     p2k_audit_light_snapshots =
         p2k_audit_env_truthy("P2K_TIMING_SNAPSHOTS");
+    p2k_irq0_stack_trace = p2k_audit_env_truthy("P2K_IRQ0_STACK_TRACE");
+    for (size_t i = 0; i < ARRAY_SIZE(p2k_irq0_stack_min_margin); i++) {
+        p2k_irq0_stack_min_margin[i] = UINT32_MAX;
+    }
+    if (p2k_irq0_stack_trace) {
+        const char *guard = getenv("P2K_IRQ0_STACK_GUARD");
+        if (guard && *guard) {
+            p2k_irq0_stack_trace_guard = strtoul(guard, NULL, 0);
+            info_report("p2k IRQ0 stack precursor: tracing guard 0x%08x",
+                        p2k_irq0_stack_trace_guard);
+        }
+    }
     p2k_audit_periodic = p2k_audit_env_truthy("P2K_DIAG") ||
                          p2k_audit_light_snapshots;
     p2k_pdb_gap_profile_enabled =
