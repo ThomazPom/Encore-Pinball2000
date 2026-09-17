@@ -607,13 +607,8 @@ def parse_boot(lines: list[str]) -> dict[str, str]:
                    if "p2k-timing #" in line and " snap |" in line), "")
     lpt = next((line for line in reversed(lines) if "p2k-lpt-hz snap" in line), "")
     data = re.search(r"data=\d+ \(\+([0-9.]+)/s\)", lpt)
-    hotloop_worst = []
     pdb_worst = []
     for line in lines:
-        if "p2k-clkint-hotloop snap" in line:
-            value = field(line, "max_us", "")
-            if value.isdigit():
-                hotloop_worst.append(int(value))
         if ("p2k-pdb05 snap" in line and
                 ("pdb05_wall_total" in line or
                  "pdb05_wall_delta" in line)):
@@ -625,8 +620,31 @@ def parse_boot(lines: list[str]) -> dict[str, str]:
         "delivery": field(timing, "delivery"),
         "current_delivery": field(timing, "current_delivery"),
         "data_rate": data.group(1) if data else "n/a",
-        "irq_worst": str(max(hotloop_worst)) if hotloop_worst else "n/a",
         "pdb_worst": str(max(pdb_worst)) if pdb_worst else "n/a",
+    }
+
+
+def parse_irq_safety(lines: list[str]) -> dict[str, int | str]:
+    max_depth = 0
+    min_stack_margin: int | None = None
+    for line in lines:
+        if "p2k-timing #" in line and (" snap |" in line or " exit |" in line):
+            try:
+                max_depth = max(max_depth,
+                                int(numeric_field(line, "max_clkint_depth")))
+            except ValueError:
+                pass
+        if "p2k IRQ0 stack precursor:" in line:
+            try:
+                margin = int(numeric_field(line, "margin"))
+                min_stack_margin = (margin if min_stack_margin is None
+                                    else min(min_stack_margin, margin))
+            except ValueError:
+                pass
+    return {
+        "max_depth": max_depth,
+        "min_stack_margin": (min_stack_margin
+                             if min_stack_margin is not None else "n/a"),
     }
 
 
@@ -656,6 +674,7 @@ def print_irq_preview(irq: dict, sleep_wall: float) -> None:
 
 def write_report(artifact: Path, result: dict) -> None:
     irq, lpt, boot = result["irq"], result["lpt"], result["boot"]
+    safety = result["irq_safety"]
     report = [
         "# Encore self-diagnostic",
         "",
@@ -671,7 +690,7 @@ def write_report(artifact: Path, result: dict) -> None:
         "| Phase | Speed/delivery | IRQ rate | IRQ sigma | IRQ core sigma | IRQ p99 | IRQ worst | DATA/s | PDB05/s | PDB p99 | PDB worst |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
         f"| Boot/warmup | {boot['current_delivery']} | — | — | — | — | "
-        f"{with_unit(boot['irq_worst'], 'us')} | {boot['data_rate']} | — | — | "
+        f"— | {boot['data_rate']} | — | — | "
         f"{with_unit(boot['pdb_worst'], 'us')} |",
         f"| Steady state | {irq['delivery']:.2f}% | {irq['rate']:.1f} | "
         f"{fmt_us(irq['stddev'])} | {fmt_us(irq['core_stddev'])} | "
@@ -681,6 +700,9 @@ def write_report(artifact: Path, result: dict) -> None:
         "",
         f"XINU `sleep 10`: {result['sleep_wall']:.3f}s wall "
         f"({result['effective_speed']:.2f}% real-time).",
+        f"Maximum observed clkint depth: {safety['max_depth']}.",
+        f"Minimum sampled XINU IStack margin: "
+        f"{safety['min_stack_margin']} bytes.",
     ]
     (artifact / "report.md").write_text("\n".join(report) + "\n")
 
@@ -714,6 +736,9 @@ def main() -> int:
                       if uses_live_adsp(forwarded) else {"status": "n/a"})
         lpt = parse_lpt(steady_lines)
         boot = parse_boot(boot_lines)
+        all_lines = ((irq_dir / "encore.log").read_text(errors="replace").splitlines()
+                     + boot_lines + steady_lines)
+        irq_safety = parse_irq_safety(all_lines)
     except Exception as error:
         print(f"[bench] ERROR: {error}", file=sys.stderr)
         print(f"[bench] artifacts={artifact}", file=sys.stderr)
@@ -726,6 +751,7 @@ def main() -> int:
         "sleep_wall": sleep_wall,
         "effective_speed": effective, "boot_wall": boot_wall,
         "irq": irq, "lpt": lpt, "boot": boot,
+        "irq_safety": irq_safety,
         "dcs_health": {"irq": irq_health, "lpt": lpt_health},
     }
     (artifact / "results.json").write_text(json.dumps(result, indent=2) + "\n")
@@ -744,7 +770,8 @@ def main() -> int:
     print(f"    Wall duration:         {boot_wall:.3f}s")
     print(f"    IRQ delivery total:    {boot['delivery']}")
     print(f"    IRQ delivery end:      {boot['current_delivery']}")
-    print(f"    Emulator IRQ worst:    {with_unit(boot['irq_worst'], 'us')}")
+    print(f"    Maximum clkint depth:  {irq_safety['max_depth']}")
+    print(f"    Minimum IStack margin: {irq_safety['min_stack_margin']} bytes")
     print(f"    LPT DATA rate end:     {boot['data_rate']}/s")
     print(f"    PDB05 worst:           {with_unit(boot['pdb_worst'], 'us')}")
     print("  Steady-state phase:")

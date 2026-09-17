@@ -107,9 +107,8 @@ scripts/run-qemu.sh --bench
 ```
 
 Use steady-state `sleep 10`, delivery, jitter and PDB05 values. Boot totals are
-reported separately. Strict natural PIT delivery is the default;
-`--hotloop` selects the former adaptive timing source for comparison and
-`--speed-target` changes guest speed.
+reported separately. Encore has one IRQ0 path: the natural i8254/i8259 path.
+`--speed-target` deliberately changes the i8254 game-clock speed.
 Details: [CPU and timing](12-cpu-and-timers.md).
 
 ## Saved settings disappear
