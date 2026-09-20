@@ -103,7 +103,10 @@ in the measured window. It is useful only together with game-clock speed:
 
 `--bench` uses only the clean guest-side probe window for IRQ results and only
 post-warmup rolling windows from the separate LPT pass. It returns `2` when
-speed or delivery is unhealthy, or when a steady PDB05 gap exceeds 2.5 ms.
+speed or delivery is unhealthy, when mean PDB p99 exceeds 1 ms, or when PDB
+gaps above 2.5 ms repeat across at least 10% of complete three-second windows
+(with a minimum of two affected windows). One isolated PDB maximum is retained
+and reported as `PASS WITH WARNINGS`; it cannot fail the run by itself.
 
 ## Jitter and cabinet traffic
 

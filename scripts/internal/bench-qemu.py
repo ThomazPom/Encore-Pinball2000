@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -31,6 +32,10 @@ WARMUP_MARKER = b"__P2K_BENCH_WARM__"
 DONE_MARKER = b"__P2K_BENCH_DONE__"
 QUICK_WARMUP_SECONDS = 10
 LONG_WARMUP_SECONDS = 30
+PDB_BREACH_US = 2500.0
+PDB_SEVERE_US = 10000.0
+PDB_P99_LIMIT_US = 1000.0
+PDB_REPEATED_FRACTION = 0.10
 DCS_HEALTH_RE = re.compile(
     r"^\[p2k-dcs-health\] queued=(?P<queued>\d+) "
     r"runtime_resets=(?P<runtime_resets>\d+) host_boots=(?P<host_boots>\d+) "
@@ -471,8 +476,10 @@ def run_irq_pass(forwarded: list[str], artifact: Path, template: bytes,
     port, gdb_port = pick_port(), pick_port()
     monitor = artifact / "monitor.sock"
     log_path = artifact / "encore.log"
-    command = launch_command(forwarded, port, monitor,
-                             ["--", "-gdb", f"tcp:127.0.0.1:{gdb_port}"])
+    command = launch_command(
+        forwarded, port, monitor,
+        ["--irq0-stack-trace", "--", "-gdb", f"tcp:127.0.0.1:{gdb_port}"],
+    )
     (artifact / "command.json").write_text(json.dumps(command, indent=2) + "\n")
     with log_path.open("wb") as log:
         env = os.environ.copy()
@@ -533,7 +540,7 @@ def run_lpt_pass(forwarded: list[str], artifact: Path,
     # is useful interactively but can manufacture the PDB tail this pass is
     # measuring.  Keep only the machine-readable, lightweight fields used by
     # this collector.
-    extra = ["--timing-snapshots"]
+    extra = ["--timing-snapshots", "--irq0-stack-trace"]
     if guest_load:
         extra += ["--", "-gdb", f"tcp:127.0.0.1:{gdb_port}"]
     command = launch_command(forwarded, port, monitor, extra)
@@ -592,13 +599,20 @@ def parse_lpt(lines: list[str]) -> dict[str, float]:
              in zip(pdb_counts, pdb_counts[1:]) if b_wall > a_wall]
     if not data_rates or not pdb or not rates:
         raise RuntimeError("steady LPT/PDB snapshots missing")
+    maxima = [item["max_total"] for item in pdb]
     return {
         "data_rate": statistics.fmean(data_rates),
         "rate": statistics.fmean(rates),
         "p50": statistics.fmean(item["p50"] for item in pdb),
         "p95": statistics.fmean(item["p95"] for item in pdb),
         "p99": statistics.fmean(item["p99"] for item in pdb),
-        "worst": max(item["max_total"] for item in pdb),
+        "mean_window_max": statistics.fmean(maxima),
+        "worst": max(maxima),
+        "windows": len(maxima),
+        "over_1000us": sum(value > 1000.0 for value in maxima),
+        "over_2500us": sum(value > PDB_BREACH_US for value in maxima),
+        "over_5000us": sum(value > 5000.0 for value in maxima),
+        "over_10000us": sum(value > PDB_SEVERE_US for value in maxima),
     }
 
 
@@ -672,9 +686,55 @@ def print_irq_preview(irq: dict, sleep_wall: float) -> None:
           f"worst={fmt_us(irq['worst'])}", flush=True)
 
 
+def evaluate_result(result: dict) -> dict[str, str | list[str]]:
+    irq, lpt = result["irq"], result["lpt"]
+    effective = result["effective_speed"]
+    target_speed = result["requested_speed"]
+    failures: list[str] = []
+    warnings: list[str] = []
+
+    if not 95.0 <= irq["delivery"] <= 105.0:
+        failures.append(f"IRQ delivery {irq['delivery']:.2f}% is outside 95–105%")
+    speed_low, speed_high = target_speed * 0.95, target_speed * 1.05
+    if not speed_low <= effective <= speed_high:
+        failures.append(
+            f"effective speed {effective:.2f}% is outside "
+            f"{speed_low:.2f}–{speed_high:.2f}%"
+        )
+    if lpt["p99"] > PDB_P99_LIMIT_US:
+        failures.append(
+            f"PDB p99 {fmt_us(lpt['p99'])} exceeds "
+            f"{fmt_us(PDB_P99_LIMIT_US)}"
+        )
+
+    repeated_limit = max(
+        2, math.ceil(lpt["windows"] * PDB_REPEATED_FRACTION)
+    )
+    if lpt["over_2500us"] >= repeated_limit:
+        failures.append(
+            f"PDB gaps above {fmt_us(PDB_BREACH_US)} repeat in "
+            f"{lpt['over_2500us']}/{lpt['windows']} windows"
+        )
+    elif lpt["over_2500us"]:
+        warnings.append(
+            f"isolated PDB gap above {fmt_us(PDB_BREACH_US)} in "
+            f"{lpt['over_2500us']}/{lpt['windows']} windows"
+        )
+    if lpt["over_10000us"]:
+        warnings.append(
+            f"PDB gaps above {fmt_us(PDB_SEVERE_US)} occurred in "
+            f"{lpt['over_10000us']}/{lpt['windows']} windows"
+        )
+
+    status = ("ABNORMAL" if failures else
+              "PASS WITH WARNINGS" if warnings else "PASS")
+    return {"status": status, "failures": failures, "warnings": warnings}
+
+
 def write_report(artifact: Path, result: dict) -> None:
     irq, lpt, boot = result["irq"], result["lpt"], result["boot"]
     safety = result["irq_safety"]
+    verdict = result["verdict"]
     report = [
         "# Encore self-diagnostic",
         "",
@@ -703,7 +763,20 @@ def write_report(artifact: Path, result: dict) -> None:
         f"Maximum observed clkint depth: {safety['max_depth']}.",
         f"Minimum sampled XINU IStack margin: "
         f"{safety['min_stack_margin']} bytes.",
+        "",
+        "| PDB window distribution | Count |",
+        "|---|---:|",
+        f"| Complete windows | {lpt['windows']} |",
+        f"| Maximum above 1 ms | {lpt['over_1000us']} |",
+        f"| Maximum above 2.5 ms | {lpt['over_2500us']} |",
+        f"| Maximum above 5 ms | {lpt['over_5000us']} |",
+        f"| Maximum above 10 ms | {lpt['over_10000us']} |",
+        f"| Mean per-window maximum | {fmt_us(lpt['mean_window_max'])} |",
+        "",
+        f"Verdict: **{verdict['status']}**.",
     ]
+    report.extend(f"- Failure: {reason}" for reason in verdict["failures"])
+    report.extend(f"- Warning: {reason}" for reason in verdict["warnings"])
     (artifact / "report.md").write_text("\n".join(report) + "\n")
 
 
@@ -754,6 +827,7 @@ def main() -> int:
         "irq_safety": irq_safety,
         "dcs_health": {"irq": irq_health, "lpt": lpt_health},
     }
+    result["verdict"] = evaluate_result(result)
     (artifact / "results.json").write_text(json.dumps(result, indent=2) + "\n")
     (artifact / "metadata.json").write_text(json.dumps({
         "arguments": forwarded, "expected_irq_hz": EXPECTED_IRQ_HZ,
@@ -791,13 +865,19 @@ def main() -> int:
     print(f"    PDB05 intervals:       p50={fmt_us(lpt['p50'])} "
           f"p95={fmt_us(lpt['p95'])} p99={fmt_us(lpt['p99'])} "
           f"worst={fmt_us(lpt['worst'])}")
+    print(f"    PDB05 windows:         >1ms={lpt['over_1000us']}/{lpt['windows']} "
+          f">2.5ms={lpt['over_2500us']}/{lpt['windows']} "
+          f">5ms={lpt['over_5000us']}/{lpt['windows']} "
+          f">10ms={lpt['over_10000us']}/{lpt['windows']}")
     print(f"  Artifacts:               {artifact}")
 
-    speed_low, speed_high = target_speed * 0.95, target_speed * 1.05
-    healthy = (95.0 <= irq["delivery"] <= 105.0 and
-               speed_low <= effective <= speed_high and lpt["worst"] <= 2500.0)
-    print(f"  RESULT: {'PASS' if healthy else 'ABNORMAL'}")
-    return 0 if healthy else 2
+    verdict = result["verdict"]
+    for reason in verdict["failures"]:
+        print(f"  FAILURE: {reason}")
+    for reason in verdict["warnings"]:
+        print(f"  WARNING: {reason}")
+    print(f"  RESULT: {verdict['status']}")
+    return 2 if verdict["status"] == "ABNORMAL" else 0
 
 
 if __name__ == "__main__":

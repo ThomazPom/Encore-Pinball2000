@@ -133,6 +133,17 @@ Include the command, commit, host OS, game, update, DCS engine, savedata mode,
 display/audio backends and the verbose log. For timing or LPT issues, include a
 `--bench` result and trace artifact.
 
+If the guest is still running in a fatal monitor or otherwise wedged, capture
+its RAM and QEMU thread state before closing the window:
+
+```sh
+tools/capture-live-crash.sh
+```
+
+The tool briefly attaches GDB, writes a new evidence directory, and detaches
+without terminating QEMU or modifying guest memory. See
+[live crash capture](51-live-crash-capture.md).
+
 ---
 
 ← [Documentation index](README.md) · [Project README](../README.md)

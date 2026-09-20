@@ -71,7 +71,7 @@ Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine.
 | `--irq0-stack-trace` | — | off | Logs record-low XINU process-stack margin immediately before IRQ0 interrupt entry. Observation only. | `scripts/run-qemu.sh --irq0-stack-trace` |
 | `--irq0-stack-guard` | guest address | unset | Restricts IRQ0 stack-margin tracing to one XINU stack guard address. | `scripts/run-qemu.sh --irq0-stack-guard 0x003f3ffc` |
 | `--irq0-stack-dump` | path | unset | With stack tracing, dumps the 8 KiB stack once observed margin reaches 128 bytes. | `scripts/run-qemu.sh --irq0-stack-dump /tmp/irq0-stack.bin` |
-| `--bench` | — | off | Runs isolated guest-IRQ and LPT/PDB passes after cabinet input and 10 seconds of guest warmup. The first pass temporarily probes XINU's live `clkint` entry in RAM; the second is completely unpatched. Requires `gdb`, `as`, `ld`, and `objcopy`. | `scripts/run-qemu.sh --bench` |
+| `--bench` | — | off | Runs isolated guest-IRQ and LPT/PDB passes after cabinet input and 10 seconds of guest warmup. It automatically records IRQ0 depth/IStack margin. A single isolated PDB gap is reported as a warning; sustained p99 or repeated-window failures remain abnormal. Requires `gdb`, `as`, `ld`, and `objcopy`. | `scripts/run-qemu.sh --bench` |
 | `--bench-long` | — | off | With `--bench`, uses the former 30-second warmup for final validation. It does not change the measured window. | `scripts/run-qemu.sh --bench --bench-long` |
 
 | `--pb2kslib` | path | `<roms>/<game>_sound.bin` lookup in machine | Exports `P2K_PB2KSLIB` to override the pb2kslib container. | `scripts/run-qemu.sh --pb2kslib ./roms/swe1_sound.bin` |
