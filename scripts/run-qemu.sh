@@ -246,8 +246,9 @@ CORE LAUNCH
   --no-savedata             Run without persistent savedata (also exports
                             P2K_NO_SAVEDATA=1) and switches cwd to a fresh
                             throwaway dir for the run.
-  --fresh                   Ignore existing savedata for this boot, then save
-                            the newly initialized state normally on exit.
+  --fresh                   Ignore existing savedata for this boot, then
+                            replace it with the newly initialized state on
+                            exit. Back up state first if it matters.
   --guest-extensions        Add Encore's volatile serial-shell extensions to
                             supported update ROMs. ROM files stay untouched.
   --setip <ip> <mask> <gw>  Enable guest extensions and persist these XINA
@@ -261,8 +262,11 @@ CORE LAUNCH
                                         if no bundle is found.
                               latest    explicitly resolve to the highest
                                         version bundle for this game.
-                              none      base-ROM mode — no update bundle is
-                                        staged or auto-discovered.
+                              none      suppress update staging and discovery.
+                                        An existing <game>.flash savedata
+                                        seed is still loaded; combine with
+                                        --no-savedata for a disposable,
+                                        guaranteed base-ROM run.
                               r2        RFM 0.80 revision-2 prototype ROMs;
                                         no update bundle is staged.
                               0210      short version code (also accepts
@@ -452,8 +456,10 @@ CONSOLE / DIAGNOSTICS
                             Other options such as --game, --update and --strict
                             are forwarded. Pass `--display none --no-audio` for
                             headless testing. Requires gdb, as, ld and objcopy.
-                            Returns 2 for unhealthy speed, IRQ delivery or a
-                            steady PDB05 gap above 2.5 ms.
+                            Returns 2 for unhealthy speed or IRQ delivery,
+                            mean PDB05 p99 above 1 ms, or gaps above 2.5 ms in
+                            at least 10% of complete windows (minimum two).
+                            An isolated gap is retained as a warning only.
   --bench-long              With --bench, restore the 30 s guest warmup used
                             for final validation. The measured window remains
                             the same; only post-workload settling is longer.
@@ -556,8 +562,8 @@ CABINET
                             The explicitly selected port
                             remains connected to the guest when its cable is
                             silent, so the ROM performs the diagnosis. A real
-                            port disables emulated cabinet keys and leaves the
-                            XINA AT keyboard active.
+                            port disables emulated cabinet keys and begins with
+                            XINA's AT keyboard unplugged; Tab connects it.
                             Default: auto.
   --lpt-ioport 0xNNN       Set the guest LPT address (default: 0x378),
                            independently of emulated or physical backend.
@@ -578,7 +584,9 @@ KEY BINDINGS (CABINET KEYS mode unless noted)
   Tab                       With an emulated board, toggle between CABINET
                             KEYS (default) and XINA KEYBOARD. A temporary
                             on-screen banner confirms the selected mode.
-                            Physical-only input leaves XINA keyboard active.
+                            Physical and disconnected boards also start with
+                            XINA's keyboard unplugged; Tab connects it without
+                            enabling emulated cabinet switches.
   F1                        Quit / shutdown request
   F4                        Toggle coin door
   F5 / Enter / KP-Enter     ~60-frame Enter pulse
@@ -606,7 +614,8 @@ KEY BINDINGS (CABINET KEYS mode unless noted)
                              Falls back to .ppm if no jpeg helper —
                              cjpeg / magick / convert — is on PATH;
                              --framebuffer writes .bmp directly through SDL)
-  (Fullscreen toggle: use SDL's default Ctrl+Alt+F.)
+  F11 / Alt+Enter           Toggle fullscreen in the default direct renderer.
+  Ctrl+Alt+F                Toggle fullscreen in QEMU's SDL display backend.
 
 ENV PASSTHROUGH (advanced; see qemu/README.md for the full table)
   P2K_NO_UART_STDERR
@@ -1415,9 +1424,10 @@ resolve_update_token() {
 
 case "$UPDATE_TOKEN" in
   none)
-    # Base-ROM mode: suppress the C code's update auto-discovery.
+    # Suppress the C code's update auto-discovery. Persistent BAR3 remains a
+    # legitimate seed; --no-savedata is required to guarantee erased BAR3.
     export P2K_NO_AUTO_UPDATE=1
-    echo "[run-qemu] --update none → base-ROM mode (P2K_NO_AUTO_UPDATE=1)" >&2
+    echo "[run-qemu] --update none → update discovery disabled; existing saved flash still loads" >&2
     ;;
   r2)
     ROM_REVISION=r2

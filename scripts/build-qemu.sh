@@ -149,7 +149,9 @@ while [[ $# -gt 0 ]]; do
       list_remote_versions
       exit 0 ;;
     -h|--help)
-      sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,/^set -euo pipefail$/p' "$0" |
+        sed '$d; s/^# \{0,1\}//' |
+        sed "s/\$DEFAULT_VER/$DEFAULT_VER/g"
       exit 0 ;;
     --) shift; break ;;
     -*) echo "[build-qemu] unknown arg '$1' (try --help)" >&2; exit 2 ;;
