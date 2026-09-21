@@ -241,7 +241,7 @@ chmod 0755 /usr/local/bin/wpctl'
 }
 
 assert_stripped_guest() {
-    ssh_guest 'command -v run0 >/dev/null && ! command -v pkttyagent >/dev/null && ! command -v pkexec >/dev/null && ! command -v sudo >/dev/null'
+    ssh_guest 'command -v run0 >/dev/null && ! command -v pkttyagent >/dev/null && ! command -v pkexec >/dev/null && ! command -v sudo >/dev/null && ! dpkg-query -W polkitd >/dev/null 2>&1'
 }
 
 enable_nonroot_escalation() {
