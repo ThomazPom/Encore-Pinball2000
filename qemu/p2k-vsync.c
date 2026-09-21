@@ -24,7 +24,7 @@
  *     the expected scanout granularity.  This is simpler than running
  *     two timers (one slow vsync, one fast scan-line).
  *
- * Both BAR2 and GX_REGS2 are plain RAM regions — use
+ * Both BAR2 SRAM and the GX register backing are RAM regions — use
  * cpu_physical_memory_write for the bus write so QEMU's IOMMU/dirty
  * tracking is honoured.
  */

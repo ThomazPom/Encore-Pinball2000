@@ -5,7 +5,8 @@
  *   "Is Encore/QEMU running on QEMU virtual time, and do the observed
  *    IRQ0/clkint counters agree with PIT expectations?"
  *
- * What it reports (observer only; no guest-state mutation):
+ * What its opt-in diagnostics report (observer only; no guest-state
+ * mutation):
  *
  *   clock=<QEMU clock used for our timers>
  *   icount=<on/off>                     (icount_enabled())
@@ -33,8 +34,10 @@
  *   - one final line at machine exit / QEMU shutdown
  *
  * A normal run keeps only the small amount of IRQ state required by the
- * functional PIT-deadline/hot-loop mechanism.  It creates no report timer,
- * exit notifier, latency histogram, PDB-gap sample, or audit output.
+ * functional PIT-deadline rendezvous.  It creates no report timer, exit
+ * notifier, latency histogram, PDB-gap sample, or audit output.  The
+ * rendezvous can ask the vCPU to leave TCG near the next PIT deadline, but it
+ * never mutates guest state or injects an IRQ.
  * Disable the complete timing mechanism with `P2K_NO_TIMING_AUDIT=1`.
  *
  * Notes:
@@ -884,20 +887,12 @@ void p2k_timing_audit_note_iret(uint32_t eip)
 }
 
 /* Hook called from accel/tcg/cpu-exec.c for every TB the main scheduler
- * loop is about to look up. During the post-IRQ0-IRET window we OR-in
- * CF_NO_GOTO_TB | CF_NO_GOTO_PTR so the just-translated TB returns to
- * cpu_exec rather than chaining to the next TB via goto_tb / goto_ptr.
- * Outside the window this is the identity function — and the upstream
- * patch ships a __weak default with the same semantics so plain QEMU
- * builds without the p2k object link cleanly. */
-/* Hook called from accel/tcg/cpu-exec.c for every TB the main scheduler
  * loop is about to look up. It captures the first-TB-after-IRET timestamp
- * for the iret_raise segment audit and, when direct-clkint dispatch owes
- * the guest a tick, forces the TB to return to cpu_exec_loop so the
- * dispatcher runs at TB granularity. Outside those cases it is the
- * identity function — the upstream patch ships a __weak default with the
- * same semantics so plain QEMU builds without the p2k object link
- * cleanly. */
+ * for detailed diagnostics and feeds the opt-in PDB-gap profiler. The
+ * normal path returns the input flags unchanged. Only the explicitly
+ * diagnostic P2K_DIAG_ALWAYS_NOCHAIN mode forbids TB chaining; it never
+ * injects a tick. The upstream patch ships a __weak identity default so
+ * plain QEMU builds without the p2k object link cleanly. */
 uint32_t p2k_tcg_cflags_override(uint32_t base);
 uint32_t p2k_tcg_cflags_override(uint32_t base)
 {
@@ -1148,27 +1143,10 @@ static void p2k_audit_update_clkint_hook(uint32_t idt20, const char *handler)
         return;
     }
 
-    /* HISTORICAL BUG (fixed here): this used to call tb_flush() (deferred
-     * via async_safe_run_on_cpu, itself a fix for an even more direct
-     * earlier crash) every time this module first learned the real clkint
-     * entry PC, so that p2k_clkint_tcg_match_pc()'s cached PC stayed
-     * "fresh" for any future TCG-time consumer. That consumer
-     * (p2k_clkint_tcg_match_pc) is DEAD CODE — grep confirms it is
-     * declared and defined but never called anywhere in the tree, a
-     * leftover from the removed direct-clkint TCG-hook mechanism. So the
-     * flush bought nothing except a 100%-reproducible
-     * `cpu_io_recompile: could not find TB for pc=<host retaddr>` fatal:
-     * even the "safe", exclusive-context-deferred tb_flush() still
-     * invalidates the TranslationBlock whose HOST code is on the call
-     * stack of whatever MMIO/PIO helper is *currently* unwinding back into
-     * cpu_io_recompile()'s tcg_tb_lookup(host_retaddr) — which then finds
-     * nothing, because tb_flush() just erased it. This module's own file
-     * header promises "observer only; no guest-state mutation"; a
-     * TB-cache-wide flush triggered by a periodic diagnostic timer was
-     * never consistent with that promise. Fix: track p2k_audit_clkint_pc
-     * as pure host-side bookkeeping for the `clkint_hook=0x%08x` log
-     * field below — no flush, no guest-visible effect, matching the
-     * documented invariant. */
+    /* The translator hook also learns this address while translating the
+     * handler. A diagnostic snapshot may discover it first; sharing the
+     * cached value keeps both paths consistent without flushing translated
+     * code or otherwise changing guest execution. */
     p2k_audit_clkint_pc = idt20;
 }
 

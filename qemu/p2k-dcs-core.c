@@ -25,7 +25,8 @@
  *   - everything else -> consumed silently (sound playback opcodes have
  *                        no protocol response)
  *
- * No timing / no IRQs here.  Sound output is deliberately deferred.
+ * The protocol core owns no timing or IRQ source.  It delegates accepted
+ * commands to the selected audio engine through explicit hooks.
  */
 
 #include "qemu/osdep.h"

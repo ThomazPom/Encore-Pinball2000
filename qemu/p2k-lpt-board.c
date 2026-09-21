@@ -32,7 +32,6 @@
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
 #include "p2k-qemu-compat.h"
-#include "p2k-qemu-compat.h"
 #include "ui/input.h"
 #include "ui/console.h"
 #include "ui/surface.h"
@@ -756,10 +755,45 @@ static void p2k_lpt_dump_state(void)
         s_lamp_rows[1], p2k_matrix_slot(1));
 }
 
+static void p2k_lpt_surface_rgb(const uint8_t *pixel, int bpp,
+                                pixman_format_code_t format, uint8_t rgb[3])
+{
+    if (bpp == 2 && (format == PIXMAN_x1r5g5b5 ||
+                     format == PIXMAN_r5g6b5)) {
+        uint16_t value = lduw_le_p(pixel);
+        uint8_t r;
+        uint8_t g;
+        uint8_t b;
+
+        if (format == PIXMAN_r5g6b5) {
+            r = (value >> 11) & 0x1f;
+            g = (value >> 5) & 0x3f;
+            b = value & 0x1f;
+            rgb[0] = (r << 3) | (r >> 2);
+            rgb[1] = (g << 2) | (g >> 4);
+            rgb[2] = (b << 3) | (b >> 2);
+        } else {
+            r = (value >> 10) & 0x1f;
+            g = (value >> 5) & 0x1f;
+            b = value & 0x1f;
+            rgb[0] = (r << 3) | (r >> 2);
+            rgb[1] = (g << 3) | (g >> 2);
+            rgb[2] = (b << 3) | (b >> 2);
+        }
+        return;
+    }
+
+    /* QEMU's normal little-endian 32-bit display surface is B,G,R,A. */
+    rgb[0] = pixel[2];
+    rgb[1] = pixel[1];
+    rgb[2] = pixel[0];
+}
+
 /* Pipe RGB to a JPEG-producing helper (cjpeg / magick / convert).
  * Returns true on success. PPM data is fed on stdin via "ppm:-".  */
 static bool p2k_lpt_try_jpeg_pipe(const char *jpg_path, int w, int h,
-                                  const uint8_t *data, int stride, int bpp)
+                                  const uint8_t *data, int stride, int bpp,
+                                  pixman_format_code_t format)
 {
     static const char *const candidates[] = {
         "cjpeg -quality 90 -outfile",   /* libjpeg-turbo-progs */
@@ -787,7 +821,8 @@ static bool p2k_lpt_try_jpeg_pipe(const char *jpg_path, int w, int h,
             const uint8_t *row = data + y * stride;
             for (int x = 0; x < w; x++) {
                 const uint8_t *px = row + x * bpp;
-                uint8_t rgb[3] = { px[2], px[1], px[0] };
+                uint8_t rgb[3];
+                p2k_lpt_surface_rgb(px, bpp, format, rgb);
                 fwrite(rgb, 1, 3, p);
             }
         }
@@ -811,10 +846,14 @@ static void p2k_lpt_screenshot(void)
     int w = surface_width(s), h = surface_height(s);
     int stride = surface_stride(s);
     int bpp = surface_bytes_per_pixel(s);
+    pixman_format_code_t format = surface_format(s);
     const uint8_t *data = surface_data(s);
-    if (!data || w <= 0 || h <= 0 || bpp < 3) {
-        fprintf(stderr, "[lpt] F3 screenshot: bad surface (w=%d h=%d bpp=%d)\n",
-                w, h, bpp);
+    bool supported_16 = bpp == 2 &&
+        (format == PIXMAN_x1r5g5b5 || format == PIXMAN_r5g6b5);
+    if (!data || w <= 0 || h <= 0 || (bpp < 3 && !supported_16)) {
+        fprintf(stderr, "[lpt] F3 screenshot: unsupported surface "
+                        "(w=%d h=%d bpp=%d format=0x%x)\n",
+                w, h, bpp, format);
         return;
     }
     char stem[256];
@@ -831,7 +870,7 @@ static void p2k_lpt_screenshot(void)
     /* Prefer JPEG via host helper. Fall back to PPM if no jpeg tool found. */
     char jpg_path[300];
     snprintf(jpg_path, sizeof(jpg_path), "%s.jpg", stem);
-    if (p2k_lpt_try_jpeg_pipe(jpg_path, w, h, data, stride, bpp)) {
+    if (p2k_lpt_try_jpeg_pipe(jpg_path, w, h, data, stride, bpp, format)) {
         fprintf(stderr, "[lpt] F3 screenshot: wrote %s (%dx%d)\n",
                 jpg_path, w, h);
         return;
@@ -846,12 +885,13 @@ static void p2k_lpt_screenshot(void)
         return;
     }
     fprintf(f, "P6\n%d %d\n255\n", w, h);
-    /* Surface is little-endian ARGB8888: byte order B,G,R,A. PPM wants R,G,B. */
+    /* Convert the QEMU surface to the RGB byte order required by PPM. */
     for (int y = 0; y < h; y++) {
         const uint8_t *row = data + y * stride;
         for (int x = 0; x < w; x++) {
             const uint8_t *p = row + x * bpp;
-            uint8_t rgb[3] = { p[2], p[1], p[0] };
+            uint8_t rgb[3];
+            p2k_lpt_surface_rgb(p, bpp, format, rgb);
             fwrite(rgb, 1, 3, f);
         }
     }

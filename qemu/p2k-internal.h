@@ -138,9 +138,10 @@ const char *p2k_dcs_core_mode_name(void);
 void p2k_install_dcs(void);
 /* p2k-dcs-uart.c: I/O 0x138-0x13F UART/DCS frontend. */
 void p2k_install_dcs_uart(void);
-/* p2k-dcs-audio.c: QEMU audiodev backend with real pb2kslib sample
- * playback (8-voice software mixer). The wrapper enables it when it
- * auto-detects a host backend; P2K_NO_DCS_AUDIO forces it off. */
+/* p2k-dcs-audio.c: QEMU audiodev bridge for the original-ADSP engines,
+ * generated PCM cache, or pb2kslib 8-voice sample mixer.  The wrapper
+ * enables it when it auto-detects a host backend; P2K_NO_DCS_AUDIO forces
+ * it off. */
 void p2k_install_dcs_audio(Pinball2000MachineState *s);
 /* Script-only capture gate. P2K_DCS_AUDIO_CAPTURE supplies the raw PCM file;
  * an injected F11 press controls whether callbacks append to it. */

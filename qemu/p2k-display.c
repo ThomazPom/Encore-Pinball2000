@@ -578,10 +578,13 @@ static void *p2k_display_worker(void *opaque)
         SDL_RenderCopyEx(s->renderer, s->texture, NULL, NULL, 0.0, NULL,
                          flip_y ? SDL_FLIP_VERTICAL : SDL_FLIP_NONE);
         draw_status_sdl(s);
-        SDL_RenderPresent(s->renderer);
         if (qatomic_xchg(&s->screenshot_pending, 0)) {
+            /* Read the composed back buffer before presenting it.  SDL may
+             * invalidate or clear that buffer in SDL_RenderPresent(), which
+             * otherwise produces a valid-sized but entirely black BMP. */
             p2k_sdl_screenshot(s);
         }
+        SDL_RenderPresent(s->renderer);
         qatomic_inc(&s_disp_frames);
         g_usleep(16000);
     }

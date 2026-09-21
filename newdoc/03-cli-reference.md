@@ -54,7 +54,7 @@ See the [Quickstart](02-quickstart.md) for the complete first-run sequence.
 | `--no-savedata` | Ignore persistent state, disable its writes and use a fresh throwaway working directory. |
 | `--fresh` | Ignore existing state for this boot, then replace it with newly initialized state in the same directory on exit. |
 | `--update SPEC` | Select `auto`, `latest`, `none`, `r2`, a short version code or an explicit inner bundle directory. |
-| `--pub-card DIR` | Experimental Prism Update Board backed by a bundle directory. |
+| `--pub-card DIR` | Experimental Prism Update Board backed by a bundle directory; incompatible with network modes because both boards decode `0xD0000`. |
 | `--guest-extensions` | Inject supported volatile serial-shell extensions into guest RAM; ROM files remain unchanged. |
 | `--setip IP MASK GATEWAY` | Enable guest extensions and persist the supplied XINA network resources immediately before `netstart`. |
 

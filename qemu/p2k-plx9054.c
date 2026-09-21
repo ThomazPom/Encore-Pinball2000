@@ -2,24 +2,24 @@
  * pinball2000 PLX9054 / ROM-window memory map.
  *
  * The real board's PLX9054 PCI bridge exposes the game ROM bank0 at several
- * address ranges, plus an SRAM region with a watchdog health register.  In
- * this milestone we only model the read-only ROM windows and the stub MMIO
- * space — that is the bare minimum to prevent PRISM from falling into
- * zero-filled RAM after the option-ROM bootstrap.
+ * address ranges, plus an SRAM region with a watchdog health register. This
+ * module owns only the ROM and BIOS windows. The fixed PCI face, PLX register
+ * surface, persistent BAR2 SRAM and BAR3 update flash live in their dedicated
+ * p2k-pci.c, p2k-plx-regs.c, p2k-bars.c and p2k-bar3-flash.c modules.
  *
  * Mappings created here (mirrors of the legacy reference layout):
  *
  *   0x000C0000  PRISM option ROM, first 32 KiB of bank0   (RO, 32 KiB)
  *   0x000F0000  BIOS shadow                               (RW, 64 KiB)
- *   0x08000000  PLX bank0 — full 1 MiB                    (RO, 1 MiB)
- *   0x14000000  BAR5 bank0 — pristine mirror of 0x080..   (RO, 1 MiB)
+ *   0x08000000  local-address compatibility view of bank0  (RO, 8 MiB visible)
+ *   0x14000000  BAR5 bank0 — complete pristine bank0       (RO, 16 MiB)
  *   0xFF000000  ROM bank0 alias — 4 MiB BT-108 mirror     (RO, 4 MiB)
  *
  * Each region is a plain QEMU `memory_region_init_rom` (or _ram for the BIOS
  * shadow) initialised from the in-memory bank0 buffer the rom loader filled.
  *
- * No PCI device, no BAR2 SRAM and no watchdog yet — those live in their own
- * follow-up patches so this file stays small.
+ * Keeping those devices separate makes this file a map of immutable ROM
+ * views rather than a second owner of PLX state.
  */
 
 #include "qemu/osdep.h"
@@ -33,8 +33,8 @@
 #define P2K_OPTROM_BASE      0x000C0000u
 #define P2K_BIOS_SHADOW_BASE 0x000F0000u
 #define P2K_BIOS_SHADOW_SIZE 0x00010000u
-#define P2K_PLX_BANK0_BASE   0x08000000u   /* LAS3BA */
-#define P2K_PLX_BANK1_BASE   0x08800000u   /* CS0BASE */
+#define P2K_PLX_BANK0_BASE   0x08000000u   /* local LAS3BA compatibility view */
+#define P2K_PLX_BANK1_BASE   0x08800000u   /* local CS0BASE */
 #define P2K_PLX_BANK2_BASE   0x09800000u   /* CS1BASE */
 #define P2K_PLX_BANK3_BASE   0x0A800000u   /* CS2BASE */
 #define P2K_PLX_CS3_DCS      0x0B800000u   /* CS3BASE — DCS sound ROM */
@@ -129,7 +129,10 @@ void p2k_map_rom_windows(Pinball2000MachineState *s)
      * Loaded from roms/bios.bin if present. */
     p2k_map_bios(system_memory, s->roms_dir);
 
-    /* PLX bank0 — full 16 MiB at 0x08000000. */
+    /* Local-address compatibility view.  The 16 MiB region registered here
+     * overlaps bank1 from 0x08800000, so QEMU's effective FlatView exposes
+     * only bank0[0..8 MiB) at 0x08000000..0x087fffff.  The complete bank0
+     * image remains visible through PCI BAR5 at 0x14000000. */
     p2k_map_rom(system_memory, "p2k.plx-bank0",
                 P2K_PLX_BANK0_BASE, P2K_BANK_SIZE,
                 s->bank0, P2K_BANK_SIZE);

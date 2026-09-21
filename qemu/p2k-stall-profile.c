@@ -26,7 +26,7 @@
  *   - Per-class cumulative + delta counters; per-class small EIP
  *     histogram so we can name the dominant offender.
  *
- *   - Dumped on every audit snapshot (initial @3s, every 5s with
+ *   - Dumped on every audit snapshot (initial @3s, every 3s with
  *     P2K_DIAG=1, plus a final summary at exit).
  *
  * Cost: when disabled, one integer compare per PIT raise. When enabled,
@@ -34,7 +34,8 @@
  * zero on the guest hot path.
  *
  * Off by default. Enable with P2K_PROFILE_STALLS=1. Threshold tunable
- * via P2K_PROFILE_STALL_GAP (default 1 -- every miss is classified).
+ * via P2K_PROFILE_STALL_GAP (default 2 -- at least one prior raise is
+ * still unserved).
  */
 
 #include "qemu/osdep.h"

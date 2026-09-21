@@ -4,17 +4,12 @@
  * This file owns ONLY the MachineClass registration and the top-level
  * init wiring (RAM alias, CPU, ISA bus, PIC, PIT, ROM load, reset hook).
  *
- * Responsibilities split out:
- *   p2k-rom.c   — bank0 ROM loader (chips u100/u101 deinterleave)
- *   p2k-boot.c  — PM-entry post-reset recipe (option ROM copy + GDT + regs)
- *   pinball2000.h     — public board constants
- *   p2k-internal.h    — private declarations shared between p2k-*.c
- *
- * Devices yet to add (each in its own future file — keep this file small):
- *   p2k-plx9054.c   — BAR0 ROM window banking, BAR2 SRAM, watchdog @ +0x420
- *   p2k-dcs2.c      — sound stream device on port 0x13c
- *   p2k-lpt-board.c — driver-board on port 0x378 (idle reply 0xF0)
- *   p2k-display.c   — DC_TIMING2 / VSYNC ~57 Hz path
+ * Responsibilities are split by concern: p2k-rom.c and p2k-boot.c own ROM
+ * loading/reset entry; the remaining p2k-*.c modules own PLX storage and
+ * windows, DCS, LPT, graphics, networking, compatibility and diagnostics.
+ * pinball2000.h contains public board constants and p2k-internal.h the private
+ * interfaces shared between those modules. Keep device behavior out of this
+ * top-level wiring file.
  *
  * Out-of-tree QEMU source.  scripts/build-qemu.sh copies the qemu/ files
  * into a pinned upstream qemu-x.y.z/hw/i386/ and patches meson.build,
@@ -263,10 +258,10 @@ static void pinball2000_init(MachineState *machine)
     p2k_load_extra_banks(s);
     p2k_load_dcs_rom(s);
 
-    /* Map bank0 into the PLX/option-ROM/BAR5/alias windows.  After this
-     * the option ROM at 0x80000 (placed by p2k_post_reset) and the full
-     * 1 MiB bank0 image at 0x08000000/0x14000000/0xFF000000 are visible
-     * to the guest. */
+    /* Map bank0 into the option-ROM, local-address compatibility, BAR5 and
+     * high-alias windows.  The local 0x08000000 view is effectively 8 MiB
+     * because CS0/bank1 starts at 0x08800000; BAR5 at 0x14000000 exposes the
+     * complete 16 MiB bank.  p2k_post_reset also stages 32 KiB at 0x80000. */
     p2k_map_rom_windows(s);
     /* Enable Cyrix MediaGX TCG opcode extensions for THIS machine only
      * (0F 3C shim + log/UD on the other documented MediaGX 0F 3x

@@ -12,7 +12,7 @@
  *   off 0 word read  : pop next DCS response word
  *   off 0 word write : DCS command word
  *   off 2 read       : flag byte (bit6=ready, bit7=output available)
- *   off 2 write      : ignored (game pokes 0x80/0x40 there during init)
+ *   off 2 write      : store the flag latch returned by subsequent reads
  */
 
 #include "qemu/osdep.h"

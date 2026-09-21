@@ -278,7 +278,8 @@ CORE LAUNCH
                                         *_game.rom + *_symbols.rom).
   --pub-card <dir>          EXPERIMENTAL: expose an update bundle through an
                             emulated Prism Update Board for XINA's
-                            `pub ... dump` command.
+                            `pub ... dump` command. Incompatible with network
+                            modes because both boards decode 0xD0000.
 
 DISPLAY / UX
   --display <backend>       QEMU -display backend. The wrapper queries
@@ -605,9 +606,9 @@ KEY BINDINGS (CABINET KEYS mode unless noted)
                             switch. Example: 13, hold Ctrl for 3 s holds Start.
   Configured A-Z            Hold mapped letters to hold their matrix switches.
                             See --switch-keymap and docs/41-cli-keyboard-guide.md.
-  F2                        Toggle vertical flipscreen
-                            (default ON: bottom-up source → top-down
-                             display).
+  F2                        Toggle vertical reversal relative to the normal
+                            display orientation. The default corrects the
+                            guest's bottom-up framebuffer for presentation.
   F3                        Screenshot to <screenshot-dir>/p2k_screen_<ts>.jpg
                             (default dir /tmp; override with
                              --screenshot-dir or P2K_SCREENSHOT_DIR.
@@ -904,7 +905,12 @@ while [[ $# -gt 0 ]]; do
         *) echo "[run-qemu] --sound-loading: expected lazy|preload, got '$2'" >&2; exit 2 ;;
       esac
       shift 2 ;;
-    --dcs-mode)        export P2K_DCS_MODE="$2"; shift 2 ;;
+    --dcs-mode)
+      case "${2:-}" in
+        io-handled|bar4-patch) export P2K_DCS_MODE="$2" ;;
+        *) echo "[run-qemu] --dcs-mode: expected io-handled or bar4-patch, got '${2:-}'" >&2; exit 2 ;;
+      esac
+      shift 2 ;;
     --diag)            export P2K_DIAG=1; shift ;;
     --trace-dcs)       export P2K_DCS_BYTE_TRACE=1; shift ;;
     --trace-audio)     export P2K_DCS_AUDIO_TRACE=1; shift ;;
@@ -983,6 +989,10 @@ if [[ "$UPDATE_TOKEN" == r2 ]]; then
     echo "[run-qemu] ERROR: --update r2 is only available for RFM" >&2
     exit 2
   fi
+fi
+if [[ -n "$PUB_CARD" && $NETWORK -eq 1 ]]; then
+  echo "[run-qemu] --pub-card cannot be combined with network modes: both boards decode guest memory at 0xD0000" >&2
+  exit 2
 fi
 if [[ $NETWORK_AUTO -eq 1 &&
       ( $NETWORK_MIRROR -eq 1 || $NETWORK_PASST -eq 1 || -n "$NETWORK_BRIDGE" ) ]]; then

@@ -5,9 +5,10 @@
  * and runs an ADSP-2104 core with SPORT1/autobuffer output. Keep this engine
  * isolated from the pb2kslib player.
  *
- * P2K_DCS_ENGINE=adsp boots the update flash, executes the original DSP
- * program, maps U109/U110 through the SDRC, and renders SPORT1 PCM. It never
- * consults pb2kslib after original-format asset preparation succeeds.
+ * The adsp, adsp-thread, adsp-clock-thread and adsp-hybrid-thread engines
+ * boot the update flash, execute the original DSP program, map U109/U110
+ * through the SDRC, and render SPORT1 PCM.  They never consult pb2kslib
+ * after original-format asset preparation succeeds.
  */
 
 #include "qemu/osdep.h"
@@ -466,16 +467,21 @@ static bool find_update_sound_flash(const char *dir, char *out, size_t out_sz)
     }
 
     const char *name;
-    bool found = false;
+    char *selected = NULL;
     while ((name = g_dir_read_name(d)) != NULL) {
-        if (has_suffix(name, "_sf.rom")) {
-            snprintf(out, out_sz, "%s/%s", dir, name);
-            found = true;
-            break;
+        if (has_suffix(name, "_sf.rom") &&
+            (!selected || strcmp(name, selected) < 0)) {
+            g_free(selected);
+            selected = g_strdup(name);
         }
     }
     g_dir_close(d);
-    return found;
+    if (!selected) {
+        return false;
+    }
+    snprintf(out, out_sz, "%s/%s", dir, selected);
+    g_free(selected);
+    return true;
 }
 
 static bool load_exact(const char *path, uint8_t **out)

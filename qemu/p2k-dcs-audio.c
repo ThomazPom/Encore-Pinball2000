@@ -1538,9 +1538,16 @@ void p2k_install_dcs_audio(Pinball2000MachineState *st)
                   qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 1000);
     }
 
-    info_report("pinball2000: DCS audio installed "
-                "(%d Hz S16, %d channel(s), %d-voice mixer, %d pb2k entries; "
-                "P2K_NO_DCS_AUDIO=1 to disable)",
-                a->output_rate, a->output_channels,
-                DCS_VOICES, a->entry_cnt);
+    if (a->adsp_engine) {
+        info_report("pinball2000: DCS audio installed "
+                    "(%d Hz S16, %d channels, native ADSP engine; "
+                    "P2K_NO_DCS_AUDIO=1 to disable)",
+                    a->output_rate, a->output_channels);
+    } else {
+        info_report("pinball2000: DCS audio installed "
+                    "(%d Hz S16, %d channel, %d-voice mixer, "
+                    "%d pb2k entries; P2K_NO_DCS_AUDIO=1 to disable)",
+                    a->output_rate, a->output_channels,
+                    DCS_VOICES, a->entry_cnt);
+    }
 }

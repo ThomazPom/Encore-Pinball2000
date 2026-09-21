@@ -31,10 +31,9 @@
  * the MediaGX scratchpad-size control bits. See `p2k-mediagx-gate.c` for
  * the modeled registers and the MediaGX patch family for the decoder.
  *
- * PCI bridge: PLX 9054
- *   BAR0  = ROM window (game ROM bank, paged)
- *   BAR2  = 256 KiB battery-backed SRAM + memory-mapped I/O
- *   BAR4  = PLX runtime registers
+ * PCI-visible PRISM surfaces are split across the fixed topology/config
+ * model and dedicated memory regions. Of particular interest here, BAR2
+ * exposes 192 KiB of battery-backed SRAM and BAR3 the update flash.
  */
 
 /* --- BAR2 SRAM offsets ---------------------------------------------------- */
