@@ -167,8 +167,8 @@ extern void (*p2k_dcs_core_audio_execute_mixer)(uint16_t cmd,
                                                 uint16_t data2);
 extern void (*p2k_dcs_core_audio_raw_cmd)(uint16_t cmd);
 
-/* p2k-lpt-board.c: minimal LPT driver-board protocol on 0x378-0x37A
- * (STATUS=0x87 signature + edge-detect dispatch, all inputs idle). */
+/* p2k-lpt-board.c: emulated/physical LPT driver-board protocol, switch and
+ * cabinet inputs, host input routing, tracing and open-bus diagnostics. */
 void p2k_install_lpt_board(void);
 void p2k_set_xina_keyboard_connected(bool connected);
 const char *p2k_lpt_resolve_game(const char *requested_game);

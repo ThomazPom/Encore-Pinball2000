@@ -34,8 +34,7 @@ DEFAULT_VER="10.0.8"
 # this list whenever a new release is validated end-to-end. --latest will
 # pick the newest entry from this list (or, with --unstable, ignore it).
 # Add a version only after the complete machine has been built and boot-tested
-# with the current patch set. At present, only the pinned default has that
-# evidence.
+# with the current patch set; the pinned default remains the release build.
 KNOWN_GOOD_VERS=( 10.0.8 10.2.4 )
 QEMU_VER="${QEMU_VER:-$DEFAULT_VER}"
 INCLUDE_UNSTABLE=0

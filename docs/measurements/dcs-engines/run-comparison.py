@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run and summarize the repeatable Pinball 2000 DCS-engine workload.
 
-The default run matches the July 2026 comparison:
+The default current comparison uses:
   * SWE1 update 2.10, no savedata, headless WAV audio, verbose diagnostics
   * start cabinet input 11 seconds after launching the wrapper
   * F4 (open coin door), three credits, then 20 alternating volume presses
@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -25,7 +27,21 @@ import sys
 import time
 
 
-ENGINES = ("pb2kslib", "pb2kslib-adsp", "adsp", "adsp-thread")
+ENGINES = (
+    "pb2kslib", "pb2kslib-adsp", "adsp", "adsp-thread",
+    "adsp-clock-thread", "adsp-hybrid-thread",
+)
+LIVE_ENGINES = {
+    "adsp", "adsp-thread", "adsp-clock-thread", "adsp-hybrid-thread",
+}
+DCS_HEALTH_RE = re.compile(
+    r"^\[p2k-dcs-health\] queued=(?P<queued>\d+) "
+    r"runtime_resets=(?P<runtime_resets>\d+) host_boots=(?P<host_boots>\d+) "
+    r"enqueued=(?P<enqueued>\d+) consumed=(?P<consumed>\d+) "
+    r"dropped=(?P<dropped>\d+) pcm_frames=(?P<pcm_frames>\d+) "
+    r"pcm_nonzero=(?P<pcm_nonzero>\d+) cycles=(?P<cycles>\d+)$",
+    re.MULTILINE,
+)
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 RUNNER = ROOT / "scripts" / "run-qemu.sh"
@@ -68,6 +84,18 @@ def monitor_commands(sock_path: Path) -> None:
                 time.sleep(0.10)
 
 
+def request_shutdown(sock_path: Path) -> None:
+    """Ask the guest-facing LPT handler to quit so final health is emitted."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as monitor:
+        monitor.settimeout(2.0)
+        monitor.connect(str(sock_path))
+        try:
+            monitor.recv(4096)
+        except socket.timeout:
+            pass
+        monitor.sendall(b"sendkey f1\n")
+
+
 def run_engine(engine: str, args: argparse.Namespace, output: Path) -> Path:
     log_path = output / f"{engine}.log"
     sock_path = Path(f"/tmp/p2k-dcs-comparison-{os.getpid()}-{engine}.mon")
@@ -82,14 +110,18 @@ def run_engine(engine: str, args: argparse.Namespace, output: Path) -> Path:
         "--audio", "wav",
         "--dcs-engine", engine,
         "--monitor", f"unix:{sock_path},server=on,wait=off",
-        "-v",
     ]
+    command.append("--timing-snapshots" if args.lightweight else "-v")
     print(f"[comparison] {engine}: {args.duration:.0f}s -> {log_path}", flush=True)
     started = time.monotonic()
     with log_path.open("w", encoding="utf-8") as log:
+        env = os.environ.copy()
+        if engine in LIVE_ENGINES:
+            env["P2K_DCS_HEALTH_REPORT"] = "1"
         proc = subprocess.Popen(
             command,
             cwd=ROOT,
+            env=env,
             stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -110,14 +142,18 @@ def run_engine(engine: str, args: argparse.Namespace, output: Path) -> Path:
                 except subprocess.TimeoutExpired:
                     pass
             if proc.poll() is None:
-                # Signal the wrapper's process group. Its trap terminates QEMU,
-                # allowing QEMU's exit notifier to emit the final audit panel.
-                os.killpg(proc.pid, signal.SIGTERM)
+                # The normal F1 shutdown path reports live-DSP health even for
+                # the synchronous engine, which has no worker exit notifier.
+                request_shutdown(sock_path)
                 try:
                     proc.wait(timeout=8.0)
                 except subprocess.TimeoutExpired:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                    proc.wait()
+                    os.killpg(proc.pid, signal.SIGTERM)
+                    try:
+                        proc.wait(timeout=8.0)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                        proc.wait()
         finally:
             if proc.poll() is None:
                 os.killpg(proc.pid, signal.SIGKILL)
@@ -137,8 +173,10 @@ def find_log(directory: Path, engine: str) -> Path:
     raise FileNotFoundError(f"no log for {engine} in {directory}")
 
 
-def summarize(log_path: Path, warmup: float) -> dict[str, float | int | str]:
-    lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+def summarize(engine: str, log_path: Path,
+              warmup: float) -> dict[str, float | int | str]:
+    text = log_path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
     timing = [line for line in lines if "p2k-timing #" in line]
     snaps = [
         line for line in timing
@@ -165,8 +203,28 @@ def summarize(log_path: Path, warmup: float) -> dict[str, float | int | str]:
             if snap_wall is not None and snap_wall >= warmup:
                 pdb_windows.append(line)
 
+    health = "n/a"
+    if engine in LIVE_ENGINES:
+        matches = list(DCS_HEALTH_RE.finditer(text))
+        if not matches:
+            health = "MISSING"
+        else:
+            values = {key: int(value)
+                      for key, value in matches[-1].groupdict().items()}
+            healthy = (
+                values["queued"] == 0
+                and values["runtime_resets"] == 0
+                and values["dropped"] == 0
+                and values["enqueued"] == values["consumed"]
+                and values["pcm_frames"] > 0
+                and values["pcm_nonzero"] > 0
+                and values["cycles"] > 0
+            )
+            health = "PASS" if healthy else "FAIL"
+
     return {
-        "engine": log_path.stem,
+        "engine": engine,
+        "health": health,
         "cumulative": field(final_timing, "delivery"),
         "raised": raised,
         "serviced": serviced,
@@ -208,7 +266,7 @@ def report(rows: list[dict[str, float | int | str]], warmup: float) -> str:
         "|---|---:|---:|---:|---:|---:|",
     ])
     for row in rows:
-        if row["jitter_n"] is None:
+        if not row["jitter_n"]:
             out.append(f"| {row['engine']} | — | — | — | — | — |")
         else:
             out.append(
@@ -231,7 +289,12 @@ def report(rows: list[dict[str, float | int | str]], warmup: float) -> str:
     out.extend([
         "",
         "`Current weighted` is sum(current services) / sum(current raises), not a mean of percentages.",
+        "",
+        "| Engine | Live-DSP health |",
+        "|---|---|",
     ])
+    for row in rows:
+        out.append(f"| {row['engine']} | {row['health']} |")
     return "\n".join(out) + "\n"
 
 
@@ -246,6 +309,10 @@ def parse_args() -> argparse.Namespace:
                         help="engine to run (repeatable; default: all engines)")
     parser.add_argument("--output", type=Path, help="artifact directory (default: timestamped /tmp directory)")
     parser.add_argument("--parse-only", type=Path, metavar="DIR", help="summarize existing logs without running QEMU")
+    parser.add_argument(
+        "--lightweight", action="store_true",
+        help="use lightweight timing snapshots instead of the detailed diagnostic sampler",
+    )
     return parser.parse_args()
 
 
@@ -263,13 +330,37 @@ def main() -> int:
     else:
         stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         output = (args.output or Path(f"/tmp/p2k-dcs-comparison-{stamp}")).resolve()
+        if output.exists() and any(output.iterdir()):
+            raise SystemExit(f"refusing to overwrite non-empty output directory: {output}")
         output.mkdir(parents=True, exist_ok=True)
+        try:
+            commit = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+            ).strip()
+        except (OSError, subprocess.CalledProcessError):
+            commit = "unknown"
+        (output / "metadata.json").write_text(json.dumps({
+            "generated": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+            "repo_commit": commit,
+            "repo_dirty": bool(subprocess.run(
+                ["git", "status", "--porcelain"], cwd=ROOT,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                check=False,
+            ).stdout.strip()),
+            "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            "game": args.game,
+            "update": args.update,
+            "engines": engines,
+            "duration": args.duration,
+            "input_delay": args.input_delay,
+            "warmup": args.warmup,
+            "lightweight": args.lightweight,
+        }, indent=2) + "\n")
         logs = [run_engine(engine, args, output) for engine in engines]
 
     rows = []
     for engine, log in zip(engines, logs):
-        row = summarize(log, args.warmup)
-        row["engine"] = engine
+        row = summarize(engine, log, args.warmup)
         rows.append(row)
     rendered = report(rows, args.warmup)
     report_path = output / "report.md"

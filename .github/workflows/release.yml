@@ -97,6 +97,15 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "commit=$checkout_commit" >> "$GITHUB_OUTPUT"
 
+      - name: Validate repository tooling
+        if: steps.publication.outputs.publish == '1'
+        run: |
+          bash -n scripts/run-qemu.sh scripts/build-qemu.sh tools/capture-live-crash.sh
+          python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+          python3 -m py_compile \
+            docs/measurements/dcs-engines/run-comparison.py \
+            docs/measurements/validation-matrix/run-matrix.py
+
       - name: Build QEMU
         if: steps.publication.outputs.publish == '1'
         run: |
@@ -120,6 +129,7 @@ jobs:
           full_asset=dist/encore-pinball2000-linux-x86_64.tar.gz
           "$source_bin" -M help | grep -q pinball2000
           grep -aq 'volatile guest extensions armed' "$source_bin"
+          python3 scripts/tests/smoke-switch-keymap.py
           mkdir -p "$package"
           install -m 0755 "$source_bin" "$package/qemu-system-i386"
           strip --strip-unneeded "$package/qemu-system-i386"

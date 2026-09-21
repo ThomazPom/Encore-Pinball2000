@@ -38,6 +38,14 @@ jobs:
           git -c protocol.version=2 fetch --no-recurse-submodules --force origin "$GITHUB_REF"
           git checkout --detach "$GITHUB_SHA"
 
+      - name: Validate repository tooling
+        run: |
+          bash -n scripts/run-qemu.sh scripts/build-qemu.sh tools/capture-live-crash.sh
+          python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+          python3 -m py_compile \
+            docs/measurements/dcs-engines/run-comparison.py \
+            docs/measurements/validation-matrix/run-matrix.py
+
       - name: Build QEMU
         run: |
           if ! bash scripts/build-qemu.sh >/tmp/build-qemu.log 2>&1; then
@@ -55,3 +63,6 @@ jobs:
           BIN="$HOME/.cache/p2k-qemu-build/qemu-10.0.8/build/qemu-system-i386"
           "$BIN" -M help | tee /tmp/qemu-machines.txt
           grep -q pinball2000 /tmp/qemu-machines.txt
+
+      - name: Boot and exercise cabinet key routing
+        run: python3 scripts/tests/smoke-switch-keymap.py

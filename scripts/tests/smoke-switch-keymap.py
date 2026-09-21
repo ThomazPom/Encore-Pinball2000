@@ -124,6 +124,11 @@ def main() -> None:
             r"switch1=0x0c.*matrix switch 14 released.*switch1=0x04.*"
             r"matrix switch 13 released.*switch1=0x00",
         )
+        require(
+            valid,
+            r"lamp_rows=(?:[0-9a-f]{2},){7}[0-9a-f]{2} "
+            r"switch_rows=(?:[0-9a-f]{2},){7}[0-9a-f]{2}",
+        )
 
         ctrl_independent = run_case(
             directory,

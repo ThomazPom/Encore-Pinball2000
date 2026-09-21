@@ -1,9 +1,9 @@
 /*
  * pinball2000 LPT driver-board protocol on ports 0x378-0x37A.
  *
- * P2K talks to its driver board (sound, lamps, switch matrix scan) over
- * the parallel port using a tiny edge-detect state machine — see the
- * protocol" handler.
+ * P2K talks to its driver board (lamps, cabinet outputs and switch scans)
+ * over the parallel port using a tiny edge-detect state machine — see the
+ * protocol handler.  DCS sound is a separate device.
  *
  *   0x378 (DATA)   WRITE: latch
  *                  READ:  if rendering gated → switch-matrix status
@@ -625,7 +625,9 @@ static void process_data_command(uint8_t opcode, uint8_t data)
         s_data_val4 = data;
         if (data != 0) {
             int idx = calc_bitwise_sum(data);
-            if (idx > 0 && idx < 8) s_lamp_rows[idx] = s_data_val2;
+            if (idx >= 1 && idx <= 8) {
+                s_lamp_rows[idx & 7] = s_data_val2;
+            }
         }
         break;
     }
@@ -682,10 +684,8 @@ static uint64_t p2k_lpt_read(void *opaque, hwaddr addr, unsigned size)
     return v;
 }
 
-/* Driver-board activity counters. Per Erikie (pinside msg #36): the
- * only thing that ultimately matters for cabinet behaviour is the LPT
- * rate seen by the driverboard (target ~16 kHz). Bump once per write/
- * dispatch; the audit panel snapshots the deltas to derive Hz. */
+/* Driver-board activity counters. Bump once per write/dispatch; the timing
+ * audit snapshots the deltas to report the guest's actual protocol rates. */
 static uint64_t s_lpt_data_writes;
 static uint64_t s_lpt_ctrl_writes;
 static uint64_t s_lpt_dispatches;
@@ -753,6 +753,15 @@ static void p2k_lpt_dump_state(void)
         !!(p2k_matrix_slot(1) & (1u << 2)),
         s_rendering_flags, s_lpt_data, s_data_for_rendering,
         s_lamp_rows[1], p2k_matrix_slot(1));
+    fprintf(stderr,
+        "[lpt] lamp_rows="
+        "%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x "
+        "switch_rows=%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x\n",
+        s_lamp_rows[1], s_lamp_rows[2], s_lamp_rows[3], s_lamp_rows[4],
+        s_lamp_rows[5], s_lamp_rows[6], s_lamp_rows[7], s_lamp_rows[0],
+        p2k_matrix_slot(1), p2k_matrix_slot(2), p2k_matrix_slot(3),
+        p2k_matrix_slot(4), p2k_matrix_slot(5), p2k_matrix_slot(6),
+        p2k_matrix_slot(7), p2k_matrix_slot(8));
 }
 
 static void p2k_lpt_surface_rgb(const uint8_t *pixel, int bpp,
