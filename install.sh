@@ -51,8 +51,15 @@ valid_tcp_port() {
     [[ "$1" =~ ^[0-9]+$ ]] && ((10#$1 >= 1 && 10#$1 <= 65535))
 }
 
+if (($# > 1)); then
+    echo "install.sh: expected at most one display profile" >&2
+    usage >&2
+    exit 2
+fi
 case "${1:-}" in
     -h|--help) usage; exit 0 ;;
+    ""|--display-manager|--cage|--weston|--direct-console|--framebuffer|--console) ;;
+    *) echo "install.sh: unknown profile '$1'" >&2; usage >&2; exit 2 ;;
 esac
 
 if [[ ${EUID} -ne 0 ]]; then
@@ -519,8 +526,18 @@ if [[ "$quiet_boot" -eq 1 || "$zero_grub_timeout" -eq 1 ]]; then
     fi
 fi
 
-install -d -m 0755 "$CONF_DIR"
+# The Encore-owned lock is the first installer-owned boot/session mutation.
+# If the process stops after this point, uninstall.sh is therefore authorised
+# to remove the partial integration instead of leaving the host wedged between
+# "already installed" and "not owned by Encore".
+if ! (set -o noclobber; printf '%s\n' encore > "$CABINET_LOCK") 2>/dev/null; then
+    lock_owner="$(sed -n '1p' "$CABINET_LOCK" 2>/dev/null || true)"
+    echo "install.sh: cabinet ownership was concurrently claimed by '${lock_owner:-unknown}'; nothing changed." >&2
+    exit 3
+fi
 install -d -m 0700 "$STATE"
+printf '%s\n' "$backend" > "$STATE/install-mode"
+install -d -m 0755 "$CONF_DIR"
 {
     printf 'ROOT=%q\n' "$ROOT"
     printf 'SESSION_USER=%q\n' "$session_user"
@@ -539,7 +556,6 @@ if ((${#launch_args[@]})); then
     printf '%s\n' "${launch_args[@]}" > "$CONF_DIR/launch.args"
 fi
 chmod 0644 "$CONF_DIR/session.conf" "$CONF_DIR/launch.args"
-printf '%s\n' "$backend" > "$STATE/install-mode"
 systemctl get-default > "$STATE/previous-default-target"
 systemctl is-enabled getty@tty1.service > "$STATE/getty-tty1-was-enabled" 2>/dev/null || true
 
@@ -753,7 +769,6 @@ if [[ "$run_as_root" -eq 1 ]]; then
     systemctl enable encore-pinball2000-root.service
 fi
 echo
-printf '%s\n' encore > "$CABINET_LOCK"
 
 # Do not report a reboot-ready installation while recently created helpers,
 # unit files, and state records still exist only in the kernel's write cache.

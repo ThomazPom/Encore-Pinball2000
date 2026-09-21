@@ -17,6 +17,26 @@ CABINET_LOCK=/var/lib/pinball2000-cabinet.lock
 NETWORK_TAP=encore-p2k0
 NETWORK_TAP_MARKER='encore-pinball2000 managed bridge tap'
 
+usage() {
+    cat <<'EOF'
+Usage: ./uninstall.sh
+
+Remove only the system integration created by install.sh. Project files,
+ROMs, savedata and shared lp-group membership are left untouched.
+EOF
+}
+
+if (($# > 1)); then
+    echo "uninstall.sh: no arguments are accepted" >&2
+    usage >&2
+    exit 2
+fi
+case "${1:-}" in
+    -h|--help) usage; exit 0 ;;
+    "") ;;
+    *) echo "uninstall.sh: unexpected argument '$1'" >&2; usage >&2; exit 2 ;;
+esac
+
 if [[ ${EUID} -ne 0 ]]; then
     for esc in run0 sudo pkexec; do
         command -v "$esc" >/dev/null 2>&1 || continue
@@ -38,7 +58,13 @@ if [[ "$lock_owner" != encore ]]; then
 fi
 
 if [[ ! -r "$STATE/install-mode" ]]; then
-    echo "Encore cabinet integration is not installed; nothing changed."
+    # The lock is deliberately the installer's first boot/session mutation. A
+    # missing mode therefore means installation stopped before that integration
+    # was installed; clear the recoverable marker and retain prior preflight.
+    rm -f "$CABINET_LOCK"
+    rmdir "$STATE" 2>/dev/null || true
+    echo "Incomplete Encore cabinet marker removed; no boot/session integration was installed."
+    echo "Runtime prerequisites prepared before that marker are intentionally preserved."
     exit 0
 fi
 

@@ -100,7 +100,11 @@ jobs:
       - name: Validate repository tooling
         if: steps.publication.outputs.publish == '1'
         run: |
-          bash -n scripts/run-qemu.sh scripts/build-qemu.sh tools/capture-live-crash.sh
+          bash -n install.sh uninstall.sh scripts/run-qemu.sh scripts/build-qemu.sh \
+            scripts/internal/encore-session.sh tools/capture-live-crash.sh \
+            tools/debian-qemu/lab.sh
+          ./install.sh --help >/dev/null
+          ./uninstall.sh --help >/dev/null
           python3 -m unittest discover -s scripts/tests -p 'test_*.py'
           python3 -m py_compile \
             docs/measurements/dcs-engines/run-comparison.py \

@@ -14,7 +14,8 @@ HOST_VARIANT=${ENCORE_QEMU_KEYBOARD_VARIANT:-$(sed -n 's/^XKBVARIANT="\{0,1\}\([
 [[ "$HOST_LAYOUT" =~ ^[A-Za-z0-9_-]+$ ]] || die "unsafe host keyboard layout '$HOST_LAYOUT'"
 [[ "$HOST_VARIANT" =~ ^[A-Za-z0-9_-]*$ ]] || die "unsafe host keyboard variant '$HOST_VARIANT'"
 if [ -n "$HOST_VARIANT" ]; then HOST_KEYMAP="$HOST_LAYOUT($HOST_VARIANT)"; else HOST_KEYMAP=$HOST_LAYOUT; fi
-BASE_TAG=$(printf '%s-%s-%s' "$HOST_LOCALE" "$HOST_LAYOUT" "${HOST_VARIANT:-default}" | tr -cs 'A-Za-z0-9._-' _)
+BASE_RECIPE_SHA=$(sha256sum "$SCRIPT_DIR/preseed.cfg" | awk '{print substr($1, 1, 12)}')
+BASE_TAG=$(printf '%s-%s-%s-%s' "$HOST_LOCALE" "$HOST_LAYOUT" "${HOST_VARIANT:-default}" "$BASE_RECIPE_SHA" | tr -cs 'A-Za-z0-9._-' _)
 BASE=$LAB_DIR/debian13-minimal-$BASE_TAG.qcow2
 OVERLAY=$LAB_DIR/current.qcow2
 CHECKOUT_PENDING=$LAB_DIR/current.checkout-pending
@@ -406,6 +407,7 @@ test -d "$root/updates"
 "$root/qemu-system-i386" -M help > /tmp/encore-release-machines
 grep -q pinball2000 /tmp/encore-release-machines
 runuser -u cabinet -- "$root/install.sh" --help >/dev/null'
+    ssh_guest 'runuser -u cabinet -- /home/cabinet/Encore-Pinball2000/uninstall.sh --help >/dev/null'
 }
 
 test_release_package() {
@@ -450,6 +452,17 @@ systemctl daemon-reload'
     ssh_guest 'test ! -e /etc/default/grub.d/99-encore-pinball2000.cfg; test ! -e /etc/grub.d/01_encore_pinball2000_quiet; test ! -e /var/lib/pinball2000-cabinet.lock'
     stop_vm
     echo "PASS: alternate installer choices and reversible boot configuration"
+}
+
+test_interrupted_install() {
+    reset_overlay; start_overlay; copy_checkout 0
+    ssh_guest 'install -d -m 0700 /var/lib/encore-pinball2000
+printf "%s\n" encore > /var/lib/pinball2000-cabinet.lock
+cd /opt/Encore-PB2K && ./uninstall.sh
+test ! -e /var/lib/pinball2000-cabinet.lock
+test ! -e /var/lib/encore-pinball2000'
+    stop_vm
+    echo "PASS: lock-only interrupted installation is recoverable"
 }
 
 manual_vm() {
@@ -506,6 +519,7 @@ case "${1:-}" in
     test-release) prereqs; need sshpass; test_release_package ;;
     test-acquire) prereqs; need sshpass; need expect; test_acquisition "${2:-release}" ;;
     test-alternates) prereqs; need sshpass; need expect; test_alternate_choices ;;
+    test-interrupted) prereqs; need sshpass; test_interrupted_install ;;
     manual) prereqs; need sshpass; manual_vm ;;
     release) prereqs; need sshpass; release_vm ;;
     all) prepare; need expect
@@ -520,6 +534,7 @@ case "${1:-}" in
          test_release_package
          test_acquisition release
          test_acquisition build
-         test_alternate_choices ;;
-    *) echo "Usage: $0 {all|prepare|reset|boot|manual|release|shell|stop|test {cage|weston|direct-console} [user|root]|test-dm [user|root]|test-git|test-assets|test-release|test-acquire [release|build]|test-alternates}" >&2; exit 2 ;;
+         test_alternate_choices
+         test_interrupted_install ;;
+    *) echo "Usage: $0 {all|prepare|reset|boot|manual|release|shell|stop|test {cage|weston|direct-console} [user|root]|test-dm [user|root]|test-git|test-assets|test-release|test-acquire [release|build]|test-alternates|test-interrupted}" >&2; exit 2 ;;
 esac

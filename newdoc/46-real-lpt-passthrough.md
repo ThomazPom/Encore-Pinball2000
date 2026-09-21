@@ -94,9 +94,10 @@ and, when needed, asks for elevation to add the runtime user to `lp`. The
 launcher then re-enters itself once through `sg lp`, so a normal interactive
 launch does not require logging out and back in.
 
-Preflight stops before asset resolution and QEMU launch. It therefore does
-**not** open, claim or probe the board and cannot prove that the cable, board or
-game signature works.
+Preflight fetches complete ROM/update trees when their configured directories
+are absent, then stops before cache generation or QEMU launch. It therefore
+does **not** open, claim or probe the board and cannot prove that the cable,
+board or game signature works.
 
 If the account database was updated but access still fails, check the node's
 real group/mode and any site-specific udev rule. Do not solve it by running the
