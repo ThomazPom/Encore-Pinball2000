@@ -17,12 +17,12 @@ CABINET_LOCK=/var/lib/pinball2000-cabinet.lock
 
 usage() {
     cat <<'EOF'
-Usage: ./install.sh [--display-manager|--cage|--weston|--direct-console]
+Usage: ./install.sh [--display-manager|--direct-console|--cage|--weston]
 
   --display-manager  use the existing Wayland desktop session (recommended)
+  --direct-console   preferred standalone profile; SDL2 KMSDRM, no compositor
   --cage             standalone minimal Wayland kiosk
   --weston           standalone reference Wayland kiosk
-  --direct-console   SDL2 KMSDRM, with no compositor or display server
 EOF
 }
 
@@ -58,7 +58,7 @@ if (($# > 1)); then
 fi
 case "${1:-}" in
     -h|--help) usage; exit 0 ;;
-    ""|--display-manager|--cage|--weston|--direct-console|--framebuffer|--console) ;;
+    ""|--display-manager|--direct-console|--cage|--weston|--framebuffer|--console) ;;
     *) echo "install.sh: unknown profile '$1'" >&2; usage >&2; exit 2 ;;
 esac
 
@@ -104,9 +104,9 @@ fi
 backend=""
 case "${1:-}" in
     --display-manager) backend=display-manager ;;
+    --direct-console|--framebuffer|--console) backend=direct-console ;;
     --cage) backend=cage ;;
     --weston) backend=weston ;;
-    --direct-console|--framebuffer|--console) backend=direct-console ;;
     "") ;;
     *) echo "install.sh: unknown profile '$1'" >&2; usage >&2; exit 2 ;;
 esac
@@ -118,13 +118,13 @@ if [[ -z "$backend" ]]; then
         choices+=(display-manager)
         echo "1. Existing Wayland display manager — Recommended"
     fi
-    choices+=(cage weston direct-console)
+    choices+=(direct-console cage weston)
     for ((i=0; i<${#choices[@]}; i++)); do
         [[ "${choices[i]}" == display-manager ]] && continue
         case "${choices[i]}" in
             cage) label="Cage — minimal Wayland kiosk" ;;
             weston) label="Weston — reference Wayland kiosk" ;;
-            direct-console) label="Direct console — SDL2 KMSDRM" ;;
+            direct-console) label="Direct console — SDL2 KMSDRM (preferred standalone)" ;;
         esac
         printf '%d. %s\n' "$((i + 1))" "$label"
     done
