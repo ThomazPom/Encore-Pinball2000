@@ -96,6 +96,17 @@ GUEST_IP=""
 GUEST_MASK=""
 GUEST_GATEWAY=""
 
+valid_ipv4() {
+  local value="$1" octet
+  local -a octets
+
+  IFS=. read -r -a octets <<<"$value"
+  ((${#octets[@]} == 4)) || return 1
+  for octet in "${octets[@]}"; do
+    [[ "$octet" =~ ^[0-9]+$ ]] && ((10#$octet <= 255)) || return 1
+  done
+}
+
 # --- QEMU binary lookup -----------------------------------------------------
 resolve_qemu_bin() {
   [[ -n "${QEMU_BIN:-}" && -x "$QEMU_BIN" ]] && return
@@ -650,6 +661,10 @@ while [[ $# -gt 0 ]]; do
     --setip)
       [[ $# -ge 4 ]] || {
         echo "[run-qemu] --setip: expected IP MASK GATEWAY" >&2
+        exit 2
+      }
+      valid_ipv4 "$2" && valid_ipv4 "$3" && valid_ipv4 "$4" || {
+        echo "[run-qemu] --setip: IP, mask, and gateway must be IPv4 addresses" >&2
         exit 2
       }
       GUEST_EXTENSIONS=1
@@ -1735,7 +1750,11 @@ PY
       echo "[run-qemu] network: localhost TCP $host_port -> XINA TCP $guest_port"
     done
     if [[ -n "$HTTP_PORT" ]]; then
-      echo "[run-qemu] network: http://127.0.0.1:${HTTP_PORT}/ → ${GUEST_NETWORK_ADDR}:80"
+      if [[ $NETWORK_AUTO -eq 1 ]]; then
+        echo "[run-qemu] network: http://127.0.0.1:${HTTP_PORT}/ → active XINA TCP 80 (after IP discovery)"
+      else
+        echo "[run-qemu] network: http://127.0.0.1:${HTTP_PORT}/ → ${GUEST_NETWORK_ADDR}:80"
+      fi
     fi
   fi
   if [[ $NETWORK_AUTO -eq 1 ]]; then

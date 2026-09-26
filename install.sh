@@ -224,14 +224,15 @@ if ask "Enable the emulated network card?" N; then
             echo "In automatic mode their exact values have almost no practical impact:"
             echo "Encore adapts to the active guest address and they do not need to match"
             echo "your home or cabinet network. Press Enter to accept the safe defaults."
-        elif [[ "$network_mode" == mirror ]]; then
-            echo "Mirror mode requires Pinball 2000's IP, mask and gateway to match"
-            echo "the host network. Incorrect or stale values prevent networking."
+        elif [[ "$network_mode" == mirror || "$network_mode" == passt ]]; then
+            echo "${network_mode^} mode requires Pinball 2000's IP, mask and gateway to match"
+            echo "the host network presented by the backend. Incorrect or stale values prevent networking."
         else
             echo "The following optional values configure XINA before its network starts."
         fi
         configure_ip=0
-        if [[ "$network_mode" == auto || "$network_mode" == mirror ]]; then
+        if [[ "$network_mode" == auto || "$network_mode" == mirror ||
+              "$network_mode" == passt ]]; then
             configure_ip=1
         elif ask "Configure Pinball 2000 IP settings at startup?" Y; then
             configure_ip=1
@@ -241,7 +242,8 @@ if ask "Enable the emulated network card?" N; then
             default_ip=10.0.2.15
             default_mask=255.255.255.0
             default_gateway=10.0.2.2
-            if [[ "$network_mode" == mirror ]] && command -v ip >/dev/null 2>&1; then
+            if [[ "$network_mode" == mirror || "$network_mode" == passt ]] &&
+               command -v ip >/dev/null 2>&1; then
                 default_route="$(ip -4 route show default 2>/dev/null | head -n1 || true)"
                 mirror_iface="$(awk '{for(i=1;i<=NF;i++)if($i=="dev")print $(i+1)}' <<<"$default_route")"
                 detected_gateway="$(awk '{for(i=1;i<=NF;i++)if($i=="via")print $(i+1)}' <<<"$default_route")"
