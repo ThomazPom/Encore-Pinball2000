@@ -172,30 +172,97 @@ def build_probe(output: Path) -> bytes:
     return raw.read_bytes()
 
 
-def update_token(arguments: list[str]) -> str:
+def option_value(arguments: list[str], option: str) -> str | None:
     for index, argument in enumerate(arguments):
-        if argument == "--update" and index + 1 < len(arguments):
-            return arguments[index + 1].lstrip("0") or "0"
-    return "210"
+        if argument == option and index + 1 < len(arguments):
+            return arguments[index + 1]
+    return None
+
+
+def normalized_update_version(token: str) -> int:
+    if token.isdigit():
+        return int(token)
+    match = re.fullmatch(r"([0-9]+)\.([0-9]+)", token)
+    if not match:
+        raise ValueError(token)
+    major, minor_text = match.groups()
+    minor = int(minor_text) * 10 if len(minor_text) == 1 else int(minor_text)
+    return int(major) * 100 + minor
+
+
+def symbol_rom(arguments: list[str]) -> Path:
+    game = option_value(arguments, "--game")
+    if game not in {"swe1", "rfm"}:
+        raise RuntimeError(
+            "--bench-guest-load requires explicit --game swe1 or --game rfm"
+        )
+    game_number = {"swe1": "50069", "rfm": "50070"}[game]
+    token = option_value(arguments, "--update")
+    if token is None or token in {"auto", "none", "r2"}:
+        raise RuntimeError(
+            "--bench-guest-load requires explicit numeric or latest --update"
+        )
+
+    update_path = Path(token)
+    if update_path.is_dir():
+        candidates = sorted(update_path.glob("*_symbols.rom"))
+    elif token == "latest":
+        candidates = sorted(
+            ROOT.glob(f"updates/pin2000_{game_number}_[0-9][0-9][0-9][0-9]_*"
+                      f"/{game_number}/*_symbols.rom"),
+            key=lambda path: int(path.parents[1].name.split("_")[2]),
+        )
+        candidates = candidates[-1:]
+    else:
+        try:
+            version = normalized_update_version(token)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"--bench-guest-load cannot resolve update {token!r}"
+            ) from exc
+        candidates = sorted(
+            ROOT.glob(f"updates/pin2000_{game_number}_{version:04d}_*"
+                      f"/{game_number}/*_symbols.rom")
+        )
+    if len(candidates) != 1:
+        raise RuntimeError(
+            f"guest load expected one {game} symbol ROM for update {token}, "
+            f"found {len(candidates)}"
+        )
+    return candidates[0]
 
 
 def load_symbols(arguments: list[str]) -> tuple[int, int, int, int]:
-    token = update_token(arguments)
-    candidates = sorted(ROOT.glob(f"updates/*_{int(token):04d}_*/*/*_symbols.rom"))
-    if not candidates:
-        raise RuntimeError(f"guest load needs a symbol ROM for update {token}")
+    symbols = symbol_rom(arguments)
     sys.path.insert(0, str(ROOT / "tools"))
     sys.dont_write_bytecode = True
     import sym_dump  # type: ignore
-    data, count, base, by_no, _ = sym_dump.parse(str(candidates[-1]))
+    data, count, base, by_no, _ = sym_dump.parse(str(symbols))
     values = []
     for name in ("create(void *, int, unsigned int, char *, int,...)",
-                 "resume(int, Bool)", "resched(void)", "announce(void)"):
+                 "resume(int, Bool)", "resched(void)", "nulluser(void)"):
         address = sym_dump.lookup(data, count, base, by_no, name)
         if address is None:
-            raise RuntimeError(f"update {token} has no symbol for {name}")
+            raise RuntimeError(f"{symbols} has no symbol for {name}")
         values.append(address)
-    return values[0], values[1], values[2], values[3] + 0x13A
+
+    game_roms = sorted(symbols.parent.glob("*_game.rom"))
+    if len(game_roms) != 1:
+        raise RuntimeError(
+            f"guest load expected one game ROM beside {symbols}, "
+            f"found {len(game_roms)}"
+        )
+    image = game_roms[0].read_bytes()
+    nulluser_offset = values[3] - 0x100000
+    window = image[nulluser_offset:nulluser_offset + 0x300]
+    idle_offsets = [index for index in range(len(window) - 1)
+                    if window[index:index + 2] == b"\xeb\xfe"]
+    if len(idle_offsets) != 1:
+        raise RuntimeError(
+            f"{game_roms[0]} nulluser has {len(idle_offsets)} idle-loop "
+            "signatures in its first 0x300 bytes"
+        )
+    return values[0], values[1], values[2], values[3] + idle_offsets[0]
 
 
 def build_guest_load(output: Path, arguments: list[str], port: int) -> None:

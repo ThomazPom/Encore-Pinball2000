@@ -2,82 +2,61 @@
 """
 sym_dump.py — Pinball 2000 XINU symbol-table reader.
 
-The build pipeline embeds a `*_symbols.rom` blob into the update flash
-(strategy 2 in src/rom.c).  The blob is also parsed at runtime by
-src/symbols.c.  This script is the offline twin: dump entries and
-do name<->addr lookups so we can replace hardcoded patch addresses
-with sym_lookup() calls.
+Encore's update-flash assembler consumes each `*_symbols.rom` blob together
+with the other update components. This script is the offline reader used to
+dump entries and perform name/address lookups.
 
-File layout (verified for SWE1 v1.5 / v2.1, RFM v1.6 / v2.6):
+File layout (verified across the preserved SWE1/RFM update set):
 
     +0x00  "SYMBOL TABLE"                      (12 B magic)
     +0x0C  u32 checksum
     +0x10  u32 num_entries
     +0x14  u32 string_table_size
-    +0x18  u32 (likely guest base = 0x10000000)
-    +0x1C  entries[num_entries] = (u32 name_off, u32 addr)
-    +end   small zero pad, then string table (NUL-terminated cstrings)
+    +0x18  entries[num_entries] = (u32 addr, u32 name_off)
+    +end   string table (NUL-terminated cstrings)
 
-`str_base` is found by trying offsets just past the entries array and keeping
-the candidate that resolves the largest sample of entries to complete
-printable strings.  Reverse lookup is done by scanning for `name\\0` and
-keeping the occurrence whose `(pos - str_base)` matches a real entry.
+The string table starts immediately after the number of entries declared in
+the header. Reverse lookup is done by scanning for `name\\0` and keeping the
+occurrence whose `(pos - str_base)` matches a real entry.
 
-NB: production RFM v1.6/v2.6 and SWE1 v1.5 ship STRIPPED tables
-(no XINU internals like clkruns / Fatal); SWE1 v2.1 keeps most of them.
+Symbol coverage differs by release. Callers must test the exact lookup result
+rather than infer that a symbol is present from the game family or version.
 """
-import struct, sys, os, argparse
+import argparse
+import os
+import struct
 
 MAGIC = b"SYMBOL TABLE"
-HDR   = 28
+HDR   = 24
 
 
 def parse(path):
-    d = open(path, "rb").read()
-    assert d[:12] == MAGIC, f"bad magic: {d[:12]!r}"
-    chk, n_hdr, str_sz, base = struct.unpack_from("<IIII", d, 12)
-    # Walk entries until addr leaves a plausible range; n_hdr is sometimes
-    # off by a couple, so trust the walk.
-    n = 0
-    for i in range(n_hdr + 32):
-        p = HDR + i * 8
-        if p + 8 > len(d):
-            break
-        no, addr = struct.unpack_from("<II", d, p)
-        if addr < 0x100000 or addr > 0x500000:
-            break
-        n += 1
-    end = HDR + n * 8
-    # Anchor str_base by scoring byte offsets just past the entries.  Picking
-    # the first superficially printable candidate is insufficient: padding can
-    # make a wrong offset land in the middle of several real names (observed on
-    # SWE1 2.00).  The real base resolves nearly every sampled entry to a
-    # complete printable C string.
+    with open(path, "rb") as source:
+        d = source.read()
+    if d[:12] != MAGIC:
+        raise ValueError(f"bad magic: {d[:12]!r}")
+    if len(d) < HDR:
+        raise ValueError(f"truncated symbol-table header: {len(d)} bytes")
+    chk, n, str_sz = struct.unpack_from("<III", d, 12)
+    str_base = HDR + n * 8
+    if str_base > len(d):
+        raise ValueError(
+            f"truncated symbol entries: need 0x{str_base:x}, have 0x{len(d):x}"
+        )
+
     by_no = {}
     for i in range(n):
-        no, addr = struct.unpack_from("<II", d, HDR + i * 8)
+        addr, no = struct.unpack_from("<II", d, HDR + i * 8)
+        if str_base + no >= len(d):
+            raise ValueError(
+                f"entry {i} name offset 0x{no:x} lies outside string table"
+            )
         by_no.setdefault(no, []).append(addr)
-    str_base = None
-    best_score = -1
-    for cand in range(end, end + 256):
-        score = 0
-        for j in range(min(128, n)):
-            nj, _ = struct.unpack_from("<II", d, HDR + j * 8)
-            pj = cand + nj
-            if pj < cand or pj >= len(d):
-                continue
-            endj = d.find(b"\x00", pj, min(len(d), pj + 512))
-            if endj < 0 or endj == pj:
-                continue
-            raw = d[pj:endj]
-            if all(0x20 <= c < 0x7f for c in raw):
-                score += 1
-        if score > best_score:
-            best_score = score
-            str_base = cand
-    if str_base is None or best_score < min(6, n):
-        raise RuntimeError("could not anchor string table base")
-    return d, n, str_base, by_no, {"chk": chk, "n_hdr": n_hdr, "str_sz": str_sz, "base": base}
+    return d, n, str_base, by_no, {
+        "chk": chk,
+        "n_hdr": n,
+        "str_sz": str_sz,
+    }
 
 
 def name_at(d, str_base, no):
@@ -117,11 +96,11 @@ def main():
     d, n, sb, by_no, hdr = parse(args.symbols_rom)
     print(f"# {os.path.basename(args.symbols_rom)}  "
           f"entries={n} str_base=0x{sb:x} hdr_n={hdr['n_hdr']} "
-          f"str_sz=0x{hdr['str_sz']:x} base=0x{hdr['base']:x}")
+          f"str_sz=0x{hdr['str_sz']:x}")
 
     if args.all or args.grep:
         for i in range(n):
-            no, addr = struct.unpack_from("<II", d, HDR + i * 8)
+            addr, no = struct.unpack_from("<II", d, HDR + i * 8)
             name = name_at(d, sb, no) or "?"
             if args.grep and not any(g in name for g in args.grep):
                 continue
@@ -136,7 +115,7 @@ def main():
         # Find nearest entry at or below target
         best = None
         for i in range(n):
-            no, addr = struct.unpack_from("<II", d, HDR + i * 8)
+            addr, no = struct.unpack_from("<II", d, HDR + i * 8)
             if addr <= target and (best is None or addr > best[0]):
                 best = (addr, no)
         if best is None:
