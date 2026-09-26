@@ -245,8 +245,10 @@ release matrix.
 extracted bundle containing a game ROM. On the 2026-09-21 tree that is 28 game
 paths × 6 engines = 168 runs, or 168 nominal minutes before overhead. Record
 the installed asset set with the result. Artifact directories use the complete
-bundle name, because version numbers alone are not unique: the current tree
-contains two distinct SWE1 1.50 builds.
+bundle name because version numbers alone do not identify provenance: the
+current tree contains two differently dated SWE1 1.50 bundle paths. Their six
+ROM components are byte-identical today, but the runner must not assume that
+same-version paths will always contain the same bytes.
 
 Each matrix subprocess uses no savedata, no display, the WAV audio backend,
 the same F4/three-credit/twenty-volume workload beginning 11 seconds after
