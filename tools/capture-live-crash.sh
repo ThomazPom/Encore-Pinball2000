@@ -144,11 +144,14 @@ ps -o pid=,ppid=,user=,lstart=,etime=,stat=,%cpu=,%mem=,args= \
     -p "$pid" > "$output/process.txt"
 cp "/proc/$pid/maps" "$output/host-maps.txt"
 qemu_executable=$(readlink -f "/proc/$pid/exe")
+script_path=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)/$(basename "$0")
 {
     printf 'captured_at=%s\n' "$(date --iso-8601=seconds)"
     printf 'host=%s\n' "$(hostname)"
     printf 'pid=%s\n' "$pid"
     printf 'qemu_executable=%s\n' "$qemu_executable"
+    printf 'qemu_sha256=%s\n' "$(sha256sum "$qemu_executable" | awk '{print $1}')"
+    printf 'capture_tool_sha256=%s\n' "$(sha256sum "$script_path" | awk '{print $1}')"
     printf 'qemu_stdout=%s\n' "$(readlink "/proc/$pid/fd/1" 2>/dev/null || true)"
     printf 'qemu_stderr=%s\n' "$(readlink "/proc/$pid/fd/2" 2>/dev/null || true)"
     printf 'kernel=%s\n' "$(uname -srmo)"
@@ -156,6 +159,11 @@ qemu_executable=$(readlink -f "/proc/$pid/exe")
         script_root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd -P)
         commit=$(git -C "$script_root" rev-parse HEAD 2>/dev/null || true)
         [ -z "$commit" ] || printf 'encore_commit=%s\n' "$commit"
+        if [ -n "$(git -C "$script_root" status --porcelain 2>/dev/null || true)" ]; then
+            printf 'encore_dirty=yes\n'
+        else
+            printf 'encore_dirty=no\n'
+        fi
     fi
 } > "$output/metadata.txt"
 
@@ -189,8 +197,6 @@ rm -f -- "$gdb_commands"
 }
 
 stat -c 'guest_ram_size=%s' "$output/guest-ram.bin" >> "$output/metadata.txt"
-(cd "$output" && sha256sum guest-ram.bin > SHA256SUMS)
-sha256sum "$qemu_executable" >> "$output/SHA256SUMS"
 
 if [ -n "$disassembly_specs" ]; then
     : > "$output/guest-disassembly.txt"
@@ -236,6 +242,17 @@ Guest disassembly: guest-disassembly.txt (when requested)
 The capture briefly paused and detached from QEMU. It did not terminate QEMU
 or deliberately write to guest memory.
 EOF
+
+(
+    cd "$output"
+    for artifact in README.txt command-line.txt gdb.txt guest-ram.bin \
+            host-maps.txt metadata.txt process.txt; do
+        sha256sum "$artifact"
+    done
+    if [ -f guest-disassembly.txt ]; then
+        sha256sum guest-disassembly.txt
+    fi
+) > "$output/SHA256SUMS"
 
 echo "Capture complete: $output"
 cat "$output/SHA256SUMS"
