@@ -1,84 +1,185 @@
-# 42 — Console scripting
+# Console scripting
 
-`scripts/run-qemu.sh --script FILE` boots Encore normally, waits for the XINU
-prompt and executes the file. Ordinary non-comment lines are XINU commands;
-lines beginning with `@` are host-side automation directives.
+`--script` drives a live XINA console and selected cabinet inputs while the
+normal graphical emulator remains open. It is intended for repeatable demos,
+state checks, screenshots and bounded audio samples—not for replacing the
+normal interactive launch or the benchmark harness.
 
-```sh
-scripts/run-qemu.sh --script scripts/demos/start-game.p2k
+```bash
+scripts/run-qemu.sh --game swe1 --update latest \
+  --script scripts/demos/start-game.p2k
 ```
 
-The launcher validates the complete file before starting QEMU. Blank lines and
-lines whose first non-space character is `#` are ignored. The emulator remains
-open when a successful script ends; use `@key f1` when a script should also shut
-it down.
+`--console-script` is a compatibility alias. Syntax is validated before QEMU
+starts; after the last action the emulator remains running until the user
+closes it. Use `@key f1` as the final action when the script should request the
+emulator's normal shutdown key instead.
+
+> [!IMPORTANT]
+> Script mode owns a private localhost UART and Unix QEMU monitor. Do not
+> combine it with `--serial`, `--uart-tcp`, `--monitor` or `--headless`.
+
+## File format
+
+A script is UTF-8 text. Empty lines and lines whose first non-space character
+is `#` are ignored. Any other line not starting with `@` is sent as one XINA
+console command followed by carriage return.
+
+```text
+# Wait until game state is visible, then inspect it.
+@wait-for 45 game info => m_game_over True
+game info
+@assert m_game_over
+```
+
+Assertions operate on the response of the most recent XINA command or polling
+action. They do not search the complete serial transcript.
 
 ## Directives
 
-| Syntax | Action |
+| Directive | Meaning |
 |---|---|
-| `@wait SECONDS` | Wait for host wall-clock time. |
-| `@key KEY [HOLD_SECONDS]` | Send a QEMU key, optionally held for a duration. |
-| `@switch NN [HOLD_SECONDS]` | Close matrix switch `11..88`, then reopen it. The default pulse is 0.1 seconds. |
-| `@repeat COUNT` … `@end` | Repeat a block. Blocks may be nested. |
-| `@assert TEXT` | Require the preceding XINU response to contain text. |
-| `@assert-not TEXT` | Require the preceding response not to contain text. |
-| `@assert-regex REGEX` | Require a regular-expression match in the preceding response. |
-| `@assert-not-regex REGEX` | Require no regular-expression match. |
-| `@wait-for SECONDS COMMAND => TEXT` | Run a XINU command repeatedly until its response contains text or time expires. |
-| `@wait-for-regex SECONDS COMMAND => REGEX` | Poll until the response matches a regular expression. |
-| `@screenshot [LABEL]` | Capture the current game image. A label renames the output. |
-| `@record-audio SECONDS [LABEL]` | Capture the selected DCS mix into a WAV file for that duration. |
-| `@echo TEXT` | Print a progress message. |
+| `@wait SECONDS` | sleep for a non-negative duration |
+| `@key KEY [HOLD_SECONDS]` | send a QEMU monitor key; optional hold must be positive |
+| `@switch RC [HOLD_SECONDS]` | pulse matrix switch row/column `11` through `88`; default hold 0.1 s |
+| `@assert TEXT` | require literal text in the last response |
+| `@assert-not TEXT` | require literal text to be absent |
+| `@assert-regex REGEX` | require a multiline Python regular-expression match |
+| `@assert-not-regex REGEX` | require no such match |
+| `@wait-for SECONDS COMMAND => TEXT` | poll a command until literal text appears |
+| `@wait-for-regex SECONDS COMMAND => REGEX` | poll until a multiline regex matches |
+| `@screenshot [LABEL]` | trigger the emulator screenshot key and retain the new image |
+| `@record-audio SECONDS [LABEL]` | retain just that interval as a WAV file |
+| `@echo TEXT` | print a labelled progress message |
+| `@repeat COUNT` … `@end` | repeat a block; nesting is allowed |
 
-Screenshots and WAV files use `--screenshot-dir`, which defaults to `/tmp`.
-Audio capture requires an available audio backend; the launcher reports an
-error before boot if none can be selected.
+Labels are simple filename stems containing letters, digits, underscore, dot
+or dash—never a path. Repeat counts are 1–10,000 and the fully expanded script
+may contain at most 100,000 actions.
 
-> [!TIP]
-> `@switch 13 3` holds Start for three seconds. It performs the same `13`, then
-> Ctrl-hold gesture available in the game window and updates the same emulated
-> switch matrix.
+### Polling instead of guessed sleeps
 
-## State-based example
+Prefer a condition when the guest exposes one:
 
 ```text
-# Wait until the game exposes its state command.
-@wait-for 30 game info => m_game_over True
-# The shell precedes completion of the trough/device startup audit.
-@wait 5
+@wait-for 60 game info => m_game_over True
+@wait-for-regex 10 ps => currently\s+[0-9]+
+```
 
-@repeat 8
+Polling uses a 0.5-second interval and preserves its final response for a
+following assertion. Each console command has a 120-second response timeout;
+the directive's own timeout bounds how long the condition may remain false.
+
+Use `@wait` only for a real dwell time, a deliberately paced input or a state
+that cannot be queried.
+
+### Inputs
+
+`@key` accepts QEMU monitor key names. Its optional hold is converted to
+milliseconds; without it the monitor's normal key press is used.
+
+`@switch 13 0.08` reproduces Encore's numeric desktop switch chord: row digit,
+column digit, then Ctrl for the requested hold. It includes fixed settling
+delays, so it is not a precision timing generator. Use the physical/cabinet
+validation path for electrical or exact pulse claims.
+
+Matrix switches remain inputs, not forced game state. Start can be rejected by
+pricing, door, trough or current game conditions. In SWE1, `m_game_over True`
+may persist after Start is accepted while the shooter-lane/serve transition is
+pending; a state such as `m_players 1` is stronger evidence of acceptance.
+
+### Screenshots and audio
+
+Screenshots are written to `P2K_SCREENSHOT_DIR` when set, otherwise `/tmp`.
+The runner detects the newly created `p2k_screen_*` file and renames it to the
+label while preserving its extension.
+
+Audio capture is prepared automatically when the script contains a directive
+beginning with `@record-audio`. It requires an available audio backend. The
+runner asks the emulator to gate raw signed 16-bit PCM with F11, then writes
+only the new complete frames into `LABEL.wav` in the screenshot directory.
+Rate and channel count come from the emulator's companion format file.
+
+> [!NOTE]
+> A screenshot or WAV proves what this run produced. Keep the command,
+> game/update identity, commit and script with evidence; the filename alone is
+> not a reproducible result.
+
+## Repeatable example
+
+```text
+@wait-for 45 game info => m_game_over True
+@repeat 5
   @key c
   @wait 1
 @end
-
-@switch 13 0.38
-@wait-for 30 game info => m_players 1
-@assert-regex m_players\s+1
-@screenshot game-started
-@record-audio 2 game-started
+@repeat 13
+  @switch 13 0.08
+  @wait 0.15
+@end
+@screenshot start-result
+game info
+@assert-regex m_game_over\s+(True|False)
 ```
 
-`@assert*` examines the latest XINU command response. `@wait-for*` both updates
-that response and supplies its own timeout, so it is preferable to a long fixed
-delay when the guest exposes a useful state command.
+The bundled `scripts/demos/start-game.p2k` is an executable example, not a
+promise that every update enters a game after the same number of coin/start
+pulses.
 
-To check syntax without booting:
+## Validate without launching
 
-```sh
-python3 scripts/internal/run-console-script.py my-session.p2k --check
+The underlying parser exposes a check-only mode:
+
+```bash
+python3 scripts/internal/run-console-script.py \
+  scripts/demos/start-game.p2k --check
 ```
 
-> [!NOTE]
-> Matrix switches are inputs, not forced game state. A valid Start pulse can
-> still be rejected because of pricing, door, ball-trough or game conditions.
-> SWE1 may keep `m_game_over True` after accepting Start while it waits for the
-> shooter-lane/serve transition. `m_players 1` is the reliable acceptance test.
+It reports the expanded action count and rejects unknown directives, invalid
+numbers/regexes/labels, unmatched blocks and excessive expansion with source
+line numbers. The launcher's `--script` path always performs this check first.
 
-Details: [desktop controls](41-cli-keyboard-guide.md),
-[LPT board](26-lpt-board.md) and [CLI reference](03-cli-reference.md).
+Parser regression tests are fast and ROM-free:
+
+```bash
+python3 -m unittest scripts.tests.test_console_script
+```
+
+## Runtime lifecycle and failure behavior
+
+The launcher creates a private temporary directory, chooses a free localhost
+TCP port, creates a Unix monitor socket, starts QEMU, and waits up to 90 seconds
+for the XINA `%` prompt. It sends carriage returns periodically while waiting
+to wake the console.
+
+On script error it prints the file and source line where possible, exits with
+status 2 and the launcher terminates its QEMU child. On successful script
+completion, control returns to the launcher and QEMU stays open. Closing or
+interrupting the launcher kills the child and removes its temporary UART,
+monitor and raw-audio artifacts; retained screenshots/WAV files remain in the
+chosen output directory.
+
+Common failures:
+
+- **prompt timeout:** wrong/unsupported update, boot failure or guest console
+  not reaching `%`;
+- **assertion has no preceding response:** put a console command or wait-for
+  before the assertion;
+- **audio backend unavailable:** choose a working backend or remove the audio
+  directive;
+- **no screenshot/audio produced:** confirm the custom QEMU build and output
+  directory permissions;
+- **manual UART/monitor conflict:** remove the mutually exclusive option and
+  let script mode create private endpoints.
+
+## Evidence boundary
+
+Console scripts use ordinary XINA commands and Encore's normal input paths,
+but they still change guest state. Results after coin, switch, key or console
+actions are scripted observations, not untouched natural-boot evidence. For
+IRQ/timing claims use the dedicated [validation and benchmark protocol](26-testing-validation-matrix.md);
+for a crash preserve the [live-capture procedure](51-live-crash-capture.md).
 
 ---
 
-← [Documentation index](README.md) · [Project README](../README.md)
+[XINA console](06-xina-os-deep-dive.md) · [Desktop controls](41-cli-keyboard-guide.md) · [Validation](26-testing-validation-matrix.md) · [Documentation](README.md)

@@ -56,7 +56,7 @@ CPUs observed in the wild: Cyrix GXm-266GP 2.9 V and GXm-233GP 2.9 V.
 > Encore relevance: LED1 is the **Blanking / Watchdog** indicator. This
 > is the host-visible signal of the very same blanking/watchdog logic
 > that Encore's `--lpt-device` raw I/O backend has to keep alive in real-
-> cabinet mode. See [`docs/48-lpt-protocol-references.md`](../../48-lpt-protocol-references.md).
+> cabinet mode. See the current [LPT driver-board guide](../../26-lpt-board.md).
 
 LEDs in **bold** are normally off when the coin door is open (interlock
 safety).

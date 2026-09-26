@@ -40,4 +40,4 @@ that:
   without the original Cyrix MediaGX PC.
 
 Both facts support the design choices documented in
-[`docs/48-lpt-protocol-references.md`](../../48-lpt-protocol-references.md).
+the current [LPT driver-board guide](../../26-lpt-board.md).

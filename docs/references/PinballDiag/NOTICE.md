@@ -22,7 +22,7 @@ artifact: the canonical worked example of how a real Pinball 2000 Power Driver
 Board is driven from Linux user-space over the parallel port.
 
 For the protocol summary that uses these files as reference, see
-[`docs/48-lpt-protocol-references.md`](../../48-lpt-protocol-references.md).
+the current [LPT driver-board guide](../../26-lpt-board.md).
 
 ## Why this matters for Encore
 

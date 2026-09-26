@@ -1,72 +1,169 @@
-# 47 — Release process
+# Release process
 
-Encore publishes one complete end-user package. It can be extracted and run
-without first cloning the repository, and the installer's download helper uses
-that same archive when it only needs to refresh the custom QEMU binary.
+Encore publishes an x86_64 Linux end-user archive built by
+`.github/workflows/release.yml`. The archive contains the custom QEMU binary,
+installer, runner, runtime scripts and documentation. It deliberately excludes
+ROMs, updates, savedata, development sources, tests and repository history.
 
-## Automatic publication
+> [!WARNING]
+> A technically reproducible archive is not automatically legally
+> redistributable. The repository has no project-level licence or complete
+> third-party asset notice inventory. Resolve that gate before calling a
+> release generally distributable.
 
-`.github/workflows/release.yml` builds in Debian 13 and publishes a fixed-name
-x86-64 archive plus its SHA-256 checksum. It runs when relevant QEMU sources or
-build integration change on `main`, and once each Monday. A scheduled run is
-skipped when the latest release already represents the current commit.
+## Published artifacts
 
-Automatic releases receive a dated `v0.YYYYMMDD.RUN` tag. A pushed semantic
-version tag such as `v1.0.0` publishes that tag instead. The workflow can also
-be started manually with an optional semantic version tag; leaving it blank
-uses the dated form.
-
-The complete archive contains:
-
-- `install.sh`, `uninstall.sh` and the complete runtime scripts;
-- user and developer documentation;
-- the ready-to-run stripped `qemu-system-i386` binary;
-- release metadata and the generated Debian runtime-package list.
-
-Development-only QEMU sources, build helpers, tests, forensic tools and the
-Debian laboratory remain in the source repository and are not copied into the
-end-user archive.
-
-It deliberately contains no ROMs, update payloads or savedata. The normal
-runner uses the existing asset downloader when either runtime asset directory
-is absent.
-
-Before publication, the workflow verifies that the stripped binary starts,
-has no unresolved libraries and exposes the `pinball2000` machine. The
-installer performs the machine check again after download.
-
-## Why the asset name does not contain a version
-
-The release tag provides version history. Keeping the asset name stable lets
-the installer use GitHub's `/releases/latest/download/` endpoint without an API
-query or a hard-coded release number:
+Each GitHub release contains:
 
 ```text
 encore-pinball2000-linux-x86_64.tar.gz
 encore-pinball2000-linux-x86_64.tar.gz.sha256
 ```
 
-This makes regular publication useful without making old installer versions
-aware of every future tag.
+The archive expands to `Encore-Pinball2000/` with:
 
-For an end-user installation, download and extract
-`encore-pinball2000-linux-x86_64.tar.gz`, enter its `Encore-Pinball2000`
-directory and run `./install.sh`. The installer's fast-download option retrieves
-the same archive, verifies it, and copies only QEMU and its metadata into the
-user cache.
+- `qemu-system-i386`, stripped but rechecked for the `pinball2000` machine;
+- `build-info.txt` with release, commit, QEMU version, UTC build time and build
+  system;
+- `runtime-packages.txt`, derived from the linked libraries;
+- `README.md`, `docs/`, installer and uninstaller;
+- the end-user launcher, demos and runtime helpers required by it.
 
-## Manual validation
+It must not contain `qemu/`, `scripts/build-qemu.sh`, `tools/`, tests, ROMs,
+updates or savedata. Assets are acquired through the normal first-run path if
+the corresponding directories are absent.
 
-After publication, exercise the same path used by the installer:
+## Triggers and tag selection
 
-```sh
-tmpdir=$(mktemp -d)
-scripts/internal/download-qemu-release.sh --destination "$tmpdir"
-"$tmpdir/qemu-system-i386" -M help | grep pinball2000
-rm -rf -- "$tmpdir"
+The release workflow runs on relevant pushes to `main`, semantic-looking
+`v*.*.*` tags, a weekly schedule and manual dispatch.
+
+| Trigger | Release tag |
+|---|---|
+| pushed tag | the pushed tag |
+| manual dispatch with `tag` | normalized to lowercase leading `v`; an existing tag is checked out |
+| main push or manual dispatch without tag | `v0.YYYYMMDD.RUN_NUMBER` |
+| weekly schedule | same automatic form, unless the latest release already points at the commit |
+
+Accepted tags match `vX.Y.Z` with an optional dotted/dashed suffix. The release
+job is serialized and is not cancelled by a newer run.
+
+> [!IMPORTANT]
+> The workflow can replace assets on an existing release with `--clobber`.
+> Reusing a tag therefore needs an explicit maintainer decision; consumers
+> should retain the checksum and commit recorded at acquisition time.
+
+## Publication pipeline
+
+The job uses Debian trixie on x86_64 and performs these gates in order:
+
+1. install pinned build/runtime dependencies;
+2. fetch the selected commit without submodule recursion;
+3. validate the tag and publication decision;
+4. syntax-check shell entry points, run all Python units, check guest-extension
+   ROM support and compile selected Python tools;
+5. build the pinned QEMU 10.0.8 machine;
+6. verify machine registration and the volatile-extension marker;
+7. run the real switch-keymap smoke test;
+8. copy and strip QEMU, then repeat registration/marker/library checks;
+9. construct the allow-listed end-user tree with `git archive`;
+10. produce SHA-256, re-extract the archive and assert required and forbidden
+    paths;
+11. run the packaged binary's `-M help` and packaged launcher's `--help`;
+12. create the GitHub release or replace its two assets.
+
+A source-compatible patch range or successful compiler run alone cannot pass
+these gates.
+
+## Reproduce before publishing
+
+On a clean supported x86_64 Debian-like host:
+
+```bash
+bash -n install.sh uninstall.sh scripts/run-qemu.sh scripts/build-qemu.sh \
+  scripts/internal/encore-session.sh tools/capture-live-crash.sh \
+  tools/debian-qemu/lab.sh
+python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+python3 guest-extensions/check-romset.py
+scripts/build-qemu.sh
 ```
 
-For a release candidate intended for cabinet use, also run the Debian lab and
-the applicable graphics, audio, input and LPT validation. Successful CI proves
-the artifact is buildable and internally coherent; it does not replace a real
-cabinet test.
+Then check the normal interactive game path and the packaging path relevant to
+the change. Installation, display-manager or acquisition changes require the
+disposable [Debian cabinet lab](../tools/debian-qemu/README.md), including
+`test-release` and the appropriate `test-acquire` case.
+
+For emulator behavior changes, attach the evidence required by the
+[validation guide](26-testing-validation-matrix.md): exact game/update, command,
+duration, exit reason and relevant timing/IRQ/IStack measurements. Do not
+promote a release from benchmark data alone.
+
+## Consumer verification
+
+Download both assets into an empty directory and verify before extraction:
+
+```bash
+sha256sum -c encore-pinball2000-linux-x86_64.tar.gz.sha256
+tar -xzf encore-pinball2000-linux-x86_64.tar.gz
+cd Encore-Pinball2000
+./scripts/run-qemu.sh --help
+```
+
+The automated downloader performs the same checksum check, requires x86_64,
+extracts to a temporary directory, verifies the executable and machine when
+host libraries allow it, then atomically replaces the cached binary:
+
+```bash
+scripts/internal/download-qemu-release.sh
+```
+
+Its default destination is
+`${XDG_CACHE_HOME:-$HOME/.cache}/encore-qemu-release`. A custom mirror or fork
+may be selected with `ENCORE_RELEASE_BASE_URL` or
+`ENCORE_RELEASE_REPOSITORY`.
+
+The checksum travels beside the archive from the same GitHub release. It
+detects corruption or mismatch, but it is not an independent signature. For a
+high-trust deployment, also pin the release tag/commit and authenticate the
+publication channel.
+
+## Asset acquisition boundary
+
+The release does not embed ROMs or update trees. On first launch,
+`fetch-assets-if-missing.sh` shallow-clones the configured repository into a
+temporary directory and installs a complete missing `roms/` or `updates/`
+tree. Existing directories are left alone.
+
+`P2K_ASSETS_REPO` can redirect that source, but the current path does not
+verify a signed manifest of individual assets. Operators who require
+reproducibility should provision audited trees themselves and retain their
+hash inventory. See [update provenance](47-community-updates.md).
+
+## Release checklist
+
+- [ ] final commit and intended tag are identified;
+- [ ] working tree contains no local payloads or investigation artifacts;
+- [ ] project and third-party licensing decision is recorded;
+- [ ] CI baseline, build and machine registration pass;
+- [ ] normal interactive launch passes with isolated savedata;
+- [ ] risk-specific smoke/matrix/benchmark evidence is retained;
+- [ ] archive allow-list and forbidden-path assertions still match the runner;
+- [ ] extracted archive passes `--help` and machine checks;
+- [ ] checksum matches the published bytes;
+- [ ] release notes distinguish fixes, experiments and known limitations;
+- [ ] rollback means publishing/retaining a known-good prior artifact, not
+      silently changing documentation to match a bad binary.
+
+## Known publication limitations
+
+- only Linux x86_64 binaries are published;
+- the binary is dynamically linked to packages recorded at build time;
+- the companion SHA-256 is not a cryptographic publisher signature;
+- asset acquisition depends on Git/network on a fresh archive;
+- neither desktop tests nor CI certify a powered physical cabinet;
+- project-level licensing/provenance remains a release blocker for broad
+  redistribution claims.
+
+---
+
+[Download and quick start](../README.md) · [Installation](01-cabinet-installation.md) · [Development](05-development-guidelines.md) · [Update provenance](47-community-updates.md)

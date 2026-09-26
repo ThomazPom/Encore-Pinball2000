@@ -1,335 +1,366 @@
 # 48 — Optional network card
 
-Encore can expose the optional Ethernet hardware expected by the original
-Pinball 2000 software:
+Encore can add an SMC8416T-compatible ISA Ethernet card to Pinball 2000. The
+card is **off by default**. Enable it only for a network-capable update and
+choose how its guest traffic reaches the host or LAN.
 
-```sh
-scripts/run-qemu.sh --network
-```
-
-This adds an SMC8416T-compatible ISA card at I/O `0x300`, IRQ 7, with its
-8 KiB shared-memory window at `0xD0000`. XINA uses its original network driver;
-Encore does not patch the guest or inject an IP address.
-
-The virtual network is deliberately isolated. It uses QEMU user networking
-with restricted outbound access, so enabling the card does not expose the
-machine or the old guest network stack to the LAN.
-
-## Guest settings
-
-Configure these values through the game's normal adjustments:
-
-| Adjustment | Value |
-|---|---|
-| IP Address | `10.0.2.15` |
-| IP Mask | `255.255.255.0` |
-| Gateway | `10.0.2.2` |
-| HTTP Server | `Yes` when HTTP access is wanted |
-
-Restart the game after changing its network adjustments. XINA registers
-`netstart()` as a power-up hook: on the next boot it reads the saved IP address,
-mask, and gateway, then initializes the interface, routes, ARP, IP, TCP, and the
-enabled network daemons. It only performs that initialization when the Ethernet
-device is present and the configured IP address is non-zero.
-
-Changing an adjustment does not restart the active network stack. The network
-resources have no change hook calling `netstart()`, so their new values normally
-take effect at the next XINA boot. During development, the XINA console command
-`net start` can invoke the same initialization without a full reboot.
-
-Encore can add the opt-in volatile command `setip` without rebuilding an update:
+For most desktop and cabinet installations, start with automatic user-mode
+NAT:
 
 ```bash
-scripts/run-qemu.sh --guest-extensions --serial
+./scripts/run-qemu.sh \
+  --game swe1 \
+  --update latest \
+  --network-auto \
+  --setip 10.0.2.15 255.255.255.0 10.0.2.2 \
+  --http-port 8080
 ```
+
+Then open <http://127.0.0.1:8080/>. `--http-port` publishes only the guest's
+TCP port 80 and binds it to the host loopback address.
+
+> [!IMPORTANT]
+> The network card and transport do not start networking in an old guest that
+> has no network stack. Use a network-capable update. Encore's extension audit
+> currently recognizes 24 preserved update images and classifies SWE1 1.30
+> and RFM 1.20 as pre-network images.
+
+## Choose a transport
+
+| Launcher option | Host privilege | Guest addressing | Reachability | Status |
+|---|---:|---|---|---|
+| `--network-auto` | none | any working static IPv4 configuration | outbound NAT; optional TCP forwards | recommended rootless mode |
+| `--network-nat` | none | normally `10.0.2.15/24`, gateway `10.0.2.2` | outbound NAT; optional TCP forwards | conventional and predictable |
+| `--network` | none | normally the same `10.0.2.0/24` values | isolated QEMU user network | useful for contained tests |
+| `--network-passt` | none | match the host's usable IPv4 topology | host-socket translation; optional TCP forwards | supported, requires `passt` |
+| `--network-mirror` | none | match the host IPv4 subnet | rootless Slirp on that subnet | experimental |
+| `--network-bridge NAME` | TAP setup only | configure for the attached LAN | direct Layer-2 LAN attachment | advanced and LAN-exposed |
+
+All modes present the same guest-visible SMC8416T-compatible card. They differ
+only in the QEMU network backend and in how host traffic is routed.
+
+> [!TIP]
+> `--network-auto` is the least fragile choice when old savedata already
+> contains an unknown but valid guest IP. It adapts forwarding to the address
+> XINA actually uses instead of requiring that address to match the host LAN
+> or QEMU's conventional `10.0.2.0/24` subnet.
+
+## Configure XINA before its first network start
+
+Pinball 2000 stores three persistent IPv4 resources: address, netmask and
+gateway. Supply all three with `--setip`:
+
+```bash
+./scripts/run-qemu.sh \
+  --game rfm \
+  --update latest \
+  --network-auto \
+  --setip 10.23.4.15 255.255.255.0 10.23.4.1
+```
+
+`--setip` enables the volatile guest extension, validates the three IPv4
+strings, and writes the normal XINA resources immediately before the first
+native `netstart`. It does not edit an update ROM. When blank CMOS triggers
+the guest's own factory reset later in that boot, a one-shot wrapper reapplies
+the same values after the reset.
+
+Only address, mask and gateway are changed. DNS and application-server names
+remain guest settings.
+
+With ordinary savedata, those resource writes persist. With `--no-savedata`,
+they affect only that disposable run. See [Persistent cabinet
+state](09-savedata.md) for the complete state boundary.
+
+The same extension adds this serial-shell command:
 
 ```text
-setip 10.0.2.15 255.255.255.0 10.0.2.2
+setip <address> <mask> <gateway>
 ```
 
-The command calls the game's own persistent `Resource<unsigned long>::putValue`
-implementation for `IPAddr`, `IPMask`, and `GW_IPA`. A normal reboot applies the
-new values. `--setip IP MASK GATEWAY` performs the same writes immediately before
-the original power-up `netstart`, so the selected values apply on that boot.
-On blank CMOS, the game subsequently performs an automatic factory reset which
-recreates all persistent Resources. Encore resolves that native path and
-reapplies the three values once after it returns. This keeps the active network,
-operator UI and saved BAR2 state consistent without editing savedata or polling.
+That command stores new values, but an already running network stack keeps its
+old configuration. Reboot the guest to apply the change safely.
 
-`net start` is not a restart operation.  Calling it after the power-up network
-initialization creates another set of `httpd`, `telnetd`, `echod`, `tcpout`,
-`tcpinp`, `tcptimer`, `ip`, and `slowtimer` processes; the `net` shell command
-has no matching `stop` action.  A live-adjustment helper must therefore not
-automatically issue `net start` until a safe teardown/reconfiguration path is
-understood.  A 30 August 2026 experiment that initialized the stack twice ended
-with a `lampmgr` interrupt-stack overflow while both daemon sets were alive.
+> [!CAUTION]
+> Do **not** issue `net start` a second time. XINA creates another complete set
+> of network processes instead of stopping or reconfiguring the first one. A
+> deliberately repeated start has produced duplicate HTTP, Telnet, TCP/IP and
+> timer processes and a real interrupt-stack overflow. Save the new settings
+> and reboot.
 
-## Local HTTP access
+## Automatic mode
 
-The original game contains a small HTTP server. To expose it only on the host:
+`--network-auto` uses QEMU's rootless user network but does not assume the
+guest is `10.0.2.15`. The emulated card provides proxy ARP for the guest's
+outbound traffic. Encore learns the active source address from an IPv4 or ARP
+packet; if no packet has exposed it when the XINA prompt appears, the emulated
+UART asks `ifstat 1` once and parses the reported address.
 
-```sh
-scripts/run-qemu.sh --http-port 8080
-```
+That discovery path does not read guest RAM, rewrite IP headers or recalculate
+checksums. The packet keeps XINA's source and destination IP addresses; proxy
+ARP only steers its Ethernet frame into Slirp.
 
-Then open <http://127.0.0.1:8080/>. This option implies `--network` and forwards
-that localhost port to `10.0.2.15:80` inside the isolated network. The host
-listener is never bound to the LAN.
-
-The path has been validated with XINA's original driver and server: the guest
-recognizes the SMC8416T, exchanges packets with the virtual gateway, and serves
-the Pinball 2000 page over the localhost forwarding rule.
-
-Network support remains optional. Encore does not assume that historical
-external Pinball 2000 services still exist.
-
-## User-mode NAT and LAN port publishing
-
-For outbound network access without Docker, a TAP, root privileges, or host
-firewall changes, use QEMU/libslirp NAT:
-
-```sh
-scripts/run-qemu.sh --network-nat
-```
-
-The guest settings remain `10.0.2.15`, `255.255.255.0`, and gateway
-`10.0.2.2`. To publish selected TCP services on every host interface, add one
-or more explicit mappings:
-
-```sh
-scripts/run-qemu.sh --network-nat --forward 8080:80 --forward 2323:23
-```
-
-Other LAN machines can then reach the guest HTTP and Telnet services through
-the host's address on TCP ports 8080 and 2323. Each mapping is deliberately
-explicit because it exposes the historical guest service to the host network.
-
-Use `--forward-local` for the same repeatable `HOST:GUEST` mapping without
-exposing the listener beyond the cabinet itself:
-
-```sh
-scripts/run-qemu.sh --network-auto \
-  --forward-local 8080:80 \
-  --forward-local 2323:23
-```
-
-Here the host port is where a client connects on the cabinet, while the guest
-port is the TCP service inside Pinball 2000. Both forwarding options may be
-repeated as many times as needed. Host ports must be unique.
-
-The convenience preset publishes only the built-in HTTP service:
-
-```sh
-scripts/run-qemu.sh --expose-services
-```
-
-This is equivalent to `--network-nat --forward 8080:80`. Telnet is deliberately
-excluded because it is an optional historical administration service; add
-`--forward 2323:23` only when it is intentionally enabled in the guest. The
-tournament client needs outbound access, which NAT already provides, and does
-not need an inbound forwarding rule.
-
-## Configuration-independent NAT
-
-The experimental automatic mode keeps libslirp on its unchanged default
-network while allowing XINA to retain any static IPv4 configuration:
-
-```sh
-scripts/run-qemu.sh --network-auto
-```
-
-The emulated SMC8416 answers every IPv4 ARP request with libslirp's default
-gateway MAC. XINA therefore sends every routed Ethernet frame into Slirp while
-the enclosed IP packet retains its original source and destination. Libslirp
-accepts that source address and ARPs it directly when returning traffic.
-
-Encore does not read or rewrite XINA's IP address, mask, gateway, IP headers or
-checksums. Changing the configuration in the service menu therefore does not
-restart QEMU or Slirp, but XINA also does not reconfigure its active stack at
-that moment. The saved values normally become active when `netstart()` runs at
-the next XINA boot, or when `net start` is issued manually on its console.
-
-For inbound forwarding, Encore waits for XINA's console prompt and issues the
-read-only `ifstat 1` command through the emulated XUART. Its reply contains the
-address of the live Ethernet interface initialized by `netstart()`. Encore uses
-that address to retarget the attached Slirp forwards through libslirp's public
-API. It does not inspect guest RAM, use update symbols, invoke `net start`,
-rewrite packets, or recalculate checksums.
-
-The SMC also learns the active address from the sender field of an outgoing ARP
-request or an outgoing IPv4 packet. This provides a natural fallback and lets a
-later manual `net start` update forwarding. Until XINA has an active interface,
-no inbound forward is installed.
-
-## Mirrored host topology with libslirp
-
-The experimental mirror mode keeps QEMU's built-in, unprivileged NAT but gives
-its virtual network the same IPv4 subnet and gateway as the host:
-
-```sh
-scripts/run-qemu.sh --network-mirror
-```
-
-The runner discovers the active default route at launch. XINA must be configured
-with the host's IPv4 address and mask, the real gateway, and the host's DNS
-server. For example, a host using `192.168.1.26/24` through `192.168.1.1` uses
-those same values in XINA. They are examples, not hard-coded defaults.
-
-The duplicate address is internal to libslirp: the guest is not attached
-directly to the physical LAN. Slirp translates its traffic through host sockets,
-so this works over Wi-Fi without root, TAP devices, capabilities, firewall
-rules, or a separately installed daemon. It was validated from XINA against
-both the mirrored gateway and an Internet address with no packet loss.
-
-A remote LAN client appears to XINA as a neighbour on the same subnet, while
-libslirp's inbound `hostfwd` path does not normally proxy that
-overlapping-subnet return path. Encore adds a narrow proxy-ARP filter in mirror
-mode: it answers XINA's neighbour request with libslirp's learned gateway MAC.
-The resulting IP packet is then handled by libslirp's existing NAT path. Encore
-does not rewrite IP packets or checksums and does not switch to another network
-transport when a service is exposed.
-
-This mode deliberately does not rewrite XINA's configuration inside the
-emulated Ethernet card. Doing that below the guest IP stack would require a
-second ARP/IP translation layer and checksum rewriting. XINA therefore remains
-the source of truth for its own network parameters.
-
-## Unprivileged passt transport
-
-The experimental `passt` path replaces libslirp with a separate, maintained
-user-mode networking daemon:
-
-```sh
-scripts/run-qemu.sh --network-passt
-```
-
-The runner installs the distribution's `passt` package when required, creates a
-private Unix socket, starts the daemon as the invoking user, and connects QEMU
-through its `stream` netdev. Both processes remain unprivileged. The socket and
-daemon disappear when QEMU exits.
-
-By default, `passt` derives its advertised topology from the host. XINA must be
-configured with the same IPv4 address, mask, gateway, and DNS values shown by
-`passt` when the runner starts. The apparent address sharing is intentional:
-`passt` translates the guest's Layer-2 traffic into host Layer-4 sockets rather
-than placing a second machine with that address on the physical LAN.
+TCP forwards are initially unbound from a guest address. After discovery, the
+SMC device retargets them to the active XINA IP and reports:
 
 ```text
-host           192.168.1.26/24
-XINA           192.168.1.26/24
-gateway        192.168.1.1
+p2k-smc8416: automatic forwards now target XINA 10.23.4.15
 ```
 
-The values above are only an example. They must not be hard-coded; roaming to
-another network changes the topology that `passt` presents.
+Automatic mode therefore corrects the transport boundary; it does not rewrite
+the guest configuration continuously. XINA still needs a valid address, mask
+and gateway and must start its own stack. `--setip` is a convenient way to
+guarantee that state on supported updates.
 
-Explicit service mappings use the same options as NAT:
+The automatic device holds at most 16 TCP-forward definitions. Count
+`--http-port`, `--forward-local` and `--forward` entries together when building
+a large service map.
 
-```sh
-scripts/run-qemu.sh --network-passt --forward 8080:80
+## Conventional NAT and isolation
+
+Use conventional NAT when the guest configuration is known:
+
+```bash
+./scripts/run-qemu.sh \
+  --game swe1 \
+  --update latest \
+  --network-nat \
+  --setip 10.0.2.15 255.255.255.0 10.0.2.2
 ```
 
-Unlike a bridge, this still translates guest traffic through host sockets and
-does not give XINA an independently owned LAN address. It can nevertheless
-share the host's normal Ethernet or Wi-Fi connectivity without TAP devices,
-raw sockets, capabilities, or firewall configuration.
+This creates QEMU's `10.0.2.0/24` user network. XINA can initiate traffic to
+the host network and Internet through Slirp. Static host forwards target
+`10.0.2.15`, so saved guest settings must agree or be replaced with `--setip`.
 
-## Existing Linux bridge
+Use plain `--network` for a contained backend:
 
-Advanced installations can place XINA directly on a real network:
-
-```sh
-scripts/run-qemu.sh --network-bridge br0
+```bash
+./scripts/run-qemu.sh --game swe1 --update latest --network \
+  --setip 10.0.2.15 255.255.255.0 10.0.2.2
 ```
 
-`br0` must already be a Linux bridge. During its normal root preparation phase,
-the runner creates the persistent `encore-p2k0` TAP, assigns it to the selected
-runtime user, and attaches it to that bridge. QEMU then opens the TAP as that
-unprivileged user. This does not depend on a distribution QEMU package,
-`qemu-bridge-helper`, setuid programs, or extra capabilities on the bundled
-binary.
+It selects the restricted QEMU user network and gives the guest no ordinary
+outside access. Adding a general forward selects connected user-mode NAT;
+choose the transport explicitly when the distinction matters.
 
-The TAP carries an Encore marker. The uninstaller removes it only when that
-marker still matches; an unrelated interface is never adopted or deleted.
-For an installed cabinet profile, a small root `oneshot` service replays this
-same runner-owned preparation at boot, before the cabinet login path starts.
-Encore deliberately does not create the bridge or change NetworkManager or
-systemd-networkd configuration. Wi-Fi interfaces also commonly cannot provide
-a transparent Ethernet bridge.
+`--http-port` is the narrow exception: it implies the card and adds one
+loopback-to-guest HTTP forward while preserving the restricted backend. A
+2026-09-26 smoke fetched the real guest page through that exact path.
 
-This mode has no QEMU port forwarding. Give the game a static address suitable
-for that LAN and connect to it directly. `--http-port` is rejected because it
-belongs to the isolated user-network mode.
+## Passt and host-subnet mirror
+
+`--network-passt` starts an unprivileged, IPv4-only, one-shot `passt` process
+and connects QEMU through its private Unix socket. Configure XINA for the
+host's usable IPv4 topology:
+
+```bash
+./scripts/run-qemu.sh \
+  --game swe1 \
+  --network-passt \
+  --setip 192.168.1.26 255.255.255.0 192.168.1.1 \
+  --http-port 8080
+```
+
+The runtime preflight installs or requests `passt` when this mode is selected.
+No TAP, bridge or firewall rewrite is created by Encore. The daemon is
+one-shot; its private socket and temporary directory disappear with the QEMU
+run.
+
+`passt` prints a DHCP-style topology summary, but the validated XINA path uses
+its persistent static resources rather than acquiring a lease. Configure the
+address, mask and gateway that passt reports; the guided installer detects and
+proposes the host values.
+
+`--network-mirror` derives the first IPv4 default route, host address and
+prefix using `ip`. It configures Slirp with that network and gateway and
+enables proxy ARP for XINA. The guest address, mask and gateway must match the
+detected host topology; the cabinet installer proposes those values.
 
 > [!WARNING]
-> Bridge mode exposes XINA's 1999 TCP/IP stack, HTTP server and optionally
-> Telnet service directly to the attached network. Use a dedicated trusted
-> cabinet VLAN or an equivalent firewall boundary, never an untrusted LAN.
+> Mirror mode is experimental. A host address or route change can make saved
+> guest settings stale. Prefer automatic mode unless matching the host subnet
+> is itself the experiment.
 
-## DHCP and automatic addressing
+## Publish guest TCP services
 
-XINA does not contain a DHCP client in the validated game path. A DHCP server
-beside the emulator therefore cannot make the guest adopt a lease: the guest
-must first know its own IP address, mask and gateway.
+The forwarding options accept TCP only:
 
-Hard-coding the current resource addresses from the host would work for one
-specific update, but those addresses differ between games and releases. It
-would also bypass the game's persistence model. Encore does not use that
-approach: its extension resolves and calls the game's persistence API.
+```bash
+# Safest: host-local HTTP
+./scripts/run-qemu.sh --network-auto --http-port 8080
 
-The implemented compatibility helper follows a fifth design:
+# Any guest TCP service, host-local only
+./scripts/run-qemu.sh --network-auto --forward-local 2323:23
 
-1. **Version-aware adjustment writer.** Update the same persistent resources
-   as the operator menu, with signatures and read-back validation for every
-   supported game release. This offers automatic configuration but has the
-   largest maintenance and corruption risk.
-2. **Packet-level address translation.** Keep a documented fixed guest address
-   and translate it to a host-selected address. This is robust and avoids game
-   memory changes, but it is NAT rather than DHCP and cannot make XINA display
-   a dynamically leased address.
-3. **New guest DHCP support.** Add a DHCP client to the historical guest code.
-   This is the cleanest guest-visible result but requires patching/rebuilding
-   each game and is outside the emulator's hardware boundary.
-4. **Event-driven resource observation.** Resolve the stable
-   `Resource<unsigned long>::putValue` code signature and emit a targeted TCG
-   helper when that guest function is translated.  The helper can filter
-   `IPAddr`, `IPMask`, and `GW IPA` without guest mutation or runtime polling.
-   Observation is straightforward; safely applying the values remains blocked
-   because XINA's `net start` only creates a new stack and exposes no teardown.
-5. **Volatile pre-`netstart` extension.** Resolve `ShellCmdAdd`, scalar
-   `Resource<T>::putValue`, `netstart`, and the three network Resource objects
-   from structural code signatures after the game has entered RAM. Install a
-   sub-1-KiB payload in the reserved top 64 KiB, intercept `netstart` once,
-   register `setip`, restore its original prologue, and continue into the real
-   function. Resolution and installation happen once when the completed game
-   emits its pre-`netstart` `XINA:` UART banner; there is no translated-block
-   polling. Update files and saved game code remain untouched.
+# Bind on every host interface
+./scripts/run-qemu.sh --network-auto --forward 8080:80
+```
 
-The payload reserve is `0x00ff0000..0x00ffffff`. It does not overlap the GX
-framebuffer (`0x00800000..0x00bfffff`) and starts above XINU's highest optional
-heap ceiling (`0x00dfffff`). The normal XINU ceiling remains `0x003fffff`.
+The left port is on the host; the right port is inside Pinball 2000. Options
+are repeatable, but each host port must be unique.
 
-The preferred direction is packet-level translation plus automatic host-side
-port discovery. It modernizes connectivity while leaving XINA's saved
-adjustments intact. A version-aware writer may remain an explicit convenience
-option after its persistence format is understood and tested; blind RAM
-injection should not become a product feature.
+`--expose-services` is shorthand for guest HTTP port 80 on host port 8080. It
+binds on every host interface and deliberately excludes Telnet. Publish
+Telnet, if truly needed, with an explicit `--forward` or `--forward-local`.
 
-Rough implementation costs are:
+> [!WARNING]
+> XINA's HTTP, Telnet and other historical services were not designed as
+> modern Internet-facing services. Prefer `--http-port` or `--forward-local`.
+> Use `--forward`, `--expose-services` or a bridge only on a trusted network
+> and only for services you intend to expose.
 
-| Approach | Prototype | Supported implementation |
-|---|---:|---:|
-| Signature-checked live adjustment override | 2–4 days | 1–2 weeks across supported updates |
-| Fixed guest IP with host-side translation | 4–7 days | 2–3 weeks including ARP and bridge tests |
-| DHCP-proxy illusion with leased external address | 1–2 weeks | 3–6 weeks across SLiRP, TAP and bridge paths |
-| DHCP client added to the guest | several weeks | unsuitable without a maintained guest-code fork |
+Forwarding is incompatible with bridge mode. Host-port availability is
+ultimately checked by Slirp or passt when the backend starts.
 
-The DHCP-proxy design would lease an address on XINA's behalf and rewrite ARP
-and IP traffic at the emulated-card boundary. It can make the cabinet reachable
-through a dynamically assigned host-side address, but XINA would still retain
-an internal static address. Calling that mechanism native guest DHCP would be
-misleading.
+## Direct bridge attachment
+
+`--network-bridge NAME` attaches the SMC card to an existing Linux bridge
+through the managed TAP `encore-p2k0`. Encore does **not** create or configure
+the bridge itself.
+
+The runtime preparation phase:
+
+1. verifies that `NAME` is an existing Linux bridge;
+2. creates `encore-p2k0` for the runtime user when absent;
+3. marks the TAP as Encore-owned;
+4. attaches it to the requested bridge and brings it up;
+5. launches QEMU as the unprivileged runtime user.
+
+The cabinet installer creates a small system service to restore that TAP at
+boot. The uninstaller removes it only when its ownership marker matches; it
+refuses to repurpose or delete an unrelated interface with the same name.
+
+Bridge mode cannot be combined with NAT, passt, forwarding or `--http-port`.
+The guest is directly reachable according to the bridge and LAN policy, so
+configure XINA for that LAN and apply host-side filtering outside Encore.
+
+> [!IMPORTANT]
+> The bridge lifecycle has implementation and installer coverage, but the
+> current project evidence does not certify a real LAN or physical cabinet.
+> Treat the first deployment as a controlled network test. The guided path is in
+> [Cabinet installation](01-cabinet-installation.md).
+
+## Guest-visible hardware
+
+The optional device combines QEMU's DP8390 packet engine with the small
+WD/SMC front end that XINA expects:
+
+| Resource | Guest-visible value |
+|---|---|
+| ASIC registers | I/O `0x300..0x30f` |
+| DP8390 registers | I/O `0x310..0x31f` |
+| Interrupt | ISA IRQ 7 |
+| shared packet RAM | `0x000d0000..0x000d1fff` (8 KiB) |
+| default MAC | `00:00:c0:01:02:03` |
+| family byte | `0x2a` |
+
+The machine also installs an eight-byte read-only LAN-ROM shadow at
+`0x000d0008..0x000d000f` so XINA can validate the MAC, family byte and
+checksum as it would after the original BIOS POST. The shadow exists as a
+machine compatibility surface; the complete packet-RAM device appears only
+when a network mode adds `p2k-smc8416`.
+
+The experimental Prism Update Board also decodes `0x000d0000`. The launcher
+therefore rejects `--pub-card` together with any network mode instead of
+creating an ambiguous mapping. See [Memory and I/O map](13-memory-map.md).
+
+## Update and extension coverage
+
+The network adapter itself is independent of game version. Useful networking
+also requires a guest image containing the XINA network stack. Automatic
+startup IP injection additionally requires the structural guest-extension
+ABI.
+
+Check every preserved update without booting it:
+
+```bash
+python3 guest-extensions/check-romset.py
+```
+
+As of 2026-09-26, the repository inventory reports:
+
+```text
+24 supported, 2 pre-network, 0 failed
+```
+
+The check proves that required code shapes and the factory-reset target are
+present. It does not prove packet transfer, service behavior or safety on a
+physical LAN. The broader version boundary is in [Compatibility and
+support](30-compatibility-support.md).
+
+## Validation snapshot — 2026-09-26
+
+Bounded emulator smokes booted SWE1 2.10, detected:
+
+```text
+ez0: port 0x300 irq 7 mac 00:00:c0:01:02:03 type SMC8416T (8 bit)
+```
+
+and fetched the guest's real 1,792-byte `Pin2000 HTTP Server` page through
+localhost in each tested transport:
+
+| Transport | Guest configuration used | Result |
+|---|---|---|
+| automatic NAT | deliberately unrelated `10.77.1.23/24` | IP learned, forward retargeted, HTTP answered |
+| conventional NAT | `10.0.2.15/24`, gateway `10.0.2.2` | HTTP answered |
+| restricted backend + local HTTP | `10.0.2.15/24`, gateway `10.0.2.2` | HTTP answered; outbound policy not tested |
+| mirror | current host subnet/address/gateway | HTTP answered |
+| passt | current host subnet/address/gateway | HTTP answered |
+
+Both maintained QEMU builds, 10.0.8 and 10.2.4, register the same SMC device
+properties. A separate passt run with fresh state and no static configuration
+did not reach HTTP even though passt advertised a DHCP assignment; configuring
+the reported host topology did. These were short, headless, software-only
+smokes. They do not certify sustained traffic, hostile inputs, the isolated
+backend's outbound policy, a real bridge, multi-machine play or a physical
+cabinet.
+
+## Troubleshooting
+
+Start with verbose serial output:
+
+```bash
+./scripts/run-qemu.sh \
+  --game swe1 \
+  --update latest \
+  --network-auto \
+  --setip 10.0.2.15 255.255.255.0 10.0.2.2 \
+  --http-port 8080 \
+  -v 2>&1 | tee encore-network.log
+```
+
+Useful milestones are:
+
+```text
+guest extension installed
+ez0: port 0x300 irq 7 ... type SMC8416T
+querying XINA's active IP through XUART
+automatic forwards now target XINA ...
+```
+
+- If `ez0` never appears, confirm that a network option was supplied and use a
+  network-capable update.
+- If Encore reports no compatible guest-extension image, do not assume
+  `--setip` was applied; run the ROM-set checker and select a supported update.
+- If automatic forwarding never gets a target, confirm that XINA reached its
+  prompt and has a nonzero active address.
+- If conventional NAT cannot reach the guest service, verify that XINA is
+  actually `10.0.2.15/24` with gateway `10.0.2.2`.
+- If a forward will not bind, choose an unused host port and check whether it
+  is already listening with `ss -ltn`.
+- If passt preparation fails, rerun the exact command with `--preflight` and
+  install the requested runtime package.
+- If bridge preparation fails, verify the existing bridge and the managed TAP
+  service; do not create or rename host interfaces merely to bypass Encore's
+  ownership checks.
+- After changing IP resources from the serial shell, reboot; never use a
+  second `net start` as a reconfiguration shortcut.
+
+The full option inventory is in [Command-line reference](03-cli-reference.md),
+general failures are covered by [Troubleshooting](04-troubleshooting.md), and
+the remaining validation gaps are explicit in [Known
+limitations](35-known-limitations.md).
 
 ---
 
-← [Documentation index](README.md)
+Previous: [Roadmap](36-roadmap.md) · Index: [Documentation](README.md) · Next:
+[Tournament-server research](49-tournament-server.md)

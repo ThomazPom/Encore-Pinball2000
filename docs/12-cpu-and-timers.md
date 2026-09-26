@@ -1,131 +1,286 @@
-# 12 — CPU and timing
+# 12 — CPU, PIT and IRQ0 timing
 
-Encore runs one QEMU TCG `486` CPU with 16 MiB of RAM. The game programs a
-QEMU i8254 PIT, the PIT drives IRQ0 through QEMU's i8259 PIC, and XINU enters
-and acknowledges its own interrupt handler through the normal EOI/IRET path.
-
-This is Encore's only IRQ0 delivery mechanism. `--strict` remains accepted as
-a compatibility alias, but it selects no alternate mode because natural
-i8254/i8259 delivery is unconditional.
-
-## Why there is only one IRQ0 path
-
-Earlier versions offered synthetic HOTLOOP sources paced at host or translated
-block boundaries. They were useful while diagnosing timer delivery, but they
-duplicated the emulated hardware and created multiple timing authorities. The
-adaptive host version could also turn a temporary guest slowdown into positive
-feedback: fewer completed handlers caused a faster source, deeper nesting and
-still less available CPU and stack.
-
-The production result is deliberately simpler:
+Encore keeps the original guest clock chain intact. QEMU's i8254 raises IRQ0,
+the i8259 arbitrates it, the x86 CPU accepts vector `0x20`, and XINU executes
+its `clkint` handler. There is no second clock source, synthetic IRQ injector
+or backlog-driven catch-up loop in the normal machine.
 
 ```text
-i8254 channel 0 -> i8259 IRQ0 -> x86 interrupt entry -> XINU clkint -> EOI/IRET
+PIT channel 0       master PIC          x86 CPU              XINU
+divisor 298     →   IRQ0 / vector 20h → interrupt gate   →   clkint
+~4003.97 Hz             │                    │                  │
+                        │                    │                  └─ one fixed
+                        │                    │                     guest tick
+                        │                    └─ intack / IRET observed
+                        └─ rising edges and EOI observed
 ```
 
-There is no alternate source, guest-feedback controller, catch-up clock,
-deadline recovery, swallowed PIT edge, or automatic timing fallback.
+> [!IMPORTANT]
+> A fast host CPU does not guarantee timely interrupt delivery by itself.
+> QEMU must leave translated guest code and poll device/interrupt state near
+> the PIT deadline. Encore's default rendezvous improves that scheduling
+> opportunity without creating, replaying or accelerating guest ticks.
 
-The optional `--irq0-stack-trace` observer records nested-handler depth and
-record-low XINU process-stack margin before interrupt entry. It never delays,
-suppresses, injects or reschedules an IRQ. `--irq0-stack-guard` can restrict
-the trace to one stack, and `--irq0-stack-dump` captures an 8 KiB image only
-if observed margin reaches 128 bytes.
+For the surrounding machine structure, start with
+[Architecture](10-architecture.md). For user-facing switches and benchmark
+syntax, see the [CLI reference](03-cli-reference.md).
 
-## Speed target
+## The normal clock path
 
-`--speed-target PERCENT` deliberately changes the requested game speed:
+SWE1 programs channel 0 with divisor 298. With the i8254 input clock this is
+approximately `1193182 / 298 = 4003.97 Hz`, or one edge every 249.75 µs.
+Encore uses QEMU's upstream i8254 and dual i8259 models:
 
-```sh
-scripts/run-qemu.sh --speed-target 75
-scripts/run-qemu.sh --speed-target 100
-scripts/run-qemu.sh --speed-target 120
+1. the i8254 changes its channel-0 output;
+2. a read-only Encore tap counts each rising edge and forwards the level
+   immediately to master-PIC IRQ0;
+3. the i8259 asserts the CPU interrupt input when its mask, request and
+   in-service state allow it;
+4. the CPU acknowledges vector `0x20`, pushes the interrupt frame and enters
+   the handler recorded in IDT slot `0x20`;
+5. XINU's handler acknowledges the PIC, advances its clock once and returns
+   with `IRET`.
+
+The PIC is edge triggered. Multiple PIT edges that arrive while IRQ0 is still
+pending or in service do not become an unlimited queue of future interrupts.
+That is why `irq0_raised` and `clkint_entered` are intentionally separate
+counters, and why expected PIT edges alone are not delivery proof.
+
+Each delivered `clkint` advances XINU by one fixed nominal 4003.97 Hz tick.
+The handler does not receive the elapsed host delay and does not turn one late
+entry into several clock advances.
+
+`--strict` remains accepted for command-line compatibility. It changes no
+setting: the natural hardware path is already the only production path.
+
+## Default PIT-deadline rendezvous
+
+After an IRQ0 handler returns, the timing module projects the next PIT edge
+from the latest observed raise plus the programmed PIT period. It arms a
+`QEMU_CLOCK_VIRTUAL` timer for that point. When the timer fires it calls
+`cpu_exit()` for CPU0, causing the vCPU to leave its current TCG execution
+chain and let QEMU poll timers and interrupt state again.
+
+If the projected deadline is already past, the timer is aimed half a PIT
+period beyond the current virtual time. This avoids scheduling a timer in the
+past; it is not repayment of missed guest time.
+
+| Property | Default behavior |
+|---|---|
+| IRQ source | upstream i8254 channel 0 |
+| interrupt controller | upstream i8259 |
+| rendezvous trigger | completion of an IRQ0 `IRET` |
+| rendezvous action | request a return from TCG with `cpu_exit()` |
+| synthetic edge or direct handler call | never |
+| backlog or adaptive acceleration | none |
+| change to the guest tick amount | none |
+
+> [!NOTE]
+> The rendezvous corrects a host scheduling opportunity, not guest clock
+> debt. There is therefore no positive-feedback rule that sees a late guest,
+> raises its IRQ rate, creates more work and raises the rate again.
+
+`P2K_NO_IRQ0_PIT_DEADLINE_TIMER=1` disables this timer for internal A/B
+testing. `P2K_NO_TIMING_AUDIT=1` disables the complete timing module,
+including the rendezvous. Neither is a supported play mode; both exist to
+isolate regressions.
+
+## Deliberate speed targets
+
+`--speed-target PERCENT` is independent of the rendezvous. The launcher
+accepts 25 through 300 and passes the requested value to the machine. Encore's
+narrow upstream PIT hook scales only the channel-0 divisor:
+
+```text
+scaled divisor = programmed divisor × 100 / requested percent
 ```
 
-The wrapper passes the percentage to the machine and the machine scales only
-the i8254 channel-0 divisor. The complete PIT/PIC/CPU/guest path remains the
-same. `100` is the default.
+At 100%, the value is unchanged. At 75%, IRQ0 is deliberately slower; at
+120%, it is deliberately faster. The result still travels through the full
+i8254 → i8259 → CPU → XINU path. Other QEMU machines retain the hook's weak
+identity implementation.
 
-This control scales the XINU game clock, not audio pitch or MediaGX instruction
-throughput.
+This option controls game-clock speed. It is not an automatic host-load
+compensator and is not enabled by the benchmark.
 
-## Measuring correctness
+## CPU scope
 
-Use the built-in self-diagnostic:
+The machine runs one QEMU TCG `486` CPU with 16 MiB RAM. Its reset recipe
+enters the PRISM option ROM directly in protected mode. Pinball 2000-specific
+MediaGX instructions are implemented in TCG and enabled only while the
+`pinball2000` machine is active; this is CPU emulation, not a guest patch.
 
-```sh
-scripts/run-qemu.sh --bench
+The entry registers and memory layout belong in the
+[boot recipe](14-boot-recipe.md) and [memory map](13-memory-map.md).
+
+## What the permanent hooks observe
+
+The custom QEMU build adds narrow observation points around the upstream
+execution path:
+
+| Observation | Meaning |
+|---|---|
+| PIT rising edge | IRQ0 request reached the master PIC input |
+| x86 interrupt acknowledgement | CPU accepted vector `0x20`, before its frame is pushed |
+| translated handler entry | execution reached the active IDT `0x20` target |
+| master-PIC EOI | handler cleared IRQ0 in-service state |
+| protected-mode `IRET` | one observed handler invocation returned |
+| first TB after `IRET` | diagnostic split of scheduler return versus later guest execution |
+| PDB opcode `0x05` completion | driver-board refresh cadence in wall and virtual time |
+
+The handler-entry helper is generated only when the translator sees the live
+IDT target. Weak defaults let ordinary upstream machines build and behave
+unchanged.
+
+Normal play does not create the periodic report timer, sort latency rings,
+emit timing reports or collect PDB-gap histories. It retains only the small
+counter state and timer needed for the rendezvous. `--timing-snapshots` and
+`--diag` opt into more work.
+
+## Reading the counters
+
+The three principal counts answer different questions:
+
+- `irq0_raised`: rising PIT edges presented to the PIC;
+- `clkint_entered`: executions of the active XINU IRQ0 handler;
+- `eoi_seen`: master-PIC EOI operations attributed to IRQ0.
+
+`delivery` is `clkint_entered / irq0_raised` since collection began;
+`current_delivery` is the same ratio over the latest reporting window.
+`irq0_edges_pit_expected`, derived from virtual elapsed time and the
+programmed divisor, is only a PIT sanity estimate.
+
+`clkint_depth` is the number of currently active observed handler entries.
+`max_clkint_depth` and `nested_clkint` expose re-entry: depth 1 means a normal
+single handler, while depth above 1 proves nesting during the observation
+window.
+
+> [!WARNING]
+> A good average delivery percentage cannot prove stack safety. Always retain
+> maximum nesting depth and minimum IStack margin when investigating the rare
+> overflow failure.
+
+## IStack precursor observation
+
+`--irq0-stack-trace` samples `ESP` at IRQ0 acknowledgement, immediately before
+the CPU pushes the interrupt frame. XINU process stacks are treated as 8 KiB
+regions in the observed `0x00200000–0x003fffff` range. The logger emits only a
+new record-low margin for each stack guard, which keeps long runs small and
+does not modify guest execution.
+
+Related controls are:
+
+| Option | Purpose |
+|---|---|
+| `--irq0-stack-trace` | enable record-low margin logging |
+| `--irq0-stack-guard ADDR` | restrict reports to one guard |
+| `--irq0-stack-dump FILE` | dump that 8 KiB stack once the margin reaches 128 bytes or less |
+
+The self-diagnostic enables the trace automatically and reports the smallest
+margin it observed. `n/a` means no precursor line was captured; it must not be
+reported as infinite margin.
+
+## Supported self-diagnostic
+
+Run the normal two-pass diagnostic with:
+
+```bash
+scripts/run-qemu.sh --bench --game swe1
 ```
 
-The benchmark runs two fresh guests so its measurement mechanisms cannot
-contaminate one another:
+It always adds `--no-savedata` and uses the normal windowed display and audio
+defaults unless the caller explicitly chooses otherwise. The default uses 10
+guest seconds of warmup; `--bench-long` changes warmup to 30 guest seconds but
+does not lengthen the measured window. Before each warmup, the harness applies
+the same short cabinet-key workload so those disturbances drain before the
+measurement begins.
 
-1. The IRQ pass finds XINU's active IDT and `clkint` handler, replaces its six
-   prologue bytes with a jump to a temporary RAM trampoline, and records real
-   handler-entry intervals with `RDTSC`. It counts every IRQ but timestamps one
-   consecutive pair in sixteen to keep probe cost small. The original bytes
-   are restored before the pass exits.
-2. The LPT pass boots an unmodified guest without GDB or the IRQ trampoline and
-   measures host-side DATA traffic and completed PDB05 frames independently.
+The two passes deliberately keep measurement concerns separate:
 
-Both passes apply the same coin-door, credit and volume-button workload before
-10 seconds of guest-time warmup. Use `--bench-long` to retain 30 seconds of
-post-workload settling for final validation. The benchmark reports:
+1. the IRQ pass locates the live IDT, verifies the known `clkint` prologue,
+   installs a temporary RAM probe, waits after GDB disturbance, measures a
+   guest `sleep 10`, then restores the original bytes;
+2. a new unpatched guest uses lightweight three-second snapshots to measure
+   LPT/PDB behavior without the RAM probe.
 
-- wall time for the guest command `sleep 10`;
-- guest-side IRQ0 delivery, rate and interval distribution;
-- LPT DATA rate;
-- PDB05 frame gaps.
+The probe counts actual handler entries. It timestamps one consecutive pair
+out of every 16 entries to retain real single-IRQ intervals with low overhead.
+The second pass avoids full `--diag` output because sorting and printing every
+ring on the emulator thread can itself create the tail being measured.
 
-Probe code and counters live only in unused guest RAM for the duration of the
-IRQ pass. Update ROMs, saved data and guest files are never changed. Raw logs,
-the assembled probe, memory discovery data and JSON results are retained in the
-printed `/tmp/p2k-bench-*` artifact directory.
+The report contains:
 
-The IRQ report includes both raw sigma and `core_sigma`. Raw sigma includes
-every sampled interval and therefore reacts strongly to a single host stall.
-`core_sigma` removes only the slowest 0.1% before calculating sigma; use it
-with p99 for steady jitter, while `worst` retains the excluded tail.
+- wall time for XINU `sleep 10` and effective requested speed;
+- actual handler rate, delivery, mean, sigma, core sigma, percentiles and
+  worst interval;
+- maximum `clkint` depth and minimum sampled IStack margin;
+- LPT DATA and PDB05 rates;
+- PDB05 p50/p95/p99, worst gap and complete-window distribution;
+- DCS health when a live ADSP engine is selected.
 
-For normal 100% operation, the most direct check is that XINU `sleep 10` takes
-approximately ten wall seconds after warmup. Boot-time cumulative delivery can
-be lower without indicating a steady-state problem.
+### Verdict
 
-## Interpreting delivery
+The benchmark returns status 2 and `ABNORMAL` if any of these hold:
 
-“IRQ0 delivery” is the ratio of observed XINU `clkint` entries to IRQ0 requests
-in the measured window. It is useful only together with game-clock speed:
+- IRQ delivery is outside 95–105%;
+- effective speed is outside ±5% of the requested target;
+- mean steady-window PDB p99 exceeds 1 ms;
+- gaps above 2.5 ms appear in at least 10% of complete windows, with a minimum
+  of two affected windows.
 
-- A low cumulative value during boot can be harmless.
-- A steady-state value near 100% with `sleep 10` near ten seconds means game
-  time is correct.
-- Values above 100% mean the requested speed is overshooting.
+One non-repeated gap above 2.5 ms is a warning. Gaps above 10 ms are also
+reported as warnings; they do not replace the distribution rule. A passing
+emulator run is evidence for that host, build, guest and observation window,
+not proof of physical-cabinet safety.
 
-`--bench` uses only the clean guest-side probe window for IRQ results and only
-post-warmup rolling windows from the separate LPT pass. It returns `2` when
-speed or delivery is unhealthy, when mean PDB p99 exceeds 1 ms, or when PDB
-gaps above 2.5 ms repeat across at least 10% of complete three-second windows
-(with a minimum of two affected windows). One isolated PDB maximum is retained
-and reported as `PASS WITH WARNINGS`; it cannot fail the run by itself.
+The command prints and preserves its temporary artifact directory, including
+`results.json`, `metadata.json`, both pass logs and `report.md`. The RAM probe
+is removed before the first pass exits, and `--no-savedata` prevents either
+pass from writing the persistent device images.
 
-## Jitter and cabinet traffic
+## Deeper diagnostics
 
-IRQ0 jitter describes variation between guest timer-handler entries. PDB05
-gaps describe the LPT driver-board frame stream and are more directly relevant
-to cabinet communication. A physical trace is required to establish cabinet
-timing limits.
+Use these only to answer a specific question; they have different costs and
+must not be mixed blindly into headline performance results.
 
-## CPU and MediaGX instructions
+| Interface | Cost and purpose |
+|---|---|
+| `--timing-snapshots` | lightweight three-second fields used by the benchmark |
+| `--diag` or `-v` | full three-second timing, segment, device and state reports |
+| `P2K_PROFILE_STALLS=1` | classify raised-versus-serviced deficits as guest `IF=0`, PIC mask/in-service, halted, TB-delay or other; default deficit threshold 2 |
+| `P2K_PROFILE_PDB_GAPS=1` | retain up to 64 rare PDB-gap events and dump them only at exit |
+| `P2K_DIAG_ALWAYS_NOCHAIN=1` | forbid TCG TB chaining for a diagnostic experiment; never a play mode |
+| `P2K_DUMP_CLKINT=PATH` | one-shot dump of the observed handler for disassembly |
+| `P2K_GUEST_CLOCK_ADDRS=...` | compare selected guest counters with wall time |
 
-The QEMU machine selects a `486` CPU model. Pinball 2000-specific MediaGX
-instructions are implemented in TCG and enabled only for the `pinball2000`
-machine. This is CPU emulation, not guest-code patching.
+The PDB-gap profiler reads a clock at every TB. It records wall/virtual time,
+thread and process CPU consumption, IRQ/LPT/display deltas, CPU/PIC state and
+dominant/slow translated blocks around qualifying events. That overhead is
+why its results diagnose a gap but do not replace a clean benchmark.
 
-The CPU begins at the PRISM protected-mode entry.
+Full diagnostics divide an IRQ cycle into raise→intack, intack→entry,
+entry→EOI, EOI→IRET and IRET→next raise. The last segment is further split at
+the first translated block after IRET. These measurements localize delay; they
+do not alter the delivery decision.
 
-Details: [CLI reference](03-cli-reference.md), [boot path](14-boot-recipe.md),
-and [LPT board](26-lpt-board.md).
+## Interpretation checklist
+
+When comparing a timing change, keep the build, game, update, savedata policy,
+display, audio engine and host workload fixed, then record:
+
+1. exact commit and complete command;
+2. warmup and measured durations;
+3. effective speed and actual IRQ delivery distribution;
+4. maximum nesting depth and minimum IStack margin;
+5. PDB percentiles, worst gap and number of affected windows;
+6. whether any profiler, verbose report or guest probe was active;
+7. whether evidence came from an emulator desktop run or powered cabinet.
+
+Do not select a timing mode from one maximum alone. A change is stronger only
+when it preserves speed and delivery, does not trade them for worse nesting or
+stack margin, and improves the complete PDB distribution under the same test.
 
 ---
 
-← [Back to documentation index](README.md) · [Back to project README](../README.md)
+← [Architecture](10-architecture.md) ·
+[Documentation index](README.md) · [Boot recipe](14-boot-recipe.md)

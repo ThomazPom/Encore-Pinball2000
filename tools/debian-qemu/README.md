@@ -1,90 +1,230 @@
-# Debian netinst regression VM
+# Debian 13 cabinet laboratory
 
-This laboratory creates a genuinely minimal Debian 13 guest once, keeps that
-post-install disk immutable, and runs every Encore Pinball 2000 experiment in a
-fresh qcow2 overlay.
+This laboratory installs a small Debian 13 guest once, seals that qcow2 image,
+and runs each automated Encore cabinet experiment in a disposable overlay. It
+tests Linux boot/session integration without turning the developer's host into
+a cabinet.
 
-By default the guest opens a GTK window backed by an 800x600 virtual display,
-so fullscreen placement and scaling can be inspected. Set
-`ENCORE_QEMU_HEADLESS=1` only for unattended or CI runs.
+It is not a gameplay, timing or physical-hardware certification environment.
+The top-level [Cabinet installation](../../docs/01-cabinet-installation.md) guide
+owns deployment choices; [Testing and validation](../../docs/26-testing-validation-matrix.md)
+defines the wider evidence ladder.
 
-The base guest intentionally has no desktop, `sudo`, `pkexec`, `polkitd`, Xorg
-or Wayland compositor. It includes only enough infrastructure for automated
-testing: OpenSSH, Git, CA certificates and `qemu-guest-agent`. The host harness
-needs `qemu-system-x86`, `qemu-system-gui`, `qemu-utils`, `curl`, `cpio`,
-`sshpass` and `expect`.
+> [!CAUTION]
+> `prepare` performs a Debian netinstall and downloads packages. `reset` deletes
+> the current disposable overlay. `all` additionally downloads a published
+> release and performs a real QEMU build inside guests; it is intentionally
+> much slower than one focused lifecycle case.
 
-Useful commands:
+## Host prerequisites
 
-```sh
-./tools/debian-qemu/lab.sh prepare       # netinstall and seal the base image
-./tools/debian-qemu/lab.sh test cage user # unprivileged lifecycle test
-./tools/debian-qemu/lab.sh test cage root # root diagnostic A/B test
-./tools/debian-qemu/lab.sh test weston user
-./tools/debian-qemu/lab.sh test direct-console user
-./tools/debian-qemu/lab.sh test-dm user    # DM integration/restoration
-./tools/debian-qemu/lab.sh test-git        # Git absent, then offered by installer
-./tools/debian-qemu/lab.sh test-assets     # missing fetch, then present no-op
-./tools/debian-qemu/lab.sh test-release    # download/extract published package
-./tools/debian-qemu/lab.sh test-acquire release
-./tools/debian-qemu/lab.sh test-acquire build
-./tools/debian-qemu/lab.sh test-alternates # opposite installer choices
-./tools/debian-qemu/lab.sh all             # complete matrix; includes a real QEMU build
-./tools/debian-qemu/lab.sh manual        # start/resume the current graphical VM
-./tools/debian-qemu/lab.sh release       # same VM using the published release
-./tools/debian-qemu/lab.sh shell         # SSH into the current overlay
-./tools/debian-qemu/lab.sh stop
-./tools/debian-qemu/lab.sh reset         # fresh overlay; next manual injects current checkout
+The harness requires:
+
+- `qemu-system-x86_64` and `qemu-img`;
+- `curl`, `cpio`, `gzip`, `tar` and OpenSSH client tools;
+- `sshpass` for guest control;
+- `expect` for interactive installer cases;
+- Git for the host-side asset case;
+- QEMU GTK display support for graphical mode, or
+  `ENCORE_QEMU_HEADLESS=1` for unattended execution.
+
+KVM is used when `/dev/kvm` is readable and writable. Otherwise the outer VM
+uses TCG with `-cpu max`. The default guest allocation is 2 GiB RAM and two
+vCPUs.
+
+## Image lifecycle
+
+The sealed base filename includes:
+
+- host locale;
+- XKB layout and variant;
+- the first 12 hexadecimal characters of the preseed SHA-256.
+
+A locale, keyboard or recipe change therefore selects a new base rather than
+silently reusing an incompatible image. Override the locale or keymap with:
+
+```bash
+ENCORE_QEMU_LOCALE=en_US.UTF-8 \
+ENCORE_QEMU_KEYBOARD=us \
+ENCORE_QEMU_KEYBOARD_VARIANT= \
+  ./tools/debian-qemu/lab.sh prepare
 ```
 
-The standalone lifecycle matrix uses controlled fake compositor and QEMU
-executables. It tests Cage, Weston and direct-console integration in both user
-and root modes: non-root elevation, PAM/logind login, inhibitor lifetime,
-explicit transition to a persistent maintenance getty, audio policy and
-reversible uninstall. Separate acquisition cases download the real published
-QEMU and perform a complete QEMU build inside the minimal guest. The asset
-cases exercise present and absent trees plus present and absent Git. The
-display-manager cases validate generated integration and restoration against a
-controlled SDDM service; they do not claim to render a real desktop session.
-Real compositor/DRM rendering, physical audio and cabinet timing remain
-physical-host tests.
+By default images live under
+`${XDG_CACHE_HOME:-$HOME/.cache}/encore-qemu`. Set `ENCORE_QEMU_DIR` to move
+them, and `ENCORE_QEMU_RAM` or `ENCORE_QEMU_CPUS` to change resources.
 
-Artifacts live outside Git under `${XDG_CACHE_HOME:-~/.cache}/encore-qemu` by
-default. Set `ENCORE_QEMU_DIR`, `ENCORE_QEMU_CPUS`, or `ENCORE_QEMU_RAM` to
-override the location and VM size. The base image is never booted by a test;
-`current.qcow2` is always a disposable backing-file overlay.
+Prepare and seal a base:
 
-The netinstall inherits the host's `LANG`, keyboard layout and keyboard
-variant. Different locale/keymap combinations receive different sealed base
-images, so switching between AZERTY and QWERTY never mutates an existing base.
-They can also be selected explicitly with `ENCORE_QEMU_LOCALE`,
-`ENCORE_QEMU_KEYBOARD` and `ENCORE_QEMU_KEYBOARD_VARIANT`.
+```bash
+./tools/debian-qemu/lab.sh prepare
+```
 
-The automated test first proves that the stock guest has `run0`, but no
-`pkttyagent`, `pkexec`, `polkitd` or `sudo`. It then installs only `polkitd` in
-the disposable overlay and launches `./install.sh` as the unprivileged
-`cabinet` user. This exercises the corrected `run0`/`pkttyagent` path instead
-of bypassing it as root. It validates installation state and uninstall
-symmetry before discarding the VM.
+The preseed creates root and `cabinet` test accounts with the laboratory-only
+password `cabinet`. It installs OpenSSH, CA certificates, Git and QEMU guest
+agent, disables installation of recommended packages, and explicitly removes
+`polkitd`, `pkexec` and `sudo`. That absence is part of the privilege test, not
+a production recommendation.
 
-`reset` creates an overlay from the sealed end-of-netinstall snapshot and marks
-it for one checkout injection. The next `manual` copies the current host
-worktree to `~/Encore-PB2K`, adds only `polkitd` for the non-root `run0` test,
-and opens the graphical console. Later `manual` boots preserve that overlay and
-its guest worktree exactly; they never copy the host checkout again. Both the
-test user and root use the laboratory-only password `cabinet`.
+`prepare` never overwrites an existing base with the same recipe identity.
+Each automated case begins with:
 
-`release` follows the same interactive model without copying the checkout. It
-downloads the latest published archive inside the guest, verifies its SHA-256,
-extracts it as `~/Encore-Pinball2000`, validates the minimal package structure
-and leaves the VM open at the normal login. `test-release` performs the same
-download and validation non-interactively, then discards the overlay.
+```bash
+./tools/debian-qemu/lab.sh reset
+```
 
-The outer VM deliberately exposes no QEMU parallel controller. After boot, the
-harness forces Linux `parport_pc` to register the otherwise unimplemented ISA
-address `0x378`, then loads `ppdev`. The guest therefore receives a genuine
-`/dev/parport0`: Encore must open it, claim it and use the normal ppdev ioctls,
-while reads reach an open virtual hardware bus with no board behind it. This
-tests the complete real-cabinet transport and lets the original ROM diagnose
-the disconnected driver board; it does not substitute Encore's software
-`disconnected` target.
+This stops the current VM, deletes `current.qcow2`, creates a fresh overlay on
+the sealed base and marks it for one checkout injection. The base itself is
+made read-only and is never booted by a test.
+
+> [!WARNING]
+> A manual experiment lives only in `current.qcow2`. Running `reset` or any
+> automated test intentionally discards it.
+
+## Focused commands
+
+| Command | What it proves | Not proved |
+|---|---|---|
+| `test cage user` | Cage install, reboot, unprivileged session, inhibitor, audio policy, maintenance and uninstall | real Cage/DRM rendering |
+| `test weston user` | same lifecycle for Weston | real Weston/DRM rendering |
+| `test direct-console user` | direct-console generated integration and lifecycle | real SDL KMSDRM/input behavior |
+| `test <profile> root` | optional root diagnostic handoff for that standalone profile | that root is appropriate for deployment |
+| `test-dm user` | generated SDDM autologin, user service, default target and restoration | an actual graphical login or real GNOME/KDE desktop |
+| `test-dm root` | display-manager root-diagnostic handoff | real compositor rendering |
+| `test-git` | missing Git is detected and installed | arbitrary distro package managers |
+| `test-assets` | absent asset fetch and present-tree no-op | ROM correctness or redistribution rights |
+| `test-release` | latest archive download, checksum, extraction and package shape | source checkout equivalence |
+| `test-acquire release` | installer acquisition of the release QEMU | future release availability |
+| `test-acquire build` | complete pinned QEMU build and machine check in the guest | gameplay timing |
+| `test-alternates` | non-default game/LPT/audio/maintenance/GRUB choices and removal | every interactive combination |
+| `test-interrupted` | lock-only interrupted installation can be removed safely | rollback after every possible host mutation |
+
+Examples:
+
+```bash
+ENCORE_QEMU_HEADLESS=1 ./tools/debian-qemu/lab.sh test cage user
+ENCORE_QEMU_HEADLESS=1 ./tools/debian-qemu/lab.sh test-dm user
+ENCORE_QEMU_HEADLESS=1 ./tools/debian-qemu/lab.sh test-interrupted
+```
+
+Run the complete implemented matrix only when its downloads and build cost are
+appropriate:
+
+```bash
+ENCORE_QEMU_HEADLESS=1 ./tools/debian-qemu/lab.sh all
+```
+
+The `all` command covers Cage, Weston and direct-console in both user and root
+modes; display-manager user/root; missing Git; assets; release package; release
+and build acquisition; alternate choices; and interrupted-install recovery.
+It executes cases sequentially, recreating the overlay for each one.
+
+## What lifecycle tests actually run
+
+The host checkout is copied to `/opt/Encore-PB2K` and linked from the cabinet
+user's home. Host and guest SHA-256 hashes of the launcher and runtime-package
+helper must match before testing continues.
+
+Automated lifecycle cases then install controlled stand-ins:
+
+- a QEMU executable that advertises the `pinball2000` machine and sleeps;
+- Cage and Weston wrappers that provide the expected Wayland environment;
+- a `wpctl` fixture that starts muted at 50% and records the cabinet policy.
+
+These stand-ins keep the test focused on generated services and transitions.
+The cases still execute the real `install.sh`, session helper and
+`uninstall.sh`. They assert configuration contents, reboot behavior,
+PAM/logind open and close records, the live `systemd-inhibit` owner, audio
+before/after evidence, maintenance getty and uninstall symmetry. Shared `lp`
+membership must remain after uninstall.
+
+Before an unprivileged installation, the test confirms the sealed guest has
+`run0` but lacks `pkttyagent`, `pkexec` and `sudo`. It installs only `polkitd`
+in the disposable overlay, then launches the installer as `cabinet`. This
+exercises the `run0` plus `pkttyagent` path rather than bypassing elevation by
+starting the installer as root.
+
+> [!NOTE]
+> If this initial stripped-guest assertion fails, the test must stop. Do not
+> reinterpret a stale cached base as passing evidence; prepare the base whose
+> filename matches the current preseed hash.
+
+## Open-bus parallel-port fixture
+
+The outer QEMU VM exposes no emulated parallel controller. After every boot,
+the harness asks Linux `parport_pc` to register the unimplemented ISA address
+`0x378` and loads `ppdev`. The guest receives a real `/dev/parport0` character
+device whose reads reach an open virtual hardware bus.
+
+This exercises Encore's real ppdev open, claim and ioctl path and allows the
+original game software to diagnose a disconnected driver board. It does not
+emulate Encore's software `disconnected` policy and does not prove a cable,
+powered driver board, switches, lamps or solenoids. See
+[Real LPT passthrough](../../docs/46-real-lpt-passthrough.md) for that boundary.
+
+## Interactive use
+
+Create a fresh graphical experiment with the current checkout:
+
+```bash
+./tools/debian-qemu/lab.sh reset
+./tools/debian-qemu/lab.sh manual
+```
+
+The default starts an 800×600 GTK QEMU window. On the first `manual` boot after
+reset, the harness copies the checkout and installs `polkitd`; later manual
+boots preserve the same overlay and do not replace its guest worktree.
+
+Inside the guest:
+
+```bash
+cd ~/Encore-PB2K
+./install.sh
+```
+
+To inspect the published package instead of copying the checkout:
+
+```bash
+./tools/debian-qemu/lab.sh release
+```
+
+`release` first creates a fresh overlay. It then downloads the latest archive
+and checksum inside the guest, verifies and extracts it to
+`~/Encore-Pinball2000`, checks the minimal release shape and leaves the VM
+running for manual installation.
+
+Operational commands are:
+
+```bash
+./tools/debian-qemu/lab.sh boot
+./tools/debian-qemu/lab.sh shell 'systemctl status getty@tty1.service'
+./tools/debian-qemu/lab.sh stop
+```
+
+Serial output is retained as `serial.log` in the lab directory. The current
+overlay is preserved by `boot`, repeated `manual` boots, `shell` and `stop`.
+`reset`, `release` and VM-backed automated cases intentionally replace it;
+the host-only `test-assets` case does not.
+
+## Evidence boundary
+
+The automated lab can support claims about:
+
+- generated files, ownership markers and restoration;
+- systemd target, getty, user-service and inhibitor transitions;
+- the unprivileged escalation route;
+- installer acquisition control flow;
+- ppdev transport against an open bus.
+
+It cannot support claims about:
+
+- pixels from a real compositor/DRM/KMS stack;
+- physical input, audio level or sound quality;
+- a powered Pinball 2000 driver board;
+- gameplay stability, guest timing, IRQ depth or IStack margin;
+- network behavior outside the controlled guest;
+- compatibility of a newly changed preseed until `prepare` and the relevant
+  cases have completed with that recipe identity.
+
+Promote conclusions only through the normal-run and measurement procedure in
+[Testing and validation](../../docs/26-testing-validation-matrix.md).

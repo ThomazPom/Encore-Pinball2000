@@ -1,110 +1,201 @@
 # Update provenance and redistribution boundary
 
-Encore can run extracted Pinball 2000 updates, but runtime support does not
-imply that every bundle belongs in this repository. The publisher/line column
-keeps stock, post-Williams, community and myPinballs releases distinct.
+Encore preserves several generations of Pinball 2000 game-code updates. This
+page records what is actually present, which source container survives, and
+where provenance remains incomplete. It is not a licence grant and it is not a
+substitute for the [game-code changelogs](50-game-changelogs.md).
 
-| Game | Version | Publisher / line | Original archive name | Local state |
-|---|---:|---|---|---|
-| RFM | 0.80 | Williams/Bally prototype (rev. 2 board) | `rfm_080.zip` | Local ZIP; U100/U101 already matched in `roms/` |
-| RFM | 0.70 | Williams/Bally | `pin2000_50070_0070_03291999_B_10000000.exe` | Missing |
-| RFM | 0.71 | Williams/Bally | `pin2000_50070_0071_03291999_B_10000000.exe` | Missing |
-| RFM | 0.84 | Williams/Bally | `pin2000_50070_0084_04061999_B_10000000.exe` | Missing |
-| RFM | 0.85 | Williams/Bally | `pin2000_50070_0085_04051999_B_10000000.exe` | Missing |
-| RFM | 0.86 | Williams/Bally | `pin2000_50070_0086_04061999_B_10000000.exe` | Missing |
-| RFM | 0.87 | Williams/Bally | `pin2000_50070_0087_04061999_B_10000000.exe` | Missing |
-| RFM | 0.90 | Williams/Bally pre-release | No separate EXE established | Installed version attested; named as predecessor of 1.00 by Williams |
-| RFM | 1.00 | Williams/Bally | No separate EXE established | Published revision history recovered |
-| RFM | 1.10 | Williams/Bally | No separate EXE established | Published revision history and installed version attested |
-| RFM | 1.20 | Williams/Bally | `pin2000_50070_0120_06091999_B_10000000.exe` | EXE + extraction |
-| RFM | 1.30 | Williams/Bally | `pin2000_50070_0130_11241999_B_10000000.exe` | EXE + extraction |
-| RFM | 1.40 | Williams/Bally | `pin2000_50070_0140_01312000_B_10000000.exe` | EXE + extraction |
-| RFM | 1.50 | Williams/Bally | `pin2000_50070_0150_07252000_B_10000000.exe` | EXE + extraction |
-| RFM | 1.60 | Post-Williams maintenance | `pin2000_50070_0160_09222003_B_10000000.exe` | Local EXE + extraction |
-| RFM | 1.21 | Community/tournament server | `pin2000_50070_0121_05202016_B_10000000.exe` | Missing |
-| RFM | 1.70 | Community/tournament server | `pin2000_50070_0170_02062006_B_10000000.exe` | Missing |
-| RFM | 1.80 | Community/tournament server | `pin2000_50070_0180_04232006_B_10000000.exe` | Local ROM ZIP + extraction; original EXE missing |
-| RFM | 1.90 | Community/tournament server | `pin2000_50070_0190_11222017_B_10000000.exe` | Missing |
-| RFM | 1.90 | Hemtoni | `rfm_190.zip` (boot timestamp 2018-03-29) | Local ZIP + assembled extraction |
-| RFM | 1.91 | Hemtoni | `rfm_191.zip` (boot timestamp 2018-05-30) | Local ZIP + assembled extraction |
-| RFM | 1.95 | Hemtoni | `rfm_195.zip` (boot timestamp 2018-03-29) | Local ZIP + assembled extraction |
-| RFM | 2.00 | myPinballs | `pin2000_50070_0200_12032018_B_10000000.exe` | Local EXE + extraction |
-| RFM | 2.10 | myPinballs | `pin2000_50070_0210_04112019_B_10000000.exe` | Local EXE + extraction |
-| RFM | 2.11 | myPinballs | Original archive name not recovered (build dated 2019-05-10) | Missing |
-| RFM | 2.20 | myPinballs | `pin2000_50070_0220_10222019_B_10000000.exe` | Local EXE + extraction |
-| RFM | 2.21 | myPinballs | `pin2000_50070_0221_04052020_B_10000000.exe` | Local EXE + extraction |
-| RFM | 2.22 | myPinballs | `pin2000_50070_0222_06302020_B_10000000.exe` | Local EXE + extraction |
-| RFM | 2.23 | myPinballs | `pin2000_50070_0223_04082021_B_10000000.exe` | Local EXE + extraction |
-| RFM | 2.24 | myPinballs | `pin2000_50070_0224_01292022_B_10000000.exe` | Local EXE + extraction |
-| RFM | 2.50 | myPinballs | `pin2000_50070_0250_12162022_B_10000000.exe` | Local EXE + extraction |
-| RFM | 2.60 | myPinballs | `pin2000_50070_0260_08082024_B_10000000.exe` | Local EXE + extraction |
-| SWE1 | 0.40 | Williams/Bally pre-release | No distributed EXE established | Installed version independently attested |
-| SWE1 | 0.43 | Williams/Bally development | No distributed EXE established | Developer PRISM-card version attested |
-| SWE1 | 1.00 | Williams/Bally | `pin2000_50069_0100_07171999_B_10000000.exe` | Missing |
-| SWE1 | 1.10 | Williams/Bally | `pin2000_50069_0110_09141999_B_10000000.exe` | Missing |
-| SWE1 | 1.20 | Williams/Bally | `pin2000_50069_0120_09161999_B_10000000.exe` | Missing |
-| SWE1 | 1.30 | Williams/Bally | `pin2000_50069_0130_09211999_B_10000000.exe` | EXE + extraction |
-| SWE1 | 1.40 | Williams/Bally | `pin2000_50069_0140_07252000_B_10000000.exe` | EXE + extraction |
-| SWE1 | 1.50 | Williams/Bally | `pin2000_50069_0150_07252000_B_10000000.exe` | Tracked extraction |
-| SWE1 | 1.50 | Post-Williams maintenance | `pin2000_50069_0150_09222003_B_10000000.exe` | Local EXE + extraction |
-| SWE1 | 1.60 | Community/tournament server | `pin2000_50069_0160_02012013_B_10000000.exe` | Missing |
-| SWE1 | 1.65 | Community/tournament server | `pin2000_50069_0165_02212018_B_10000000.exe` | Missing |
-| SWE1 | 1.66 | Hemtoni | `swep1_166.zip` (boot timestamp 2022-04-03) | Local ZIP + extraction |
-| SWE1 | 2.00 | Community/tournament server; rewritten 1.30 “Questionmark Mission” test build, not a chronological 2.x successor | `pin2000_50069_0200_02262016_B_10000000.exe` | Missing |
-| SWE1 | 2.00 | myPinballs | `pin2000_50069_0200_04112025_B_10000000.exe` | Local EXE + extraction |
-| SWE1 | 2.01 | myPinballs | `pin2000_50069_0201_05012025_B_10000000.exe` | Local EXE + extraction |
-| SWE1 | 2.10 | myPinballs | `pin2000_50069_0210_10312025_B_10000000.exe` | Local EXE + extraction |
+> [!IMPORTANT]
+> A tracked payload is evidence of preservation, not proof that Encore owns or
+> may relicense it. The repository still lacks a project-level licence and a
+> complete asset provenance/notice inventory. Resolve those before describing
+> a release archive as generally redistributable.
 
-## Notes
+## Identities
 
-- `pin2000_50072_0020_02112018_B_10000000.exe` is listed by the historical
-  tournament server, but game ID 50072 is not ordinary RFM 50070.
-- The same server listed separate PUB-card utilities. PUB tools are not copies
-  of the corresponding game-update EXEs.
-- RFM 2.11 is attested with a 10 May 2019 build date. This fits between RFM
-  2.10 (11 April 2019) and 2.20 (22 October 2019); it cannot belong to the
-  myPinballs SWE1 line, which began in 2025. Its updater and release notes have
-  not yet been recovered, and the author's current continuous changelog omits
-  this intermediate build.
-- Build dates are not always archive dates. RFM 2.10 displays 31 December 2018
-  in the manager but its verified archive is dated 11 April 2019.
-- SWE1 0.40 is not merely a suspected filename: multiple cabinet owners have
-  reported the version in the machine's System Information screen, including a
-  production machine with serial number 53369102428. Another owner reported a
-  developer flash PRISM card containing SWE1 0.43. No updater EXE, build date or
-  complete extraction has yet been recovered for either pre-release version.
-- RFM 1.60 contains the final XINA 1.19 correction. RFM 1.90 is described by
-  contemporary owners as a November 2017 custom build also circulated on a PUB
-  card and requiring additional RAM.
-- The recovered `rfm_190.zip` is a March 2018 build and therefore does not
-  replace the still-missing November 2017 updater EXE. The recovered Hemtoni
-  RFM ZIPs omit `im_flsh0`; the assembled local trees use the byte-identical
-  image shared by RFM 1.40 through 1.80. XINA validated that image and all three
-  recovered boot/game/symbol sets before starting versions 1.90, 1.91 and 1.95.
-  Their outer directory dates come from the embedded boot timestamps.
-- RFM 1.80 is canonically stored under `04232006`: its boot and game images
-  are dated 23 April 2006. The former `0180_09222003` directory was a
-  byte-identical, incorrectly named duplicate; 22 September 2003 belongs to
-  RFM 1.60 and the duplicate has been removed.
+Pinball 2000 update names use the game number and a four-digit version:
 
-## Repository policy
+| Game | Short name | Game number |
+|---|---|---:|
+| Star Wars Episode I | SWE1 | `50069` |
+| Revenge From Mars | RFM | `50070` |
 
-The Williams/Bally, post-Williams and independently preserved community
-releases carried by the repository remain tracked. The myPinballs files remain
-local and are ignored by Git. An extraction is considered matched only when it
-is byte-identical to its source archive and contains `gamelist.txt` plus the
-matching game-number directory.
+Other numbers are not aliases. In particular, `50072` identifies **Wizard
+Blocks**, not RFM or SWE1. A historical tournament-server listing or PUB-card
+catalogue can contain several games and utilities; never classify an artifact
+from version/date alone.
 
-## Sources
+## Current preserved set
 
-- [Williams/Bally technical-support catalogue](https://www.planetarypinball.com/mm5/Williams/tech/pin2000/software.html)
-- [RFM collectors page](https://www.pinball2000.de/rfm_ind.htm)
-- [RFM 1.60 revision history](https://forums.arcade-museum.com/threads/video-how-to-update-rfm-to-version-1-6-pinball-2000.266919/)
-- [myPinballs RFM update log](https://www.mypinballs.com/software/rfm/code_updates.jsp)
-- [Archived myPinballs home page](https://web.archive.org/web/20191030091013/https://mypinballs.com/)
-- [Historical Pinball 2000 filenames](https://pinside.com/pinball/forum/topic/pinball-2000-rfmswe1-update-files)
-- [SWE1 0.40 and developer 0.43 cabinet reports](https://pinside.com/pinball/forum/topic/pin2k-swep1-version-04-is-this-a-legit-version)
-- [Independent SWE1 0.40 production-cabinet report](https://pinside.com/pinball/forum/topic/is-swe1-that-bad)
-- [RFM 1.1 cabinet report](https://pinside.com/pinball/forum/topic/rfm-hillary-come-here-you-gotta-see-this/page/35#post-4121268)
-- [RFM 1.90 PUB-card discussion](https://pinside.com/pinball/forum/topic/pintastic-2018-sturbridge-massachusetts-buy-sell-trade-and-beyond/page/6)
-- [June 2018 cached update-server index](https://pinside.com/pinball/forum/topic/rfm-hillary-come-here-you-gotta-see-this/page/42#post-4454785)
+The current tree contains 26 extracted update paths:
+
+- eight SWE1 paths, covering 1.30, 1.40, two labelled 1.50 paths, 1.66, 2.00,
+  2.01 and 2.10;
+- eighteen RFM paths, covering 1.20–1.60, 1.80, 1.90, 1.91, 1.95 and
+  2.00–2.60 with the locally present intermediate releases.
+
+Twenty matching classic `.exe` containers are preserved under
+`updates/exe-sources/`. Six additional ZIP sources preserve prototype or
+community material. An extracted directory can be useful even when the
+original installer is missing, but its provenance status must say so.
+
+The repository does not publish all 26 paths. Williams/Bally,
+post-Williams and independently preserved community material may be tracked;
+the myPinballs paths and matching downloaded installers are explicitly ignored
+by `.gitignore`. They are supported local test inputs, not repository payloads.
+
+Every accepted extracted bundle currently has the four emulator components:
+
+```text
+*_bootdata.rom
+*_im_flsh0.rom
+*_game.rom
+*_symbols.rom
+```
+
+`*_pubboot.rom` and `*_sf.rom` are present only where the source set preserves
+them. Their absence does not make the four-part Encore update image incomplete;
+it does limit claims about recreating the original physical update package or
+native sound-flash path.
+
+### Exact local inventory
+
+| Family | Preserved outer identities |
+|---|---|
+| SWE1 | `0130_09211999`, `0140_07252000`, `0150_07252000`, `0150_09222003`, `0166_04032022`, `0200_04112025`, `0201_05012025`, `0210_10312025` |
+| RFM | `0120_06091999`, `0130_11241999`, `0140_01312000`, `0150_07252000`, `0160_09222003`, `0180_04232006`, `0190_03292018`, `0191_05302018`, `0195_03292018`, `0200_12032018`, `0210_04112019`, `0220_10222019`, `0221_04052020`, `0222_06302020`, `0223_04082021`, `0224_01292022`, `0250_12162022`, `0260_08082024` |
+
+The two SWE1 1.50 outer paths currently contain the same six component bytes.
+Keep both provenance labels, but do not call them different builds unless a
+future recovery produces different hashes.
+
+## Provenance classes
+
+Use a class rather than flattening everything into “official” or “community”:
+
+| Class | Meaning |
+|---|---|
+| Williams/Bally | contemporary publisher update or revision material |
+| post-Williams maintenance | later XINA/game maintenance distributed after the pinball division closed |
+| tournament/community | builds associated with surviving tournament or enthusiast work, sometimes only historically attested |
+| myPinballs | the author's continuing unofficial 2.x update lines |
+| extracted-only | component bytes survive but their original installer or complete note set does not |
+| filename-only | a dated/versioned artifact is historically attested but no local payload is preserved |
+
+These classes describe evidence, not quality. Compatibility is tracked
+separately in [Compatibility and support](30-compatibility-support.md), and
+gameplay changes are attributed in the changelog page.
+
+## Dates are not enough
+
+The date embedded in an outer directory often comes from source metadata or
+the extraction process. It can differ from a public announcement date, and two
+version lines can overlap.
+
+Therefore:
+
+- use the complete outer directory and component hashes for an evidence run;
+- use an author's release note for the described change set;
+- never infer chronology solely by sorting directory dates;
+- never infer authorship from a `gamelist.txt`; and
+- keep internal version labels distinct from public release numbers.
+
+RFM 2.11 is historically attested between 2.10 and 2.20, but its updater and
+original notes are not in the current local set. Absence from the current
+continuous changelog is not proof that the build never existed.
+
+### Historically attested gaps
+
+The prior inventory also records versions for which this checkout has no
+complete payload. They remain recovery leads, not supported local bundles:
+
+| Family | Attested but not locally preserved |
+|---|---|
+| RFM | 0.70, 0.71, 0.84–0.87, 0.90, 1.00, 1.10, 1.21, 1.70, the November 2017 tournament/community 1.90, and 2.11 |
+| SWE1 | 0.40, development 0.43, 1.00–1.20, tournament/community 1.60 and 1.65, and the 2016 tournament test labelled 2.00 |
+
+The two RFM 1.90 identities must not be collapsed. The locally recovered
+`rfm_190.zip` carries a March 2018 boot timestamp; it is not proof of the
+separately attested November 2017 PUB-card build. Likewise, SWE1's 2016 test
+labelled 2.00 is not the myPinballs 2.00 release from 2025.
+
+The recovered RFM 1.90, 1.91 and 1.95 ZIPs omit `im_flsh0`. Their assembled
+local directories use the byte-identical image found in the preserved RFM
+1.40 through 1.80 trees; the recovered boot, game and symbol files remain the
+version-specific evidence. This reconstruction must be stated whenever those
+directories are exported or cited.
+
+RFM 1.80 is canonically named `0180_04232006` from its boot/game timestamps.
+Do not recreate the former, byte-identical `0180_09222003` duplicate: that date
+belongs to RFM 1.60.
+
+## Safe extraction and preservation
+
+Classic PUB installers can be inspected with the repository extractor:
+
+```bash
+python3 tools/extract-pub-update.py /path/to/update.exe \
+  --output /tmp/pin2000-update-review
+```
+
+The extractor:
+
+- requires one consistent game/version set;
+- requires the four core components;
+- writes into a new destination unless `--force` is explicit; and
+- prints sizes and SHA-256 values for the result.
+
+Do not use `--force` on a preservation directory. Extract into a temporary
+review location, compare hashes and metadata, then add a deliberately named
+outer directory only after provenance review.
+
+To assemble the emulator's four-part flash image without modifying the source
+bundle:
+
+```bash
+python3 tools/build_update_bin.py \
+  /path/to/outer/50069 \
+  /tmp/update.bin
+```
+
+This is an emulator/research artifact. It is not a physical PUB-card image.
+
+## Contribution record
+
+A newly recovered update should arrive with:
+
+- original filename and container hash;
+- recovery source and permission/provenance note;
+- acquisition date;
+- game number, version and component inventory;
+- SHA-256 for every extracted component;
+- extractor/tool version or command;
+- any original release notes kept separately from inference; and
+- explicit redistribution status.
+
+> [!CAUTION]
+> Do not commit credentials, private archive links, owner savedata or a full
+> machine dump with an update contribution. Live RAM and serial logs can
+> contain operator or tournament data.
+
+When an old and a newly recovered container produce identical components, keep
+the source-container hashes and provenance records even if the extracted tree
+does not need another byte-identical copy.
+
+## What releases may claim
+
+Until licensing/provenance work is complete, a release process must distinguish:
+
+- emulator source and its notices;
+- custom QEMU patches/build products;
+- game/base/update assets;
+- documentation and measurements; and
+- user-created savedata or crash evidence.
+
+A convenient first-run acquisition mechanism does not erase those boundaries.
+See [Release process](47-release-process.md) for archive checks and the
+[roadmap](36-roadmap.md) for the outstanding licence/provenance gate.
+
+---
+
+[ROM/update loading](15-rom-loading.md) · [Game-code changelogs](50-game-changelogs.md) · [Documentation](README.md)

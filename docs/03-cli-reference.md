@@ -1,266 +1,355 @@
-# 03 — CLI Reference
+# 03 — Command-line reference
 
-This page lists the options parsed by `scripts/run-qemu.sh` and
-`scripts/build-qemu.sh`.
-
-## Automatic cabinet selection
-
-The default launch is equivalent to:
-
-```bash
-scripts/run-qemu.sh --game auto --lpt-device auto
-```
-
-`--lpt-device auto` lets the Encore binary enumerate `/dev/parportN`, validate
-the Pinball 2000 board protocol and fall back to the keyboard-backed emulated
-board when no recognized hardware answers. `emulated` always ignores physical
-ports; `required` stops instead of falling back.
-
-`--game auto` identifies SWE1 or RFM from a recognized physical playfield. If
-the emulated board is selected, it uses SWE1 by default. Explicit `swe1` and
-`rfm` choices remain available for diagnosis.
-
-Enumeration, positive board recognition and playfield identification live in
-the QEMU machine, not in the shell launcher. With emulation, `Tab` switches
-the host keyboard between cabinet controls (the default) and XINA's emulated
-AT keyboard. With a detected physical board, cabinet-key injection is disabled
-and the AT keyboard also remains unplugged until `Tab`; explicit hybrid input
-allows the cabinet-key side of the same router to supplement physical input.
-
-> [!WARNING]
-> The real-LPT options expose implemented code paths. Physical-cabinet
-> validation is still required before powering a playfield.
-
-## `scripts/run-qemu.sh` synopsis
+Encore's public launcher is `scripts/run-qemu.sh`. It prepares the selected host
+path, locates or acquires the custom QEMU executable, resolves game assets and
+then starts the `pinball2000` machine.
 
 ```sh
-scripts/run-qemu.sh [OPTIONS] [-- <qemu passthrough>]
+scripts/run-qemu.sh [OPTIONS] [-- QEMU_OPTIONS...]
 ```
 
-Runs Williams Pinball 2000 firmware under the custom QEMU `pinball2000` machine. Stock `qemu-system-i386` cannot boot this machine unless it was built with Encore's `qemu/` sources.
-
-## Run wrapper summary
-
-| Flag | Argument | Default | Semantics | Example |
-|---|---:|---|---|---|
-| `--game` | `auto` \| `swe1` \| `rfm` | `auto` | Auto-identifies a recognized physical playfield; the emulated-board fallback selects SWE1. | `scripts/run-qemu.sh --game rfm` |
-| `--roms` | directory | `<repo>/roms` | Directory containing `<game>_u100.rom`/`.bin` etc.; passed as `roms-dir=`. | `scripts/run-qemu.sh --roms /data/p2k/roms` |
-| `--savedata` | directory | `<repo>/savedata` | Passes this persistent-state directory to the Encore machine; the binary creates it when absent. | `scripts/run-qemu.sh --savedata ./my-save` |
-| `--no-savedata` | — | off | Exports `P2K_NO_SAVEDATA=1` and runs from a fresh throwaway cwd with no `savedata/` subdir; savedata seeds are skipped and exit writes are discarded. | `scripts/run-qemu.sh --no-savedata` |
-| `--fresh` | — | off | Ignores existing saved device files for this boot, then replaces them with the newly initialized state on clean exit. | `scripts/run-qemu.sh --fresh` |
-| `--update` | spec | `auto` | Selects an update bundle, base-ROM mode, or the RFM R2 prototype ROMs. | `scripts/run-qemu.sh --update 0210` |
-| `--display` | backend | direct framebuffer in a graphical session; KMSDRM on a local VT | Explicitly selects a QEMU display backend, validates it against `qemu-system-i386 -display help`, and disables the default direct renderer. | `scripts/run-qemu.sh --display gtk` |
-| `--headless` | — | off | Shortcut for display `none` plus serial stdio unless `--uart-quiet` is used. Promotes verbosity to at least `-v`. | `scripts/run-qemu.sh --headless --game swe1` |
-| `--fullscreen` | — | off | Adds QEMU `-full-screen`; ignored with `--display none`. | `scripts/run-qemu.sh --fullscreen` |
-| `--bpp` | `16` \| `32` | `32` | `16` exports `P2K_DISPLAY_BPP=16` for native x1r5g5b5; `32` keeps ARGB8888 path. | `scripts/run-qemu.sh --bpp 16` |
-| `--framebuffer` | — | on for desktop auto-selection | Runs QEMU with display `none` and gives a dedicated SDL thread direct access to the native 640×240 RGB555 framebuffer. SDL scales it to the window; presentation and input bypass QEMU's display backend. | `scripts/run-qemu.sh --framebuffer` |
-| `--wayland` | — | off | Selects SDL2's native Wayland backend for the direct framebuffer renderer. Requires an existing Wayland session and implies `--framebuffer`; no X11 fallback is attempted. | `scripts/run-qemu.sh --wayland --fullscreen` |
-| `--display-manager` | — | off | Uses the current Wayland display-manager session. Runtime prerequisites and missing assets are prepared automatically before launch. | `scripts/run-qemu.sh --display-manager --fullscreen` |
-| `--cage` | — | off | Prepares Cage and the Wayland runtime through APT when needed, then starts Encore inside a standalone Cage kiosk. | `scripts/run-qemu.sh --cage --fullscreen` |
-| `--weston` | — | off | Prepares Weston and the Wayland runtime through APT when needed, then starts Encore inside Weston's standalone DRM kiosk. | `scripts/run-qemu.sh --weston --fullscreen` |
-| `--preflight` | — | off | Follows the otherwise normal requested launch path, prepares every runtime dependency, permission and asset it encounters, then stops immediately before starting a compositor or QEMU. | `SDL_VIDEODRIVER=KMSDRM scripts/run-qemu.sh --preflight --fullscreen` |
-| `--flipscreen` | — | off | Vertically reverses the displayed image, exactly as if F2 had been pressed once. F2 toggles that same state at run time. | `scripts/run-qemu.sh --flipscreen` |
-| `--switch-keymap` | YAML file | `$XDG_CONFIG_HOME/encore/switch-keymap.yaml`, else `~/.config/encore/switch-keymap.yaml` | Maps A-Z keys directly to matrix switches. A missing file is initialized with an editable starter map. | `scripts/run-qemu.sh --switch-keymap ./my-switches.yaml` |
-| `--qemu-framebuffer` | — | off | Keeps the selected QEMU display backend, but reads RGB555 directly from guest RAM and expands it through a lookup table into QEMU's preferred ARGB surface instead of using address-space reads. Experimental A/B option. | `scripts/run-qemu.sh --qemu-framebuffer` |
-| `--qemu-framebuffer-async` | — | off | Adds worker-thread QEMU-surface submission to `--qemu-framebuffer`. It requires QEMU's SDL display. OpenGL-backed renderers transfer their context to the worker on the first refresh. Experimental A/B option. | `scripts/run-qemu.sh --qemu-framebuffer-async` |
-| `--qemu-framebuffer-async-driver` | `auto` \| `wayland` \| `x11` \| `software` | `auto` | Selects the SDL presentation path used by `--qemu-framebuffer-async`. `auto` prefers accelerated X11 and otherwise uses software SDL; `wayland` exercises the native accelerated context-handoff path. | `scripts/run-qemu.sh --qemu-framebuffer-async --qemu-framebuffer-async-driver wayland` |
-| `--audio` | `auto` \| `none` \| QEMU audio driver | `auto` | Autodetects the first QEMU-supported/host-available backend in order: `sdl`, `pa`, `alsa`, `oss`, `sndio`, `dbus`; falls back to `none` with a warning. Explicit backends are validated against QEMU `-audio help`. | `scripts/run-qemu.sh --audio alsa` |
-| `--no-audio` | — | off | Forces DCS audio off; overrides `--audio`. | `scripts/run-qemu.sh --no-audio` |
-| `--speed-target` | percent | `100` | Deliberate XINU game-clock speed from 25 through 300. Scales the natural i8254 PIT divisor. | `scripts/run-qemu.sh --speed-target 75` |
-| `--strict` | — | on | Compatibility alias for Encore's sole natural i8254/i8259 IRQ0 path. | `scripts/run-qemu.sh --strict` |
-| `--irq0-stack-trace` | — | off | Logs record-low XINU process-stack margin immediately before IRQ0 interrupt entry. Observation only. | `scripts/run-qemu.sh --irq0-stack-trace` |
-| `--irq0-stack-guard` | guest address | unset | Restricts IRQ0 stack-margin tracing to one XINU stack guard address. | `scripts/run-qemu.sh --irq0-stack-guard 0x003f3ffc` |
-| `--irq0-stack-dump` | path | unset | With stack tracing, dumps the 8 KiB stack once observed margin reaches 128 bytes. | `scripts/run-qemu.sh --irq0-stack-dump /tmp/irq0-stack.bin` |
-| `--bench` | — | off | Runs isolated guest-IRQ and LPT/PDB passes after cabinet input and 10 seconds of guest warmup. It automatically records IRQ0 depth/IStack margin. A single isolated PDB gap is reported as a warning; sustained p99 or repeated-window failures remain abnormal. Requires `gdb`, `as`, `ld`, and `objcopy`. | `scripts/run-qemu.sh --bench` |
-| `--bench-long` | — | off | With `--bench`, uses the former 30-second warmup for final validation. It does not change the measured window. | `scripts/run-qemu.sh --bench --bench-long` |
-
-| `--pb2kslib` | path | `<roms>/<game>_sound.bin` lookup in machine | Exports `P2K_PB2KSLIB` to override the pb2kslib container. | `scripts/run-qemu.sh --pb2kslib ./roms/swe1_sound.bin` |
-| `--dcs-engine` | `pb2kslib` \| `pb2kslib-adsp` \| `adsp` \| `adsp-thread` \| `adsp-clock-thread` \| `adsp-hybrid-thread` | `adsp-hybrid-thread` | Selects extracted samples, persistent PCM generated by the native DSP, synchronous native ADSP, the condition-driven worker, the fixed-slice producer, or the event-gated hybrid. Missing native assets fall back to `pb2kslib`. | `scripts/run-qemu.sh --dcs-engine adsp-thread` |
-| `--dcs-pcm-cpu` | logical CPU | unset | Pins the native ADSP worker used by `adsp-thread`, `adsp-clock-thread`, or `adsp-hybrid-thread`. Experimental and Linux-only; validate on the target host. | `scripts/run-qemu.sh --dcs-pcm-cpu 2` |
-| `--clear-pb2kslib-cache` | flag | off | Deletes the persistent `pb2kslib-adsp` PCM cache before launch so it is generated again. | `scripts/run-qemu.sh --dcs-engine pb2kslib-adsp --clear-pb2kslib-cache` |
-| `--pb2kslib-cache-workers` | `1..32` | `6` | Sets the number of concurrent headless QEMU/DSP slots. Each slot consumes short fresh-DSP jobs; their PCM is merged before launch. `1` keeps generation in the game window. | `scripts/run-qemu.sh --dcs-engine pb2kslib-adsp --pb2kslib-cache-workers 8` |
-| `--dcs-sound-flash` | path | auto from selected update or ROM directory | Selects the 1 MiB sound-flash image used by a native ADSP engine. | `scripts/run-qemu.sh --dcs-engine adsp --dcs-sound-flash ./roms/swe1_28f800.rom` |
-| `--sound-loading` | `lazy` \| `preload` | `lazy` | Lazy decodes samples on first use; preload exports `P2K_DCS_PRELOAD=1`. | `scripts/run-qemu.sh --sound-loading preload` |
-| `--serial` | — | off | Interactive COM1 in current terminal via temporary TCP UART plus foreground `nc`; requires `nc`; mutually exclusive with `--serial-tcp`, `--uart-tcp`, `--headless`. | `scripts/run-qemu.sh --serial` |
-| `--script` | file | off | Validates the file, waits for XINU, then runs console commands and automation directives. Supports timed keys and matrix switches, repeats, assertions, polling, screenshots and timed audio capture. It manages a private TCP UART and QEMU monitor, then leaves the emulator running. `--console-script` is an alias. | `scripts/run-qemu.sh --script scripts/demos/start-game.p2k` |
-| `--uart-quiet` | — | off | Silences COM1/UART stderr mirror and uses `-serial null` in headless mode. Wins over `-v`. | `scripts/run-qemu.sh --uart-quiet` |
-| `--guest-extensions` | — | off | Installs Encore's transient, signature-resolved XINU extension in guest RAM. It adds the `setip` serial command without changing an update ROM. | `scripts/run-qemu.sh --guest-extensions --serial` |
-| `--setip` | `IP MASK GATEWAY` | off | Writes XINA's persistent network Resources before `netstart`; a blank-CMOS factory reset is handled once afterward so the UI and saved state retain them. | `scripts/run-qemu.sh --network-auto --setip 10.0.2.15 255.255.255.0 10.0.2.2` |
-
-| `--uart-drop` | substring | drops `swd Debug:` by default | Repeatable line filter for UART output before stdout/TCP/stderr. | `scripts/run-qemu.sh --uart-drop NonFatal` |
-| `--uart-no-filter` | — | off | Exports empty `P2K_UART_DROP`, disabling the default `swd Debug:` filter and custom drops. | `scripts/run-qemu.sh --uart-no-filter` |
-| `--uart-tcp` | `host:port` | off | Binds COM1 to QEMU TCP serial server. Compatible with `--headless`. | `scripts/run-qemu.sh --uart-tcp 127.0.0.1:4444` |
-| `--serial-tcp` | port | off | Alias for `--uart-tcp 127.0.0.1:<port>`; port must be numeric. | `scripts/run-qemu.sh --serial-tcp 4444` |
-| `--monitor` | QEMU spec | off | Adds QEMU `-monitor <spec>`. | `scripts/run-qemu.sh --monitor stdio` |
-| `--debug` | QEMU `-d` opts | off | Adds `-d <opts> -D /tmp/p2k_qemu.log`. | `scripts/run-qemu.sh --debug int,cpu_reset` |
-| `--screenshot-dir` | existing directory | `/tmp` inside QEMU machine | Exports `P2K_SCREENSHOT_DIR`; F3 writes screenshots there. | `scripts/run-qemu.sh --screenshot-dir ./screens` |
-| `--record-video` | new output path | off | Records the complete run at 640×480/60 fps. FFmpeg selects the container and its default codec from the filename extension; RGB555 frames use an anonymous pipe and no raw video file is written. Refuses to overwrite an existing file. Video-only. | `scripts/run-qemu.sh --record-video ./gameplay.mkv` |
-| `--diag` | — | off | Exports `P2K_DIAG=1` for PIT/PIC/IDT/XINU change-only sampler. | `scripts/run-qemu.sh --diag` |
-| `--trace-dcs` | — | off | Exports `P2K_DCS_BYTE_TRACE=1` for per-byte DCS UART tracing. | `scripts/run-qemu.sh --trace-dcs` |
-| `--trace-audio` | — | off | Exports `P2K_DCS_AUDIO_TRACE=1` for DCS audio event/status tracing. | `scripts/run-qemu.sh --trace-audio` |
-| `--trace-timing` | — | off | Alias for `--diag`; no separate timing trace exists today. | `scripts/run-qemu.sh --trace-timing` |
-| `-v` | — | quiet default | Level 1: UART stderr mirror plus `P2K_DIAG=1`. | `scripts/run-qemu.sh -v` |
-| `-vv` | — | quiet default | Level 2: `-v` plus audio trace. | `scripts/run-qemu.sh -vv` |
-| `-vvv` | — | quiet default | Level 3: `-v` plus audio trace and DCS byte trace. | `scripts/run-qemu.sh -vvv` |
-| `--dcs-mode` | `io-handled` \| `bar4-patch` | unset | Exports `P2K_DCS_MODE`; both labels use the shared BAR4 + UART core today. | `scripts/run-qemu.sh --dcs-mode io-handled` |
-| `--lpt-device` | `auto` \| `emulated` \| `required` \| `disconnected` \| `none` \| `/dev/parportN` | `auto` | Chooses automatic detection with emulated fallback, forced emulation, strict detection, an open bus, no guest LPT device, or an authoritative physical port. A silent explicitly selected cable remains attached for the guest ROM to diagnose. | `scripts/run-qemu.sh --lpt-device /dev/parport1 --game rfm` |
-| `--lpt-ioport` | address | `0x378` | Set the guest-visible LPT address independently of its emulated or physical host backend. XINA normally probes `0x3bc`, `0x378`, and `0x278`; the binary warns, but does not refuse, for another address. | `scripts/run-qemu.sh --lpt-device /dev/parport0 --lpt-ioport 0x3bc` |
-| `--lpt-input` | `physical` \| `hybrid` | `physical` | Keep cabinet input physical-only, or add keyboard switch closures to physical active-low reads. Hybrid never replaces hardware outputs, status, protocol traffic or keepalive. | `scripts/run-qemu.sh --lpt-device /dev/parport0 --lpt-input hybrid` |
-
-| `--lpt-trace` | file | off | Exports `P2K_LPT_TRACE_FILE`; appends LPT read/write trace lines. Parent directory must exist. | `scripts/run-qemu.sh --lpt-trace ./logs/lpt.txt` |
-| `--network` | — | off | Adds the SMC8416T-compatible card on an isolated QEMU user network. XINA and the game retain control of IP configuration and network startup. | `scripts/run-qemu.sh --network` |
-| `--network-nat` | — | off | Adds the card behind QEMU/libslirp user-mode NAT, with outbound host-network and Internet access. Requires no root, TAP, Docker, or firewall changes. | `scripts/run-qemu.sh --network-nat` |
-| `--network-auto` | — | off | Uses default rootless libslirp NAT plus universal proxy ARP. XINA keeps its static settings; Encore discovers its active IP with the read-only XUART command `ifstat 1`, with outgoing ARP/IPv4 as fallback. Experimental. | `scripts/run-qemu.sh --network-auto` |
-| `--network-mirror` | — | off | Uses rootless libslirp NAT while presenting the host's current IPv4 subnet and gateway to XINA. A narrow proxy-ARP filter preserves LAN service exposure without switching transport. XINA must use the host IPv4 address and mask. Experimental. | `scripts/run-qemu.sh --network-mirror` |
-| `--network-passt` | — | off | Connects the card through the system `passt` daemon and QEMU's Unix stream backend. Runs unprivileged and mirrors the host IPv4 address, route, and DNS topology while translating traffic through host sockets. Experimental. | `scripts/run-qemu.sh --network-passt` |
-| `--expose-services` | — | off | Enables NAT and publishes the built-in guest HTTP server as host TCP 8080 → guest TCP 80. Telnet remains opt-in through `--forward 2323:23`. | `scripts/run-qemu.sh --expose-services` |
-| `--forward` | `host:guest` TCP ports | none | With user-mode NAT, automatic NAT or passt, publishes a guest TCP port on every host interface. Repeatable and deliberately LAN-visible. | `scripts/run-qemu.sh --network-auto --forward 8080:80` |
-| `--forward-local` | `host:guest` TCP ports | none | With user-mode NAT, publishes a guest TCP port on `127.0.0.1` only. Repeatable. | `scripts/run-qemu.sh --network-auto --forward-local 8080:80` |
-| `--http-port` | TCP port | off | Forwards `127.0.0.1:<port>` to the game's HTTP server at `10.0.2.15:80`; implies `--network` and never binds a public host interface. | `scripts/run-qemu.sh --http-port 8080` |
-| `--network-bridge` | bridge name | off | Attaches the card to an existing Linux bridge through the managed `encore-p2k0` TAP. The runner's root phase creates and attaches the TAP, while QEMU runs unprivileged. Encore does not create or reconfigure the bridge. The old guest stack becomes directly reachable from that network; incompatible with `--http-port`. | `scripts/run-qemu.sh --network-bridge br0` |
-
-| `--tcg-only` | — | off | Smoke-tests host QEMU with `-M isapc`; does not boot Pinball 2000. | `scripts/run-qemu.sh --tcg-only` |
-| `--` | QEMU args | none | Forwards remaining args verbatim to QEMU. | `scripts/run-qemu.sh -- -S` |
-| `-h`, `--help` | — | — | Prints the wrapper help. | `scripts/run-qemu.sh --help` |
-
-> [!TIP]
-> `--audio auto` selects an available host backend. `--audio none` runs silent.
-> `--sound-loading preload` moves sample decoding to startup.
-
-> [!NOTE]
-> `scripts/demos/start-game.p2k` sends real emulated coin and Start switches.
-> Coin pulses become credits according to the game's saved pricing adjustments;
-> edit the repeat count when that configuration requires it. Details:
-> [console scripting](42-console-scripting.md).
-
-> [!WARNING]
-> `--serial` occupies the current terminal. Use `--serial-tcp` for a separate
-> client. Real-LPT modes require physical validation before playfield power.
-
-## Update specs
+Run `scripts/run-qemu.sh --help` for the executable copy of this interface.
+Options after `--` pass directly to the custom `qemu-system-i386` process.
 
 > [!IMPORTANT]
-> Update selection order is: `none` if specified, explicit directory/token, then auto-discovery. Missing updates fall back to base ROMs.
+> A stock `qemu-system-i386` has no `pinball2000` machine. Let the launcher
+> acquire the binary, build it with `scripts/build-qemu.sh`, or select a known
+> compatible executable with `QEMU_BIN`.
 
-| Spec | Meaning | Example |
-|---|---|---|
-| `auto` | Default. The machine discovers the newest available update and installs it when saved update flash differs. | `scripts/run-qemu.sh --update auto` |
-| `latest` | Wrapper resolves the highest version directory for the selected game. | `scripts/run-qemu.sh --game rfm --update latest` |
-| `none` | Base-ROM mode. Exports `P2K_NO_AUTO_UPDATE=1`; no update bundle is staged. | `scripts/run-qemu.sh --update none --no-savedata` |
-| `r2` | Loads the RFM 0.80 revision-2 prototype `u100r2/u101r2` pair and stages no BAR3 update. `--game auto` resolves to RFM; explicit SWE1 is rejected. | `scripts/run-qemu.sh --game rfm --update r2` |
-| `0210`, `210`, `2.10`, `2.1` | Short version token resolved against `updates/pin2000_<gid>_<vvvv>_*/<gid>/`. | `scripts/run-qemu.sh --game swe1 --update 2.10` |
-| `<dir>` | Explicit path to inner bundle directory containing `*_bootdata.rom`, `*_im_flsh0.rom`, `*_game.rom`, and `*_symbols.rom`. | `scripts/run-qemu.sh --update /data/p2k/update/50069` |
+## Default launch
 
-> [!TIP]
-> Use `--update latest` to auto-pick the newest update, or `--update none` for base-ROM mode with base ROMs only.
+With no arguments, the launcher uses these policies:
 
-## Display modes
-
-| Mode | When to use | Notes |
-|---|---|---|
-| direct framebuffer | Normal desktop play/testing | Default when `DISPLAY` or `WAYLAND_DISPLAY` exists. A dedicated SDL thread presents guest RGB555 RAM directly. |
-| `sdl` | Explicit QEMU display path | Select with `--display sdl`; wrapper adds `show-cursor=on,grab-on-hover=off` unless already specified. |
-| `gtk` | Desktop testing with GTK UI | Only if QEMU was built with GTK; install `libgtk-3-dev` before `scripts/build-qemu.sh`. |
-| `none` | CI, serial-only, or diagnostics | No graphics window. Combine with `--uart-tcp`, `--serial-tcp`, or `--headless` for observability. |
-| other QEMU backends | Advanced QEMU use | Accepted only if listed by `qemu-system-i386 -display help`. |
-
-## Serial and verbosity matrix
-
-> [!TIP]
-> Add `-v` for first-line debugging with UART mirror and diagnostics. Use `--uart-quiet` for silent CI.
-
-| Choice | QEMU serial sink | Host UART stderr mirror | Best for |
-|---|---|---|---|
-| default | none unless QEMU chooses one | off (`P2K_NO_UART_STDERR=1`) | Clean desktop launch. |
-| `-v` | unchanged | on plus diagnostics | First-line debugging. |
-| `--headless` | `stdio` | on unless `--uart-quiet` | Headless log capture. |
-| `--headless --uart-quiet` | `null` | off | Silent CI smoke test. |
-| `--serial` | temporary TCP, foreground `nc` | off | One-terminal XINA interaction. |
-| `--serial-tcp 4444` | `tcp:127.0.0.1:4444,server=on,wait=off` | off by default; use `-v` to mirror | Two-terminal monitor session. |
-
-## Key bindings
-
-Delivered by the QEMU machine, not the wrapper:
-
-| Key | Action |
+| Concern | Default |
 |---|---|
-| `F1` | Quit / shutdown request (`Alt+F1` in XINA keyboard mode) |
-| `F2` | Toggle vertical flipscreen (`Alt+F2` in XINA keyboard mode); `--flipscreen` starts with that state active |
-| `F3` | Screenshot to `<screenshot-dir>/p2k_screen_<ts>.jpg` (`Alt+F3` in XINA keyboard mode), with `.ppm` fallback |
-| `F4` | Toggle coin door |
-| `F5`, `Enter`, `KP-Enter` | ~60-frame Enter pulse |
-| `F6`, `F9` | Left / right action buttons |
-| `F7`, `F8` | Left / right flippers |
-| `F10`, `C` | Coin slot 1 |
-| `Space`, `S` | Start |
-| `Esc`, `Left arrow` | Service |
-| `Down`, `KP-` | Volume down |
-| `Up`, `=`, `KP+` | Volume up |
-| `Right arrow` | Begin test |
-| `F12` | State dump |
-| Type `11..88`, hold `Ctrl` | Hold the selected matrix switch until `Ctrl` is released; another Ctrl hold repeats it; switch `13` is Start |
-| Configured A-Z key | Hold its switch for the duration of the key press; simultaneous mappings are supported |
-| `Ctrl+Alt+F` | SDL fullscreen toggle |
+| Game | `auto`: identify a recognized physical board, otherwise SWE1 |
+| Update | `auto`: newest matching local bundle, otherwise base ROMs |
+| ROM directory | `roms/` in the Encore tree |
+| Savedata | persistent `savedata/` in the Encore tree |
+| LPT board | `auto`: physical ppdev board when recognized, otherwise emulated |
+| Display | direct SDL framebuffer in a graphical desktop session |
+| Audio backend | first supported and host-available backend |
+| DCS engine | `adsp-hybrid-thread` |
+| Game speed | 100% |
+| UART terminal output | quiet |
 
-The A-Z file format and override rules are documented in
-[desktop controls](41-cli-keyboard-guide.md).
-
-## `scripts/build-qemu.sh` synopsis
+For an unambiguous disposable desktop run, use:
 
 ```sh
-scripts/build-qemu.sh [VERSION]
-scripts/build-qemu.sh [--qemu-version VERSION] [--latest] [--unstable] [--list]
+scripts/run-qemu.sh \
+  --game swe1 \
+  --lpt-device emulated \
+  --no-savedata
 ```
 
-Builds a minimal `qemu-system-i386` with the Encore `pinball2000` machine.
+See the [Quickstart](02-quickstart.md) for the complete first-run sequence.
 
-| Flag / form | Default | Semantics | Example |
-|---|---|---|---|
-| no args | QEMU `10.0.8` | Build the pinned default version. | `scripts/build-qemu.sh` |
-| positional `X.Y.Z[-rcN]` | — | Build that QEMU version. Warns if not in the known-good list. | `scripts/build-qemu.sh 10.0.8` |
-| `--qemu-version`, `-V` | — | Explicit version form. | `scripts/build-qemu.sh --qemu-version 10.0.8` |
-| `--latest` | newest known-good stable | Picks newest entry from the script's `KNOWN_GOOD_VERS`. | `scripts/build-qemu.sh --latest` |
-| `--unstable` | off | With `--latest`, query newest tarball including `-rcN`; with `--list`, include release candidates. | `scripts/build-qemu.sh --latest --unstable` |
-| `--list`, `--list-qemu-versions` | stable only | Lists versions available on the QEMU mirror, then exits. | `scripts/build-qemu.sh --list` |
-| `-h`, `--help` | — | Prints the script's usage block. | `scripts/build-qemu.sh --help` |
-| `--` | — | Stops option parsing; currently there are no build passthrough args after it. | `scripts/build-qemu.sh --` |
-| `QEMU_VER=...` | `10.0.8` | Environment override for version. | `QEMU_VER=10.0.8 scripts/build-qemu.sh` |
-| `P2K_ENABLE_GTK=1` | off | Opts a developer build into QEMU's GTK backend; requires `gtk+-3.0` development files. Cabinet builds omit GTK/X11 by default. | `P2K_ENABLE_GTK=1 scripts/build-qemu.sh` |
+## Game, ROM, update and state
 
-The runtime-validated releases are QEMU 10.0.8 and 10.2.4. The pinned default
-remains 10.0.8; `--latest` selects 10.2.4.
-| `P2K_QEMU_BUILD_DIR=...` | `$HOME/.cache/p2k-qemu-build` | Build/cache root. Use a real Linux filesystem; shared folders may not support QEMU's symlinks. | `P2K_QEMU_BUILD_DIR=$HOME/p2k-build scripts/build-qemu.sh` |
+| Option | Effect |
+|---|---|
+| `--game auto\|swe1\|rfm` | Select the title. `auto` is the default. |
+| `--roms DIR` | Use `DIR` instead of the repository `roms/` tree. |
+| `--savedata DIR` | Read and write `<game>.flash`, `<game>.nvram2` and `<game>.see` under `DIR`. |
+| `--no-savedata` | Ignore persistent state, disable its writes and use a fresh throwaway working directory. |
+| `--fresh` | Ignore existing state for this boot, then replace it with newly initialized state in the same directory on exit. |
+| `--update SPEC` | Select `auto`, `latest`, `none`, `r2`, a short version code or an explicit inner bundle directory. |
+| `--pub-card DIR` | Experimental Prism Update Board backed by a bundle directory; incompatible with network modes because both boards decode `0xD0000`. |
+| `--guest-extensions` | Inject supported volatile serial-shell extensions into guest RAM; ROM files remain unchanged. |
+| `--setip IP MASK GATEWAY` | Enable guest extensions and persist the supplied XINA network resources immediately before `netstart`. |
 
-| `P2K_QEMU_MIRROR=...` | `https://download.qemu.org` | Alternate QEMU tarball mirror. | `P2K_QEMU_MIRROR=https://download.qemu.org scripts/build-qemu.sh --list` |
+`--fresh` and `--no-savedata` are mutually exclusive. `--update r2` selects the
+RFM 0.80 revision-2 base ROMs and is invalid with SWE1.
+
+Update specifications:
+
+| Specification | Resolution |
+|---|---|
+| `auto` | Leave selection to the machine's local auto-discovery; this is the default. |
+| `latest` | Highest four-digit version present for the selected game. |
+| `none` | Suppress update staging and auto-discovery; an existing persistent `<game>.flash` seed still loads. |
+| `r2` | RFM revision-2 prototype ROM names; no update bundle. |
+| `0210`, `210`, `2.10` | Resolve a locally present short version code. |
+| directory | Use an explicit inner game directory containing the update ROM components. |
+
+An explicit version or directory that cannot be resolved is an error. For a
+guaranteed base-ROM test that preserves installed state, combine
+`--update none` with `--no-savedata`. Details and layouts belong in
+[ROM and update loading](15-rom-loading.md); persistence belongs in
+[Savedata](09-savedata.md).
+
+## Display and host session
+
+| Option | Effect |
+|---|---|
+| `--display BACKEND` | Select a QEMU display backend after checking it against this QEMU build. |
+| `--headless` | Use display `none` and bind the UART to standard I/O. |
+| `--fullscreen` | Request a fullscreen QEMU or direct-framebuffer presentation. |
+| `--bpp 16\|32` | Select native RGB555 or converted ARGB8888 display depth; default 32. |
+| `--framebuffer` | Force Encore's direct SDL framebuffer renderer. |
+| `--wayland` | Force the direct renderer as a native Wayland client. |
+| `--display-manager` | Use the current Wayland display-manager session. |
+| `--cage` | Start the launcher inside a standalone Cage Wayland kiosk. |
+| `--weston` | Start the launcher inside a standalone Weston kiosk. |
+| `--preflight` | Prepare dependencies, assets and the selected host path, then stop before a compositor or QEMU. |
+| `--flipscreen` | Start with the vertically reversed display state. |
+| `--switch-keymap FILE` | Load or initialize the editable A–Z switch map. Default: `$XDG_CONFIG_HOME/encore/switch-keymap.yaml`, otherwise `~/.config/encore/switch-keymap.yaml`. |
+| `--qemu-framebuffer` | Use the experimental fast renderer inside QEMU's display path. |
+| `--qemu-framebuffer-async` | Add the experimental asynchronous QEMU surface submit worker. |
+| `--qemu-framebuffer-async-driver MODE` | Select `auto`, `wayland`, `x11` or `software` for async A/B measurements. |
+
+`--display none` removes the window but does not configure the UART;
+`--headless` does both. The direct framebuffer and QEMU framebuffer paths are
+mutually exclusive. Explicit framebuffer modes cannot be combined with
+`--headless`. A headless launch also enables at least the first verbose tier so
+the session is observable unless `--uart-quiet` is supplied.
+
+The complete keyboard mapping is in [Desktop controls](41-cli-keyboard-guide.md).
+
+## Audio and clock
+
+| Option | Effect |
+|---|---|
+| `--audio auto\|none\|DRIVER` | Auto-select, disable or explicitly select a QEMU audio driver. |
+| `--no-audio` | Force audio off, overriding `--audio`. |
+| `--dcs-engine ENGINE` | Select `pb2kslib`, `pb2kslib-adsp`, `adsp`, `adsp-thread`, `adsp-clock-thread` or `adsp-hybrid-thread`. |
+| `--dcs-pcm-cpu CPU` | Experimentally pin a threaded ADSP producer to one Linux logical CPU. |
+| `--dcs-sound-flash FILE` | Use an explicit 1 MiB ADSP sound-flash image. |
+| `--pb2kslib FILE` | Override the pb2kslib container instead of `<roms>/<game>_sound.bin`. |
+| `--clear-pb2kslib-cache` | Remove the generated update-derived PCM cache before launch. |
+| `--pb2kslib-cache-workers N` | Use 1–32 DSP worker processes for missing PCM generation; default 6. |
+| `--sound-loading lazy\|preload` | Decode extracted samples on demand or preload them at startup. |
+| `--dcs-mode io-handled\|bar4-patch` | Select a compatibility label; both currently use the same BAR4/UART core. |
+| `--speed-target PERCENT` | Deliberately scale guest game-clock speed from 25% through 300%; default 100%. |
+| `--strict` | Compatibility alias for the sole natural i8254+i8259 IRQ0 path. |
+
+`--audio auto` is Encore's host-aware selection, not QEMU's `driver=auto`.
+It tries `sdl`, `pa`, `alsa`, `oss`, `sndio` and `dbus` in that order, while
+requiring both QEMU support and the relevant host check. Explicit drivers are
+rejected when absent from the selected QEMU binary.
+
+The native ADSP engines fall back to `pb2kslib` when their original-format
+assets are incomplete. If neither native assets nor a valid library are
+available, the audio device remains present but sample lookups miss.
+
+See [DCS sound](25-dcs-sound.md) and [CPU and timing](12-cpu-and-timers.md)
+before changing engines or clock speed.
+
+## Network
+
+Every network option adds the emulated SMC8416T-compatible card. XINA retains
+ownership of guest network startup and configuration.
+
+| Option | Effect |
+|---|---|
+| `--network` | Isolated QEMU user network without outside access. |
+| `--network-nat` | Conventional unprivileged QEMU user-mode NAT. |
+| `--network-auto` | Rootless NAT that adapts to XINA's active IPv4 address. |
+| `--network-mirror` | Experimental libslirp topology mirroring the host IPv4 subnet. |
+| `--network-passt` | Unprivileged host-network translation through `passt`. |
+| `--network-bridge NAME` | Attach a managed TAP to an existing Linux bridge. |
+| `--expose-services` | Publish host TCP 8080 to guest HTTP port 80 on every host interface. |
+| `--forward HOST:GUEST` | Publish one guest TCP port on every host interface; repeatable. |
+| `--forward-local HOST:GUEST` | Publish one guest TCP port on `127.0.0.1`; repeatable. |
+| `--http-port PORT` | Publish guest `10.0.2.15:80` on one localhost port. |
+
+> [!CAUTION]
+> `--forward` and `--expose-services` deliberately expose the historical guest
+> network stack beyond localhost. Use `--forward-local` unless remote access is
+> intentional and the host network is trusted.
+
+Bridge mode cannot be combined with NAT or forwarding. `--network-auto`,
+mirror, passt and bridge transports have additional mutual-exclusion checks.
+See [Optional network card](48-network.md) for topology and guest setup.
+
+## Serial console, automation and diagnostics
+
+| Option | Effect |
+|---|---|
+| `--serial` | Open an interactive local XINA console through a temporary TCP UART and foreground `nc`. |
+| `--uart-tcp HOST:PORT` | Expose COM1 as a bidirectional TCP server. |
+| `--serial-tcp PORT` | Alias for `--uart-tcp 127.0.0.1:PORT`. |
+| `--script FILE` | Validate and execute a console/cabinet automation script, leaving QEMU open afterward. |
+| `--console-script FILE` | Compatibility alias for `--script`. |
+| `--uart-quiet` | Disable the UART sink and stderr mirror; bounded boot input is pre-stuffed unless overridden. |
+| `--uart-drop TEXT` | Remove UART lines containing `TEXT`; repeatable. |
+| `--uart-no-filter` | Disable the default `swd Debug:` filter and custom drop rules. |
+| `--monitor SPEC` | Set the QEMU monitor target. |
+| `--debug ITEMS` | Enable QEMU `-d` items and write them to `/tmp/p2k_qemu.log`. |
+| `--diag` | Enable the read-only PIT/PIC/IDT/XINU change sampler. |
+| `--trace-timing` | Compatibility alias for `--diag`. |
+| `--timing-snapshots` | Emit the lightweight three-second timing subset used by benchmarks. |
+| `--trace-audio` | Trace DCS audio events and periodic renderer status. |
+| `--trace-dcs` | Trace DCS UART traffic byte by byte. |
+| `-v` | Restore the UART stderr mirror and enable `--diag`. |
+| `-vv` | Add audio tracing. |
+| `-vvv` | Add DCS byte tracing. |
+| `--irq0-stack-trace` | Log record-low XINU IStack margin at IRQ0 interrupt acknowledgement. |
+| `--irq0-stack-guard ADDR` | Restrict stack observation to one guest stack-guard address. |
+| `--irq0-stack-dump FILE` | Dump the 8 KiB stack once observed margin reaches 128 bytes. |
+| `--screenshot-dir DIR` | Select the directory used by the F3 screenshot action; default `/tmp`. |
+| `--record-video FILE` | Record the run through FFmpeg without overwriting an existing file. |
+
+`--script` owns its UART and monitor and cannot be combined with `--serial`, a
+manual UART TCP target, a manual monitor or `--headless`. Script syntax is in
+[Console scripting](42-console-scripting.md). `--serial` requires an `nc`
+implementation such as Debian's `netcat-openbsd`. The screenshot directory
+and the parent directory of a video output must already exist.
+
+## Self-diagnostic
+
+`--bench` starts two isolated emulator passes with disposable state:
+
+1. a temporary RAM-only XINU `clkint` probe measures guest IRQ intervals and
+   is restored before exit;
+2. a new unpatched guest measures LPT and PDB05 behavior.
+
+Both passes collect IRQ0 depth and IStack margin, exercise cabinet input, wait
+through guest warmup and time a guest `sleep 10`. The benchmark requires
+`gdb`, `as`, `ld` and `objcopy`.
+
+| Option | Effect |
+|---|---|
+| `--bench` | Run the two-pass self-diagnostic and write a temporary artifact directory. |
+| `--bench-long` | Use a 30-second rather than 10-second guest warmup; the measured window is unchanged. |
+| `--bench-guest-load` | Add a temporary cooperative low-priority XINU worker during both passes. |
+
+Exit status 2 means abnormal speed or IRQ delivery, mean PDB p99 above 1 ms,
+or gaps above 2.5 ms in at least 10% of complete windows with a minimum of two
+affected windows. A non-repeated breach is retained as `PASS WITH WARNINGS` and
+does not fail the command by itself.
+
+## Cabinet LPT
+
+| Option | Effect |
+|---|---|
+| `--lpt-device auto\|emulated\|required\|disconnected\|none\|/dev/parportN` | Select physical, emulated, open-bus or absent driver-board behavior. |
+| `--lpt-ioport ADDRESS` | Change the guest LPT base address from the default `0x378`. |
+| `--lpt-input physical\|hybrid` | With a real board, accept physical switches only or add keyboard closures. |
+| `--lpt-trace FILE` | Append microsecond-timestamped LPT reads and writes to a trace file. |
+
+`required` refuses emulated fallback. An explicit `/dev/parportN` is
+authoritative. `hybrid` is valid only with a physical-capable selection. See
+[LPT driver-board interface](26-lpt-board.md) and
+[Real LPT passthrough](46-real-lpt-passthrough.md).
+
+Physical, emulated and deliberately disconnected cabinet modes begin with the
+XINA AT keyboard unplugged. `Tab` connects it; with a physical-only board this
+does not enable emulated cabinet switches.
 
 > [!WARNING]
-> `--unstable` may select a release candidate.
+> Presence of the real-LPT implementation is not certification for a powered
+> playfield. Follow the physical validation procedure before cabinet use.
 
-The build script configures QEMU with `--target-list=i386-softmmu`,
-`--without-default-devices`, SDL, and only Encore's explicit Kconfig/Meson
-dependencies. Docs, tools, guest agent, plugins, VNC and GTK are disabled.
-Developers can explicitly opt into GTK with `P2K_ENABLE_GTK=1`. A hashed
-configure profile recreates the build directory when these choices change;
-ordinary source edits preserve the incremental build.
+## Escape hatches
 
-The `machine-build-integration` patch family connects upstream QEMU to an
-Encore-owned `hw/i386/p2k/` directory. Its filename declares the tested QEMU
-source range. Validation requires zero-fuzz application; the builder generates
-the changing source list and machine Kconfig without rewriting upstream build
-files directly.
+| Option | Effect |
+|---|---|
+| `--tcg-only` | Start the selected QEMU binary as a plain `isapc` smoke test without Pinball 2000 hardware. |
+| `-- QEMU_OPTIONS...` | Pass all remaining arguments directly to QEMU. |
+| `-h`, `--help` | Print launcher help and exit. |
 
-Details: [quickstart](02-quickstart.md), [troubleshooting](04-troubleshooting.md)
-and [documentation index](README.md).
+Arguments passed after `--` bypass Encore's option validation. They are for
+QEMU debugging and controlled experiments, not ordinary game configuration.
 
-## `scripts/internal/download-qemu-release.sh` synopsis
+## QEMU build command
+
+`scripts/build-qemu.sh` creates a minimal i386 system emulator with the Encore
+machine grafted into a pinned upstream source tree:
+
+```sh
+scripts/build-qemu.sh [VERSION|OPTIONS]
+```
+
+| Form | Effect |
+|---|---|
+| no argument | Build pinned QEMU 10.0.8. |
+| `VERSION` | Build an explicit `X.Y.Z` or `X.Y.Z-rcN`. |
+| `--qemu-version VERSION`, `-V VERSION` | Explicit version form. |
+| `--latest` | Select the newest entry in the script's known-good list. |
+| `--unstable` | With `--latest` or `--list`, include release candidates from the mirror. |
+| `--list`, `--list-qemu-versions` | Query and print versions available on the configured mirror. |
+| `-h`, `--help` | Print build help. |
+
+The default output is
+`$HOME/.cache/p2k-qemu-build/qemu-<version>/build/qemu-system-i386`.
+Relevant environment overrides are:
+
+| Variable | Effect |
+|---|---|
+| `P2K_QEMU_BUILD_DIR` | Replace the build/cache root. |
+| `P2K_QEMU_MIRROR` | Replace `https://download.qemu.org`. |
+| `P2K_ENABLE_GTK=1` | Add GTK to the otherwise SDL-focused minimal build. |
+| `QEMU_VER` | Legacy default-version override. |
+
+The current known-good list contains QEMU 10.0.8 and 10.2.4, so `--latest`
+selects 10.2.4 while the pinned no-argument default remains 10.0.8. Keep the
+build root on a Linux filesystem that supports the symlinks used by QEMU's
+source tree.
+
+## Binary and asset acquisition
+
+The launcher searches, in order:
+
+1. executable `QEMU_BIN` supplied by the environment;
+2. `qemu-system-i386` at the Encore repository root;
+3. the pinned local-build cache;
+4. the verified release cache.
+
+When the source build script exists and no binary is found, an interactive
+launcher offers a local build or a verified release download. A packaged
+release without its binary downloads the replacement automatically.
+
+Advanced acquisition variables:
+
+| Variable | Effect |
+|---|---|
+| `QEMU_BIN` | Select an already compatible executable. |
+| `P2K_ASSETS_REPO` | Replace the Git source used when `roms/` or `updates/` is absent. |
+| `ENCORE_RELEASE_REPOSITORY` | Replace the GitHub `owner/repository` used for binary releases. |
+| `ENCORE_RELEASE_BASE_URL` | Replace the complete release-download base URL. |
+| `XDG_CACHE_HOME` | Relocate the release and generated-audio caches that honor it. |
+
+The standalone binary downloader accepts an optional destination:
 
 ```sh
 scripts/internal/download-qemu-release.sh [--destination DIR]
 ```
 
-Downloads the fixed-name QEMU asset and checksum from the latest GitHub
-release. The default destination is
+It supports x86-64 hosts, verifies the published SHA-256 file and checks that
+the downloaded executable advertises the `pinball2000` machine when its shared
+libraries are already available. The default destination is
 `$XDG_CACHE_HOME/encore-qemu-release`, or
-`$HOME/.cache/encore-qemu-release` when `XDG_CACHE_HOME` is unset. It supports
-published x86-64 builds only. `ENCORE_RELEASE_REPOSITORY=owner/repository` can
-redirect the download for release testing.
+`$HOME/.cache/encore-qemu-release` when `XDG_CACHE_HOME` is unset.
+
+## Cabinet installation commands
+
+`install.sh` configures a bootable cabinet session and escalates through
+`run0`, `sudo` or `pkexec` when necessary:
+
+```sh
+./install.sh [--display-manager|--cage|--weston|--direct-console]
+```
+
+Run `./uninstall.sh` to remove only integration owned by Encore. Installation
+changes host services and boot/session configuration; follow
+[Cabinet installation](01-cabinet-installation.md) rather than treating these
+commands as desktop-launch shortcuts.
+
+## Forensic capture
+
+When a guest is still alive but wedged, `tools/capture-live-crash.sh` can attach
+GDB briefly, preserve RAM and host state, then detach:
+
+```sh
+tools/capture-live-crash.sh [--pid PID] [--output DIR] \
+  [--disassemble ADDRESS[:LENGTH]]...
+```
+
+See [Live crash capture](51-live-crash-capture.md) before using it on an
+incident.
+
+---
+
+← [Quickstart](02-quickstart.md) · [Documentation index](README.md) ·
+[Troubleshooting](04-troubleshooting.md)

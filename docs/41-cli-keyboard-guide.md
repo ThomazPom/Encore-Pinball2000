@@ -1,140 +1,190 @@
 # 41 — Desktop controls
 
-With an emulated driver board, Encore starts in cabinet-key mode. Press `Tab`
-to toggle between that mapping and the emulated AT keyboard connected to
-XINA's real i8042 driver. A temporary banner identifies the selected mode.
-Until that toggle, the keyboard is electrically absent from XINA, so its
-automatic keyboard-function menu does not appear during normal cabinet boot.
+Encore routes host keys either to the emulated cabinet controls or to XINA's
+AT keyboard. This guide describes the default direct framebuffer and QEMU
+display paths; both ultimately use the same input router and cabinet state.
 
-In `XINA KEYBOARD` mode, keys are delivered exclusively as PC keyboard scan
-codes. They are not duplicated as cabinet switches. Plain F1/F2/F3 therefore
-retain their original XINA functions; Alt+F1/F2/F3 invoke Encore's quit, flip
-and screenshot actions. F3 opens XINA's keyboard shell, where commands such as
-`help` and `fupdate enable` can be typed.
+## Input modes
 
-## Gameplay and emulator controls
+Emulated, physical and deliberately disconnected LPT modes begin with the AT
+keyboard unplugged from XINA. Press `Tab` to switch between:
 
-| Key | Action |
+- **CABINET KEYS** — host keys operate the emulated driver-board inputs;
+- **XINA KEYBOARD** — ordinary keys reach the guest's AT keyboard.
+
+The direct renderer briefly displays the selected mode. `Tab` remains owned by
+Encore so it can switch back. While the keyboard is unplugged, XINA receives
+no host keystrokes and cannot present keyboard-driven guest controls during a
+normal cabinet boot.
+
+When XINA keyboard mode is active, plain `F1`, `F2` and `F3` belong to the
+guest. Hold `Alt` with those keys to invoke Encore's Quit, flipscreen and
+screenshot actions.
+
+> [!NOTE]
+> `--lpt-device none` installs no guest LPT device and connects the XINA
+> keyboard immediately. There is no cabinet input router in that diagnostic
+> mode.
+
+## Cabinet keys
+
+These controls are active with the emulated board and with explicit hybrid
+input. A held key keeps the corresponding contact closed unless the table says
+the action is a pulse or toggle.
+
+| Key | Cabinet or host action |
 |---|---|
-| `Tab` | Toggle `CABINET KEYS` / `XINA KEYBOARD` |
-| `Space` / `S` | Start |
-| `F10` / `C` | Hold coin-slot 1 contact closed |
-| `F4` | Open or close the coin door |
-| `F7` / `F8` | Left/right flipper |
-| `F6` / `F9` | Left/right action button |
-| `F2` | Toggle vertical display flip |
-| `F3` | Save a screenshot under `--screenshot-dir` (default `/tmp`) |
-| `F12` | Print LPT registers and switch state |
-| `F1` | Request a clean shutdown (`Alt+F1` in XINA keyboard mode) |
-| `Ctrl+Alt+F` | Toggle SDL fullscreen through QEMU |
+| `F1` | Request clean emulator shutdown. |
+| `F2` | Toggle vertical reversal relative to the normal display orientation. |
+| `F3` | Capture a screenshot. |
+| `F4` | Toggle the emulated coin-door interlock. |
+| `F5`, `Enter`, `KP Enter` | Fire an approximately 60-LPT-frame Enter pulse. |
+| `F6` | Hold the left action button. |
+| `F7` | Hold the left flipper. |
+| `F8` | Hold the right flipper. |
+| `F9` | Hold the right action button. |
+| `F10`, `C` | Hold coin-slot contact 1. |
+| `Space`, `S` | Hold matrix switch 13, the Start button. |
+| `Esc`, `Left` | Hold the service-panel Escape input. |
+| `Down`, `KP -` | Hold Volume Down / menu Down. |
+| `Up`, `=`, `KP +` | Hold Volume Up / menu Up. |
+| `Right` | Hold Begin Test / Enter. |
+| `F12` | Print current LPT/input state to the terminal. |
 
-## Custom A-Z switch bindings
+Coin is a contact, not a hard-coded credit operation. Whether one closure adds
+a credit depends on the game's current pricing and saved adjustments.
 
-Hold a configured letter to close its matrix switch; release the letter to
-open it. Multiple mapped letters can be held together. They use an independent
-input layer, so a mapped key cannot release a switch still held through the
-numeric Ctrl selector.
+> [!TIP]
+> For a basic desktop start: tap or hold `C` as required for credits, then
+> press `S`. Use `F7` and `F8` for the flippers and `F1` to exit.
 
-The default file is created on first launch:
+## Window and display actions
 
-```text
-${XDG_CONFIG_HOME}/encore/switch-keymap.yaml
+| Display path | Fullscreen toggle |
+|---|---|
+| Default direct framebuffer | `F11` or `Alt+Enter` |
+| QEMU SDL selected with `--display sdl` | `Ctrl+Alt+F` |
+
+Closing the direct framebuffer window requests the same clean shutdown as
+`F1`.
+
+`F3` writes under `/tmp` by default. Select an existing directory with:
+
+```sh
+scripts/run-qemu.sh --screenshot-dir ./screens
 ```
 
-When `XDG_CONFIG_HOME` is unset, this is
-`~/.config/encore/switch-keymap.yaml`. Select another file with:
+The direct framebuffer captures a 640×480 BMP. QEMU display paths prefer JPEG
+when `cjpeg`, `magick` or `convert` is available and otherwise write PPM.
+
+Use `--flipscreen` to start in the same reversed state toggled by `F2`.
+
+## Any matrix switch
+
+To operate a switch by its two-digit matrix number:
+
+1. type a column and row from `11` through `88`;
+2. hold either `Ctrl` key for as long as the switch should remain closed;
+3. release `Ctrl` to open it.
+
+The two digits must each be from 1 through 8. The selected number remains
+available, so another `Ctrl` hold repeats the same switch. Typing a new pair
+replaces it. Numeric-`Ctrl` holds and configured-letter holds are tracked
+independently, so releasing either input does not release a switch that the
+other one still holds.
+
+Example: type `1`, then `3`, then hold `Ctrl` to operate Start as switch 13.
+
+## Custom A–Z bindings
+
+Encore creates an editable starter map on the first emulated-board or hybrid
+input launch:
+
+```text
+$XDG_CONFIG_HOME/encore/switch-keymap.yaml
+```
+
+When `XDG_CONFIG_HOME` is unset, the path is
+`~/.config/encore/switch-keymap.yaml`. Select another path with:
 
 ```sh
 scripts/run-qemu.sh --switch-keymap ./my-switches.yaml
 ```
 
-The file uses a strict, dependency-free YAML subset:
+A missing selected file and its parent directory are initialized
+automatically. The file uses a deliberately small YAML subset:
 
 ```yaml
 switches:
   a: 13
-  x: 28
-  f: 58
+  b: 28
+  z: 88
 ```
 
-- Keys are single letters from A through Z, matched without case sensitivity.
-- Values are matrix numbers `11` through `88`; both digits must be `1..8`.
-- Blank lines and `#` comments are accepted.
-- Entries must be indented beneath one top-level `switches:` mapping.
-- Duplicate letters, tabs, trailing text, extra sections and other YAML
-  features reject the complete file. Built-in controls remain available.
+Rules:
 
-A binding overrides that letter's built-in action. For example, binding `c`
-replaces the `C` coin shortcut; `F10` still pulses the coin switch. The file is
-read once at launch.
+- the only top-level key is `switches:`;
+- each indented entry maps one A–Z letter to a matrix number;
+- both switch digits must be from 1 through 8;
+- blank lines and `#` comments are accepted;
+- tabs, duplicate letters, trailing text and malformed entries reject the
+  complete custom map rather than loading it partially.
 
-With ROMs and update 2.10 installed, exercise parsing, simultaneous holds,
-same-switch reference counts and built-in fallback with:
+Letter case is ignored. Holding a configured letter holds its switch. Several
+letters may map to the same switch; that switch remains closed until every
+mapped key currently holding it has been released.
 
-```sh
-python3 scripts/tests/smoke-switch-keymap.py
-```
+Configured letters take precedence over built-in letter shortcuts. For
+example, mapping `c` replaces the normal `C` coin binding for that run. Invalid
+custom maps disable only the custom bindings, so built-in controls remain
+available; run with `-v` for line-specific parser warnings.
 
-## Any matrix switch
+The generated starter map currently contains:
 
-Encore accepts standard two-digit matrix switch numbers. The first digit is
-the column and the second is the row; both range from 1 through 8.
+| Letter | Switch |
+|---|---:|
+| `X` | 28 |
+| `F` | 58 |
+| `D` | 53 |
+| `G` | 54 |
+| `E` | 55 |
+| `T` | 56 |
+| `L` | 52 |
 
-1. Type the two-digit switch number on the number row or keypad.
-2. Press and hold `Ctrl` to close that switch.
-3. Release `Ctrl` to open it again.
+These are editable defaults, not additional hard-coded controls.
+The map is read once during machine initialization; restart Encore after
+editing it.
 
-The switch remains closed for the real duration of the Ctrl press. The number
-stays selected, so another Ctrl hold repeats the same switch. For example, type
-`13`, hold Ctrl for three seconds, release it, then hold Ctrl again whenever
-Start should be pressed again. Typing another two-digit number replaces the
-selection; digits must be from 1 through 8.
+## Physical, hybrid and disconnected boards
 
-## Coin-door service panel
+- **Physical-only:** the real board supplies cabinet inputs. Keyboard cabinet
+  closures are blocked, while `F1`–`F3` remain available as host actions.
+- **Hybrid:** physical reads remain authoritative and keyboard closures are
+  added to them. Outputs, protocol traffic, keepalive and the coin-door
+  interlock remain physical; `F4` is therefore ignored.
+- **Disconnected:** the guest sees an open LPT bus. Cabinet closures are
+  blocked, while `F1`–`F3` and the `Tab` route to XINA remain available.
 
-Open the coin door with `F4` before using service volume and menu controls.
+In physical and disconnected modes, `Tab` can connect the XINA keyboard but
+does not silently enable emulated cabinet switches. See
+[LPT driver-board interface](26-lpt-board.md) and
+[Real LPT passthrough](46-real-lpt-passthrough.md).
 
-| Key | Cabinet button | Typical use |
-|---|---|---|
-| `Esc` / `Left` | Escape | Service credits or menu back |
-| `Down` / keypad `-` | Volume down | Lower volume or menu down |
-| `Up` / `=` / keypad `+` | Volume up | Raise volume or menu up |
-| `Right` | Begin test | Enter the service menu |
-| `F5` / `Enter` / keypad `Enter` | Enter | Select a service item |
+> [!WARNING]
+> Keyboard behavior validated in emulation does not validate a powered
+> playfield or real cabinet switch wiring.
 
-The exact menu reaction belongs to the running Williams software and can vary
-by game state or update.
+## Automation
 
-## Credit pulses
+`--display none` creates no graphical input window, and `--serial` controls
+COM1 rather than cabinet switches.
 
-Each `F10` or `C` press starts a 60-scan coin-switch pulse. Pressing again while
-the pulse is active restarts that duration. The game awards credits according
-to its pricing adjustments, so one pulse is not necessarily one credit.
-
-Wait until the ROM has finished booting before inserting credits. Rapidly
-mashing the credit key during boot has made SWE1 2.10 enter its
-`scheduler is hung` fatal monitor in both normal HOTLOOP and `--strict`. This
-has not been observed during normal play and is not HOTLOOP-specific.
-
-## Modes without desktop keys
-
-- `--display none` has no graphical input window.
-- A detected or explicitly selected physical board supplies the cabinet input
-  and leaves the AT keyboard unplugged until `Tab`. `--lpt-input hybrid`
-  additionally lets the cabinet-key side of the router supplement physical
-  switch reads without replacing hardware outputs or keepalive.
-- The diagnostic `--lpt-device disconnected` mode follows the same keyboard
-  lifecycle: open-bus LPT and no AT keyboard until `Tab`.
-- `--serial` controls COM1 in the terminal. It is separate from cabinet keys.
-
-For automated cabinet input, use the QEMU monitor `sendkey` command normally.
-Send `tab` first when the test intends to type into XINA's AT keyboard. For
-low-level cabinet state, press `F12` in cabinet-key mode or enable
-`--lpt-trace`.
-
-Details: [LPT board](26-lpt-board.md) and
-[CLI reference](03-cli-reference.md).
+For repeatable tests, prefer console scripts over desktop key timing. Scripts
+can wait for guest state, hold keys or exact matrix switches, repeat actions
+and capture screenshots or audio. See
+[Console scripting](42-console-scripting.md).
 
 ---
 
-← [Documentation index](README.md) · [Project README](../README.md)
+← [Quickstart](02-quickstart.md) · [Documentation index](README.md) ·
+[Command-line reference](03-cli-reference.md)

@@ -7,7 +7,8 @@ bench.
 
 ## Screen shot
 
-[screenshot](./img/pinballDiag_main.png)
+The upstream screenshot referenced by the original README is not preserved in
+this evidence copy.
 
 ## Dependencies
 
@@ -58,5 +59,4 @@ See the github wiki pages for more information.
 
 ## License
 
-This project is licensed under the BSD license - see the [LICENSE.txt](LICENSE.md) file.
-
+This project is licensed under the BSD license - see the [LICENSE.txt](LICENSE.txt) file.
