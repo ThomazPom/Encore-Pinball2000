@@ -81,6 +81,53 @@ List the supported entry points without changing the host:
 ./install.sh --help
 ```
 
+The first choice determines who owns the graphical session and where `F1`
+leaves the operator:
+
+```text
+                              ./install.sh
+                                    │
+              ┌─────────────────────┴──────────────────────┐
+              │                                            │
+              ▼                                            ▼
+   --display-manager (default)                       standalone tty1
+              │                                            │
+              │                     ┌──────────────────────┼───────────────────┐
+              │                     │                      │                   │
+              ▼                     ▼                      ▼                   ▼
+        GDM or SDDM          --direct-console           --cage              --weston
+              │                     │                      │                   │
+              ▼                     ▼                      ▼                   ▼
+   existing Wayland desktop     SDL2 KMSDRM          Cage Wayland        Weston Wayland
+              │                     │                      │                   │
+              ▼                     │                      └─────────┬─────────┘
+   user systemd service             │                                │
+              │                     └──────────────┬─────────────────┘
+              │                                    │
+              ▼                                    ▼
+   Encore direct SDL2 renderer        Encore direct SDL2 renderer
+              │                                    │
+              ▼                                    ▼
+      F1 returns to desktop          F1 ends cabinet session, then opens
+                                     the selected maintenance tty or DM
+                                     for this boot; reboot returns to Encore
+```
+
+The two families still share the distribution's ordinary unprivileged login
+machinery:
+
+```text
+display-manager:
+systemd → GDM/SDDM → PAM/logind → Wayland desktop → systemd --user → Encore
+
+standalone:
+systemd → agetty → login → PAM/logind → systemd --user
+        → Cage / Weston / SDL2 KMSDRM → Encore
+```
+
+No branch installs Xorg, an X11 window manager or XWayland, and none requires
+Encore itself to run as root.
+
 | Profile | Session path | Host requirement | When to use it |
 |---|---|---|---|
 | `--display-manager` | GDM/SDDM autologin → Wayland session → user systemd service | an existing supported GDM or SDDM Wayland setup | default and easiest first choice; keeps the distribution's familiar desktop/session lifecycle |
