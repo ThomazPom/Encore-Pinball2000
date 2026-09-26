@@ -285,8 +285,8 @@ DISPLAY / UX
   --display <backend>       QEMU -display backend. The wrapper queries
                             `qemu-system-i386 -display help` and rejects
                             any backend the binary wasn't compiled with.
-                            Out of the box this build supports: sdl,
-                            none, dbus. Rebuild with `--enable-gtk` if
+                            Out of the box this build supports: sdl and
+                            none. Rebuild with `--enable-gtk` if
                             you want gtk.
   --headless                Shortcut for --display none -serial stdio
                             (so you actually see UART output).

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify the structural extension ABI against every preserved game ROM."""
 
+import argparse
 from pathlib import Path
 import re
 import struct
@@ -52,8 +53,14 @@ def factory_reset_target(data: bytes) -> int | None:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.parse_args()
+    roms = sorted(ROOT.glob("updates/pin2000_*/*/*_game.rom"))
+    if not roms:
+        print("FAIL  no preserved update game ROMs found", file=sys.stderr)
+        return 2
     supported = skipped = failed = 0
-    for rom in sorted(ROOT.glob("updates/pin2000_*/*/*_game.rom")):
+    for rom in roms:
         data = rom.read_bytes()
         shell = list(SHELL.finditer(data))
         put = list(PUT_VALUE.finditer(data))

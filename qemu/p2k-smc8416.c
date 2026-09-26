@@ -9,14 +9,13 @@
  */
 
 #include "qemu/osdep.h"
-#include "exec/memory.h"
+#include "p2k-qemu-compat.h"
 #include "hw/isa/isa.h"
 #include "hw/net/ne2000.h"
 #include "net/net.h"
 #include "qapi/error.h"
 #include "qemu/module.h"
 #include "qemu/error-report.h"
-#include "exec/address-spaces.h"
 #include "p2k-internal.h"
 #include <slirp/libslirp.h>
 
@@ -503,7 +502,7 @@ static void p2k_smc_instance_init(Object *obj)
     memcpy(s->dp8390.c.macaddr.a, mac, sizeof(mac));
 }
 
-static void p2k_smc_class_init(ObjectClass *klass, void *data)
+static void p2k_smc_class_init(ObjectClass *klass, P2K_CLASS_INIT_DATA data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

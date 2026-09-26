@@ -46,7 +46,9 @@ jobs:
           ./install.sh --help >/dev/null
           ./uninstall.sh --help >/dev/null
           python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+          python3 guest-extensions/check-romset.py
           python3 -m py_compile \
+            guest-extensions/check-romset.py \
             docs/measurements/dcs-engines/run-comparison.py \
             docs/measurements/validation-matrix/run-matrix.py
 
