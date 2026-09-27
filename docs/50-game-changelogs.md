@@ -156,19 +156,64 @@ SWE1 1.20 is described by the source history but is not preserved as an
 extracted bundle here. No recovered note supports a separate change summary
 for 1.66.
 
-### Dormant Question Mark scene
+### Question Mark and community test scenes
 
-The preserved SWE1 2.10 symbol table contains `QuestionMarkScene` availability,
-start, end, intro and background routines. Its game image also contains start,
-finish and menu strings for the scene. That proves retained code and audit
-surface; it does not prove normal reachability or complete gameplay.
+`QuestionMarkScene` is real retained SWE1 game code, not merely a label found
+in the community build. The preserved 1.50 symbol table already contains its
+availability, start, end, intro, background, audio and audit objects, and the
+game image contains `Question Mark Started`, `Question Mark Finished` and
+`Scene - Question Mark` strings.
 
-An earlier documentation pass reported forcing scene index 13 in a temporary
-2.10 image and observing only a minimal score award over a black screen. That
-patched image, raw log and exact procedure are not preserved. The observation
-is therefore a **historical research lead**, not accepted runtime evidence. A
-future rerun must preserve the input hash, patch, output hash, scripted inputs,
-video/log evidence and clean-state policy before the behavior can be promoted.
+#### The 2016 tournament/community experiment
+
+An exact historical updater identity,
+`pin2000_50069_0200_02262016_B_10000000.exe`, is attested for a rewritten SWE1
+1.30 test build exposing the otherwise unreachable “Questionmark Mission”. It
+was numbered 2.00 but was not a chronological successor to the factory line.
+A [contemporary owner discussion](https://pinside.com/pinball/forum/topic/p2k-swep1-question-mark-mission)
+independently confirms the puzzle that motivated such a build: the stock game
+recorded Question Mark started/ended statistics, yet owners could not identify
+a normal way to play it.
+
+That updater is not locally preserved. Its identity and reported purpose are
+historical evidence, while its exact code changes and runtime presentation
+remain unverified until the payload is recovered. It must not be confused with
+the unrelated myPinballs 2.00 released in 2025.
+
+#### The 2025 myPinballs re-exposure
+
+The [SWE1 2.0 author's published notes](https://www.mypinballs.com/files/pin2k/starwars_updates_log.pdf)
+then state: “Scene - Added sample modes in, 4 extra (for testing).” A comparison
+of `scene_table_data` supplies the missing identity evidence:
+
+| SWE1 build | Destroyer Droid | Hover Tank | Watto's Chance | Question Mark |
+|---|---|---|---|---|
+| 1.50 | `(0,1,0)` | `(0,1,0)` | `(0,1,0)` | `(0,4,2)` |
+| community 2.0 | `(0,1,0)` | `(0,1,0)` | `(0,1,0)` | `(0,1,0)` |
+
+The tuple labels are not preserved, so this document does not invent names for
+the three fields. The relevant fact is the exact transition: community 2.0
+reclassifies Question Mark to match the three other late sample scenes while
+its release note announces four test modes. Taken together, these are strong
+evidence that **Question Mark is the fourth test scene exposed by the 2025
+community release**. This locally verifiable result independently supports the
+reported purpose of the missing 2016 experiment; it does not prove the two
+builds implemented the exposure identically.
+
+The reproducibility anchors are `scene_table_data` at `0x002e02a0` in 1.50 and
+`0x002de9b8` in community 2.0. Each table row is five little-endian 32-bit
+values; the second value resolves through the matching symbol ROM to the
+corresponding `jedi_scene_*` object. Addresses and interpretation are scoped to
+those exact builds.
+
+#### What gameplay remains unproven
+
+These conclusions are narrower than claiming a finished mission. An earlier
+documentation pass reported forcing scene index 13 in a temporary 2.10 image
+and observing only a minimal score award over a black screen. The patched
+image, raw log and exact procedure were not preserved, so those behavioral
+details remain a research lead. A future rerun should preserve input and output
+hashes, patch, scripted inputs, video/log evidence and clean-state policy.
 
 ## Unofficial myPinballs releases
 
@@ -215,8 +260,8 @@ can pair with primary change notes. The most useful open gaps are:
 
 - SWE1 1.00, 1.10 and community/tournament builds 1.60 and 1.65;
 - SWE1 1.66, whose four-component payload is preserved without notes;
-- the unrelated community “2.00” Question Mark test build reported as a
-  rewritten 1.30, whose updater is not preserved here;
+- the 2016 community “2.00” Question Mark test build, whose exact updater and
+  original accompanying note are not preserved here;
 - RFM community/tournament builds 1.21, 1.70 and 1.80;
 - preserved RFM 1.90, 1.91 and 1.95 payloads; and
 - RFM 2.11, reported between 2.10 and 2.20 but absent from both the current

@@ -316,6 +316,41 @@ The live samples also illustrate important interpretation limits:
 The normal benchmark uses the guest's `sleep 10` only as one scoped wall-time
 check; it does not treat the shell as a stable automation ABI.
 
+### Game-specific commands can expose preserved development paths
+
+The shell is also a window into game code that was not intended as an ordinary
+operator interface. RFM 1.50's `scenemgr` can inspect, select, start, stop and
+reset its scene objects. The historical XINA 1.18 reference lists 12 of them,
+including `Question Mark` at index 7; for example, its documented forced-start
+form is `scenemgr resetall stopall start 7`. That is a real RFM command and
+scene, not a feature supplied by Encore.
+
+SWE1 has a separate `QuestionMarkScene`. Its class, start/end code, display
+effects, audio records and audit strings already exist in the preserved 1.50
+game. A distinct tournament/community update named
+`pin2000_50069_0200_02262016_B_10000000.exe` is historically attested as a
+rewritten 1.30 build made to expose that “Questionmark Mission” for testing.
+Its updater has not yet been recovered, but the build identity and stated
+purpose should not be confused with a hypothetical Encore patch.
+
+There is also a separate myPinballs SWE1 2.0 dated 2025. Its published notes
+say that four extra sample modes were added for testing, and its locally
+preserved binary scene table corroborates the description: compared with
+1.50, it changes Question Mark's availability metadata to the same values used
+by the other three late sample scenes—Destroyer Droid, Hover Tank and Watto's
+Chance.
+
+> [!NOTE]
+> Two unrelated updates therefore carry the version `2.00`: the missing 2016
+> tournament/community Questionmark test build and the preserved 2025
+> myPinballs release. The later binary independently provides strong evidence
+> for Question Mark as the fourth test scene. Neither fact proves that the
+> inherited scene was a fully finished mission: code presence, test
+> availability and complete player-facing rules are three different claims.
+> See the
+> [game-code changelog](50-game-changelogs.md#question-mark-and-community-test-scenes)
+> for the version-by-version evidence.
+
 > [!WARNING]
 > On a real or passthrough cabinet, `drive`, `lamp`, `switch`, mechanism and
 > firmware commands can affect physical outputs or persistent state. Do not
