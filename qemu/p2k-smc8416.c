@@ -24,6 +24,7 @@
 #define P2K_SMC_SHMEM_BASE   0x000d0000u
 #define P2K_SMC_SHMEM_SIZE   0x00002000u
 #define P2K_SMC_MAX_AUTO_FWDS 16
+#define P2K_TOURNEY_UDP_PORT 2069u
 
 OBJECT_DECLARE_SIMPLE_TYPE(P2KSMCState, P2K_SMC8416)
 
@@ -56,6 +57,7 @@ struct P2KSMCState {
     bool proxy_arp;
     bool proxy_arp_all;
     bool gateway_mac_valid;
+    bool tourney_ttl_reported;
     uint8_t gateway_mac[6];
     char *auto_hostfwd;
     struct in_addr current_guest_ip;
@@ -173,6 +175,66 @@ static void p2k_smc_inspect_tx(P2KSMCState *s, const uint8_t *packet,
                packet[18] == 6 && packet[19] == 4) {
         memcpy(&source, packet + 28, sizeof(source));
         p2k_smc_retarget_hostfwds(s, source);
+    }
+}
+
+static uint16_t p2k_smc_ipv4_checksum(const uint8_t *header, size_t length)
+{
+    uint32_t sum = 0;
+
+    for (size_t i = 0; i + 1 < length; i += 2) {
+        sum += p2k_net_be16(header + i);
+    }
+    if (length & 1) {
+        sum += (uint16_t)header[length - 1] << 8;
+    }
+    while (sum >> 16) {
+        sum = (sum & 0xffffu) + (sum >> 16);
+    }
+    return ~sum;
+}
+
+/* XINA's tournament client deliberately emits UDP/2069 with TTL 1 because
+ * the original server lived on the cabinet's LAN.  A Slirp netdev inserts a
+ * synthetic routed hop that the physical machine never had, consumes that
+ * sole TTL, and rejects the packet before NAT.  Compensate only at that
+ * virtual boundary: Slirp then transmits the host packet with the guest's
+ * intended effective TTL of 1.  Direct L2 and passt backends never enter this
+ * path because they do not expose a Slirp handle. */
+static void p2k_smc_compensate_slirp_tourney_ttl(P2KSMCState *s,
+                                                  uint8_t *packet,
+                                                  size_t size)
+{
+    const size_t ip_offset = 14;
+    uint8_t *ip;
+    uint8_t ihl;
+    uint16_t fragment;
+
+    if (!p2k_smc_slirp(s) || size < ip_offset + 20 ||
+        p2k_net_be16(packet + 12) != 0x0800) {
+        return;
+    }
+    ip = packet + ip_offset;
+    ihl = (ip[0] & 0x0f) * 4;
+    if ((ip[0] >> 4) != 4 || ihl < 20 || size < ip_offset + ihl + 8 ||
+        p2k_net_be16(ip + 2) < ihl + 8 || ip[9] != 17 || ip[8] != 1) {
+        return;
+    }
+
+    /* Only the first IPv4 fragment carries a UDP header. */
+    fragment = p2k_net_be16(ip + 6);
+    if ((fragment & 0x1fffu) != 0 ||
+        p2k_net_be16(ip + ihl + 2) != P2K_TOURNEY_UDP_PORT) {
+        return;
+    }
+
+    ip[8] = 2;
+    p2k_net_put_be16(ip + 10, 0);
+    p2k_net_put_be16(ip + 10, p2k_smc_ipv4_checksum(ip, ihl));
+    if (!s->tourney_ttl_reported) {
+        info_report("p2k-smc8416: Slirp tournament TTL compensation active "
+                    "(UDP/2069 1 -> 2 before synthetic hop)");
+        s->tourney_ttl_reported = true;
     }
 }
 
@@ -327,6 +389,8 @@ static void p2k_smc_dp8390_write(void *opaque, hwaddr off, uint64_t value,
         if (index + dp->tcnt <= NE2000_PMEM_END) {
             p2k_smc_inspect_tx(s, dp->mem + index, dp->tcnt);
             p2k_smc_proxy_arp_tx(s, dp->mem + index, dp->tcnt);
+            p2k_smc_compensate_slirp_tourney_ttl(s, dp->mem + index,
+                                                  dp->tcnt);
         }
     }
     dp->io.ops->write(dp->io.opaque, off, value, size);

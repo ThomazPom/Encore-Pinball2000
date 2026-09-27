@@ -95,9 +95,10 @@ outbound traffic. Encore learns the active source address from an IPv4 or ARP
 packet; if no packet has exposed it when the XINA prompt appears, the emulated
 UART asks `ifstat 1` once and parses the reported address.
 
-That discovery path does not read guest RAM, rewrite IP headers or recalculate
-checksums. The packet keeps XINA's source and destination IP addresses; proxy
-ARP only steers its Ethernet frame into Slirp.
+The address-discovery path does not read guest RAM or rewrite IP addresses.
+The packet keeps XINA's source and destination addresses; proxy ARP only
+steers its Ethernet frame into Slirp. The narrow tournament-TTL compensation
+described below is independent of discovery.
 
 TCP forwards are initially unbound from a guest address. After discovery, the
 SMC device retargets them to the active XINA IP and reports:
@@ -114,6 +115,28 @@ guarantee that state on supported updates.
 The automatic device holds at most 16 TCP-forward definitions. Count
 `--http-port`, `--forward-local` and `--forward` entries together when building
 a large service map.
+
+### Tournament TTL compensation on Slirp
+
+The preserved JTS client sends IPv4 UDP requests from port 5001 to destination
+port 2069 with TTL 1. That is correct for its original same-LAN tournament
+server. Slirp is implemented as a router, however, so its synthetic hop would
+consume the only TTL and return ICMP `time exceeded` before NAT could send the
+request.
+
+Encore compensates at the emulated-card/Slirp boundary. For an IPv4 first
+fragment that is UDP to destination port 2069 with TTL exactly 1, the card
+changes the TTL to 2 and recomputes the IPv4 header checksum immediately before
+handing the frame to Slirp. Slirp consumes that one added hop, leaving the
+original effective TTL of 1 on the host side. Source and destination addresses,
+ports, payload and UDP checksum are untouched.
+
+The card tests its connected backend rather than a launcher-option name. The
+compensation therefore applies to every Slirp-backed mode (`--network`,
+`--network-nat`, `--network-auto` and `--network-mirror`) and cannot activate
+for passt or a bridged/TAP connection. The Tourney IP remains entirely under
+operator control; it is not required to be `10.0.2.2` or another Encore-owned
+address.
 
 ## Conventional NAT and isolation
 

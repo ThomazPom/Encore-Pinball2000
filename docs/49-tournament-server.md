@@ -94,6 +94,7 @@ Disassembly of SWE1 2.10 establishes these properties:
 
 - the destination address is the numeric **Tourney IP Address** resource;
 - the destination port is `0x0815`, decimal **2069**;
+- unicast UDP leaves the preserved XINU stack with TTL 1;
 - the 8-byte header holds a 16-bit type, 16-bit transaction identifier and
   32-bit length, all converted to network byte order;
 - replies are matched to the expected source address and transaction;
@@ -136,6 +137,28 @@ Those sources support **UDP/2069** and the original deployment shape. They do
 not define every message field. Names inferred from symbols are useful leads;
 wire layout must come from disassembly plus captures, not from C++ type names
 alone.
+
+### Slirp TTL failure and compensation
+
+A controlled RFM 1.80 comparison on 2026-09-27 used the same QEMU 10.0.8,
+update, copied savedata, JTS server and mirrored Slirp topology on both sides.
+Only the SMC8416 tournament-TTL compensation differed:
+
+| Run | Duration | Requests at QEMU/Slirp boundary | Server replies | ICMP TTL-expired | IPv4 checksum failures |
+|---|---:|---:|---:|---:|---:|
+| unmodified parent | 30 s | 5 at TTL 1 | 0 | 5 | 0 |
+| compensated build | 65 s | 12 at TTL 2 | 12 | 0 | 0 |
+
+The unmodified packets died inside Slirp before reaching the UDP server. With
+compensation, the server logged every type-9 power-on request and every reply
+returned through Slirp to the guest capture. A separate 90-second
+`--network-auto` run retained the operator-selected destination address and
+produced 17 TTL-2 requests, no ICMP TTL-expired response and no bad IPv4
+checksum. The transport correction does not by itself establish compatibility
+with every historical or community tournament-server protocol.
+
+See [Optional network card](48-network.md#tournament-ttl-compensation-on-slirp)
+for the exact activation boundary.
 
 ### Surviving implementation leads
 
