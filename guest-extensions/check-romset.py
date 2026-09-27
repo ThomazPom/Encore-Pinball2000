@@ -33,6 +33,10 @@ NETSTART = bytes.fromhex(
     "81e600ff0000c1e60809c6"
 )
 FACTORY_MESSAGE = b"*** Automatic Factory Reset underway"
+UDP_TTL = bytes.fromhex(
+    "83c40c6685c0750666c74606ffffbb010000008b450825f0000000"
+    "3de0000000752e"
+)
 
 
 def factory_reset_target(data: bytes) -> int | None:
@@ -65,9 +69,11 @@ def main() -> int:
         shell = list(SHELL.finditer(data))
         put = list(PUT_VALUE.finditer(data))
         netstart = [m.start() for m in re.finditer(re.escape(NETSTART), data)]
+        udp_ttl = [m.start() for m in re.finditer(re.escape(UDP_TTL), data)]
         factory = factory_reset_target(data)
         name = rom.parents[1].name
-        if len(shell) == 1 and put and len(netstart) == 1 and factory is not None:
+        if (len(shell) == 1 and put and len(netstart) == 1 and
+                len(udp_ttl) == 1 and factory is not None):
             print(f"OK    {name}")
             supported += 1
         elif b"IPAddr\0" not in data and not netstart:
@@ -75,7 +81,8 @@ def main() -> int:
             skipped += 1
         else:
             print(f"FAIL  {name}: shell={len(shell)} put={len(put)} "
-                  f"netstart={len(netstart)} factory={factory is not None}")
+                  f"netstart={len(netstart)} udp_ttl={len(udp_ttl)} "
+                  f"factory={factory is not None}")
             failed += 1
     print(f"\n{supported} supported, {skipped} pre-network, {failed} failed")
     return bool(failed)

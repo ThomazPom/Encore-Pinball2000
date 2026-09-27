@@ -23,6 +23,9 @@
 #define GE_MAGIC           0x58454750u
 #define GE_HOOK_LENGTH     6u
 #define GE_FACTORY_HOOK_LENGTH 9u
+#define GE_UDP_TTL_IMMEDIATE_OFFSET 15u
+#define GE_UDP_TTL_DEFAULT     1u
+#define GE_UDP_TTL_SLIRP       64u
 
 enum {
     GE_O_MAGIC          = 0x00,
@@ -52,6 +55,7 @@ typedef struct MaskedPattern {
 static bool ge_enabled;
 static bool ge_installed;
 static bool ge_retired;
+static bool ge_udp_ttl_done;
 
 static const uint8_t shell_bytes[] = {
     0x55,0x89,0xe5,0x83,0xec,0x04,0x57,0x56,0x53,0xc7,0x45,0xfc,
@@ -83,6 +87,16 @@ static const uint8_t netstart_anchor[] = {
 
 static const uint8_t factory_reset_message[] =
     "*** Automatic Factory Reset underway";
+
+/* All preserved network-capable XINA images initialise udpsend()'s unicast
+ * TTL through this unique instruction sequence.  Multicast may subsequently
+ * replace EBX from its route, so changing this immediate repairs only the
+ * common unicast default. */
+static const uint8_t udp_ttl_anchor[] = {
+    0x83,0xc4,0x0c,0x66,0x85,0xc0,0x75,0x06,0x66,0xc7,0x46,0x06,0xff,0xff,
+    0xbb,0x01,0x00,0x00,0x00,0x8b,0x45,0x08,0x25,0xf0,0x00,0x00,0x00,
+    0x3d,0xe0,0x00,0x00,0x00,0x75,0x2e,
+};
 
 static uint32_t ld32(const uint8_t *p)
 {
@@ -120,6 +134,62 @@ static uint8_t *find_exact(uint8_t *buf, size_t size,
         }
     }
     return NULL;
+}
+
+static uint8_t *find_udp_ttl_unique(uint8_t *buf, size_t size,
+                                    uint32_t *current_ttl)
+{
+    uint8_t *match = NULL;
+
+    for (size_t off = 0; off + sizeof(udp_ttl_anchor) <= size; off++) {
+        uint32_t value;
+
+        if (memcmp(buf + off, udp_ttl_anchor, GE_UDP_TTL_IMMEDIATE_OFFSET) ||
+            memcmp(buf + off + GE_UDP_TTL_IMMEDIATE_OFFSET + 4,
+                   udp_ttl_anchor + GE_UDP_TTL_IMMEDIATE_OFFSET + 4,
+                   sizeof(udp_ttl_anchor) -
+                   GE_UDP_TTL_IMMEDIATE_OFFSET - 4)) {
+            continue;
+        }
+        value = ld32(buf + off + GE_UDP_TTL_IMMEDIATE_OFFSET);
+        if (match) {
+            return NULL;
+        }
+        match = buf + off;
+        *current_ttl = value;
+    }
+    if (*current_ttl != GE_UDP_TTL_DEFAULT &&
+        *current_ttl != GE_UDP_TTL_SLIRP) {
+        return NULL;
+    }
+    return match;
+}
+
+static bool ge_try_patch_udp_ttl(void)
+{
+    uint8_t *ram = g_malloc(GE_SCAN_LENGTH);
+    uint8_t *anchor;
+    uint32_t current_ttl = 0;
+    uint8_t replacement[4];
+    uint32_t address;
+
+    cpu_physical_memory_read(GE_SCAN_BASE, ram, GE_SCAN_LENGTH);
+    anchor = find_udp_ttl_unique(ram, GE_SCAN_LENGTH, &current_ttl);
+    if (!anchor) {
+        g_free(ram);
+        return false;
+    }
+    address = GE_SCAN_BASE + (anchor - ram) + GE_UDP_TTL_IMMEDIATE_OFFSET;
+    if (current_ttl == GE_UDP_TTL_DEFAULT) {
+        st32(replacement, GE_UDP_TTL_SLIRP);
+        cpu_physical_memory_write(address, replacement, sizeof(replacement));
+    }
+    info_report("pinball2000: Slirp UDP guest extension installed: "
+                "udpsend TTL=%u at 0x%08x%s",
+                GE_UDP_TTL_SLIRP, address,
+                current_ttl == GE_UDP_TTL_SLIRP ? " (already active)" : "");
+    g_free(ram);
+    return true;
 }
 
 static bool parse_ipv4_env(const char *name, uint32_t *result)
@@ -295,6 +365,7 @@ void p2k_guest_extensions_init(void)
     ge_enabled = v && *v && strcmp(v, "0");
     ge_installed = false;
     ge_retired = !ge_enabled;
+    ge_udp_ttl_done = false;
     if (ge_enabled) {
         info_report("pinball2000: volatile guest extensions armed for XINA startup");
     }
@@ -304,6 +375,7 @@ void p2k_guest_extensions_reset(void)
 {
     ge_installed = false;
     ge_retired = !ge_enabled;
+    ge_udp_ttl_done = false;
 }
 
 void p2k_guest_extensions_observe_uart_line(const char *line, size_t len)
@@ -312,13 +384,20 @@ void p2k_guest_extensions_observe_uart_line(const char *line, size_t len)
         line++;
         len--;
     }
-    if (ge_retired || ge_installed || len < 5 || memcmp(line, "XINA:", 5)) {
+    if (len < 5 || memcmp(line, "XINA:", 5)) {
         return;
     }
     /* The update loader has completely materialised the selected image before
      * its XINA banner reaches the emulated UART.  This one hardware event is
      * before netstart, so no translated-block polling is necessary. */
-    if (!ge_try_install()) {
+    if (!ge_udp_ttl_done && p2k_smc_slirp_active()) {
+        ge_udp_ttl_done = true;
+        if (!ge_try_patch_udp_ttl()) {
+            info_report("pinball2000: no compatible UDP TTL guest-extension "
+                        "image; feature retired");
+        }
+    }
+    if (!ge_retired && !ge_installed && !ge_try_install()) {
         info_report("pinball2000: no compatible guest-extension image; feature retired");
         ge_retired = true;
     }

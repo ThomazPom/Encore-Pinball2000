@@ -85,6 +85,8 @@ void p2k_isa_set_uart_irq(qemu_irq irq);
  * interface address and the emulated Ethernet card owns the forwards. */
 bool p2k_smc_auto_ip_requested(void);
 void p2k_smc_auto_ip_discovered(const char *address);
+/* True only when the emulated Ethernet card is connected to QEMU Slirp. */
+bool p2k_smc_slirp_active(void);
 void p2k_install_pci_stub(void);
 void p2k_install_plx_bars(Pinball2000MachineState *s);
 

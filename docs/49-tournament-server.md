@@ -138,11 +138,11 @@ not define every message field. Names inferred from symbols are useful leads;
 wire layout must come from disassembly plus captures, not from C++ type names
 alone.
 
-### Slirp TTL failure and compensation
+### Slirp TTL failure and UDP-stack correction
 
 A controlled RFM 1.80 comparison on 2026-09-27 used the same QEMU 10.0.8,
 update, copied savedata, JTS server and mirrored Slirp topology on both sides.
-Only the SMC8416 tournament-TTL compensation differed:
+Only the original SMC8416 tournament-TTL compensation differed:
 
 | Run | Duration | Requests at QEMU/Slirp boundary | Server replies | ICMP TTL-expired | IPv4 checksum failures |
 |---|---:|---:|---:|---:|---:|
@@ -157,8 +157,24 @@ produced 17 TTL-2 requests, no ICMP TTL-expired response and no bad IPv4
 checksum. The transport correction does not by itself establish compatibility
 with every historical or community tournament-server protocol.
 
-See [Optional network card](48-network.md#tournament-ttl-compensation-on-slirp)
-for the exact activation boundary.
+That first experiment established the routing failure but fixed only JTS.
+Inspection of XINU's common `udpsend()` then showed the same default TTL 1 in
+every preserved network-capable image. The final correction is therefore a
+volatile guest extension, installed only with an actual Slirp peer, that
+changes the unicast default to 64 before `netstart`. A 75-second RFM 1.90 run
+captured a complete JTS exchange with requests from ephemeral ports
+5021–5029 to UDP/2069 at TTL 64; the server replies carried valid UDP checksums
+and continued through the type 3, 4, 5, 8 and 7 requests.
+
+The live test also confirmed a separate historical convention. JTS sends from
+an ephemeral port but opens its receiving endpoint on local UDP/2069. A normal
+`recvfrom()`/`sendto()` relay answers the ephemeral source port, which XINU is
+not listening on. Encore therefore retargets Slirp replies sourced by
+UDP/2069 to guest UDP/2069 and adjusts their UDP checksum. This rule is
+tournament-specific; the TTL extension is stack-wide.
+
+See [Optional network card](48-network.md#slirp-udp-guest-extension) for the
+exact activation boundary.
 
 ### Surviving implementation leads
 

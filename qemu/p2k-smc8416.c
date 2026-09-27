@@ -57,7 +57,7 @@ struct P2KSMCState {
     bool proxy_arp;
     bool proxy_arp_all;
     bool gateway_mac_valid;
-    bool tourney_ttl_reported;
+    bool tourney_reply_reported;
     uint8_t gateway_mac[6];
     char *auto_hostfwd;
     struct in_addr current_guest_ip;
@@ -66,6 +66,7 @@ struct P2KSMCState {
 };
 
 static P2KSMCState *p2k_auto_smc;
+static P2KSMCState *p2k_current_smc;
 
 static ssize_t p2k_smc_receive(NetClientState *nc, const uint8_t *buf,
                                size_t size);
@@ -91,6 +92,11 @@ static Slirp *p2k_smc_slirp(P2KSMCState *s)
         return NULL;
     }
     return ((P2KSlirpPeer *)peer)->slirp;
+}
+
+bool p2k_smc_slirp_active(void)
+{
+    return p2k_current_smc && p2k_smc_slirp(p2k_current_smc);
 }
 
 static void p2k_smc_retarget_hostfwds(P2KSMCState *s,
@@ -178,64 +184,77 @@ static void p2k_smc_inspect_tx(P2KSMCState *s, const uint8_t *packet,
     }
 }
 
-static uint16_t p2k_smc_ipv4_checksum(const uint8_t *header, size_t length)
+static uint16_t p2k_smc_checksum_replace16(uint16_t checksum,
+                                            uint16_t old_value,
+                                            uint16_t new_value)
 {
-    uint32_t sum = 0;
+    uint32_t sum = (~checksum & 0xffffu) + (~old_value & 0xffffu) + new_value;
 
-    for (size_t i = 0; i + 1 < length; i += 2) {
-        sum += p2k_net_be16(header + i);
-    }
-    if (length & 1) {
-        sum += (uint16_t)header[length - 1] << 8;
-    }
     while (sum >> 16) {
         sum = (sum & 0xffffu) + (sum >> 16);
     }
-    return ~sum;
+    checksum = ~sum;
+    /* In UDP/IPv4, zero means that no checksum was supplied. */
+    return checksum ? checksum : 0xffffu;
 }
 
-/* XINA's tournament client deliberately emits UDP/2069 with TTL 1 because
- * the original server lived on the cabinet's LAN.  A Slirp netdev inserts a
- * synthetic routed hop that the physical machine never had, consumes that
- * sole TTL, and rejects the packet before NAT.  Compensate only at that
- * virtual boundary: Slirp then transmits the host packet with the guest's
- * intended effective TTL of 1.  Direct L2 and passt backends never enter this
- * path because they do not expose a Slirp handle. */
-static void p2k_smc_compensate_slirp_tourney_ttl(P2KSMCState *s,
-                                                  uint8_t *packet,
-                                                  size_t size)
+/* The preserved JTS client sends from an ephemeral port but opens its reply
+ * datagram endpoint on the fixed tournament port.  A conventional UDP relay
+ * that replies to recvfrom()'s source tuple therefore returns the packet to
+ * the closed transmit endpoint.  Physical tournament servers knew the
+ * asymmetric convention; recovered community relays commonly do not.
+ *
+ * Keep that historical distinction outside the guest: for Slirp only, route
+ * replies sourced by UDP/2069 to XINA's UDP/2069 endpoint.  Direct L2 and
+ * passt traffic remain byte-for-byte untouched. */
+static uint8_t *p2k_smc_retarget_slirp_tourney_reply(P2KSMCState *s,
+                                                      const uint8_t *packet,
+                                                      size_t size)
 {
     const size_t ip_offset = 14;
-    uint8_t *ip;
+    const uint8_t *ip;
+    const uint8_t *udp;
+    uint8_t *copy;
     uint8_t ihl;
+    uint16_t checksum;
+    uint16_t destination;
     uint16_t fragment;
 
     if (!p2k_smc_slirp(s) || size < ip_offset + 20 ||
         p2k_net_be16(packet + 12) != 0x0800) {
-        return;
+        return NULL;
     }
     ip = packet + ip_offset;
     ihl = (ip[0] & 0x0f) * 4;
     if ((ip[0] >> 4) != 4 || ihl < 20 || size < ip_offset + ihl + 8 ||
-        p2k_net_be16(ip + 2) < ihl + 8 || ip[9] != 17 || ip[8] != 1) {
-        return;
+        p2k_net_be16(ip + 2) < ihl + 8 || ip[9] != 17) {
+        return NULL;
     }
-
-    /* Only the first IPv4 fragment carries a UDP header. */
     fragment = p2k_net_be16(ip + 6);
+    udp = ip + ihl;
+    destination = p2k_net_be16(udp + 2);
     if ((fragment & 0x1fffu) != 0 ||
-        p2k_net_be16(ip + ihl + 2) != P2K_TOURNEY_UDP_PORT) {
-        return;
+        p2k_net_be16(udp) != P2K_TOURNEY_UDP_PORT ||
+        destination == P2K_TOURNEY_UDP_PORT) {
+        return NULL;
     }
 
-    ip[8] = 2;
-    p2k_net_put_be16(ip + 10, 0);
-    p2k_net_put_be16(ip + 10, p2k_smc_ipv4_checksum(ip, ihl));
-    if (!s->tourney_ttl_reported) {
-        info_report("p2k-smc8416: Slirp tournament TTL compensation active "
-                    "(UDP/2069 1 -> 2 before synthetic hop)");
-        s->tourney_ttl_reported = true;
+    copy = g_memdup2(packet, size);
+    udp = copy + ip_offset + ihl;
+    checksum = p2k_net_be16(udp + 6);
+    p2k_net_put_be16((uint8_t *)udp + 2, P2K_TOURNEY_UDP_PORT);
+    if (checksum) {
+        p2k_net_put_be16((uint8_t *)udp + 6,
+                         p2k_smc_checksum_replace16(
+                             checksum, destination, P2K_TOURNEY_UDP_PORT));
     }
+    if (!s->tourney_reply_reported) {
+        info_report("p2k-smc8416: Slirp tournament reply retarget active "
+                    "(UDP/%u -> UDP/%u)", destination,
+                    P2K_TOURNEY_UDP_PORT);
+        s->tourney_reply_reported = true;
+    }
+    return copy;
 }
 
 static void p2k_smc_parse_auto_hostfwds(P2KSMCState *s, Error **errp)
@@ -343,8 +362,15 @@ static ssize_t p2k_smc_receive(NetClientState *nc, const uint8_t *buf,
 {
     NE2000State *dp = qemu_get_nic_opaque(nc);
     P2KSMCState *s = container_of(dp, P2KSMCState, dp8390);
+    g_autofree uint8_t *retargeted = NULL;
+    const uint8_t *packet = buf;
     uint8_t saved_prom[12];
     ssize_t ret;
+
+    retargeted = p2k_smc_retarget_slirp_tourney_reply(s, buf, size);
+    if (retargeted) {
+        packet = retargeted;
+    }
 
     /* Upstream NE2000 uses its duplicated PROM bytes for destination-MAC
      * filtering.  EtherEZ exposes packet RAM from offset zero, so XINA's TX
@@ -352,8 +378,8 @@ static ssize_t p2k_smc_receive(NetClientState *nc, const uint8_t *buf,
      * filters against the page-1 physical-address registers instead.  Supply
      * that view only while the common receive engine performs its filter. */
     if (s->proxy_arp && !s->proxy_arp_all && size >= 14 &&
-        p2k_net_be16(buf + 12) == 0x0800) {
-        memcpy(s->gateway_mac, buf + 6, sizeof(s->gateway_mac));
+        p2k_net_be16(packet + 12) == 0x0800) {
+        memcpy(s->gateway_mac, packet + 6, sizeof(s->gateway_mac));
         s->gateway_mac_valid = true;
     }
 
@@ -361,7 +387,7 @@ static ssize_t p2k_smc_receive(NetClientState *nc, const uint8_t *buf,
     for (unsigned i = 0; i < 6; i++) {
         dp->mem[i * 2] = dp->phys[i];
     }
-    ret = ne2000_receive(nc, buf, size);
+    ret = ne2000_receive(nc, packet, size);
     memcpy(dp->mem, saved_prom, sizeof(saved_prom));
     return ret;
 }
@@ -389,8 +415,6 @@ static void p2k_smc_dp8390_write(void *opaque, hwaddr off, uint64_t value,
         if (index + dp->tcnt <= NE2000_PMEM_END) {
             p2k_smc_inspect_tx(s, dp->mem + index, dp->tcnt);
             p2k_smc_proxy_arp_tx(s, dp->mem + index, dp->tcnt);
-            p2k_smc_compensate_slirp_tourney_ttl(s, dp->mem + index,
-                                                  dp->tcnt);
         }
     }
     dp->io.ops->write(dp->io.opaque, off, value, size);
@@ -535,6 +559,7 @@ static void p2k_smc_realize(DeviceState *dev, Error **errp)
                            object_get_typename(OBJECT(dev)), dev->id,
                            &dev->mem_reentrancy_guard, dp);
     qemu_format_nic_info_str(qemu_get_queue(dp->nic), dp->c.macaddr.a);
+    p2k_current_smc = s;
     if (s->proxy_arp_all || s->auto_fwd_count) {
         p2k_auto_smc = s;
     }
@@ -546,6 +571,9 @@ static void p2k_smc_unrealize(DeviceState *dev)
 
     if (p2k_auto_smc == s) {
         p2k_auto_smc = NULL;
+    }
+    if (p2k_current_smc == s) {
+        p2k_current_smc = NULL;
     }
 }
 
