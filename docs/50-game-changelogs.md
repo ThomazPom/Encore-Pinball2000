@@ -206,14 +206,26 @@ values; the second value resolves through the matching symbol ROM to the
 corresponding `jedi_scene_*` object. Addresses and interpretation are scoped to
 those exact builds.
 
-#### What gameplay remains unproven
+#### Observed gameplay and remaining boundary
 
-These conclusions are narrower than claiming a finished mission. An earlier
-documentation pass reported forcing scene index 13 in a temporary 2.10 image
-and observing only a minimal score award over a black screen. The patched
-image, raw log and exact procedure were not preserved, so those behavioral
-details remain a research lead. A future rerun should preserve input and output
-hashes, patch, scripted inputs, video/log evidence and clean-state policy.
+The project exercised the retained scene in Encore by changing only
+`Scenes::choose_next_scene()` in a temporary SWE1 2.10 image so every normal
+mission draw returned the stock Question Mark scene at index 13. Selection and
+activation otherwise followed the game's normal path.
+
+The observed result was a minimal mystery award, not a developed mission:
+activation produced a black screen, immediately added score and awarded a
+`JEDI` letter, with no playable rules, visible scene or meaningful
+presentation. The code also updates its start/finish audits, explaining why
+the dormant scene remains visible in game statistics.
+
+This is a retained project observation, originally documented on `main` by
+commit `52d570b`; it is not merely an inference from symbol names. The temporary
+patched image and raw capture were not retained, so a future reproduction
+should additionally preserve input/output hashes, the patch, scripted inputs,
+video/log evidence and clean-state policy. That reproducibility gap does not
+erase the observed result, but the result characterises the scene inherited by
+2.10—not necessarily the missing 2016 build byte for byte.
 
 ## Unofficial myPinballs releases
 

@@ -345,9 +345,11 @@ Chance.
 > tournament/community Questionmark test build and the preserved 2025
 > myPinballs release. The later binary independently provides strong evidence
 > for Question Mark as the fourth test scene. Neither fact proves that the
-> inherited scene was a fully finished mission: code presence, test
-> availability and complete player-facing rules are three different claims.
-> See the
+> inherited scene was a fully finished mission. A preserved project report
+> records the opposite for SWE1 2.10: forcing the normal scene selector to
+> index 13 produced an immediate score and `JEDI` letter over a black screen,
+> with no playable rules or presentation. Code presence, test availability and
+> complete player-facing rules are therefore three different claims. See the
 > [game-code changelog](50-game-changelogs.md#question-mark-and-community-test-scenes)
 > for the version-by-version evidence.
 
