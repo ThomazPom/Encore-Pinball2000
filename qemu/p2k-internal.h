@@ -208,7 +208,7 @@ void p2k_install_vsync(void);
 /* p2k-plx-regs.c: PLX 9050 BAR0 register file + 93C46 SEEPROM model. */
 void p2k_install_plx_regs(Pinball2000MachineState *s);
 
-/* p2k-mem-detect.c: opt-in XINU sizmem() 4 MiB -> 14 MiB override. */
+/* p2k-mem-detect.c: opt-in, exact-signature XINU 4 MiB -> 14 MiB override. */
 void p2k_install_mem_detect(void);
 
 /* p2k-guest-extensions.c: optional volatile RAM extension. */

@@ -74,6 +74,20 @@ should be used as shorthand for “known working server client.” A real matrix
 would require each exact guest image, a fixed server build and recorded packet
 exchanges.
 
+### RFM 1.80's memory cost
+
+The myPinballs technical setup separates two thresholds: RFM 1.5 or later can
+connect to its tournament system, while scrolling attract-mode scores require
+1.8. It also warns that 1.8 needs at least 8 MiB although most cabinets shipped
+with only 4 MiB: [myPinballs technical setup](https://mypinballs.com/tournament/core/techsetup.jsp).
+
+The preserved programs confirm that this is a hard guest-memory boundary, not
+just conservative installation advice. RFM 1.80's XINU `sizmem()` returns
+the raw value `0x800` for 8 MiB; 1.50 and 1.60 return `0x400` for 4 MiB,
+and the preserved 1.90-and-later line returns to `0x400`. The full comparison
+and implications for original hardware and Encore are in
+[Game changelogs](50-game-changelogs.md#why-rfm-180-needs-8-mib).
+
 ## Protocol facts established so far
 
 Disassembly of SWE1 2.10 establishes these properties:

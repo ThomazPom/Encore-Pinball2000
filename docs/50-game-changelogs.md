@@ -227,6 +227,54 @@ video/log evidence and clean-state policy. That reproducibility gap does not
 erase the observed result, but the result characterises the scene inherited by
 2.10—not necessarily the missing 2016 build byte for byte.
 
+## Why RFM 1.80 needs 8 MiB
+
+The surviving [myPinballs technical setup](https://mypinballs.com/tournament/core/techsetup.jsp)
+states that RFM 1.5 or later can connect to its tournament system, but that the
+scrolling attract-mode scores require 1.8. It explicitly requires at least
+8 MiB for 1.8 and notes that most games shipped with only 4 MiB.
+
+The preserved update programs explain why. Their symbol ROMs locate the same
+ten-byte `sizmem(void)` function, and the matching game ROMs contain:
+
+```text
+55 89 e5 b8 00 04 00 00 c9 c3  -> return 0x400 (XINU uses 4 MiB)
+55 89 e5 b8 00 08 00 00 c9 c3  -> return 0x800 (XINU uses 8 MiB)
+```
+
+| Preserved RFM build | `sizmem()` address | Returned ceiling |
+|---:|---:|---:|
+| 1.50 | `0x002629c0` | 4 MiB |
+| 1.60 | `0x002629d8` | 4 MiB |
+| **1.80** | `0x00262c8c` | **8 MiB** |
+| 1.90 | `0x0024cc50` | 4 MiB |
+| 1.91 | `0x00262624` | 4 MiB |
+| 1.95 | `0x0024cb60` | 4 MiB |
+| 2.00 | `0x0026628c` | 4 MiB |
+| 2.10 | `0x00269804` | 4 MiB |
+| 2.20 | `0x0026da24` | 4 MiB |
+| 2.21 | `0x0026f530` | 4 MiB |
+| 2.22 | `0x00271288` | 4 MiB |
+| 2.23 | `0x00271d18` | 4 MiB |
+| 2.24 | `0x00272534` | 4 MiB |
+| 2.50 | `0x0027391c` | 4 MiB |
+| 2.60 | `0x0027456c` | 4 MiB |
+
+> [!IMPORTANT]
+> This establishes a narrow but strong conclusion: 1.80 deliberately raised
+> XINU's usable-memory ceiling from 4 to 8 MiB, and the value is back to 4 MiB
+> in every preserved release from 1.90 onward. On an unexpanded 4 MiB
+> cabinet, 1.80 therefore assumes memory the machine does not physically have;
+> reports of malfunction on stock machines have a direct technical
+> explanation. The binaries do not by themselves prove which symptom every
+> owner saw or the authors' stated motive for reverting the value.
+
+Encore exposes 16 MiB of physical RAM, so unmodified 1.80 has the 8 MiB it asks
+for and can appear healthy. That is correct for an upgraded cabinet but can
+mask 1.80's original stock-hardware incompatibility. Conversely, Encore's
+optional 4→14 MiB signature patch does not match 1.80's distinct 8 MiB body;
+it is neither needed nor silently applied to that build.
+
 ## Unofficial myPinballs releases
 
 These releases are community game-code updates. “Latest” in Encore means the
@@ -274,14 +322,14 @@ can pair with primary change notes. The most useful open gaps are:
 - SWE1 1.66, whose four-component payload is preserved without notes;
 - the 2016 community “2.00” Question Mark test build, whose exact updater and
   original accompanying note are not preserved here;
-- RFM community/tournament builds 1.21, 1.70 and 1.80;
+- RFM community/tournament builds 1.21, 1.70 and the remaining 1.80 gameplay
+  changes beyond the now-established memory/tournament facts;
 - preserved RFM 1.90, 1.91 and 1.95 payloads; and
 - RFM 2.11, reported between 2.10 and 2.20 but absent from both the current
   local payload set and the author's continuous changelog.
 
-Tournament documentation associates RFM 1.8 with scrolling tournament scores
-and an 8 MiB memory requirement. That is useful compatibility evidence, but it
-is not a complete 1.7-to-1.8 release note. See
+The 1.80 memory requirement and its exact implementation are established
+above, but they are not a complete 1.70-to-1.80 gameplay release note. See
 [Tournament-server preservation](49-tournament-server.md) for the separated
 protocol and historical evidence.
 

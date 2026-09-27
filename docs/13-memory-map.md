@@ -27,6 +27,14 @@ The machine has exactly 16 MiB of RAM at `0x00000000–0x00ffffff`. Three
 read-only or writable board views overlay portions of that RAM with QEMU
 priority 1:
 
+> [!IMPORTANT]
+> Physical backing and guest allocation policy are different limits. Most
+> preserved builds make XINU's `sizmem()` report 4 MiB; RFM 1.80 deliberately
+> reports 8 MiB. Encore still backs the full 16 MiB in both cases. This lets
+> 1.80 use its expected memory here, but can hide the incompatibility that its
+> 8 MiB policy had with stock 4 MiB cabinets. See
+> [Game changelogs](50-game-changelogs.md#why-rfm-180-needs-8-mib).
+
 | Effective range | Size | Access | Owner and purpose |
 |---:|---:|---|---|
 | `0x00000000–0x000bffff` | 768 KiB | RAM | ordinary guest RAM, including the reset copy at `0x00080000` and GDT at `0x00088000` |

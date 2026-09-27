@@ -129,6 +129,12 @@ RFM 1.80 is canonically named `0180_04232006` from its boot/game timestamps.
 Do not recreate the former, byte-identical `0180_09222003` duplicate: that date
 belongs to RFM 1.60.
 
+RFM 1.80 also differs materially from its neighbours: its `sizmem()` reports
+8 MiB, while 1.50, 1.60 and every preserved RFM build surveyed from 1.90
+through 2.60 report 4 MiB. This matches the author's hardware warning and is
+not merely a filename or changelog inference. See
+[Why RFM 1.80 needs 8 MiB](50-game-changelogs.md#why-rfm-180-needs-8-mib).
+
 ## Safe extraction and preservation
 
 Classic PUB installers can be inspected with the repository extractor:

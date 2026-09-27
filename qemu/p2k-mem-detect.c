@@ -1,20 +1,22 @@
 /*
  * Optional XINU memory-size override.
  *
- * Supported game images contain a small sizmem() function whose body is:
+ * Most supported game images contain a small sizmem() function whose body is:
  *
  *     55 89 E5 B8 00 04 00 00 C9 C3
  *     push ebp; mov ebp,esp; mov eax,0x400; leave; ret
  *
- * XINU consequently sets its memory ceiling to 4 MiB.  That is the native
- * behavior and is Encore's default.  Current SWE1 update boots, including
- * 2.10, have been observed reaching the running game without changing it.
+ * XINU consequently sets its memory ceiling to 4 MiB.  That guest-selected
+ * behavior is Encore's default.  RFM 1.80 is a known exception: its immediate
+ * is 0x800 (8 MiB), so it intentionally does not match this exact signature.
+ * Later preserved RFM builds return to 0x400.  Current SWE1 update boots,
+ * including 2.10, have been observed reaching the game without changing it.
  *
  * P2K_MEM_DETECT_PATCH=1 enables a retained compatibility experiment.  It
- * changes the immediate to 0xE00, giving XINU a 14 MiB ceiling.  The scanner
- * is bounded because the update loader first relocates the function into RAM:
- * it checks the game-code window every 10 ms for at most one second, changes
- * one signature-matched byte, then retires permanently.
+ * changes the 0x400 immediate to 0xE00, giving XINU a 14 MiB ceiling.  The
+ * scanner is bounded because the update loader first relocates the function
+ * into RAM: it checks the game-code window every 10 ms for at most one second,
+ * changes one signature-matched byte, then retires permanently.
  *
  * Keep this opt-in until the update matrix has had enough unpatched field
  * use to show whether any older combination genuinely needs the larger heap.

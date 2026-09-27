@@ -208,8 +208,10 @@ need a periodic guest-memory patch or a separate compatibility timer.
 The only retained compatibility memory mutation is the separately opt-in
 `P2K_MEM_DETECT_PATCH=1` experiment described below: it scans a bounded
 relocated-game range for one exact `sizmem()` body and changes the XINU result
-from 4 MiB to 14 MiB. Without that environment variable, native 4 MiB behavior
-is left untouched. The current base/latest smoke ran with the native default.
+from 4 MiB to 14 MiB. Without that environment variable, the guest's native
+result is left untouched. That is 4 MiB for the current base/latest smoke and
+most preserved updates, but 8 MiB for RFM 1.80. The exact 1.80 body therefore
+does not match this 4→14 MiB experiment.
 
 ## Physical and optional devices
 
@@ -228,7 +230,9 @@ behavior have their own compatibility boundary in
 The read-only PUB card model, QEMU framebuffer renderer/async worker, detailed
 diagnostic sampler and the `P2K_MEM_DETECT_PATCH=1` XINU 4→14 MiB override are
 experimental. The memory override is signature-bounded and off by default;
-current ordinary paths retain XINU's native 4 MiB ceiling.
+current ordinary paths retain each guest's native ceiling: normally 4 MiB,
+with RFM 1.80's verified 8 MiB value as an exception. See
+[Game changelogs](50-game-changelogs.md#why-rfm-180-needs-8-mib).
 
 ## Validate a new claim
 

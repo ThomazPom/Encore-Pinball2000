@@ -190,11 +190,18 @@ transient snapshot, not a fixed boot contract.
 > benchmark's maximum `clkint` depth and minimum IStack margin for that question.
 
 In the RFM 1.50 sample, `mem stat` reported 4 MiB of guest RAM and separated
-text, data, BSS, allocated process stacks, heap and remaining memory. Commands
-such as `sem`, `queue` and `timerq` reveal the corresponding synchronization
-and timed-wait structures. Together these are useful for answering “what is
-blocked or consuming memory now?”; they do not by themselves prove why an
-interrupt was late or nested.
+text, data, BSS, allocated process stacks, heap and remaining memory. That
+number is a XINU policy, not the size of Encore's physical RAM backing:
+`sizmem()` returns the raw value `0x400` for 4 MiB in RFM 1.50 and 1.60,
+`0x800` for 8 MiB in RFM 1.80, then `0x400` again in every preserved RFM
+build surveyed from 1.90 through 2.60. See
+[RFM 1.80's 8 MiB boundary](50-game-changelogs.md#why-rfm-180-needs-8-mib)
+for the exact binary evidence.
+
+Commands such as `sem`, `queue` and `timerq` reveal the corresponding
+synchronization and timed-wait structures. Together these are useful for
+answering “what is blocked or consuming memory now?”; they do not by
+themselves prove why an interrupt was late or nested.
 
 ## Fatal and NonFatal output
 
