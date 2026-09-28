@@ -68,7 +68,7 @@ not current implementation authority.
 |---|---|
 | local update inventory, provenance and redistribution | [Update provenance](47-community-updates.md) |
 | attributable RFM/SWE1 software changes | [Game-code changelogs](50-game-changelogs.md) |
-| guest JTS surface and missing tournament server | [Tournament-server research](49-tournament-server.md) |
+| guest JTS surface and legacy lab server | [Tournament-server research](49-tournament-server.md) |
 
 The fact that Encore can execute an asset does not establish a right to
 redistribute it. Keep code, third-party ROM/update material, savedata and

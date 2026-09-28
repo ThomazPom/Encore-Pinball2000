@@ -2,14 +2,15 @@
 
 Pinball 2000 contains a real network-tournament client, usually identified by
 its internal `jts_*` symbols. Encore currently preserves enough of the network
-hardware to study that client, but it does **not** ship a tournament server or
-an emulated card reader.
+hardware to study that client. It retains one unsupported community server as
+a laboratory artifact, but does **not** provide a supported tournament service
+or an emulated card reader.
 
 > [!IMPORTANT]
-> Network tournament play is not a supported Encore feature. There is no
-> end-to-end test, compatible server artifact, protocol implementation or
-> working player-identification path in this repository. Enabling the network
-> card does not change that status.
+> Network tournament play is not a supported Encore feature. The recovered
+> Python 2 relay has passed one bounded RFM 1.90 transport test, but it has no
+> established licence, complete protocol suite or working card-reader path.
+> Enabling the network card does not change that status.
 
 This page records what can be proved from the preserved game programs, current
 Encore implementation and contemporary observations. It also defines the
@@ -197,6 +198,11 @@ These are preservation leads, not Encore dependencies or endorsements:
   presentation](https://www.pinballnews.com/shows/expo2010/index4.html). It is
   not evidence for the original JTS server and no corresponding source tree
   is part of Encore.
+- A recovered 2013 Python 2 “Pinbox Tournament Server” is now retained as a
+  [legacy lab tool](../tools/tournament-server-legacy/README.md). Its source
+  header attributes `MasterGeek`, but no upstream URL or licence was recovered.
+  It is useful evidence for message shapes, not evidence for the original Expo
+  Java server.
 
 Do not build a compatibility claim by combining details from these separate
 systems. Recover a specific artifact, hash it, establish its license, then test
@@ -209,25 +215,26 @@ card through isolated user networking, NAT, automatic NAT, passt, mirror or an
 existing bridge. The guest sees I/O base `0x300`, IRQ 7 and MAC address
 `00:00:c0:01:02:03`.
 
-That gives the historical client a possible packet path. It does not add a JTS
-peer. No current launcher option:
+That gives the historical client a possible packet path. Encore now preserves
+one manually launched community JTS relay under `tools/`, but does not make it
+a supported service. No current launcher option:
 
 - starts a tournament server;
 - decodes or records JTS messages as structured data;
-- synthesizes a player, division, ranking or picture;
 - translates a modern service into the historical protocol;
 - configures the guest's Tourney IP, login or password;
 - emulates the barcode reader.
 
-The repository-wide implementation search also finds no JTS server, protocol
-library, packet fixture or server conformance test outside the preserved guest
-programs and documentation.
+The legacy relay can synthesize divisions, players, rankings and pictures from
+an HTTP score API. Its recovered picture fixtures are not vendored because no
+licence was found, and it has no server conformance suite. The 2026-09-27 test
+proves only the documented RFM 1.90 path.
 
 > [!TIP]
-> JTS is guest-initiated. A future local server normally should not require a
-> public host-to-guest port forward. That architectural expectation still
-> needs a captured request/reply smoke under each proposed Encore transport;
-> the existing `--http-port` tests exercise TCP in the opposite direction.
+> JTS is guest-initiated. The tested Slirp path requires no public
+> host-to-guest port forward. That result does not establish equivalent
+> behavior for passt or a direct bridge; each transport still needs its own
+> captured request/reply smoke.
 
 ## The independent COM2 blocker
 
@@ -262,9 +269,23 @@ version used identical electrical and framing settings.
 
 ## Safe research setup
 
-Until a server implementation exists, do not point a cabinet or emulator at a
-random historical hostname. The client can send player identifiers, scores
-and configured credentials to the selected numeric address.
+Do not point a cabinet or emulator at a random historical hostname. The client
+can send player identifiers, scores and configured credentials to the selected
+numeric address. The retained relay also contacts a clear-text HTTP API and
+binds UDP on all host interfaces, so use it only in a controlled lab.
+
+Read the [legacy server README](../tools/tournament-server-legacy/README.md),
+then start it explicitly; the Encore launcher never does this:
+
+```bash
+cd tools/tournament-server-legacy
+P2K_TOURNAMENT_API=http://127.0.0.1:18081/ python2.7 ./server.py
+```
+
+The API in this example is a fixture supplied by the researcher, not an
+Encore service. Without an API, the relay can still answer the basic power-on
+exchange but normally has no player list. The unlicensed `.i64` picture files
+are not included.
 
 Use an isolated lab with disposable savedata:
 
@@ -279,9 +300,10 @@ Use an isolated lab with disposable savedata:
 ```
 
 This command only supplies an isolated guest network and known XINA address.
-It does **not** start JTS or configure the Tourney IP. A packet recorder or
-mock server belongs on a deliberately controlled endpoint; record its exact
-version, bind address and SHA-256 alongside every capture.
+It does **not** start JTS or configure the Tourney IP. Set the guest's numeric
+Tourney IP to the controlled server endpoint, save, then reboot rather than
+calling `net start` twice. Record the server hash, bind address, API fixture,
+guest settings and packet capture alongside every result.
 
 > [!CAUTION]
 > Do not use `net start` again after changing guest settings. XINA creates

@@ -33,6 +33,12 @@ It must not contain `qemu/`, `scripts/build-qemu.sh`, `tools/`, tests, ROMs,
 updates or savedata. Assets are acquired through the normal first-run path if
 the corresponding directories are absent.
 
+> [!NOTE]
+> This exclusion also keeps the recovered legacy tournament server out of the
+> end-user archive. Its missing upstream licence and Python 2 laboratory status
+> are recorded in its `NOTICE.md`; do not add it to the release allow-list
+> without resolving both.
+
 ## Triggers and tag selection
 
 The release workflow runs on relevant pushes to `main`, semantic-looking

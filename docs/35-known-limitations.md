@@ -25,7 +25,7 @@ fidelity or invalidate a support claim.
 | hardware | no current powered-cabinet/physical-LPT certification exists on this host | follow the staged real-board procedure on the target cabinet |
 | platform | published binaries target Linux x86_64 only | treat another architecture/OS as a new port |
 | device fidelity | PCI, SuperIO, MediaGX and PUB models implement game-used surfaces, not complete chips | do not infer hotplug, arbitrary firmware or general hardware compatibility |
-| networking | XINA services are historical and optional forwarding can expose them | bind locally unless an isolated trusted network is intentional |
+| networking | XINA services are historical; the JTS relay is an unlicensed Python 2 lab artifact without card-reader support | bind locally and treat tournament work as preservation research |
 
 ## Timing is host-sensitive
 
@@ -214,6 +214,14 @@ them reachable from the surrounding network; prefer `--forward-local` unless
 exposure on a trusted isolated network is deliberate. Networking is optional
 and does not belong on the critical path for local play. See
 [Optional network card](48-network.md).
+
+The recovered tournament relay under `tools/tournament-server-legacy/` is not
+a supported Encore service. It requires Python 2, binds UDP on all host
+interfaces, calls a clear-text HTTP score API and has no conformance or hostile
+input suite. Its picture fixtures are excluded for lack of established
+redistribution rights. One RFM 1.90 request/reply sequence passed; COM2 input,
+barcode identification, score submission and the complete SWE1/RFM lifecycle
+remain unproven. See [Tournament-server preservation](49-tournament-server.md).
 
 ## Deliberately partial machine models
 
