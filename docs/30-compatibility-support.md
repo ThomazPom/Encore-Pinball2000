@@ -71,17 +71,19 @@ refresh; inventory is not certification.
 
 ### Guest-extension compatibility is narrower
 
-`guest-extensions/check-romset.py` checks only the volatile extension ABI used
-by `--guest-extensions` and `--setip`. On 2026-09-26 it reported:
+`guest-extensions/check-romset.py` checks the volatile extension ABI used by
+`--guest-extensions`/`--setip` and the structural `udpsend()` anchor used by
+the automatic Slirp UDP correction. On 2026-09-28 it reported:
 
 ```text
 24 supported, 2 pre-network, 0 failed
 ```
 
-The expected pre-network skips are SWE1 1.30 and RFM 1.20. Normal boot does not
-require the extension, and an `OK` says nothing about graphics, sound, timing
-or an entire play session. The checker now fails if no preserved game ROM is
-found, so an empty asset tree cannot produce a vacuous success.
+The expected pre-network skips are SWE1 1.30 and RFM 1.20. They do not expose
+the later network path. Normal non-network boot does not require an extension,
+and an `OK` says nothing about graphics, sound, timing or an entire play
+session. The checker fails if no preserved game ROM is found, so an empty
+asset tree cannot produce a vacuous success.
 
 ## Current runtime evidence
 

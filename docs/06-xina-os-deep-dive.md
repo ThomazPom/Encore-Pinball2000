@@ -421,8 +421,10 @@ updates as structurally supported and two early images as pre-network.
 
 > [!NOTE]
 > This is an explicit compatibility extension, not a claim that the original
-> software contained Encore's command. A run without the option executes the
-> unmodified guest path.
+> software contained Encore's command. A run without the option does not add
+> that command or the startup resource wrapper. Independently, an actual
+> Slirp-backed NIC triggers the narrow automatic `udpsend()` TTL patch needed
+> for routed UDP; passt and bridge leave that code unchanged.
 
 See [Optional networking](48-network.md) for topology and exposure rules and
 `guest-extensions/README.md` for the payload ABI.

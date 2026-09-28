@@ -58,6 +58,12 @@ See the [Quickstart](02-quickstart.md) for the complete first-run sequence.
 | `--guest-extensions` | Inject supported volatile serial-shell extensions into guest RAM; ROM files remain unchanged. |
 | `--setip IP MASK GATEWAY` | Enable guest extensions and persist the supplied XINA network resources immediately before `netstart`. |
 
+These options control the serial-shell/`setip` payload. They do not control
+the narrower UDP compatibility patch: when the NIC's actual backend is Slirp,
+Encore automatically changes XINU's volatile unicast `udpsend()` TTL default
+from 1 to 64 before `netstart`. Passt and bridge backends retain guest code
+unchanged. See [Optional networking](48-network.md#slirp-udp-guest-extension).
+
 `--fresh` and `--no-savedata` are mutually exclusive. `--update r2` selects the
 RFM 0.80 revision-2 base ROMs and is invalid with SWE1.
 

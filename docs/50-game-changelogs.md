@@ -384,7 +384,8 @@ flash; pair it with `--no-savedata` for a clean base-ROM comparison.
 A published feature does not prove that Encore emulates every device it uses.
 Examples include:
 
-- network tournament clients without a compatible tournament server;
+- network tournament clients without a validated end-to-end server and card
+  reader path;
 - card-reader flows while COM2 has no receive backend;
 - physical shaker, knocker, opto or trough expansions;
 - installation through a physical PUB card; and

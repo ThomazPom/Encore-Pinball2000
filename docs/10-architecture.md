@@ -76,7 +76,7 @@ hooks.
 | MediaGX graphics | `p2k-mediagx-gate.c`, `p2k-gx.c`, `p2k-gp-blt.c`, `p2k-vsync.c`, `p2k-display.c`, `p2k-video-capture.c` | machine-gated instructions, graphics registers, blits, scan timing, host presentation and recording |
 | network | `p2k-smc8416.c`, `p2k-nic-dseg.c` | optional ISA NIC plus boot-visible LAN-ROM shadow |
 | update board | `p2k-pub-card.c` | optional experimental PUB flash window |
-| diagnostics and compatibility | `p2k-diag.c`, `p2k-timing-audit.c`, `p2k-stall-profile.c`, `p2k-mem-detect.c`, `p2k-gfxlist-watch.c`, `p2k-guest-extensions.c` | observation by default; explicitly selected, signature-matched mutation where documented |
+| diagnostics and compatibility | `p2k-diag.c`, `p2k-timing-audit.c`, `p2k-stall-profile.c`, `p2k-mem-detect.c`, `p2k-gfxlist-watch.c`, `p2k-guest-extensions.c` | observation by default; signature-matched mutation only at documented opt-in or backend compatibility boundaries |
 
 The complete address inventory belongs in [Memory map](13-memory-map.md).
 Subsystem behavior belongs in the linked device pages rather than being
@@ -178,10 +178,11 @@ SEEPROM; those three device images persist on clean exit. ROM chip inputs and
 mapped ROM windows are not modified. See
 [Persistent cabinet state](09-savedata.md).
 
-Optional compatibility features are narrower:
+Compatibility mutations remain narrow and explicit:
 
-- guest extensions inject a signature-resolved payload into guest RAM and are
-  reset with the machine;
+- opt-in guest extensions inject a signature-resolved payload into guest RAM;
+  Slirp additionally applies the signature-bounded unicast UDP TTL immediate;
+  both are reset with the machine;
 - the memory-detection override is opt-in and signature matched;
 - diagnostic samplers are observers; the timing module also owns the documented
   default post-IRET deadline rendezvous, while experimental profilers remain

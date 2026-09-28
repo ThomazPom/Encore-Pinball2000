@@ -361,7 +361,8 @@ Start with verbose serial output:
 Useful milestones are:
 
 ```text
-guest extension installed
+Slirp UDP guest extension installed: udpsend TTL=64 ...
+guest extension installed: netstart=...       # only with --guest-extensions/--setip
 ez0: port 0x300 irq 7 ... type SMC8416T
 querying XINA's active IP through XUART
 automatic forwards now target XINA ...
@@ -369,8 +370,10 @@ automatic forwards now target XINA ...
 
 - If `ez0` never appears, confirm that a network option was supplied and use a
   network-capable update.
-- If Encore reports no compatible guest-extension image, do not assume
-  `--setip` was applied; run the ROM-set checker and select a supported update.
+- If Encore reports no compatible UDP TTL guest-extension image under Slirp,
+  that update has no safe automatic UDP patch target. If it reports the
+  general guest-extension message, do not assume `--setip` was applied. In
+  either case, run the ROM-set checker and select a supported update.
 - If automatic forwarding never gets a target, confirm that XINA reached its
   prompt and has a nonzero active address.
 - If conventional NAT cannot reach the guest service, verify that XINA is
