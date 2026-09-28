@@ -217,18 +217,38 @@ existing bridge. The guest sees I/O base `0x300`, IRQ 7 and MAC address
 
 That gives the historical client a possible packet path. Encore now preserves
 one manually launched community JTS relay under `tools/`, but does not make it
-a supported service. No current launcher option:
+a supported service. The launcher can persist the guest's native Tourney IP,
+Tournament Play and Free Play resources with the command
+`--tournament <ip> [on|off] [no-free]`. No current launcher option:
 
 - starts a tournament server;
 - decodes or records JTS messages as structured data;
 - translates a modern service into the historical protocol;
-- configures the guest's Tourney IP, login or password;
+- configures the guest's network login or password;
 - emulates the barcode reader.
 
 The legacy relay can synthesize divisions, players, rankings and pictures from
 an HTTP score API. Its recovered picture fixtures are not vendored because no
 licence was found, and it has no server conformance suite. The 2026-09-27 test
 proves only the documented RFM 1.90 path.
+
+### Startup-profile evidence
+
+On 2026-09-28, SWE1 2.10 was booted from copied savedata and the values were
+read through XINA's own `reslist data` command. The two profile forms and a
+second boot without `--tournament` produced:
+
+| Launcher profile | `ADTS_IPA` bytes | `ADGmTour` | `ADCrdFPl` | Reboot without option |
+|---|---|---|---|---|
+| `--tournament 10.0.2.2` | `02 02 00 0a` | `1` | `1` | same values |
+| `--tournament 10.0.2.9 off no-free` | `09 02 00 0a` | `0` | `0` | same values |
+
+The address bytes are XINA's little-endian storage representation of the
+supplied numeric IPv4 address. This proves option parsing, native resource
+writes and persistence for those two profiles. It does not prove an external
+server, card-reader workflow or complete tournament lifecycle. The exact
+console assertions are retained in
+`scripts/tests/fixtures/tournament-profile*-smoke.p2k`.
 
 > [!TIP]
 > JTS is guest-initiated. The tested Slirp path requires no public
@@ -295,15 +315,17 @@ Use an isolated lab with disposable savedata:
   --update 2.10 \
   --network \
   --setip 10.0.2.15 255.255.255.0 10.0.2.2 \
+  --tournament 10.0.2.2 \
   --no-savedata \
   --headless
 ```
 
-This command only supplies an isolated guest network and known XINA address.
-It does **not** start JTS or configure the Tourney IP. Set the guest's numeric
-Tourney IP to the controlled server endpoint, save, then reboot rather than
-calling `net start` twice. Record the server hash, bind address, API fixture,
-guest settings and packet capture alongside every result.
+This command supplies an isolated guest network, known XINA address and a
+Tourney IP targeting Slirp's host endpoint. It also enables Tournament Play
+and Free Play, which are the `--tournament` defaults. It does **not** start
+JTS. Use `no-free` only when a working COM2 reader/payment path exists; Encore
+does not currently provide one. Record the server hash, bind address, API
+fixture, guest settings and packet capture alongside every result.
 
 > [!CAUTION]
 > Do not use `net start` again after changing guest settings. XINA creates

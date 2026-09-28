@@ -1,0 +1,6 @@
+# Verify the defaults from --tournament 10.0.2.2.
+reslist data
+@assert-regex \[ADTS_IPA\][^\r\n]*[\r\n]+[ ]+02\|02\|00\|0a
+@assert-regex \[ADGmTour\][^\r\n]*[\r\n]+[ ]+01\|00\|00\|00
+@assert-regex \[ADCrdFPl\][^\r\n]*[\r\n]+[ ]+01\|00\|00\|00
+@echo Tournament on/free profile verified; close the emulator normally

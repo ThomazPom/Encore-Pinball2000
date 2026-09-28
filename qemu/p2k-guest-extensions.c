@@ -47,13 +47,20 @@ enum {
     GE_O_DNS_RESOURCE   = 0x58,
     GE_O_STARTUP_DNS_ENABLE = 0x5c,
     GE_O_STARTUP_DNS    = 0x60,
+    GE_O_TOURNEY_IP_RESOURCE = 0x64,
+    GE_O_TOURNAMENT_RESOURCE = 0x68,
+    GE_O_FREE_PLAY_RESOURCE = 0x6c,
+    GE_O_STARTUP_TOURNAMENT_ENABLE = 0x70,
+    GE_O_STARTUP_TOURNEY_IP = 0x74,
+    GE_O_STARTUP_TOURNAMENT_ON = 0x78,
+    GE_O_STARTUP_FREE_PLAY = 0x7c,
 };
 
-typedef enum GuestIPv4Status {
-    GE_IPV4_ABSENT,
-    GE_IPV4_VALID,
-    GE_IPV4_INVALID,
-} GuestIPv4Status;
+typedef enum GuestEnvStatus {
+    GE_ENV_ABSENT,
+    GE_ENV_VALID,
+    GE_ENV_INVALID,
+} GuestEnvStatus;
 
 typedef struct MaskedPattern {
     const uint8_t *bytes;
@@ -218,14 +225,14 @@ static bool ge_try_patch_udp_ttl(void)
     return true;
 }
 
-static GuestIPv4Status parse_ipv4_env(const char *name, uint32_t *result)
+static GuestEnvStatus parse_ipv4_env(const char *name, uint32_t *result)
 {
     const char *s = getenv(name);
     const char *p;
     uint32_t value = 0;
 
     if (!s || !*s) {
-        return GE_IPV4_ABSENT;
+        return GE_ENV_ABSENT;
     }
     p = s;
     for (unsigned part = 0; part < 4; part++) {
@@ -244,11 +251,26 @@ static GuestIPv4Status parse_ipv4_env(const char *name, uint32_t *result)
         value = value << 8 | octet;
     }
     *result = value;
-    return GE_IPV4_VALID;
+    return GE_ENV_VALID;
 
 invalid:
     error_report("pinball2000: %s is not an IPv4 address: %s", name, s);
-    return GE_IPV4_INVALID;
+    return GE_ENV_INVALID;
+}
+
+static GuestEnvStatus parse_bool_env(const char *name, uint32_t *result)
+{
+    const char *s = getenv(name);
+
+    if (!s || !*s) {
+        return GE_ENV_ABSENT;
+    }
+    if (!strcmp(s, "0") || !strcmp(s, "1")) {
+        *result = s[0] - '0';
+        return GE_ENV_VALID;
+    }
+    error_report("pinball2000: %s is not 0 or 1: %s", name, s);
+    return GE_ENV_INVALID;
 }
 
 static bool resolve_resources(const uint8_t *netstart, uint32_t ns_addr,
@@ -281,16 +303,19 @@ static bool resolve_resources(const uint8_t *netstart, uint32_t ns_addr,
     return true;
 }
 
-static bool resolve_dns_resource(uint8_t *ram, size_t size,
-                                 uint32_t get_value,
-                                 uint32_t *dns_resource_out)
+static bool resolve_named_resource(uint8_t *ram, size_t size,
+                                   const char *resource_name,
+                                   uint32_t *resource_out,
+                                   uint32_t *constructor_out)
 {
-    static const uint8_t dns_name[] = "DNSIPA";
-    uint8_t *name = find_exact_unique(ram, size, dns_name, sizeof(dns_name));
+    size_t name_length = strlen(resource_name) + 1;
+    uint8_t *name = find_exact_unique(ram, size,
+                                      (const uint8_t *)resource_name,
+                                      name_length);
     uint8_t *constructor_ref = NULL;
     uint32_t name_addr;
     uint32_t resource;
-    unsigned get_calls = 0;
+    uint32_t constructor;
 
     if (!name) {
         return false;
@@ -314,23 +339,35 @@ static bool resolve_dns_resource(uint8_t *ram, size_t size,
     if (resource < GE_SCAN_BASE || resource > GE_SCAN_BASE + size - 4) {
         return false;
     }
+    constructor = GE_SCAN_BASE + (constructor_ref - ram) + 20 +
+                  (int32_t)ld32(constructor_ref + 16);
+    if (constructor < GE_SCAN_BASE || constructor >= GE_SCAN_BASE + size) {
+        return false;
+    }
+    *resource_out = resource;
+    *constructor_out = constructor;
+    return true;
+}
+
+static unsigned resource_call_count(uint8_t *ram, size_t size,
+                                    uint32_t resource, uint32_t target)
+{
+    unsigned calls = 0;
+
     for (size_t off = 0; off + 10 <= size; off++) {
-        uint32_t target;
+        uint32_t call_target;
 
         if (ram[off] != 0x68 || ld32(ram + off + 1) != resource ||
             ram[off + 5] != 0xe8) {
             continue;
         }
-        target = GE_SCAN_BASE + off + 10 + (int32_t)ld32(ram + off + 6);
-        if (target == get_value) {
-            get_calls++;
+        call_target = GE_SCAN_BASE + off + 10 +
+                      (int32_t)ld32(ram + off + 6);
+        if (call_target == target) {
+            calls++;
         }
     }
-    if (get_calls != 1) {
-        return false;
-    }
-    *dns_resource_out = resource;
-    return true;
+    return calls;
 }
 
 static uint8_t *resolve_factory_reset(uint8_t *ram, size_t size)
@@ -369,15 +406,21 @@ static bool ge_try_install(void)
     MaskedPattern put = { put_bytes, put_mask, sizeof(put_bytes) };
     uint8_t *shell_at, *put_at, *anchor_at, *netstart;
     uint8_t *factory_reset = NULL;
-    uint32_t resources[3], dns_resource, get_value;
-    uint32_t startup[3], startup_dns;
+    uint32_t resources[3], dns_resource, tourney_ip_resource;
+    uint32_t tournament_resource, free_play_resource, get_value;
+    uint32_t dns_constructor, tourney_ip_constructor;
+    uint32_t tournament_constructor, free_play_constructor;
+    uint32_t startup[3], startup_dns, startup_tourney_ip;
+    uint32_t startup_tournament_on, startup_free_play;
     uint8_t payload[P2K_GE_PAYLOAD_SIZE];
     uint8_t hook[GE_HOOK_LENGTH] = { 0xe9, 0, 0, 0, 0, 0x90 };
     uint8_t factory_hook[GE_FACTORY_HOOK_LENGTH] = {
         0xe9, 0, 0, 0, 0, 0x90, 0x90, 0x90, 0x90
     };
-    GuestIPv4Status ip_status, mask_status, gateway_status, dns_status;
-    bool have_startup, have_startup_dns;
+    GuestEnvStatus ip_status, mask_status, gateway_status, dns_status;
+    GuestEnvStatus tourney_ip_status, tournament_on_status, free_play_status;
+    bool have_startup, have_startup_dns, have_startup_tournament;
+    const char *tournament_suffix = "";
 
     cpu_physical_memory_read(GE_SCAN_BASE, ram, GE_SCAN_LENGTH);
     shell_at = find_masked(ram, GE_SCAN_LENGTH, shell);
@@ -393,8 +436,28 @@ static bool ge_try_install(void)
         !resolve_resources(netstart,
                            GE_SCAN_BASE + (netstart - ram), resources,
                            &get_value) ||
-        !resolve_dns_resource(ram, GE_SCAN_LENGTH, get_value,
-                              &dns_resource)) {
+        !resolve_named_resource(ram, GE_SCAN_LENGTH, "DNSIPA",
+                                &dns_resource, &dns_constructor) ||
+        resource_call_count(ram, GE_SCAN_LENGTH, dns_resource,
+                            get_value) != 1 ||
+        !resolve_named_resource(ram, GE_SCAN_LENGTH, "TS_IPA",
+                                &tourney_ip_resource,
+                                &tourney_ip_constructor) ||
+        !resolve_named_resource(ram, GE_SCAN_LENGTH, "GmTour",
+                                &tournament_resource,
+                                &tournament_constructor) ||
+        !resolve_named_resource(ram, GE_SCAN_LENGTH, "CrdFPl",
+                                &free_play_resource,
+                                &free_play_constructor) ||
+        tourney_ip_constructor != dns_constructor ||
+        tournament_constructor != free_play_constructor ||
+        tournament_constructor == dns_constructor ||
+        dns_resource == tourney_ip_resource ||
+        dns_resource == tournament_resource ||
+        dns_resource == free_play_resource ||
+        tourney_ip_resource == tournament_resource ||
+        tourney_ip_resource == free_play_resource ||
+        tournament_resource == free_play_resource) {
         g_free(ram);
         return false;
     }
@@ -411,6 +474,9 @@ static bool ge_try_install(void)
     st32(payload + GE_O_MASK_RESOURCE, resources[1]);
     st32(payload + GE_O_GW_RESOURCE, resources[2]);
     st32(payload + GE_O_DNS_RESOURCE, dns_resource);
+    st32(payload + GE_O_TOURNEY_IP_RESOURCE, tourney_ip_resource);
+    st32(payload + GE_O_TOURNAMENT_RESOURCE, tournament_resource);
+    st32(payload + GE_O_FREE_PLAY_RESOURCE, free_play_resource);
     st32(payload + GE_O_ORIGINAL_LEN, GE_HOOK_LENGTH);
     memcpy(payload + GE_O_ORIGINAL, netstart, GE_HOOK_LENGTH);
 
@@ -418,9 +484,18 @@ static bool ge_try_install(void)
     mask_status = parse_ipv4_env("P2K_GUEST_MASK", &startup[1]);
     gateway_status = parse_ipv4_env("P2K_GUEST_GATEWAY", &startup[2]);
     dns_status = parse_ipv4_env("P2K_GUEST_DNS", &startup_dns);
-    if (ip_status == GE_IPV4_INVALID || mask_status == GE_IPV4_INVALID ||
-        gateway_status == GE_IPV4_INVALID || dns_status == GE_IPV4_INVALID) {
-        error_report("pinball2000: invalid guest network startup value");
+    tourney_ip_status = parse_ipv4_env("P2K_TOURNAMENT_IP",
+                                       &startup_tourney_ip);
+    tournament_on_status = parse_bool_env("P2K_TOURNAMENT_ENABLED",
+                                           &startup_tournament_on);
+    free_play_status = parse_bool_env("P2K_TOURNAMENT_FREE_PLAY",
+                                      &startup_free_play);
+    if (ip_status == GE_ENV_INVALID || mask_status == GE_ENV_INVALID ||
+        gateway_status == GE_ENV_INVALID || dns_status == GE_ENV_INVALID ||
+        tourney_ip_status == GE_ENV_INVALID ||
+        tournament_on_status == GE_ENV_INVALID ||
+        free_play_status == GE_ENV_INVALID) {
+        error_report("pinball2000: invalid guest startup value");
         g_free(ram);
         ge_retired = true;
         return false;
@@ -431,46 +506,52 @@ static bool ge_try_install(void)
         ge_retired = true;
         return false;
     }
-    have_startup = ip_status == GE_IPV4_VALID;
-    have_startup_dns = dns_status == GE_IPV4_VALID;
+    if (tourney_ip_status != tournament_on_status ||
+        tourney_ip_status != free_play_status) {
+        error_report("pinball2000: tournament IP, enabled state and "
+                     "free-play state must be supplied together");
+        g_free(ram);
+        ge_retired = true;
+        return false;
+    }
+    have_startup = ip_status == GE_ENV_VALID;
+    have_startup_dns = dns_status == GE_ENV_VALID;
+    have_startup_tournament = tourney_ip_status == GE_ENV_VALID;
     if (have_startup) {
+        st32(payload + GE_O_STARTUP_ENABLE, 1);
+        st32(payload + GE_O_STARTUP_IP, startup[0]);
+        st32(payload + GE_O_STARTUP_MASK, startup[1]);
+        st32(payload + GE_O_STARTUP_GW, startup[2]);
+    }
+    if (have_startup_dns) {
+        st32(payload + GE_O_STARTUP_DNS_ENABLE, 1);
+        st32(payload + GE_O_STARTUP_DNS, startup_dns);
+    }
+    if (have_startup_tournament) {
+        st32(payload + GE_O_STARTUP_TOURNAMENT_ENABLE, 1);
+        st32(payload + GE_O_STARTUP_TOURNEY_IP, startup_tourney_ip);
+        st32(payload + GE_O_STARTUP_TOURNAMENT_ON,
+             startup_tournament_on);
+        st32(payload + GE_O_STARTUP_FREE_PLAY, startup_free_play);
+        tournament_suffix = startup_tournament_on ?
+            (startup_free_play ? " startup tournament=on/free" :
+                                 " startup tournament=on/no-free") :
+            (startup_free_play ? " startup tournament=off/free" :
+                                 " startup tournament=off/no-free");
+    }
+    if (have_startup || have_startup_dns || have_startup_tournament) {
         factory_reset = resolve_factory_reset(ram, GE_SCAN_LENGTH);
-
         if (!factory_reset) {
             error_report("pinball2000: automatic factory-reset path was not resolved");
             g_free(ram);
             ge_retired = true;
             return false;
         }
-        st32(payload + GE_O_STARTUP_ENABLE, 1);
-        st32(payload + GE_O_STARTUP_IP, startup[0]);
-        st32(payload + GE_O_STARTUP_MASK, startup[1]);
-        st32(payload + GE_O_STARTUP_GW, startup[2]);
         st32(payload + GE_O_FACTORY_RESET,
              GE_SCAN_BASE + (factory_reset - ram));
         st32(payload + GE_O_FACTORY_ORIG_LEN, GE_FACTORY_HOOK_LENGTH);
         memcpy(payload + GE_O_FACTORY_ORIGINAL, factory_reset,
                GE_FACTORY_HOOK_LENGTH);
-    }
-    if (have_startup_dns) {
-        if (!factory_reset) {
-            factory_reset = resolve_factory_reset(ram, GE_SCAN_LENGTH);
-        }
-        if (!factory_reset) {
-            error_report("pinball2000: automatic factory-reset path was not resolved");
-            g_free(ram);
-            ge_retired = true;
-            return false;
-        }
-        st32(payload + GE_O_STARTUP_DNS_ENABLE, 1);
-        st32(payload + GE_O_STARTUP_DNS, startup_dns);
-        if (!have_startup) {
-            st32(payload + GE_O_FACTORY_RESET,
-                 GE_SCAN_BASE + (factory_reset - ram));
-            st32(payload + GE_O_FACTORY_ORIG_LEN, GE_FACTORY_HOOK_LENGTH);
-            memcpy(payload + GE_O_FACTORY_ORIGINAL, factory_reset,
-                   GE_FACTORY_HOOK_LENGTH);
-        }
     }
 
     st32(hook + 1, (GE_PAYLOAD_BASE + GE_ENTRY_OFFSET) -
@@ -478,7 +559,7 @@ static bool ge_try_install(void)
     cpu_physical_memory_write(GE_PAYLOAD_BASE, payload, sizeof(payload));
     cpu_physical_memory_write(GE_SCAN_BASE + (netstart - ram),
                               hook, sizeof(hook));
-    if (have_startup || have_startup_dns) {
+    if (have_startup || have_startup_dns || have_startup_tournament) {
         st32(factory_hook + 1,
              (GE_PAYLOAD_BASE + GE_FACTORY_ENTRY_OFFSET) -
              (GE_SCAN_BASE + (factory_reset - ram) + 5));
@@ -487,12 +568,15 @@ static bool ge_try_install(void)
     }
     info_report("pinball2000: guest extension installed: netstart=0x%08x "
                 "ShellCmdAdd=0x%08x resources=%08x/%08x/%08x "
-                "dns=%08x%s%s",
+                "dns=%08x tournament=%08x/%08x/%08x%s%s%s",
                 GE_SCAN_BASE + (unsigned)(netstart - ram),
                 GE_SCAN_BASE + (unsigned)(shell_at - ram),
                 resources[0], resources[1], resources[2], dns_resource,
+                tourney_ip_resource, tournament_resource,
+                free_play_resource,
                 have_startup ? " startup IPv4" : "",
-                have_startup_dns ? " startup DNS" : "");
+                have_startup_dns ? " startup DNS" : "",
+                tournament_suffix);
     g_free(ram);
     ge_installed = true;
     return true;

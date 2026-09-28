@@ -22,11 +22,18 @@
 .equ GE_DNS_RESOURCE,     GE_BASE + 0x58
 .equ GE_STARTUP_DNS_ENABLE, GE_BASE + 0x5c
 .equ GE_STARTUP_DNS,      GE_BASE + 0x60
+.equ GE_TOURNEY_IP_RESOURCE, GE_BASE + 0x64
+.equ GE_TOURNAMENT_RESOURCE, GE_BASE + 0x68
+.equ GE_FREE_PLAY_RESOURCE, GE_BASE + 0x6c
+.equ GE_STARTUP_TOURNAMENT_ENABLE, GE_BASE + 0x70
+.equ GE_STARTUP_TOURNEY_IP, GE_BASE + 0x74
+.equ GE_STARTUP_TOURNAMENT_ON, GE_BASE + 0x78
+.equ GE_STARTUP_FREE_PLAY, GE_BASE + 0x7c
 
 .section .control,"aw",@progbits
 .long 0x58454750                 /* "PGEX", filled/validated by host */
 .long 1
-.fill 24, 4, 0
+.fill 30, 4, 0
 
 .section .text,"ax",@progbits
 .global p2k_ge_bootstrap
@@ -92,6 +99,25 @@ p2k_ge_apply_startup:
     call *GE_PUT_VALUE
     addl $8, %esp
 4:
+    cmpl $0, GE_STARTUP_TOURNAMENT_ENABLE
+    je 5f
+    pushl GE_STARTUP_TOURNEY_IP
+    pushl GE_TOURNEY_IP_RESOURCE
+    call *GE_PUT_VALUE
+    addl $8, %esp
+    testl %eax, %eax
+    jz 5f
+    pushl GE_STARTUP_TOURNAMENT_ON
+    pushl GE_TOURNAMENT_RESOURCE
+    call *GE_PUT_VALUE
+    addl $8, %esp
+    testl %eax, %eax
+    jz 5f
+    pushl GE_STARTUP_FREE_PLAY
+    pushl GE_FREE_PLAY_RESOURCE
+    call *GE_PUT_VALUE
+    addl $8, %esp
+5:
     ret
 
 /* unsigned parse_ipv4(const char *s); CF=1 on malformed input. */

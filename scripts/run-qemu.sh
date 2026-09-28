@@ -97,6 +97,10 @@ GUEST_IP=""
 GUEST_MASK=""
 GUEST_GATEWAY=""
 GUEST_DNS=""
+TOURNAMENT_PROFILE=0
+TOURNAMENT_IP=""
+TOURNAMENT_ENABLED=1
+TOURNAMENT_FREE_PLAY=1
 
 # --- QEMU binary lookup -----------------------------------------------------
 resolve_qemu_bin() {
@@ -259,6 +263,12 @@ CORE LAUNCH
                             setip <ip> <mask> <gateway>.
   --dns <address>           Persist XINA's DNSIPA resource before netstart.
                             Serial equivalent: setdns <address>.
+  --tournament <ip> [on|off] [no-free]
+                            Persist the native Tourney IP, Tournament Play,
+                            and Free Play resources before netstart. Defaults
+                            to on and free; no-free forces Free Play off for a
+                            COM2 barcode-reader setup. This does not start a
+                            tournament server or select a network backend.
   --update <spec>           Update bundle selection. Spec is one of:
                               auto      (default) machine auto-discovers
                                         the newest matching bundle in
@@ -630,7 +640,8 @@ ENV PASSTHROUGH (advanced; see qemu/README.md for the full table)
   P2K_PB2KSLIB P2K_DCS_ENGINE P2K_DCS_PCM_CPU P2K_DCS_MODE P2K_SCREENSHOT_DIR
   P2K_DISPLAY_BPP P2K_FRAMEBUFFER_THREAD P2K_QEMU_FRAMEBUFFER
   P2K_GUEST_EXTENSIONS P2K_GUEST_IP P2K_GUEST_MASK P2K_GUEST_GATEWAY
-  P2K_GUEST_DNS
+  P2K_GUEST_DNS P2K_TOURNAMENT_IP P2K_TOURNAMENT_ENABLED
+  P2K_TOURNAMENT_FREE_PLAY
   P2K_LPT_DEVICE P2K_LPT_INPUT
   P2K_LPT_IOPORT P2K_LPT_TRACE_FILE P2K_DCS_PRELOAD
   P2K_SWITCH_KEYMAP P2K_VIDEO_CAPTURE P2K_FFMPEG_BIN
@@ -680,6 +691,26 @@ while [[ $# -gt 0 ]]; do
       GUEST_EXTENSIONS=1
       GUEST_DNS="$2"
       shift 2 ;;
+    --tournament)
+      [[ -n "${2:-}" ]] && valid_ipv4 "$2" || {
+        echo "[run-qemu] --tournament: expected an IPv4 address" >&2
+        exit 2
+      }
+      GUEST_EXTENSIONS=1
+      TOURNAMENT_PROFILE=1
+      TOURNAMENT_IP="$2"
+      TOURNAMENT_ENABLED=1
+      TOURNAMENT_FREE_PLAY=1
+      shift 2
+      case "${1:-}" in
+        on)  TOURNAMENT_ENABLED=1; shift ;;
+        off) TOURNAMENT_ENABLED=0; shift ;;
+      esac
+      if [[ "${1:-}" == "no-free" ]]; then
+        TOURNAMENT_FREE_PLAY=0
+        shift
+      fi
+      ;;
     --clear-pb2kslib-cache) CLEAR_PB2K_ADSP_CACHE=1; shift ;;
     --pb2kslib-cache-workers)
       PB2K_ADSP_CACHE_WORKERS="$2"; shift 2 ;;
@@ -983,6 +1014,11 @@ if [[ $GUEST_EXTENSIONS -eq 1 ]]; then
   fi
   if [[ -n "$GUEST_DNS" ]]; then
     export P2K_GUEST_DNS="$GUEST_DNS"
+  fi
+  if [[ $TOURNAMENT_PROFILE -eq 1 ]]; then
+    export P2K_TOURNAMENT_IP="$TOURNAMENT_IP"
+    export P2K_TOURNAMENT_ENABLED="$TOURNAMENT_ENABLED"
+    export P2K_TOURNAMENT_FREE_PLAY="$TOURNAMENT_FREE_PLAY"
   fi
 fi
 if [[ -n "$HTTP_PORT" ]]; then

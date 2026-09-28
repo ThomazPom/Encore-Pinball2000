@@ -91,6 +91,39 @@ query, while address, mask and gateway belong to the already running network
 stack. Reboot the guest after a complete network change; it is the one safe,
 uniform application path.
 
+### Prepare native tournament settings
+
+`--tournament` stores the three native settings that form the JTS operator
+profile:
+
+```bash
+./scripts/run-qemu.sh \
+  --game swe1 \
+  --update 2.10 \
+  --network \
+  --setip 10.0.2.15 255.255.255.0 10.0.2.2 \
+  --tournament 10.0.2.2
+```
+
+This is shorthand for Tourney IP `10.0.2.2`, Tournament Play `on` and Free
+Play `on`. The complete form is:
+
+```text
+--tournament <ip> [on|off] [no-free]
+```
+
+`off` stores the supplied address but disables Tournament Play. `no-free`
+forces Free Play off for a setup that expects player/payment input from the
+COM2 card reader. The option does not preserve the previous Free Play value:
+without `no-free`, it deliberately writes `on`. It does not configure network
+addressing, login/password, a card reader or a server, so combine it with the
+network mode and `--setip` values appropriate to the selected topology.
+
+The three writes use XINA's native `TS_IPA`, `GmTour` and `CrdFPl` resources
+and the same factory-reset/reboot persistence path as `--setip` and `--dns`.
+The reproducible console fixtures under `scripts/tests/fixtures/` inspect
+their stored bytes with XINA's own `reslist data` command.
+
 > [!CAUTION]
 > Do **not** issue `net start` a second time. XINA creates another complete set
 > of network processes instead of stopping or reconfiguring the first one. A
@@ -374,7 +407,7 @@ Useful milestones are:
 
 ```text
 Slirp UDP guest extension installed: udpsend TTL=64 ...
-guest extension installed: netstart=...       # with --guest-extensions/--setip/--dns
+guest extension installed: netstart=...       # with --guest-extensions/--setip/--dns/--tournament
 ez0: port 0x300 irq 7 ... type SMC8416T
 querying XINA's active IP through XUART
 automatic forwards now target XINA ...
@@ -384,8 +417,9 @@ automatic forwards now target XINA ...
   network-capable update.
 - If Encore reports no compatible UDP TTL guest-extension image under Slirp,
   that update has no safe automatic UDP patch target. If it reports the
-  general guest-extension message, do not assume `--setip` or `--dns` was applied. In
-  either case, run the ROM-set checker and select a supported update.
+  general guest-extension message, do not assume `--setip`, `--dns` or
+  `--tournament` was applied. In either case, run the ROM-set checker and
+  select a supported update.
 - If automatic forwarding never gets a target, confirm that XINA reached its
   prompt and has a nonzero active address.
 - If conventional NAT cannot reach the guest service, verify that XINA is

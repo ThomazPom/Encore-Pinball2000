@@ -418,9 +418,12 @@ routine.
 
 `--setip <ip> <mask> <gateway>` additionally writes the three normal XINA
 network resources at startup. Independent `--dns <address>` writes the native
-`DNSIPA` resource without changing those three values. The extension checker
-requires a unique DNS resource/read path and currently classifies 24 preserved
-updates as structurally supported and two early images as pre-network.
+`DNSIPA` resource without changing those three values. The command
+`--tournament <ip> [on|off] [no-free]` writes the native `TS_IPA`, `GmTour`
+and `CrdFPl` resources; it does not supply a server or COM2 reader. The
+extension checker requires unique resource constructors, verifies the IP and
+Yes/No type relationships, and currently classifies 24 preserved updates as
+structurally supported and two early images as pre-network.
 
 > [!NOTE]
 > This is an explicit compatibility extension, not a claim that the original

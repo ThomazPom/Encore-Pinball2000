@@ -37,7 +37,12 @@ UDP_TTL = bytes.fromhex(
     "83c40c6685c0750666c74606ffffbb010000008b450825f0000000"
     "3de0000000752e"
 )
-DNS_NAME = b"DNSIPA\0"
+RESOURCE_NAMES = {
+    "dns": b"DNSIPA\0",
+    "tourney_ip": b"TS_IPA\0",
+    "tournament": b"GmTour\0",
+    "free_play": b"CrdFPl\0",
+}
 BASE = 0x100000
 
 
@@ -64,12 +69,8 @@ def rel32_target(data: bytes, instruction: int) -> int:
     )[0]
 
 
-def dns_resource(data: bytes, netstart: int) -> tuple[int, int] | None:
-    if (data[netstart + 9] != 0x68 or
-            data[netstart + 14] != 0xE8):
-        return None
-    get_value = rel32_target(data, netstart + 14)
-    name_offsets = [m.start() for m in re.finditer(re.escape(DNS_NAME), data)]
+def named_resource(data: bytes, name: bytes) -> tuple[int, int] | None:
+    name_offsets = [m.start() for m in re.finditer(re.escape(name), data)]
     if len(name_offsets) != 1:
         return None
     name_address = BASE + name_offsets[0]
@@ -82,13 +83,42 @@ def dns_resource(data: bytes, netstart: int) -> tuple[int, int] | None:
                     data[off + 15] == 0xE8]
     if len(constructors) != 1:
         return None
-    resource = struct.unpack_from("<I", data, constructors[0] + 11)[0]
-    resource_push = b"\x68" + struct.pack("<I", resource) + b"\xe8"
+    constructor = constructors[0]
+    resource = struct.unpack_from("<I", data, constructor + 11)[0]
+    target = rel32_target(data, constructor + 15)
+    if not BASE <= resource <= BASE + len(data) - 4:
+        return None
+    if not BASE <= target < BASE + len(data):
+        return None
+    return resource, target
+
+
+def extension_resources(data: bytes, netstart: int) -> dict[str, int] | None:
+    if (data[netstart + 9] != 0x68 or
+            data[netstart + 14] != 0xE8):
+        return None
+    get_value = rel32_target(data, netstart + 14)
+    resolved = {key: named_resource(data, name)
+                for key, name in RESOURCE_NAMES.items()}
+    if any(value is None for value in resolved.values()):
+        return None
+    resources = {key: value[0] for key, value in resolved.items()}
+    constructors = {key: value[1] for key, value in resolved.items()}
+    resource_push = (b"\x68" + struct.pack("<I", resources["dns"]) +
+                     b"\xe8")
     get_calls = [m.start() for m in re.finditer(re.escape(resource_push), data)
                  if rel32_target(data, m.start() + 5) == get_value]
     if len(get_calls) != 1:
         return None
-    return resource, get_calls[0]
+    if len(set(resources.values())) != len(resources):
+        return None
+    if constructors["dns"] != constructors["tourney_ip"]:
+        return None
+    if constructors["tournament"] != constructors["free_play"]:
+        return None
+    if constructors["dns"] == constructors["tournament"]:
+        return None
+    return resources
 
 
 def main() -> int:
@@ -106,12 +136,13 @@ def main() -> int:
         netstart = [m.start() for m in re.finditer(re.escape(NETSTART), data)]
         udp_ttl = [m.start() for m in re.finditer(re.escape(UDP_TTL), data)]
         factory = factory_reset_target(data)
-        dns = None
+        resources = None
         if len(netstart) == 1 and netstart[0] >= 0x2D:
-            dns = dns_resource(data, netstart[0] - 0x2D)
+            resources = extension_resources(data, netstart[0] - 0x2D)
         name = rom.parents[1].name
         if (len(shell) == 1 and put and len(netstart) == 1 and
-                len(udp_ttl) == 1 and factory is not None and dns is not None):
+                len(udp_ttl) == 1 and factory is not None and
+                resources is not None):
             print(f"OK    {name}")
             supported += 1
         elif b"IPAddr\0" not in data and not netstart:
@@ -120,7 +151,8 @@ def main() -> int:
         else:
             print(f"FAIL  {name}: shell={len(shell)} put={len(put)} "
                   f"netstart={len(netstart)} udp_ttl={len(udp_ttl)} "
-                  f"factory={factory is not None} dns={dns is not None}")
+                  f"factory={factory is not None} "
+                  f"resources={resources is not None}")
             failed += 1
     print(f"\n{supported} supported, {skipped} pre-network, {failed} failed")
     return bool(failed)

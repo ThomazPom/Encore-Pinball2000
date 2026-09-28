@@ -23,6 +23,14 @@ requested values after the reset so the operator UI and BAR2 persistence
 retain them. No polling or host-side savedata editing is involved. No payload
 is written until every import, resource and hook site has been resolved.
 
+`--tournament <ip> [on|off] [no-free]` uses the same startup and persistence
+path for the native `TS_IPA`, `GmTour` and `CrdFPl` resources. Its defaults are
+Tournament Play on and Free Play on; `no-free` writes Free Play off. The host
+resolver verifies that Tourney IP shares the scalar-IP constructor used by
+DNS and that Tournament Play and Free Play share the distinct Yes/No
+constructor. The option only prepares guest settings: it does not start a
+server, select networking or emulate COM2.
+
 When the emulated Ethernet card is attached to QEMU's Slirp backend, Encore
 also applies a smaller automatic extension before `netstart`. Every preserved
 network-capable image gives unicast packets sent through XINU's common

@@ -70,7 +70,7 @@ git diff --check
 
 `check-romset.py` checks whether every installed update matches the structural
 guest-extension signatures. A `SKIP` for a pre-network image is expected; an
-`OK` does not mean that the whole game was played. On the 2026-09-21 tree it
+`OK` does not mean that the whole game was played. On the 2026-09-28 tree it
 reported 24 supported images, two pre-network skips and zero failures.
 
 Build and confirm machine registration separately:

@@ -58,12 +58,15 @@ See the [Quickstart](02-quickstart.md) for the complete first-run sequence.
 | `--guest-extensions` | Inject supported volatile serial-shell extensions into guest RAM; ROM files remain unchanged. |
 | `--setip IP MASK GATEWAY` | Enable guest extensions and persist the supplied XINA network resources immediately before `netstart`. |
 | `--dns ADDRESS` | Enable guest extensions and persist XINA's `DNSIPA` resource before `netstart`; independent of `--setip`. |
+| `--tournament IP [on\|off] [no-free]` | Persist Tourney IP, Tournament Play and Free Play. Defaults to `on` and Free Play enabled; `no-free` disables Free Play. |
 
-These options control the serial-shell `setip`/`setdns` payload. They do not control
-the narrower UDP compatibility patch: when the NIC's actual backend is Slirp,
-Encore automatically changes XINU's volatile unicast `udpsend()` TTL default
-from 1 to 64 before `netstart`. Passt and bridge backends retain guest code
-unchanged. See [Optional networking](48-network.md#slirp-udp-guest-extension).
+These options use the same volatile startup payload. `--tournament` configures
+guest resources only: it neither starts a server, chooses a network backend nor
+emulates the COM2 barcode reader. They do not control the narrower UDP
+compatibility patch: when the NIC's actual backend is Slirp, Encore
+automatically changes XINU's volatile unicast `udpsend()` TTL default from 1
+to 64 before `netstart`. Passt and bridge backends retain guest code unchanged.
+See [Optional networking](48-network.md#slirp-udp-guest-extension).
 
 `--fresh` and `--no-savedata` are mutually exclusive. `--update r2` selects the
 RFM 0.80 revision-2 base ROMs and is invalid with SWE1.
