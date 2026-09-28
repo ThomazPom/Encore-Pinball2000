@@ -19,6 +19,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT/scripts/internal/runtime-packages.sh"
+source "$ROOT/scripts/internal/network-validation.sh"
 ORIGINAL_ARGS=("$@")
 
 # Preserve explicit environment selection; the CLI can replace it below.
@@ -95,17 +96,7 @@ GUEST_EXTENSIONS=0
 GUEST_IP=""
 GUEST_MASK=""
 GUEST_GATEWAY=""
-
-valid_ipv4() {
-  local value="$1" octet
-  local -a octets
-
-  IFS=. read -r -a octets <<<"$value"
-  ((${#octets[@]} == 4)) || return 1
-  for octet in "${octets[@]}"; do
-    [[ "$octet" =~ ^[0-9]+$ ]] && ((10#$octet <= 255)) || return 1
-  done
-}
+GUEST_DNS=""
 
 # --- QEMU binary lookup -----------------------------------------------------
 resolve_qemu_bin() {
@@ -266,6 +257,8 @@ CORE LAUNCH
                             network resources immediately before netstart.
                             They can later be changed from serial with:
                             setip <ip> <mask> <gateway>.
+  --dns <address>           Persist XINA's DNSIPA resource before netstart.
+                            Serial equivalent: setdns <address>.
   --update <spec>           Update bundle selection. Spec is one of:
                               auto      (default) machine auto-discovers
                                         the newest matching bundle in
@@ -637,6 +630,7 @@ ENV PASSTHROUGH (advanced; see qemu/README.md for the full table)
   P2K_PB2KSLIB P2K_DCS_ENGINE P2K_DCS_PCM_CPU P2K_DCS_MODE P2K_SCREENSHOT_DIR
   P2K_DISPLAY_BPP P2K_FRAMEBUFFER_THREAD P2K_QEMU_FRAMEBUFFER
   P2K_GUEST_EXTENSIONS P2K_GUEST_IP P2K_GUEST_MASK P2K_GUEST_GATEWAY
+  P2K_GUEST_DNS
   P2K_LPT_DEVICE P2K_LPT_INPUT
   P2K_LPT_IOPORT P2K_LPT_TRACE_FILE P2K_DCS_PRELOAD
   P2K_SWITCH_KEYMAP P2K_VIDEO_CAPTURE P2K_FFMPEG_BIN
@@ -667,9 +661,25 @@ while [[ $# -gt 0 ]]; do
         echo "[run-qemu] --setip: IP, mask, and gateway must be IPv4 addresses" >&2
         exit 2
       }
+      valid_ipv4_netmask "$3" || {
+        echo "[run-qemu] --setip: '$3' is not a contiguous IPv4 netmask" >&2
+        exit 2
+      }
+      ipv4_same_subnet "$2" "$4" "$3" || {
+        echo "[run-qemu] --setip: IP and gateway are not in the selected subnet" >&2
+        exit 2
+      }
       GUEST_EXTENSIONS=1
       GUEST_IP="$2"; GUEST_MASK="$3"; GUEST_GATEWAY="$4"
       shift 4 ;;
+    --dns)
+      [[ -n "${2:-}" ]] && valid_ipv4 "$2" || {
+        echo "[run-qemu] --dns: expected an IPv4 address" >&2
+        exit 2
+      }
+      GUEST_EXTENSIONS=1
+      GUEST_DNS="$2"
+      shift 2 ;;
     --clear-pb2kslib-cache) CLEAR_PB2K_ADSP_CACHE=1; shift ;;
     --pb2kslib-cache-workers)
       PB2K_ADSP_CACHE_WORKERS="$2"; shift 2 ;;
@@ -970,6 +980,9 @@ if [[ $GUEST_EXTENSIONS -eq 1 ]]; then
     export P2K_GUEST_IP="$GUEST_IP"
     export P2K_GUEST_MASK="$GUEST_MASK"
     export P2K_GUEST_GATEWAY="$GUEST_GATEWAY"
+  fi
+  if [[ -n "$GUEST_DNS" ]]; then
+    export P2K_GUEST_DNS="$GUEST_DNS"
   fi
 fi
 if [[ -n "$HTTP_PORT" ]]; then

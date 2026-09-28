@@ -72,7 +72,8 @@ refresh; inventory is not certification.
 ### Guest-extension compatibility is narrower
 
 `guest-extensions/check-romset.py` checks the volatile extension ABI used by
-`--guest-extensions`/`--setip` and the structural `udpsend()` anchor used by
+`--guest-extensions`/`--setip`/`--dns`, including the unique native `DNSIPA`
+resource/read path, and the structural `udpsend()` anchor used by
 the automatic Slirp UDP correction. On 2026-09-28 it reported:
 
 ```text

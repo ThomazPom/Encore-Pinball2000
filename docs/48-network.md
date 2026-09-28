@@ -13,6 +13,7 @@ NAT:
   --update latest \
   --network-auto \
   --setip 10.0.2.15 255.255.255.0 10.0.2.2 \
+  --dns 10.0.2.3 \
   --http-port 8080
 ```
 
@@ -47,38 +48,48 @@ only in the QEMU network backend and in how host traffic is routed.
 
 ## Configure XINA before its first network start
 
-Pinball 2000 stores three persistent IPv4 resources: address, netmask and
-gateway. Supply all three with `--setip`:
+Pinball 2000 stores four persistent IPv4 resources: address, netmask, gateway
+and DNS server. Supply the first three with `--setip` and, independently, the
+resolver address with `--dns`:
 
 ```bash
 ./scripts/run-qemu.sh \
   --game rfm \
   --update latest \
   --network-auto \
-  --setip 10.23.4.15 255.255.255.0 10.23.4.1
+  --setip 10.23.4.15 255.255.255.0 10.23.4.1 \
+  --dns 10.0.2.3
 ```
 
-`--setip` enables the volatile guest extension, validates the three IPv4
-strings, and writes the normal XINA resources immediately before the first
-native `netstart`. It does not edit an update ROM. When blank CMOS triggers
-the guest's own factory reset later in that boot, a one-shot wrapper reapplies
-the same values after the reset.
+`--setip` validates the three IPv4 strings, requires a contiguous mask and a
+gateway in the selected subnet. `--dns` validates one independent IPv4
+address. Either option enables the volatile guest extension and writes the
+corresponding normal XINA resources immediately before the first native
+`netstart`. Neither edits an update ROM. When blank CMOS triggers the guest's
+own factory reset later in that boot, a one-shot wrapper reapplies only the
+values requested on the command line.
 
-Only address, mask and gateway are changed. DNS and application-server names
-remain guest settings.
+Omitting `--dns` preserves the saved DNS value; omitting `--setip` preserves
+the saved address, mask and gateway. Application-server names remain guest
+settings. QEMU's ordinary Slirp networks expose their DNS forwarder at
+`10.0.2.3`; passt, bridge and mirrored topologies may require a DNS server
+reachable through the selected host network.
 
 With ordinary savedata, those resource writes persist. With `--no-savedata`,
 they affect only that disposable run. See [Persistent cabinet
 state](09-savedata.md) for the complete state boundary.
 
-The same extension adds this serial-shell command:
+The same extension adds these serial-shell commands:
 
 ```text
 setip <address> <mask> <gateway>
+setdns <address>
 ```
 
-That command stores new values, but an already running network stack keeps its
-old configuration. Reboot the guest to apply the change safely.
+They store new values. DNS is read by the guest resolver when it constructs a
+query, while address, mask and gateway belong to the already running network
+stack. Reboot the guest after a complete network change; it is the one safe,
+uniform application path.
 
 > [!CAUTION]
 > Do **not** issue `net start` a second time. XINA creates another complete set
@@ -109,8 +120,8 @@ p2k-smc8416: automatic forwards now target XINA 10.23.4.15
 
 Automatic mode therefore corrects the transport boundary; it does not rewrite
 the guest configuration continuously. XINA still needs a valid address, mask
-and gateway and must start its own stack. `--setip` is a convenient way to
-guarantee that state on supported updates.
+and gateway and must start its own stack. `--setip` guarantees that state on
+supported updates; add `--dns 10.0.2.3` when guest name resolution is needed.
 
 The automatic device holds at most 16 TCP-forward definitions. Count
 `--http-port`, `--forward-local` and `--forward` entries together when building
@@ -354,6 +365,7 @@ Start with verbose serial output:
   --update latest \
   --network-auto \
   --setip 10.0.2.15 255.255.255.0 10.0.2.2 \
+  --dns 10.0.2.3 \
   --http-port 8080 \
   -v 2>&1 | tee encore-network.log
 ```
@@ -362,7 +374,7 @@ Useful milestones are:
 
 ```text
 Slirp UDP guest extension installed: udpsend TTL=64 ...
-guest extension installed: netstart=...       # only with --guest-extensions/--setip
+guest extension installed: netstart=...       # with --guest-extensions/--setip/--dns
 ez0: port 0x300 irq 7 ... type SMC8416T
 querying XINA's active IP through XUART
 automatic forwards now target XINA ...
@@ -372,7 +384,7 @@ automatic forwards now target XINA ...
   network-capable update.
 - If Encore reports no compatible UDP TTL guest-extension image under Slirp,
   that update has no safe automatic UDP patch target. If it reports the
-  general guest-extension message, do not assume `--setip` was applied. In
+  general guest-extension message, do not assume `--setip` or `--dns` was applied. In
   either case, run the ROM-set checker and select a supported update.
 - If automatic forwarding never gets a target, confirm that XINA reached its
   prompt and has a nonzero active address.

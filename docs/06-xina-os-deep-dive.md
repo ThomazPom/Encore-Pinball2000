@@ -412,11 +412,14 @@ resource change and reboot instead; see [Optional networking](48-network.md).
 
 `--guest-extensions` does not rewrite ROM files. After the selected game emits
 its `XINA:` startup banner, Encore identifies supported code patterns in live
-RAM, installs a small payload, registers a `setip` shell command, and restores
-the intercepted `netstart` prologue before entering the original routine.
+RAM, installs a small payload, registers `setip` and `setdns` shell commands,
+and restores the intercepted `netstart` prologue before entering the original
+routine.
 
 `--setip <ip> <mask> <gateway>` additionally writes the three normal XINA
-resources at startup. The extension checker currently classifies 24 preserved
+network resources at startup. Independent `--dns <address>` writes the native
+`DNSIPA` resource without changing those three values. The extension checker
+requires a unique DNS resource/read path and currently classifies 24 preserved
 updates as structurally supported and two early images as pre-network.
 
 > [!NOTE]

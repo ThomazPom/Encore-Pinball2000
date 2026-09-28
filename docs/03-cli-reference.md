@@ -57,8 +57,9 @@ See the [Quickstart](02-quickstart.md) for the complete first-run sequence.
 | `--pub-card DIR` | Experimental Prism Update Board backed by a bundle directory; incompatible with network modes because both boards decode `0xD0000`. |
 | `--guest-extensions` | Inject supported volatile serial-shell extensions into guest RAM; ROM files remain unchanged. |
 | `--setip IP MASK GATEWAY` | Enable guest extensions and persist the supplied XINA network resources immediately before `netstart`. |
+| `--dns ADDRESS` | Enable guest extensions and persist XINA's `DNSIPA` resource before `netstart`; independent of `--setip`. |
 
-These options control the serial-shell/`setip` payload. They do not control
+These options control the serial-shell `setip`/`setdns` payload. They do not control
 the narrower UDP compatibility patch: when the NIC's actual backend is Slirp,
 Encore automatically changes XINU's volatile unicast `udpsend()` TTL default
 from 1 to 64 before `netstart`. Passt and bridge backends retain guest code

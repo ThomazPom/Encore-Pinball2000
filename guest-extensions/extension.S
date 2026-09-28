@@ -19,6 +19,9 @@
 .equ GE_FACTORY_ORIG_LEN, GE_BASE + 0x40
 .equ GE_FACTORY_ORIGINAL, GE_BASE + 0x44
 .equ GE_INSTALLED,        GE_BASE + 0x54
+.equ GE_DNS_RESOURCE,     GE_BASE + 0x58
+.equ GE_STARTUP_DNS_ENABLE, GE_BASE + 0x5c
+.equ GE_STARTUP_DNS,      GE_BASE + 0x60
 
 .section .control,"aw",@progbits
 .long 0x58454750                 /* "PGEX", filled/validated by host */
@@ -37,6 +40,12 @@ p2k_ge_bootstrap:
     pushl $0                       /* disabled */
     pushl $p2k_ge_setip
     pushl $p2k_ge_setip_name
+    pushl $0                       /* visible */
+    call *GE_SHELL_CMD_ADD
+    addl $16, %esp
+    pushl $0                       /* disabled */
+    pushl $p2k_ge_setdns
+    pushl $p2k_ge_setdns_name
     pushl $0                       /* visible */
     call *GE_SHELL_CMD_ADD
     addl $16, %esp
@@ -63,15 +72,26 @@ p2k_ge_apply_startup:
     pushl GE_IP_RESOURCE
     call *GE_PUT_VALUE
     addl $8, %esp
+    testl %eax, %eax
+    jz 3f
     pushl GE_STARTUP_MASK
     pushl GE_MASK_RESOURCE
     call *GE_PUT_VALUE
     addl $8, %esp
+    testl %eax, %eax
+    jz 3f
     pushl GE_STARTUP_GW
     pushl GE_GW_RESOURCE
     call *GE_PUT_VALUE
     addl $8, %esp
 3:
+    cmpl $0, GE_STARTUP_DNS_ENABLE
+    je 4f
+    pushl GE_STARTUP_DNS
+    pushl GE_DNS_RESOURCE
+    call *GE_PUT_VALUE
+    addl $8, %esp
+4:
     ret
 
 /* unsigned parse_ipv4(const char *s); CF=1 on malformed input. */
@@ -160,14 +180,20 @@ p2k_ge_setip:
     pushl GE_IP_RESOURCE
     call *GE_PUT_VALUE
     addl $8, %esp
+    testl %eax, %eax
+    jz 19f
     pushl -8(%ebp)
     pushl GE_MASK_RESOURCE
     call *GE_PUT_VALUE
     addl $8, %esp
+    testl %eax, %eax
+    jz 19f
     pushl -12(%ebp)
     pushl GE_GW_RESOURCE
     call *GE_PUT_VALUE
     addl $8, %esp
+    testl %eax, %eax
+    jz 19f
     xorl %eax, %eax
     leave
     ret
@@ -178,6 +204,36 @@ p2k_ge_setip:
 
 p2k_ge_setip_name:
     .asciz "setip"
+
+/* XINU shell ABI: (stdin, stdout, stderr, argc, argv). */
+.global p2k_ge_setdns
+.type p2k_ge_setdns,@function
+p2k_ge_setdns:
+    pushl %ebp
+    movl %esp, %ebp
+    cmpl $2, 20(%ebp)
+    jne 29f
+    movl 24(%ebp), %edx
+    pushl 4(%edx)
+    call p2k_ge_parse_ipv4
+    addl $4, %esp
+    jc 29f
+    pushl %eax
+    pushl GE_DNS_RESOURCE
+    call *GE_PUT_VALUE
+    addl $8, %esp
+    testl %eax, %eax
+    jz 29f
+    xorl %eax, %eax
+    leave
+    ret
+29:
+    movl $1, %eax
+    leave
+    ret
+
+p2k_ge_setdns_name:
+    .asciz "setdns"
 
 /* A blank BAR2 causes the game's automatic factory reset to recreate every
  * persistent Resource after netstart.  The one-shot wrapper reapplies startup

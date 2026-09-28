@@ -101,7 +101,8 @@ jobs:
         if: steps.publication.outputs.publish == '1'
         run: |
           bash -n install.sh uninstall.sh scripts/run-qemu.sh scripts/build-qemu.sh \
-            scripts/internal/encore-session.sh tools/capture-live-crash.sh \
+            scripts/internal/encore-session.sh scripts/internal/network-validation.sh \
+            tools/capture-live-crash.sh \
             tools/debian-qemu/lab.sh
           ./install.sh --help >/dev/null
           ./uninstall.sh --help >/dev/null
@@ -174,6 +175,7 @@ jobs:
             scripts/internal/guest-load.S \
             scripts/internal/pb2k-sound-key.py \
             scripts/internal/run-console-script.py \
+            scripts/internal/network-validation.sh \
             scripts/internal/runtime-packages.sh \
             | tar -x -C "$full_root"
           install -m 0755 "$package/qemu-system-i386" "$full_root/qemu-system-i386"
@@ -189,6 +191,7 @@ jobs:
           test -x "$verify/Encore-Pinball2000/uninstall.sh"
           test -x "$verify/Encore-Pinball2000/scripts/run-qemu.sh"
           test -r "$verify/Encore-Pinball2000/scripts/internal/runtime-packages.sh"
+          test -r "$verify/Encore-Pinball2000/scripts/internal/network-validation.sh"
           test ! -e "$verify/Encore-Pinball2000/scripts/build-qemu.sh"
           test ! -e "$verify/Encore-Pinball2000/qemu"
           test ! -e "$verify/Encore-Pinball2000/tools"

@@ -12,14 +12,16 @@ payload and its import block to `0x00ff0000..0x00ffffff`.  That 64 KiB reserve
 is outside both XINU's largest supported heap ceiling (`0x00dfffff`) and the
 physical framebuffer (`0x00800000..0x00bfffff`).
 
-The first extension supplies `setip <address> <mask> <gateway>` on the XINU
-serial shell.  It updates the three normal persistent resources through
-`Resource<unsigned long>::putValue`; `net start` or a reboot applies them.
-For `--setip`, the values are applied before `netstart`. If blank CMOS causes
-the game's native automatic factory reset later in that boot, a one-shot
-wrapper reapplies them after the reset so the operator UI and BAR2 persistence
-retain the same values. No polling or host-side savedata editing is involved.
-No payload is written until every import and hook site has been resolved.
+The first extension supplies `setip <address> <mask> <gateway>` and
+`setdns <address>` on the XINU serial shell.  They update the four normal
+persistent resources through `Resource<unsigned long>::putValue`; a reboot
+safely applies a complete network change. For `--setip` and `--dns`, requested
+values are applied before `netstart`; omitting either option preserves that
+part of the existing configuration. If blank CMOS causes the game's native
+automatic factory reset later in that boot, a one-shot wrapper reapplies the
+requested values after the reset so the operator UI and BAR2 persistence
+retain them. No polling or host-side savedata editing is involved. No payload
+is written until every import, resource and hook site has been resolved.
 
 When the emulated Ethernet card is attached to QEMU's Slirp backend, Encore
 also applies a smaller automatic extension before `netstart`. Every preserved

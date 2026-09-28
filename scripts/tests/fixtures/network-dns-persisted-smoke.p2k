@@ -1,0 +1,4 @@
+# Boot without guest-extension options and prove saved IPv4/DNS still work.
+ifstat 1
+nslookup example.com
+@echo Persisted DNS smoke complete; close the emulator normally

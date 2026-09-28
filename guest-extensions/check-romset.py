@@ -37,6 +37,8 @@ UDP_TTL = bytes.fromhex(
     "83c40c6685c0750666c74606ffffbb010000008b450825f0000000"
     "3de0000000752e"
 )
+DNS_NAME = b"DNSIPA\0"
+BASE = 0x100000
 
 
 def factory_reset_target(data: bytes) -> int | None:
@@ -56,6 +58,39 @@ def factory_reset_target(data: bytes) -> int | None:
     return None
 
 
+def rel32_target(data: bytes, instruction: int) -> int:
+    return BASE + instruction + 5 + struct.unpack_from(
+        "<i", data, instruction + 1
+    )[0]
+
+
+def dns_resource(data: bytes, netstart: int) -> tuple[int, int] | None:
+    if (data[netstart + 9] != 0x68 or
+            data[netstart + 14] != 0xE8):
+        return None
+    get_value = rel32_target(data, netstart + 14)
+    name_offsets = [m.start() for m in re.finditer(re.escape(DNS_NAME), data)]
+    if len(name_offsets) != 1:
+        return None
+    name_address = BASE + name_offsets[0]
+    name_push = b"\x68" + struct.pack("<I", name_address)
+    references = [m.start() for m in re.finditer(re.escape(name_push), data)]
+    constructors = [off for off in references
+                    if off + 20 <= len(data) and
+                    data[off + 5] == 0x68 and
+                    data[off + 10] == 0x68 and
+                    data[off + 15] == 0xE8]
+    if len(constructors) != 1:
+        return None
+    resource = struct.unpack_from("<I", data, constructors[0] + 11)[0]
+    resource_push = b"\x68" + struct.pack("<I", resource) + b"\xe8"
+    get_calls = [m.start() for m in re.finditer(re.escape(resource_push), data)
+                 if rel32_target(data, m.start() + 5) == get_value]
+    if len(get_calls) != 1:
+        return None
+    return resource, get_calls[0]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.parse_args()
@@ -71,9 +106,12 @@ def main() -> int:
         netstart = [m.start() for m in re.finditer(re.escape(NETSTART), data)]
         udp_ttl = [m.start() for m in re.finditer(re.escape(UDP_TTL), data)]
         factory = factory_reset_target(data)
+        dns = None
+        if len(netstart) == 1 and netstart[0] >= 0x2D:
+            dns = dns_resource(data, netstart[0] - 0x2D)
         name = rom.parents[1].name
         if (len(shell) == 1 and put and len(netstart) == 1 and
-                len(udp_ttl) == 1 and factory is not None):
+                len(udp_ttl) == 1 and factory is not None and dns is not None):
             print(f"OK    {name}")
             supported += 1
         elif b"IPAddr\0" not in data and not netstart:
@@ -82,7 +120,7 @@ def main() -> int:
         else:
             print(f"FAIL  {name}: shell={len(shell)} put={len(put)} "
                   f"netstart={len(netstart)} udp_ttl={len(udp_ttl)} "
-                  f"factory={factory is not None}")
+                  f"factory={factory is not None} dns={dns is not None}")
             failed += 1
     print(f"\n{supported} supported, {skipped} pre-network, {failed} failed")
     return bool(failed)

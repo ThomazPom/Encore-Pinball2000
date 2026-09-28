@@ -205,6 +205,12 @@ modes as the launcher. Automatic mode is the normal choice. Bridge mode
 creates and owns only a TAP attached to an already existing bridge; it does
 not create or reconfigure that bridge.
 
+When the installer configures XINA, it records address, contiguous mask,
+gateway and DNS through the guest's native persistent resources. Automatic
+and conventional NAT default to QEMU's `10.0.2.3` DNS forwarder. Mirror and
+passt modes prefer a non-loopback resolver detected from the host and fall
+back to the selected gateway; the confirmation screen shows the final value.
+
 Local forwards bind cabinet-only services; network forwards make them
 reachable through the host. XINA's web and Telnet services are historical and
 must not be treated as modern authenticated Internet services. Full topology

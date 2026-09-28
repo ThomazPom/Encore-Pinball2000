@@ -4,6 +4,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
+source "$ROOT/scripts/internal/network-validation.sh"
 CONF_DIR=/etc/encore-pinball2000
 STATE=/var/lib/encore-pinball2000
 GETTY_DROPIN=/etc/systemd/system/getty@tty1.service.d/49-encore.conf
@@ -35,16 +36,6 @@ ask() {
         read -r -p "$prompt [y/N] " answer
         [[ "$answer" =~ ^[Yy]$ ]]
     fi
-}
-
-valid_ipv4() {
-    local value="$1" octet
-    local -a octets
-    IFS=. read -r -a octets <<<"$value"
-    ((${#octets[@]} == 4)) || return 1
-    for octet in "${octets[@]}"; do
-        [[ "$octet" =~ ^[0-9]+$ ]] && ((10#$octet <= 255)) || return 1
-    done
 }
 
 valid_tcp_port() {
@@ -185,6 +176,7 @@ network_setip=0
 guest_ip=""
 guest_mask=""
 guest_gateway=""
+guest_dns=""
 echo
 echo "Optional Pinball 2000 network card:"
 echo "  Encore can expose the original SMC8416T-compatible Ethernet hardware"
@@ -273,6 +265,23 @@ PY
             valid_ipv4 "$guest_ip" && valid_ipv4 "$guest_mask" &&
                 valid_ipv4 "$guest_gateway" || {
                 echo "Invalid IPv4 settings" >&2; exit 2;
+            }
+            valid_ipv4_netmask "$guest_mask" || {
+                echo "Invalid non-contiguous IPv4 netmask" >&2; exit 2;
+            }
+            ipv4_same_subnet "$guest_ip" "$guest_gateway" "$guest_mask" || {
+                echo "Pinball 2000 IP and gateway must be in the same subnet" >&2
+                exit 2
+            }
+            default_dns=10.0.2.3
+            if [[ "$network_mode" == mirror || "$network_mode" == passt ]]; then
+                detected_dns="$(awk '$1 == "nameserver" && $2 ~ /^[0-9]+(\.[0-9]+){3}$/ && $2 !~ /^127\./ {print $2; exit}' /etc/resolv.conf 2>/dev/null || true)"
+                default_dns="${detected_dns:-$default_gateway}"
+            fi
+            read -r -p "Pinball 2000 DNS server [$default_dns]: " guest_dns
+            guest_dns="${guest_dns:-$default_dns}"
+            valid_ipv4 "$guest_dns" || {
+                echo "Invalid IPv4 DNS server" >&2; exit 2;
             }
         fi
 
@@ -381,6 +390,7 @@ else
 fi
 [[ $network_setip -eq 0 ]] || \
     echo "  XINA IPv4    : $guest_ip mask $guest_mask gateway $guest_gateway"
+[[ $network_setip -eq 0 ]] || echo "  XINA DNS     : $guest_dns"
 ((${#network_local_forwards[@]} == 0)) || \
     echo "  local TCP    : ${network_local_forwards[*]} (host:guest)"
 ((${#network_forwards[@]} == 0)) || \
@@ -422,6 +432,7 @@ if [[ $network -eq 1 ]]; then
     esac
     [[ $network_setip -eq 0 ]] || \
         launch_args+=(--setip "$guest_ip" "$guest_mask" "$guest_gateway")
+    [[ $network_setip -eq 0 ]] || launch_args+=(--dns "$guest_dns")
     for forward in "${network_local_forwards[@]}"; do
         launch_args+=(--forward-local "$forward")
     done
@@ -449,6 +460,7 @@ if [[ $network -eq 1 ]]; then
     esac
     [[ $network_setip -eq 0 ]] || \
         preflight_args+=(--setip "$guest_ip" "$guest_mask" "$guest_gateway")
+    [[ $network_setip -eq 0 ]] || preflight_args+=(--dns "$guest_dns")
     for forward in "${network_local_forwards[@]}"; do
         preflight_args+=(--forward-local "$forward")
     done

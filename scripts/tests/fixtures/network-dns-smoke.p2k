@@ -1,0 +1,6 @@
+# Exercise both injected commands, then prove that XINA can resolve a name.
+ifstat 1
+nslookup example.com
+setip 10.0.2.15 255.255.255.0 10.0.2.2
+setdns 10.0.2.3
+@echo DNS smoke complete; close the emulator normally

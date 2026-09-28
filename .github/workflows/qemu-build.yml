@@ -41,7 +41,8 @@ jobs:
       - name: Validate repository tooling
         run: |
           bash -n install.sh uninstall.sh scripts/run-qemu.sh scripts/build-qemu.sh \
-            scripts/internal/encore-session.sh tools/capture-live-crash.sh \
+            scripts/internal/encore-session.sh scripts/internal/network-validation.sh \
+            tools/capture-live-crash.sh \
             tools/debian-qemu/lab.sh
           ./install.sh --help >/dev/null
           ./uninstall.sh --help >/dev/null

@@ -205,7 +205,7 @@ launcher correctly refuses to enable them together.
 
 The oldest preserved SWE1 1.30 and RFM 1.20 images predate the surveyed network
 path and its structural signatures. They boot without the extension, but
-`--guest-extensions`/`--setip` cannot add the extension interface and the
+`--guest-extensions`/`--setip`/`--dns` cannot add the extension interface and the
 automatic Slirp UDP correction has no compatible `udpsend()` target.
 
 XINA's HTTP and Telnet services come from an old embedded stack without modern
