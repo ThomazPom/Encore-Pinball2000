@@ -34,6 +34,11 @@ Development rules, hook placement and validation requirements:
 scripts/build-qemu.sh
 ```
 
+Use `scripts/build-qemu.sh --clean` when a pristine extraction and configure
+are required. It removes only the selected QEMU version's extracted
+source/build tree, retains the downloaded tarball and rebuilds normally. Add
+`-V VERSION` to target a non-default cached version.
+
 ## Upstream patch boundary
 
 The files under `upstream-patches/` modify the pinned QEMU core. They are not

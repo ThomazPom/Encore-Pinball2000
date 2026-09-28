@@ -274,6 +274,7 @@ scripts/build-qemu.sh [VERSION|OPTIONS]
 | `--qemu-version VERSION`, `-V VERSION` | Explicit version form. |
 | `--latest` | Select the newest entry in the script's known-good list. |
 | `--unstable` | With `--latest` or `--list`, include release candidates from the mirror. |
+| `--clean` | Remove only the selected version's extracted source/build tree, retain its downloaded tarball, then rebuild from a pristine extraction. |
 | `--list`, `--list-qemu-versions` | Query and print versions available on the configured mirror. |
 | `-h`, `--help` | Print build help. |
 
@@ -292,6 +293,10 @@ The current known-good list contains QEMU 10.0.8 and 10.2.4, so `--latest`
 selects 10.2.4 while the pinned no-argument default remains 10.0.8. Keep the
 build root on a Linux filesystem that supports the symlinks used by QEMU's
 source tree.
+
+`--clean` composes with the version selectors. For example,
+`scripts/build-qemu.sh --clean -V 10.2.4` cleans and rebuilds 10.2.4 without
+touching the cached 10.0.8 tree or either downloaded archive.
 
 ## Binary and asset acquisition
 

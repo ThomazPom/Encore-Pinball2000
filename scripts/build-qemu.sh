@@ -16,6 +16,8 @@
 #   scripts/build-qemu.sh --qemu-version 10.1.0
 #   scripts/build-qemu.sh --latest             # newest STABLE from KNOWN_GOOD_VERS
 #   scripts/build-qemu.sh --latest --unstable  # newest tarball on the mirror (incl. -rcN)
+#   scripts/build-qemu.sh --clean              # discard extracted source/build, then rebuild
+#   scripts/build-qemu.sh --clean -V 10.2.4    # clean only the selected version
 #   scripts/build-qemu.sh --list               # list stable versions on the mirror
 #   scripts/build-qemu.sh --list --unstable    # list including -rcN
 #   QEMU_VER=10.1.0 scripts/build-qemu.sh      # legacy env-var form (still works)
@@ -133,6 +135,7 @@ EOF
 }
 
 PICK_LATEST=0
+CLEAN_BUILD=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --qemu-version|-V)
@@ -144,6 +147,8 @@ while [[ $# -gt 0 ]]; do
       PICK_LATEST=1; shift ;;
     --unstable)
       INCLUDE_UNSTABLE=1; shift ;;
+    --clean)
+      CLEAN_BUILD=1; shift ;;
     --list|--list-qemu-versions)
       list_remote_versions
       exit 0 ;;
@@ -177,12 +182,30 @@ if (( PICK_LATEST )); then
   echo "[build-qemu] --latest → $QEMU_VER"
 fi
 
-SRC="$WORK/qemu-$QEMU_VER"
+[[ "$QEMU_VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]] || {
+  echo "[build-qemu] invalid QEMU version '$QEMU_VER'" >&2
+  exit 2
+}
+
 TARBALL="qemu-$QEMU_VER.tar.xz"
 URL="$MIRROR/$TARBALL"
 
 mkdir -p "$WORK"
+WORK="$(cd "$WORK" && pwd -P)"
+SRC="$WORK/qemu-$QEMU_VER"
 cd "$WORK"
+
+if (( CLEAN_BUILD )); then
+  # QEMU_VER is syntax-validated above and SRC is a single version-specific
+  # child of the selected cache root. Keep the downloaded tarball so a clean
+  # rebuild does not require another network transfer.
+  if [[ -e "$SRC" ]]; then
+    echo "[build-qemu] --clean: removing extracted source/build $SRC"
+    rm -rf -- "$SRC"
+  else
+    echo "[build-qemu] --clean: no existing source/build for QEMU $QEMU_VER"
+  fi
+fi
 
 # --- Detect stale patch effects -------------------------------------------
 # The extracted upstream tree is disposable. Hash the ordered family list,
@@ -197,7 +220,7 @@ PATCHSET_SENTINEL="$SRC/.p2k-patchset-sha256"
 if [[ -d "$SRC" ]] && \
    { [[ ! -f "$PATCHSET_SENTINEL" ]] || [[ "$(cat "$PATCHSET_SENTINEL")" != "$PATCHSET_HASH" ]]; }; then
   echo "[build-qemu] patch set changed or incomplete; refreshing cached upstream source"
-  rm -rf "$SRC"
+  rm -rf -- "$SRC"
 fi
 
 if [[ ! -d "$SRC" ]]; then
