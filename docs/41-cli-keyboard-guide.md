@@ -30,26 +30,26 @@ screenshot actions.
 
 These controls are active with the emulated board and with explicit hybrid
 input. A held key keeps the corresponding contact closed unless the table says
-the action is a pulse or toggle.
+the action is a toggle.
 
-| Key | Cabinet or host action |
-|---|---|
-| `F1` | Request clean emulator shutdown. |
-| `F2` | Toggle vertical reversal relative to the normal display orientation. |
-| `F3` | Capture a screenshot. |
-| `F4` | Toggle the emulated coin-door interlock. |
-| `F5`, `Enter`, `KP Enter` | Fire an approximately 60-LPT-frame Enter pulse. |
-| `F6` | Hold the left action button. |
-| `F7` | Hold the left flipper. |
-| `F8` | Hold the right flipper. |
-| `F9` | Hold the right action button. |
-| `F10`, `C` | Hold coin-slot contact 1. |
-| `Space`, `S` | Hold matrix switch 13, the Start button. |
-| `Esc`, `Left` | Hold the service-panel Escape input. |
-| `Down`, `KP -` | Hold Volume Down / menu Down. |
-| `Up`, `=`, `KP +` | Hold Volume Up / menu Up. |
-| `Right` | Hold Begin Test / Enter. |
-| `F12` | Print current LPT/input state to the terminal. |
+| Key                       | Cabinet or host action                                               |
+| ------------------------- | -------------------------------------------------------------------- |
+| `F1`                      | Request clean emulator shutdown.                                     |
+| `F2`                      | Toggle vertical reversal relative to the normal display orientation. |
+| `F3`                      | Capture a screenshot.                                                |
+| `F4`                      | Toggle the emulated coin-door interlock.                             |
+| `F5`, `Enter`, `KP Enter` | Hold the service-panel Begin Test / Enter contact.                  |
+| `F6`                      | Hold the left action button.                                         |
+| `F7`                      | Hold the left flipper.                                               |
+| `F8`                      | Hold the right flipper.                                              |
+| `F9`                      | Hold the right action button.                                        |
+| `F10`, `C`                | Hold coin-slot contact 1.                                            |
+| `Space`, `S`              | Hold matrix switch 13, the Start button.                             |
+| `Esc`, `Left`             | Hold the service-panel Escape input.                                 |
+| `Down`, `KP -`            | Hold Volume Down / menu Down.                                        |
+| `Up`, `=`, `KP +`         | Hold Volume Up / menu Up.                                            |
+| `Right`                   | Hold the same Begin Test / Enter contact.                            |
+| `F12`                     | Print current LPT/input state to the terminal.                       |
 
 Coin is a contact, not a hard-coded credit operation. Whether one closure adds
 a credit depends on the game's current pricing and saved adjustments.

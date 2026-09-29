@@ -102,13 +102,19 @@ The model implements the command shapes the current guest exercises. Output
 and input state are deliberately separate, so an illuminated lamp cannot be
 fed back as a phantom closed switch.
 
+Native XINA collects these replies in one 12-column logical switch table. Its
+columns 0–7 contain the electrically scanned 8×8 matrix. Columns 8, 9 and 10
+instead contain direct coin, service and cabinet-button groups; column 11
+combines board status. Consequently, names such as `Physical[8]` identify an
+index in XINA's unified table, not a ninth electrically scanned matrix column.
+
 | Opcode | Direction | Current semantic effect |
 |---:|---|---|
 | `0x00` | read | physical group 8: coin-slot contacts |
 | `0x01` | read | physical group 10: flippers/actions and coin-door interlock |
 | `0x02` | read | high-nibble status `0xf0` |
-| `0x03` | read | physical group 9: service/menu controls and the bounded Enter pulse |
-| `0x04` | read | selected 8×8 playfield-matrix row |
+| `0x03` | read | physical group 9: level-held service/menu contacts |
+| `0x04` | read | eight row bits for the selected standard-matrix column |
 | `0x05` | write | select/strobe a one-hot matrix column; record one PDB05 timing event |
 | `0x06`, `0x07` | write | retain output data used by the following row/control operations |
 | `0x08` | write | select and retain one of eight lamp/output rows |
@@ -128,15 +134,19 @@ guarantee a credit, and Start does not force the guest into a game.
 
 ## Input layers
 
-There are two independent software matrix layers:
+The standard 8×8 switch matrix has two independent software layers:
 
-- built-in cabinet controls and the numeric `NN` + Ctrl selector;
+- built-in Start plus the numeric `NN` + Ctrl selector;
 - strict YAML A–Z bindings loaded once during machine initialization.
 
-Their row bits are ORed. Per-switch hold counts keep overlapping bindings
-correct: releasing one of two keys mapped to the same switch does not reopen
-the contact until both have been released. Repeated key-down events are
-deduplicated.
+Their row bits are ORed. Within the YAML layer, per-switch hold counts keep
+overlapping bindings correct: releasing one of two configured letters mapped
+to the same switch does not reopen the contact until both have been released.
+Repeated key-down events for configured letters are deduplicated.
+
+The other built-in cabinet inputs are not matrix entries: coin slots, the
+service panel, flippers/actions and the coin-door interlock arrive through
+XINA's direct logical columns 8, 9 and 10.
 
 The default keymap is created at
 `$XDG_CONFIG_HOME/encore/switch-keymap.yaml` (normally
@@ -160,14 +170,31 @@ The full key table and cabinet/XINA keyboard toggle are in
 
 ### From a contact to a game action
 
-The desktop Start controls close standard matrix switch 13. Internally its
-column is retained in slot 1 because the board protocol's one-hot decoder is
-one-based; moving it to array slot 0 would make the guest scan a different
-contact.
+The desktop Start controls close standard matrix switch 13: human column 1,
+row 3. XINA stores that contact as zero-based `SwitchID` 2. Encore retains the
+host-side column byte in slot 1 because the PDB selector is one-hot; selector
+bit 0 reads that slot, while selector bit 7 wraps to slot 0. Moving Start to
+host slot 0 would therefore make the guest scan a different contact.
 
 Seeing that closure proves the LPT/input path, not that the guest accepted a
-new game. Pricing/credits, DCS readiness, Slam Tilt, trough/device audits and
-game-specific state still participate. The repository's
+new game. Native SWE1 handles the closing edge immediately and does not queue
+it for later. For a new game, `Game::m_credit_button_pressed()` requires, in
+order: no menu consumption, inactive Slam Tilt, Free Play or a positive credit
+balance, ready audio, a successful `MultiDevice::game_start_check()`, the JTS
+check and the game-specific check. JTS returns success while the game is over;
+SWE1's final check instead rejects while `pid_recent_game_over_kickout` is
+alive. The device check also rejects active multi-device work and audits the
+machine's ball count, starting the missing-ball search when necessary.
+
+> [!NOTE]
+> The coin-door contact is not a direct condition in this native Start path.
+> A Start edge delivered before audio/device readiness, during ball search or
+> during the recent game-over kickout is discarded. Repeated presses appear to
+> cure the problem only because one later edge eventually reaches an open
+> eligibility window.
+
+This chain and the SWE1-specific kickout guard are present in every preserved
+SWE1 update from 1.30 through 2.10. The repository's
 `scripts/demos/start-game.p2k` uses real coin and switch closures, then queries
 `game info`; `m_players 1` is the reliable acceptance signal for its current
 SWE1 workflow. See [Console scripting](42-console-scripting.md) before turning
@@ -183,8 +210,9 @@ switches.
 `--lpt-input hybrid` is accepted only with `auto`, `required` or an explicit
 ppdev path, and only takes effect when a physical board is actually selected.
 All guest writes, outputs, keepalive and base reads still hit the real board.
-For gated input reads, Encore then clears the active-low bits corresponding to
-keyboard closures. This can add a closure but cannot reopen a switch already
+For gated input reads, Encore treats the raw physical inputs as active-low and
+clears the bits corresponding to keyboard closures. Under that experimental
+polarity model, this can add a closure but cannot reopen a switch already
 closed by the cabinet.
 
 The physical coin-door interlock remains authoritative in hybrid mode, so F4

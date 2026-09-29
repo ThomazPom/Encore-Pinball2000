@@ -206,8 +206,10 @@ For every input feature, define and test:
 - one destination held by two different input sources;
 - shutdown or reset while an input remains held.
 
-Edge-triggered actions such as coin pulses and level-triggered actions such as
-matrix switches require different semantics. Do not infer one from the other.
+One-shot host actions such as screenshots and level-held cabinet contacts such
+as coin slots, service buttons or matrix switches require different semantics.
+Do not turn a physical contact into a synthetic pulse merely to make a short
+automated key event visible; give automation an explicit hold duration.
 
 ### Cross-module interfaces
 

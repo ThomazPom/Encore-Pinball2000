@@ -152,6 +152,21 @@ def main() -> None:
             r"matrix switch 13 released.*switch1=0x00",
         )
 
+        held_enter = run_case(
+            directory,
+            "held-enter",
+            "switches:\n  a: 88\n",
+            [
+                key_events(("ret", True), ("ret", True), ("right", True)),
+                key_events(("ret", False)),
+                key_events(("f12", True), ("f12", False)),
+                key_events(("right", False)),
+                key_events(("f12", True), ("f12", False)),
+                key_events(("f1", True)),
+            ],
+        )
+        require(held_enter, r"phys9=0x08.*phys9=0x00")
+
         invalid = run_case(
             directory,
             "invalid",

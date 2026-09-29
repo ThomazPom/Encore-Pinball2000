@@ -604,7 +604,7 @@ KEY BINDINGS (CABINET KEYS mode unless noted)
                             enabling emulated cabinet switches.
   F1                        Quit / shutdown request
   F4                        Toggle coin door
-  F5 / Enter / KP-Enter     ~60-frame Enter pulse
+  F5 / Enter / KP-Enter     hold Begin Test / Enter contact
   F6 / F9                   Left / right action buttons
   F7 / F8                   Left / right flippers
   F10 / C                   Coin slot 1

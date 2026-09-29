@@ -5,28 +5,33 @@
  * over the parallel port using a tiny edge-detect state machine — see the
  * protocol handler.  DCS sound is a separate device.
  *
+ * Software-board I/O behavior:
+ *
  *   0x378 (DATA)   WRITE: latch
- *                  READ:  if rendering gated → switch-matrix status
+ *                  READ:  if rendering gated → selected PDB input/status
  *                          else → echo last data byte
- *   0x379 (STATUS) READ:  always 0x87 (driver-board signature)
+ *   0x379 (STATUS) READ:  configured signature byte (default 0x87)
  *   0x37A (CTRL)   WRITE: edge-detect protocol:
  *                          bit2 rising  → capture data → opcode latch
  *                          bit0 falling → dispatch process_data_command
  *                  READ:  echo the last value written
+ * Physical ppdev mode instead forwards all three port bytes to the real PDB.
  *
- * Cabinet input injection (column-gated, mirrors Encore behaviour):
+ * Guest-visible cabinet input injection:
  *
  *   F4              coin door interlock toggle (Physical[10] bit 1)
+ *   F5 / Enter      Begin Test / Enter contact   (Physical[9] bit 3)
  *   F7              LEFT  flipper             (Physical[10] bit 5)
  *   F8              RIGHT flipper             (Physical[10] bit 4)
- *   Space / S       Start button              (col 0 bit 2 of opcode 0x04)
+ *   Space / S       Start button              (matrix 13; XINA SwitchID 2)
  *   F10 / C         coin slot 1               (Physical[8] bit 0)
  *   F12             dump LPT state to stderr
  *   NN, hold Ctrl   select matrix switch NN, hold it while Ctrl is held
  *
  * Hooked through QEMU's input subsystem (`qemu_input_handler_register`)
  * so it works with -display sdl / gtk and the QEMU monitor `sendkey`
- * command alike. No host LPT, no per-game RAM scribbling.
+ * command alike.  The software path does not patch per-game RAM; an optional
+ * Linux ppdev path passes the same guest I/O region to a physical PDB.
  */
 
 #include "qemu/osdep.h"
@@ -374,15 +379,17 @@ const char *p2k_lpt_resolve_game(const char *requested_game)
     return game_auto ? "swe1" : requested_game;
 }
 
-/* P2K rendering/switch state machine (mirrors io.c:720-742). */
+/* P2K rendering/switch state machine.  Its control edges match the native
+ * PinIORead/PinIOWrite transactions in the preserved SWE1 and RFM updates. */
 static uint8_t s_lpt_data;
 static uint8_t s_lpt_status = 0x87;
 static uint8_t s_rendering_flags;
 static uint8_t s_data_for_rendering;
 static uint8_t s_rendering_data_val;
 /* Driver-board output and input are separate electrical paths.  Opcode 0x08
- * latches lamp rows; opcode 0x04 scans playfield switches.  Sharing one array
- * here fed illuminated lamps back into XINA as phantom closed switches. */
+ * latches lamp rows; opcode 0x04 scans the standard 8x8 switch matrix, which
+ * also contains cabinet Start.  Sharing one array here fed illuminated lamps
+ * back into XINA as phantom closed switches. */
 static uint8_t s_lamp_rows[8];
 static uint8_t s_switch_matrix[8];
 static uint8_t s_keymap_switch_matrix[8];
@@ -408,15 +415,16 @@ static uint8_t s_data_flag7;
 static uint8_t s_data_bit4;
 static uint8_t s_data_bit6;
 
-/* Cabinet interlock — door starts CLOSED so the "OPEN COIN DOOR"
- * overlay disappears and play is enabled (mirrors io.c:756). */
+/* Cabinet interlock — door starts CLOSED, exposing logical-column 10 bit 1
+ * as set so the guest does not present its "OPEN COIN DOOR" state. */
 static uint8_t s_coin_door_closed = 1;
 
-/* Live cabinet input state (driven by p2k_lpt_key_event below). */
-static uint8_t s_phys10_buttons;     /* Physical[10] bits 4-7 (flippers/actions) */
-static uint8_t s_phys9_service;      /* Physical[9]  bits 0-3 (service menu) */
-static uint8_t s_phys8_coin_slots;   /* Physical[8]  bits 0-3 (coin slots) */
-static int     s_enter_pulse;        /* F5 short-press: ~60 LPT frames high */
+/* Live cabinet input state (driven by p2k_lpt_host_key below). */
+static uint8_t s_phys10_buttons;     /* XINA logical Physical[10], bits 4-7 */
+static uint8_t s_phys9_service;      /* XINA logical Physical[9], bits 0-3 */
+static uint8_t s_phys8_coin_slots;   /* XINA logical Physical[8], bits 0-3 */
+static bool s_service_enter_key_down[Q_KEY_CODE__MAX];
+static unsigned s_service_enter_holds;
 
 /* Digits select a standard matrix switch (column, row).  The last complete
  * number stays selected; every Ctrl hold closes it for that exact duration. */
@@ -544,6 +552,25 @@ static bool p2k_handle_numeric_switch_key(int qcode, bool down)
     return false;
 }
 
+/* F5, Enter, keypad Enter and Right are aliases for the same physical
+ * service-panel contact.  Count the independently held sources so releasing
+ * one alias cannot open the contact while another remains down. */
+static void p2k_set_service_enter_key(int qcode, bool down)
+{
+    if (qcode < 0 || qcode >= Q_KEY_CODE__MAX ||
+        s_service_enter_key_down[qcode] == down) {
+        return;
+    }
+    s_service_enter_key_down[qcode] = down;
+    if (down) {
+        if (s_service_enter_holds++ == 0) {
+            s_phys9_service |= 1u << 3;
+        }
+    } else if (s_service_enter_holds > 0 && --s_service_enter_holds == 0) {
+        s_phys9_service &= ~(1u << 3);
+    }
+}
+
 static uint8_t retrieve_rendering_status(uint8_t opcode)
 {
     switch (opcode) {
@@ -557,9 +584,7 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
     }
     case 0x02: return 0xF0;                           /* status hi nibble */
     case 0x03: {                                      /* Physical[9] service menu */
-        uint8_t v = s_phys9_service & 0x0F;
-        if (s_enter_pulse > 0) { v |= 0x08; s_enter_pulse--; }
-        return v;
+        return s_phys9_service & 0x0F;
     }
     case 0x04: {
         int sel  = calc_bitwise_sum(s_rendering_data_val);   /* 1..8 if one-hot */
@@ -581,10 +606,10 @@ static uint8_t retrieve_rendering_status(uint8_t opcode)
     }
 }
 
-/* Physical PDB inputs are active-low.  A keyboard closure can therefore be
- * added safely by clearing its bit in the physical byte: it can never reopen
- * a switch already closed by the cabinet.  Protocol/status replies and every
- * output remain authoritative hardware traffic. */
+/* Hybrid mode treats raw physical PDB inputs as active-low.  It adds a
+ * keyboard closure by clearing its bit in the physical byte, so it cannot
+ * reopen a switch already closed by the cabinet.  Protocol/status replies and
+ * every output remain authoritative hardware traffic. */
 static uint8_t retrieve_hybrid_input_mask(uint8_t opcode)
 {
     switch (opcode) {
@@ -594,12 +619,7 @@ static uint8_t retrieve_hybrid_input_mask(uint8_t opcode)
     case 0x01:
         return s_phys10_buttons & 0xf0;
     case 0x03: {
-        uint8_t v = s_phys9_service & 0x0f;
-        if (s_enter_pulse > 0) {
-            v |= 0x08;
-            s_enter_pulse--;
-        }
-        return v;
+        return s_phys9_service & 0x0f;
     }
     case 0x04: {
         int sel = calc_bitwise_sum(s_rendering_data_val);
@@ -746,10 +766,10 @@ static const MemoryRegionOps p2k_lpt_ops = {
 static void p2k_lpt_dump_state(void)
 {
     fprintf(stderr,
-        "[lpt] coin_door=%s phys10=0x%02x phys8=0x%02x start=%d "
+        "[lpt] coin_door=%s phys10=0x%02x phys9=0x%02x phys8=0x%02x start=%d "
         "ctrl=0x%02x data=0x%02x op=0x%02x lamp1=0x%02x switch1=0x%02x\n",
         s_coin_door_closed ? "CLOSED" : "OPEN",
-        s_phys10_buttons, s_phys8_coin_slots,
+        s_phys10_buttons, s_phys9_service, s_phys8_coin_slots,
         !!(p2k_matrix_slot(1) & (1u << 2)),
         s_rendering_flags, s_lpt_data, s_data_for_rendering,
         s_lamp_rows[1], p2k_matrix_slot(1));
@@ -950,13 +970,11 @@ void p2k_lpt_host_key(int qcode, bool down)
                     s_coin_door_closed);
         }
         break;
-    case Q_KEY_CODE_F5:                              /* short Enter pulse */
+    case Q_KEY_CODE_F5:
     case Q_KEY_CODE_KP_ENTER:
     case Q_KEY_CODE_RET:
-        if (down) {
-            s_enter_pulse = 60;                      /* ~60 LPT frames */
-            fprintf(stderr, "[lpt] Enter pulse fired (~60 frames)\n");
-        }
+    case Q_KEY_CODE_RIGHT:                           /* Begin Test / Enter */
+        p2k_set_service_enter_key(qcode, down);
         break;
     case Q_KEY_CODE_F6:                              /* LEFT action button */
         if (down) s_phys10_buttons |=  (1u << 7);
@@ -990,12 +1008,8 @@ void p2k_lpt_host_key(int qcode, bool down)
         if (down) s_phys9_service |=  (1u << 2);
         else      s_phys9_service &= ~(1u << 2);
         break;
-    case Q_KEY_CODE_RIGHT:                           /* Begin Test / Enter */
-        if (down) s_phys9_service |=  (1u << 3);
-        else      s_phys9_service &= ~(1u << 3);
-        break;
     case Q_KEY_CODE_SPC:
-    case Q_KEY_CODE_S: {                             /* Start button (sw=2) */
+    case Q_KEY_CODE_S: {   /* Start: matrix 13; zero-based XINA SwitchID 2 */
         p2k_set_matrix_switch(13, down);
         break;
     }
@@ -1224,7 +1238,7 @@ void p2k_install_lpt_board(void)
                 s_physical_board ? "; physical board (Tab enables AT keyboard)" :
                 s_disconnected ? "; disconnected open bus (Tab enables AT keyboard)" :
                 "; keys: F1 quit | F2 vertical flip | F3 screenshot | "
-                "F4 door | F5/Enter pulse | F6/F9 actions | "
+                "F4 door | F5/Enter/Right enter | F6/F9 actions | "
                 "F7/F8 flippers | Space/S start | F10/C coin | "
                 "F12 dump | Esc/Left service | Up/Down volume | "
                 "Right enter | NN then Ctrl matrix switch");

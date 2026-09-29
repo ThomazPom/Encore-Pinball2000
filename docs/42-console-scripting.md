@@ -41,7 +41,7 @@ action. They do not search the complete serial transcript.
 |---|---|
 | `@wait SECONDS` | sleep for a non-negative duration |
 | `@key KEY [HOLD_SECONDS]` | send a QEMU monitor key; optional hold must be positive |
-| `@switch RC [HOLD_SECONDS]` | pulse matrix switch row/column `11` through `88`; default hold 0.1 s |
+| `@switch CR [HOLD_SECONDS]` | pulse matrix switch column/row `11` through `88`; default hold 0.1 s |
 | `@assert TEXT` | require literal text in the last response |
 | `@assert-not TEXT` | require literal text to be absent |
 | `@assert-regex REGEX` | require a multiline Python regular-expression match |
@@ -78,15 +78,19 @@ that cannot be queried.
 `@key` accepts QEMU monitor key names. Its optional hold is converted to
 milliseconds; without it the monitor's normal key press is used.
 
-`@switch 13 0.08` reproduces Encore's numeric desktop switch chord: row digit,
-column digit, then Ctrl for the requested hold. It includes fixed settling
+`@switch 13 0.08` reproduces Encore's numeric desktop switch chord: column
+digit, row digit, then Ctrl for the requested hold. It includes fixed settling
 delays, so it is not a precision timing generator. Use the physical/cabinet
 validation path for electrical or exact pulse claims.
 
-Matrix switches remain inputs, not forced game state. Start can be rejected by
-pricing, door, trough or current game conditions. In SWE1, `m_game_over True`
-may persist after Start is accepted while the shooter-lane/serve transition is
-pending; a state such as `m_players 1` is stronger evidence of acceptance.
+Matrix switches remain inputs, not forced game state. Native SWE1 discards a
+Start edge when pricing, audio readiness, Slam Tilt, active multi-device work,
+the ball audit or its game-specific recent-kickout guard rejects it; it does
+not retry that edge when the condition later clears. The coin door is not a
+direct Start gate. In SWE1, `m_game_over True` may persist after Start is
+accepted while the shooter-lane/serve transition is pending; a state such as
+`m_players 1` is stronger evidence of acceptance. The detailed native chain is
+documented in [LPT/driver-board emulation](26-lpt-board.md#from-a-contact-to-a-game-action).
 
 ### Screenshots and audio
 

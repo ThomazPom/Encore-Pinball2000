@@ -37,8 +37,9 @@ cabinet.
 The `HW::control` / `HW::writeData` pair in [`hw.cpp`](hw.cpp) is also the
 authoritative example of which PC parallel-port control bits are inverted at
 the hardware level (`STROBE=0x01` and `SELECT=0x08` are inverted, `INIT=0x04`
-is not — see [`hw.h`](hw.h)). Encore's `src/lpt_pass.c` should be checked
-against these conventions before any real-cabinet protocol work.
+is not — see [`hw.h`](hw.h)). Encore's current physical and emulated protocol
+owner is `qemu/p2k-lpt-board.c`; real-cabinet validation must check that path
+against these conventions.
 
 ## Local modifications
 
