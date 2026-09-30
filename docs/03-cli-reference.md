@@ -194,9 +194,9 @@ See [Optional network card](48-network.md) for topology and guest setup.
 | `-v` | Restore the UART stderr mirror and enable `--diag`. |
 | `-vv` | Add audio tracing. |
 | `-vvv` | Add DCS byte tracing. |
-| `--irq0-stack-trace` | Log record-low XINU IStack margin at IRQ0 interrupt acknowledgement. |
+| `--irq0-stack-trace` | Sample record-low XINU IStack margin at IRQ0 acknowledgement; publish it only in periodic/exit timing reports. |
 | `--irq0-stack-guard ADDR` | Restrict stack observation to one guest stack-guard address. |
-| `--irq0-stack-dump FILE` | Dump the 8 KiB stack once observed margin reaches 128 bytes. |
+| `--irq0-stack-dump FILE` | Schedule a deferred 8 KiB stack dump once observed margin reaches 128 bytes. |
 | `--screenshot-dir DIR` | Select the directory used by the F3 screenshot action; default `/tmp`. |
 | `--record-video FILE` | Record the run through FFmpeg without overwriting an existing file. |
 

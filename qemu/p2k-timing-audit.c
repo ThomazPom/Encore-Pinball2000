@@ -29,9 +29,9 @@
  *   host_slow=<yes/no>                  (scale < 0.95)
  *
  * Cadence (diagnostics are opt-in):
- *   - if `P2K_DIAG=1` (or `run-qemu.sh -v`): a full report every 3 s
- *   - if `P2K_TIMING_SNAPSHOTS=1`: a lightweight benchmark report every 3 s
- *   - one final line at machine exit / QEMU shutdown
+ *   - if `P2K_DIAG=1` (or `run-qemu.sh -v`): a bounded report every 3 s
+ *   - if `P2K_TIMING_SNAPSHOTS=1`: the same bounded benchmark report
+ *   - one complete report at machine exit / QEMU shutdown
  *
  * A normal run keeps only the small amount of IRQ state required by the
  * functional PIT-deadline rendezvous.  It creates no report timer, exit
@@ -120,8 +120,6 @@ static int64_t  p2k_clkint_entry_max_ns;
  * actually executing the handler", and is meaningful regardless of
  * coalescence. */
 static int64_t  p2k_audit_latest_raise_ns;
-static int64_t  p2k_audit_latest_raise_wall_ns;
-static uint64_t p2k_audit_latest_raise_seq;
 #define P2K_AUDIT_LAT_WINDOW  4096u
 static uint32_t p2k_audit_lat_us[P2K_AUDIT_LAT_WINDOW];
 static uint32_t p2k_audit_lat_n;          /* total samples (saturates) */
@@ -167,7 +165,6 @@ static bool     p2k_first_tb_pending;
 static uint32_t p2k_clkint_depth;
 static uint32_t p2k_clkint_max_depth;
 static uint64_t p2k_nested_clkint_total;
-static bool     p2k_guest_tb_seen_after_iret = true;
 static uint64_t p2k_intack_seen_irq0;
 static uint64_t p2k_iret_seen_after_clkint;
 static bool p2k_irq0_stack_trace;
@@ -175,6 +172,10 @@ static uint32_t p2k_irq0_stack_min_margin[256];
 static uint32_t p2k_irq0_stack_trace_guard;
 static uint64_t p2k_irq0_stack_samples;
 static bool p2k_irq0_stack_dumped;
+static bool p2k_irq0_stack_dump_pending;
+static uint32_t p2k_irq0_stack_dump_guard;
+static const char *p2k_irq0_stack_dump_path;
+static uint32_t p2k_irq0_stack_global_min = UINT32_MAX;
 
 /* EOI EIP histogram (top hot EIPs at the moment of `out 0x20, 0x20`).
  * Reveals where in the clkint body the EOI is written: useful to
@@ -603,9 +604,6 @@ void p2k_timing_audit_note_irq0_raised(void)
 {
     int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     p2k_audit_latest_raise_ns = now;
-    p2k_audit_latest_raise_wall_ns =
-        qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
-    p2k_audit_latest_raise_seq++;
     p2k_audit_irq0_raised++;
     if (!p2k_audit_detailed) {
         return;
@@ -648,12 +646,12 @@ void p2k_timing_audit_note_intack(int intno)
     }
 
     /* Opt-in precursor detector for XINU's 8 KiB process stacks. Sample
-     * immediately before the CPU pushes its interrupt frame. Record-low
-     * logging keeps long runs small and never changes guest execution. */
+     * immediately before the CPU pushes its interrupt frame.  This hot path
+     * only updates fixed-size memory: formatting, logging and optional file
+     * I/O are deferred to the periodic/exit report. */
     if (p2k_irq0_stack_trace && current_cpu) {
         CPUX86State *env = &X86_CPU(current_cpu)->env;
         uint32_t esp = (uint32_t)env->regs[R_ESP];
-        uint32_t eip = (uint32_t)env->eip;
 
         if (esp >= 0x00200000u && esp < 0x00400000u) {
             uint32_t guard = (esp & ~0x1fffu) - 4u;
@@ -665,44 +663,15 @@ void p2k_timing_audit_note_intack(int intno)
                  guard == p2k_irq0_stack_trace_guard) &&
                 margin < p2k_irq0_stack_min_margin[slot]) {
                 p2k_irq0_stack_min_margin[slot] = margin;
-                PICCommonState *pic = isa_pic ? (PICCommonState *)isa_pic
-                                              : NULL;
-                int64_t now_v = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-                int64_t now_w = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
-                int64_t raise_v_us = p2k_audit_latest_raise_ns
-                    ? (now_v - p2k_audit_latest_raise_ns) / 1000 : -1;
-                int64_t raise_w_us = p2k_audit_latest_raise_wall_ns
-                    ? (now_w - p2k_audit_latest_raise_wall_ns) / 1000 : -1;
-                info_report("p2k IRQ0 stack precursor: samples=%llu "
-                            "margin=%u esp=0x%08x eip=0x%08x "
-                            "eflags=0x%08x depth=%u stack_guard=0x%08x "
-                            "source=pit raise_seq=%llu "
-                            "raise_v_us=%lld raise_wall_us=%lld "
-                            "tb_after_iret=%u imr=%02x irr=%02x isr=%02x",
-                            (unsigned long long)p2k_irq0_stack_samples,
-                            margin, esp, eip, (uint32_t)env->eflags,
-                            p2k_clkint_depth, guard,
-                            (unsigned long long)p2k_audit_latest_raise_seq,
-                            (long long)raise_v_us, (long long)raise_w_us,
-                            p2k_guest_tb_seen_after_iret,
-                            pic ? pic->imr : 0xff,
-                            pic ? pic->irr : 0xff,
-                            pic ? pic->isr : 0xff);
+                p2k_irq0_stack_global_min =
+                    MIN(p2k_irq0_stack_global_min, margin);
 
-                const char *dump = getenv("P2K_IRQ0_STACK_DUMP");
-                if (!p2k_irq0_stack_dumped && margin <= 128u &&
-                    dump && *dump) {
-                    uint8_t image[0x2000];
-                    cpu_physical_memory_read(guard + 4u, image,
-                                             sizeof(image));
-                    FILE *f = fopen(dump, "wb");
-                    if (f) {
-                        fwrite(image, 1, sizeof(image), f);
-                        fclose(f);
-                        info_report("p2k IRQ0 stack precursor: dumped stack "
-                                    "to %s", dump);
-                    }
-                    p2k_irq0_stack_dumped = true;
+                if (!p2k_irq0_stack_dumped &&
+                    !p2k_irq0_stack_dump_pending && margin <= 128u &&
+                    p2k_irq0_stack_dump_path &&
+                    *p2k_irq0_stack_dump_path) {
+                    p2k_irq0_stack_dump_guard = guard;
+                    p2k_irq0_stack_dump_pending = true;
                 }
             }
         }
@@ -869,7 +838,6 @@ void p2k_timing_audit_note_iret(uint32_t eip)
         p2k_iret_seen_after_clkint++;
     }
     p2k_clkint_depth--;
-    p2k_guest_tb_seen_after_iret = false;
 
     /* After the IRQ0 IRET, arm a short virtual-clock timer aimed at the
      * next projected i8254 deadline (latest_raise_ns + pit_period_ns) and
@@ -911,7 +879,6 @@ uint32_t p2k_tcg_cflags_override(uint32_t base)
         p2k_ts_first_tb_after_iret_ns = now;
         p2k_first_tb_pending = false;
     }
-    p2k_guest_tb_seen_after_iret = true;
     /* Diagnostic only (off by default): unconditionally forbid TB chaining
      * on every TB, with NO synthetic tick injection at all -- i.e. the
      * plain hardware-faithful natural i8259/i8254 IRQ0 path, but with the
@@ -1150,8 +1117,36 @@ static void p2k_audit_update_clkint_hook(uint32_t idt20, const char *handler)
     p2k_audit_clkint_pc = idt20;
 }
 
+static void p2k_irq0_stack_flush_deferred_dump(void)
+{
+    if (!p2k_irq0_stack_dump_pending || p2k_irq0_stack_dumped ||
+        !p2k_irq0_stack_dump_path || !*p2k_irq0_stack_dump_path) {
+        return;
+    }
+
+    uint8_t image[0x2000];
+    cpu_physical_memory_read(p2k_irq0_stack_dump_guard + 4u,
+                             image, sizeof(image));
+    FILE *f = fopen(p2k_irq0_stack_dump_path, "wb");
+    if (f) {
+        fwrite(image, 1, sizeof(image), f);
+        fclose(f);
+        info_report("p2k IRQ0 stack summary: dumped deferred stack "
+                    "guard=0x%08x to %s",
+                    p2k_irq0_stack_dump_guard,
+                    p2k_irq0_stack_dump_path);
+    } else {
+        warn_report("p2k IRQ0 stack summary: cannot write deferred dump %s",
+                    p2k_irq0_stack_dump_path);
+    }
+    p2k_irq0_stack_dump_pending = false;
+    p2k_irq0_stack_dumped = true;
+}
+
 static void p2k_audit_emit(const char *tag)
 {
+    p2k_irq0_stack_flush_deferred_dump();
+
     /* PIT ch0. */
     uint32_t pit0_count = 0;
     int      pit0_mode  = -1;
@@ -1224,6 +1219,13 @@ static void p2k_audit_emit(const char *tag)
         ? (double)nested_clkint_delta / delivery_window_s : 0.0;
     double speed_target_pct = p2k_speed_target_percent();
     double current_speed_pct = 100.0 * current_clkint_hz / 4003.966443;
+    char min_stack_margin[16];
+    if (p2k_irq0_stack_global_min == UINT32_MAX) {
+        snprintf(min_stack_margin, sizeof(min_stack_margin), "n/a");
+    } else {
+        snprintf(min_stack_margin, sizeof(min_stack_margin), "%u",
+                 p2k_irq0_stack_global_min);
+    }
     prev_delivery_raised = p2k_audit_irq0_raised;
     prev_delivery_serviced = serviced;
     prev_nested_clkint = p2k_nested_clkint_total;
@@ -1238,6 +1240,7 @@ static void p2k_audit_emit(const char *tag)
                 "current_irq0_raised=%llu current_clkint_entered=%llu "
                 "nested_clkint=%llu current_nested_clkint=%llu "
                 "nested_clkint_hz=%.1f clkint_depth=%u max_clkint_depth=%u "
+                "stack_samples=%llu min_stack_margin=%s "
                 "speed_target=%.2f%% current_clkint_hz=%.1f current_speed=%.2f%% "
                 "imr=%02x irr=%02x isr=%02x base=%02x "
                 "idt20=0x%08x handler=%s clkint_hook=0x%08x "
@@ -1256,6 +1259,8 @@ static void p2k_audit_emit(const char *tag)
                 (unsigned long long)p2k_nested_clkint_total,
                 (unsigned long long)nested_clkint_delta,
                 nested_clkint_hz, p2k_clkint_depth, p2k_clkint_max_depth,
+                (unsigned long long)p2k_irq0_stack_samples,
+                min_stack_margin,
                 speed_target_pct, current_clkint_hz, current_speed_pct,
                 imr, irr, isr, base,
                 idt20, handler, p2k_audit_clkint_pc,
@@ -1263,13 +1268,13 @@ static void p2k_audit_emit(const char *tag)
                 base);
 
     /* The full diagnostic report sorts twelve 4096-entry timing rings and
-     * emits many log lines. That is useful interactively, but doing it on
-     * the emulator thread every three seconds creates the very PDB tail a
-     * benchmark is trying to measure. P2K_TIMING_SNAPSHOTS keeps only the
-     * five fields consumed by the comparison tool and sorts one ring.
-     * Exit still takes the complete report, after timing has stopped being
+     * emits many log lines. That is useful at exit, but doing it on the
+     * emulator thread every three seconds can stall the i8254 long enough
+     * for QEMU to replay a large PIT debt as a burst. Periodic reports are
+     * therefore always the bounded snapshot below, including P2K_DIAG;
+     * exit still emits the complete report after timing has stopped being
      * performance-sensitive. */
-    if (p2k_audit_light_snapshots && strcmp(tag, "snap") == 0) {
+    if (strcmp(tag, "snap") == 0) {
         uint32_t s50, s95, s99, smax;
         p2k_dwell_percentiles(&p2k_dw_pdb05_wall_delta,
                               &s50, &s95, &s99, &smax);
@@ -1591,7 +1596,25 @@ static void p2k_audit_exit_cb(Notifier *n, void *opaque)
     if (p2k_audit_timer) {
         timer_del(p2k_audit_timer);
     }
-    p2k_audit_emit("exit");
+    if (p2k_audit_detailed) {
+        p2k_audit_emit("exit");
+    } else {
+        p2k_irq0_stack_flush_deferred_dump();
+        if (p2k_irq0_stack_trace) {
+            if (p2k_irq0_stack_global_min == UINT32_MAX) {
+                info_report("p2k IRQ0 stack summary: samples=%llu "
+                            "max_clkint_depth=%u min_stack_margin=n/a",
+                            (unsigned long long)p2k_irq0_stack_samples,
+                            p2k_clkint_max_depth);
+            } else {
+                info_report("p2k IRQ0 stack summary: samples=%llu "
+                            "max_clkint_depth=%u min_stack_margin=%u",
+                            (unsigned long long)p2k_irq0_stack_samples,
+                            p2k_clkint_max_depth,
+                            p2k_irq0_stack_global_min);
+            }
+        }
+    }
 }
 
 static Notifier p2k_audit_exit_notifier = {
@@ -1611,6 +1634,7 @@ void p2k_install_timing_audit(Pinball2000MachineState *s)
     p2k_audit_light_snapshots =
         p2k_audit_env_truthy("P2K_TIMING_SNAPSHOTS");
     p2k_irq0_stack_trace = p2k_audit_env_truthy("P2K_IRQ0_STACK_TRACE");
+    p2k_irq0_stack_dump_path = getenv("P2K_IRQ0_STACK_DUMP");
     for (size_t i = 0; i < ARRAY_SIZE(p2k_irq0_stack_min_margin); i++) {
         p2k_irq0_stack_min_margin[i] = UINT32_MAX;
     }
@@ -1659,12 +1683,11 @@ void p2k_install_timing_audit(Pinball2000MachineState *s)
         timer_mod(p2k_audit_timer,
                   qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
                   P2K_AUDIT_INITIAL_NS);
+        info_report("pinball2000: timing-audit armed (initial @3s, "
+                    "bounded snapshots every 3s; full report at exit; "
+                    "disable with P2K_NO_TIMING_AUDIT=1)");
+    }
+    if (p2k_audit_detailed || p2k_irq0_stack_trace) {
         qemu_add_exit_notifier(&p2k_audit_exit_notifier);
-        info_report("pinball2000: timing-audit armed (initial @3s, %s; "
-                    "disable with P2K_NO_TIMING_AUDIT=1)",
-                    p2k_audit_light_snapshots ?
-                        "light snapshots every 3s" :
-                    p2k_audit_periodic ?
-                        "full snapshots every 3s" : "exit only");
     }
 }

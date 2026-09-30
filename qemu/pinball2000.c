@@ -80,6 +80,7 @@ int p2k_pit_scale_count(int channel, int count)
     return scaled == 0x10000ull ? 0 : (int)scaled;
 }
 
+/* Observe channel 0 between the PIT and PIC without changing either device. */
 static void p2k_irq0_tap_set(void *opaque, int n, int level)
 {
     P2KIrq0Tap *tap = opaque;

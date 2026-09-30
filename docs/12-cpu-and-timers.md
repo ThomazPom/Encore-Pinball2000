@@ -164,21 +164,31 @@ window.
 
 `--irq0-stack-trace` samples `ESP` at IRQ0 acknowledgement, immediately before
 the CPU pushes the interrupt frame. XINU process stacks are treated as 8 KiB
-regions in the observed `0x00200000–0x003fffff` range. The logger emits only a
-new record-low margin for each stack guard, which keeps long runs small and
-does not modify guest execution.
+regions in the observed `0x00200000–0x003fffff` range. The acknowledgement hot
+path only updates fixed-size memory. It performs no formatting, logging, file
+I/O or guest-memory dump. The three-second timing report and exit report emit
+the cumulative sample count and smallest margin as `stack_samples` and
+`min_stack_margin`.
+
+This split is a correctness requirement, not just an optimization. Synchronous
+record-low logging from the acknowledgement hook was observed to lengthen an
+already nested handler, provoke still deeper records and form a measurement
+feedback loop. The controlled reproduction is preserved in the
+[Game Over IRQ0 experiment](measurements/2026-09-29-gameover-irq0.md).
+The later live failure caused by the old full periodic report is documented in
+[IRQ0 runaway: diagnostic observer effect](measurements/2026-09-30-irq0-observer-effect.md).
 
 Related controls are:
 
 | Option | Purpose |
 |---|---|
-| `--irq0-stack-trace` | enable record-low margin logging |
-| `--irq0-stack-guard ADDR` | restrict reports to one guard |
-| `--irq0-stack-dump FILE` | dump that 8 KiB stack once the margin reaches 128 bytes or less |
+| `--irq0-stack-trace` | enable record-low margin sampling and summary fields |
+| `--irq0-stack-guard ADDR` | restrict the sampled minimum to one guard |
+| `--irq0-stack-dump FILE` | schedule a deferred 8 KiB dump after the margin reaches 128 bytes or less |
 
 The self-diagnostic enables the trace automatically and reports the smallest
-margin it observed. `n/a` means no precursor line was captured; it must not be
-reported as infinite margin.
+margin it observed. `n/a` means no in-arena acknowledgement was sampled; it
+must not be reported as infinite margin.
 
 ## Supported self-diagnostic
 
@@ -205,8 +215,9 @@ The two passes deliberately keep measurement concerns separate:
 
 The probe counts actual handler entries. It timestamps one consecutive pair
 out of every 16 entries to retain real single-IRQ intervals with low overhead.
-The second pass avoids full `--diag` output because sorting and printing every
-ring on the emulator thread can itself create the tail being measured.
+The second pass requests the bounded snapshot explicitly and does not enable
+the unrelated diagnostic samplers. Complete timing-ring sorting is deferred to
+shutdown so it cannot create the tail being measured.
 
 The report contains:
 
@@ -246,7 +257,7 @@ must not be mixed blindly into headline performance results.
 | Interface | Cost and purpose |
 |---|---|
 | `--timing-snapshots` | lightweight three-second fields used by the benchmark |
-| `--diag` or `-v` | full three-second timing, segment, device and state reports |
+| `--diag` or `-v` | bounded three-second timing snapshots plus the complete report at exit |
 | `P2K_PROFILE_STALLS=1` | classify raised-versus-serviced deficits as guest `IF=0`, PIC mask/in-service, halted, TB-delay or other; default deficit threshold 2 |
 | `P2K_PROFILE_PDB_GAPS=1` | retain up to 64 rare PDB-gap events and dump them only at exit |
 | `P2K_DIAG_ALWAYS_NOCHAIN=1` | forbid TCG TB chaining for a diagnostic experiment; never a play mode |

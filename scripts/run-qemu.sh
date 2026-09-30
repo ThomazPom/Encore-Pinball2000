@@ -373,10 +373,12 @@ AUDIO
   --no-audio                Force DCS audio off (overrides --audio).
   --strict                  Compatibility alias for the sole natural
                             i8254+i8259 IRQ0 path.
-  --irq0-stack-trace        Log record-low XINU stack margin at IRQ0 intack.
-                            Diagnostic only; does not alter guest execution.
+  --irq0-stack-trace        Sample record-low XINU stack margin at IRQ0 intack.
+                            Reporting is deferred to timing snapshots/exit so
+                            the interrupt hot path performs no logging or I/O.
   --irq0-stack-guard ADDR   Restrict that trace to one XINU stack guard.
-  --irq0-stack-dump FILE    Dump its 8 KiB stack once margin reaches 128 B.
+  --irq0-stack-dump FILE    Schedule a deferred 8 KiB stack dump once the
+                            sampled margin reaches 128 B.
   --speed-target <percent>  Deliberate game-clock speed, 25..300 (default
                             100). Scales the i8254 PIT divisor. Example:
                             75 = three-quarter speed, 120 = 1.2x speed.
@@ -1308,7 +1310,7 @@ if [[ $VERBOSITY -ge 3 ]]; then export P2K_DCS_BYTE_TRACE=1; fi
 if [[ $VERBOSITY -lt 1 && "${P2K_TIMING_SNAPSHOTS:-0}" != "1" ]]; then
   if [[ "${P2K_IRQ0_STACK_TRACE:-0}" == "1" ]]; then
     exec 2> >(sed -u \
-      '/^qemu-system-i386: \(info\|warning\):/ {/p2k IRQ0 stack precursor/!d;}' >&2)
+      '/^qemu-system-i386: \(info\|warning\):/ {/p2k IRQ0 stack/!d;}' >&2)
   else
     exec 2> >(grep -v --line-buffered -E \
       '^qemu-system-i386: (info|warning):' >&2)

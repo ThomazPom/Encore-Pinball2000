@@ -602,11 +602,9 @@ def run_lpt_pass(forwarded: list[str], artifact: Path,
     monitor = artifact / "monitor.sock"
     log_path = artifact / "encore.log"
     gdb_port = pick_port()
-    # The detailed -v diagnostic report sorts every timing ring and writes a
-    # large log burst on the emulator thread every three seconds.  That work
-    # is useful interactively but can manufacture the PDB tail this pass is
-    # measuring.  Keep only the machine-readable, lightweight fields used by
-    # this collector.
+    # Request the bounded periodic report explicitly. P2K_DIAG now uses the
+    # same safe snapshot and reserves its complete report for shutdown, but
+    # the benchmark should not depend on a user's verbosity environment.
     extra = ["--timing-snapshots", "--irq0-stack-trace"]
     if guest_load:
         extra += ["--", "-gdb", f"tcp:127.0.0.1:{gdb_port}"]
@@ -713,6 +711,12 @@ def parse_irq_safety(lines: list[str]) -> dict[str, int | str]:
             try:
                 max_depth = max(max_depth,
                                 int(numeric_field(line, "max_clkint_depth")))
+            except ValueError:
+                pass
+            try:
+                margin = int(numeric_field(line, "min_stack_margin"))
+                min_stack_margin = (margin if min_stack_margin is None
+                                    else min(min_stack_margin, margin))
             except ValueError:
                 pass
         if "p2k IRQ0 stack precursor:" in line:
