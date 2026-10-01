@@ -1,0 +1,67 @@
+p2k: add an opt-in timer callback observation hook
+
+Provide a weak, disabled-by-default hook around QEMU timer callbacks.  The
+Pinball 2000 forensic build uses it to retain the callback and overdue-deadline
+history immediately preceding pathological IRQ0 nesting.  Other machines take
+only the weak false predicate and execute the original direct callback path.
+
+--- a/util/qemu-timer.c
++++ b/util/qemu-timer.c
+@@ -484,10 +484,29 @@ bool timer_expired(QEMUTimer *timer_head, int64_t current_time)
+     return timer_expired_ns(timer_head, current_time * timer_head->scale);
+ }
+
++bool p2k_timer_callback_observer_enabled(void);
++void p2k_timer_callback_observe(QEMUTimerCB *cb, void *opaque,
++                                QEMUClockType clock_type,
++                                int64_t expire_time, int64_t observed_time,
++                                int64_t start_wall_time, int64_t end_wall_time);
++
++__attribute__((weak)) bool p2k_timer_callback_observer_enabled(void)
++{
++    return false;
++}
++
++__attribute__((weak)) void p2k_timer_callback_observe(
++    QEMUTimerCB *cb, void *opaque, QEMUClockType clock_type,
++    int64_t expire_time, int64_t observed_time,
++    int64_t start_wall_time, int64_t end_wall_time)
++{
++}
++
+ bool timerlist_run_timers(QEMUTimerList *timer_list)
+ {
+     QEMUTimer *ts;
+     int64_t current_time;
++    int64_t callback_expire_time;
+     bool progress = false;
+     QEMUTimerCB *cb;
+     void *opaque;
+@@ -553,12 +572,26 @@ bool timerlist_run_timers(QEMUTimerList *timer_list)
+         timer_list->active_timers = ts->next;
+         ts->next = NULL;
++        callback_expire_time = ts->expire_time;
+         ts->expire_time = -1;
+         cb = ts->cb;
+         opaque = ts->opaque;
+
+         /* run the callback (the timer list can be modified) */
+         qemu_mutex_unlock(&timer_list->active_timers_lock);
+-        cb(opaque);
++        if (p2k_timer_callback_observer_enabled()) {
++            int64_t start_wall_time =
++                qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
++            int64_t end_wall_time;
++
++            cb(opaque);
++            end_wall_time = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
++            p2k_timer_callback_observe(cb, opaque,
++                                       timer_list->clock->type,
++                                       callback_expire_time, current_time,
++                                       start_wall_time, end_wall_time);
++        } else {
++            cb(opaque);
++        }
+         qemu_mutex_lock(&timer_list->active_timers_lock);
+
+         progress = true;

@@ -177,6 +177,70 @@ static uint32_t p2k_irq0_stack_dump_guard;
 static const char *p2k_irq0_stack_dump_path;
 static uint32_t p2k_irq0_stack_global_min = UINT32_MAX;
 
+/* Opt-in, memory-only precursor ring for rare IRQ0 runaways.  The hook around
+ * QEMU's generic timer callback dispatcher supplies both the callback deadline
+ * and the main-loop observation time.  Freeze as soon as IRQ0 nesting reaches
+ * 16 so a fatal monitor cannot overwrite the initiating delay. */
+#define P2K_TIMER_PRECURSOR_EVENTS 8192u
+typedef struct P2KTimerPrecursorEvent {
+    uint64_t seq;
+    uint64_t irq_raised;
+    uint64_t clkint_entered;
+    int64_t expire_ns;
+    int64_t observed_ns;
+    int64_t start_wall_ns;
+    int64_t end_wall_ns;
+    uintptr_t callback;
+    uintptr_t opaque;
+    uint32_t clkint_depth;
+    uint32_t max_clkint_depth;
+    uint8_t clock_type;
+} P2KTimerPrecursorEvent;
+
+static bool p2k_timer_precursor_enabled;
+static bool p2k_timer_precursor_frozen;
+static uint64_t p2k_timer_precursor_seq;
+static volatile uint64_t p2k_timer_precursor_freeze_seq;
+static volatile P2KTimerPrecursorEvent
+    p2k_timer_precursor_events[P2K_TIMER_PRECURSOR_EVENTS];
+
+bool p2k_timer_callback_observer_enabled(void)
+{
+    return p2k_timer_precursor_enabled && !p2k_timer_precursor_frozen;
+}
+
+void p2k_timer_callback_observe(QEMUTimerCB *cb, void *opaque,
+                                QEMUClockType clock_type,
+                                int64_t expire_ns, int64_t observed_ns,
+                                int64_t start_wall_ns, int64_t end_wall_ns)
+{
+    if (!p2k_timer_precursor_enabled || p2k_timer_precursor_frozen) {
+        return;
+    }
+
+    uint64_t seq = p2k_timer_precursor_seq++;
+    volatile P2KTimerPrecursorEvent *event =
+        &p2k_timer_precursor_events[seq & (P2K_TIMER_PRECURSOR_EVENTS - 1u)];
+
+    event->seq = seq;
+    event->irq_raised = p2k_audit_irq0_raised;
+    event->clkint_entered = p2k_audit_clkint_entered;
+    event->expire_ns = expire_ns;
+    event->observed_ns = observed_ns;
+    event->start_wall_ns = start_wall_ns;
+    event->end_wall_ns = end_wall_ns;
+    event->callback = (uintptr_t)cb;
+    event->opaque = (uintptr_t)opaque;
+    event->clkint_depth = p2k_clkint_depth;
+    event->max_clkint_depth = p2k_clkint_max_depth;
+    event->clock_type = clock_type;
+
+    if (p2k_clkint_max_depth >= 16u) {
+        p2k_timer_precursor_freeze_seq = seq;
+        p2k_timer_precursor_frozen = true;
+    }
+}
+
 /* EOI EIP histogram (top hot EIPs at the moment of `out 0x20, 0x20`).
  * Reveals where in the clkint body the EOI is written: useful to
  * confirm the handler shape in the disassembly. Tiny fixed table of
@@ -1635,6 +1699,13 @@ void p2k_install_timing_audit(Pinball2000MachineState *s)
         p2k_audit_env_truthy("P2K_TIMING_SNAPSHOTS");
     p2k_irq0_stack_trace = p2k_audit_env_truthy("P2K_IRQ0_STACK_TRACE");
     p2k_irq0_stack_dump_path = getenv("P2K_IRQ0_STACK_DUMP");
+    p2k_timer_precursor_enabled =
+        p2k_audit_env_truthy("P2K_TIMER_PRECURSOR");
+    if (p2k_timer_precursor_enabled) {
+        info_report("pinball2000: timer precursor ring armed "
+                    "(%u events; freezes at IRQ0 depth 16)",
+                    P2K_TIMER_PRECURSOR_EVENTS);
+    }
     for (size_t i = 0; i < ARRAY_SIZE(p2k_irq0_stack_min_margin); i++) {
         p2k_irq0_stack_min_margin[i] = UINT32_MAX;
     }

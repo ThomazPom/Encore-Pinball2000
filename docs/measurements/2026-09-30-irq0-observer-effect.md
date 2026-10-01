@@ -69,6 +69,7 @@ actively doing work on the timer thread.
 | Corrected `P2K_DIAG`, manual play | ~358 s | 1,432,361 raised / 1,419,023 entered over all phases | 5 | 6688 B | 5.952 ms | 23 fronts below 100 us | clean F1 shutdown; no recorder trigger |
 | Full flight recorder, no `P2K_DIAG` | failure began near 282 s | recorder froze after the trigger | 123 | 44 B before overflow | no initiating host stall | repeated entry at `0x0025040c` | failed; recorder considered invasive |
 | Minimal stack sampler, manual stress | 2,964,902 acknowledgements, about 12.34 min of IRQ time | normal natural delivery | 8 | 6588 B | not sampled | not sampled | several play/Game Over cycles; clean F1 shutdown |
+| Minimal stack sampler, normal no-`-v` run | fatal after 55 s | delivery stopped at the fatal monitor | 120 after entry into the monitor; 100 consecutive `clkint_x` frames retained on the fatal stack | 116 B before interrupt entry | not sampled | not sampled | **`IStack: overflow (A)` in `lampmgr`** |
 | Rejected PIT late-transition collapse | 10.006 s measured after warmup | 49.76% / 49.79% | 5 | 7044 B | IRQ worst 1.52 ms | suppressed by dropping ordinary catch-up | ABNORMAL; reverted |
 
 The generic bench warning was one isolated PDB gap above 2.5 ms in five
@@ -79,6 +80,40 @@ The manual run was deliberately controlled by a human. The attempted
 `natural-drain.p2k` automation was invalid: it could create two players and
 then drain only three balls, so its Game Over timeout was not a functional
 failure. That script has been removed.
+
+## Normal no-`-v` reproduction
+
+A later SWE1 2.00 run reproduced the actual fatal without `-v`, `P2K_DIAG`, a
+profiler, a flight recorder, a breaker or a modified PIT. The command used the
+normal i8254/i8259 path plus only `--irq0-stack-trace`, whose interrupt hot path
+updates fixed-size counters and record-low stack margins in memory.
+
+The guest started at 21:17:50 and emitted the fatal at 21:18:45, after about
+55 seconds:
+
+```text
+*** Fatal: Last[XPid 100 APid -1 (autotick)] Current[XPid 121 APid -1 (lampmgr)]
+*** Fatal: IStack: overflow (A) xpid 121 (lampmgr) limit 0x3e9ffc base 0x3ebff8
+esp 0x3ea028 magic 0xaaa9
+```
+
+The retained EBP chain contains exactly 100 consecutive returns to
+`clkint_x` between `interval_0_25ms()` and the interrupted lamp-manager work.
+The live host counters recorded a 116-byte minimum pre-entry margin and a
+maximum tracked depth of 120 by the time the fatal monitor was captured. The
+chain above the nested handlers resolves as:
+
+```text
+ttycntl -> control -> con_getc -> getc -> shell_read_line -> monitor_shell
+-> monitor -> Fatal -> IStackFatal -> interval_0_25ms
+-> clkint_x x 100 -> BaseViewManager::ViewRenderProc -> userret
+```
+
+This is the same deterministic fatal stack as the preceding `-v` run, which
+also retained 100 consecutive `clkint_x` frames and reached a 116-byte sampled
+margin. `-v` can still add latency, but it is not necessary for this failure.
+The run does not identify the initiating host-side delay because detailed
+timing collection was intentionally disabled.
 
 ## Rejected alternatives
 
@@ -109,7 +144,17 @@ selected SWE1 2.10 XINU scheduler globals.
 ## Remaining validation boundary
 
 The corrected diagnostic path has passed the generic bench, one long detailed
-run and one heavily exercised minimal-sampler run. Reports of rare crashes
-from completely normal runs remain unconfirmed by a retained clean capture.
-They must not be attributed to an observer effect—or to normal IRQ delivery—
-without evidence from a measurement path whose own cost has first been bounded.
+run and one heavily exercised minimal-sampler run. A retained no-`-v` capture
+now proves that natural i8254/i8259 delivery can nevertheless build a fatal
+IRQ0 nesting chain. The remaining observer is the bounded, memory-only stack
+sampler; a completely option-free capture would remove even that final caveat.
+The current evidence proves the recursive delivery mechanism. A follow-up
+memory-only timer ring plus Linux `schedstat` correlation has since identified
+a second natural initiator: transient host starvation of the TCG vCPU while
+the virtual-clock PIT continues. See
+[`2026-10-01-irq0-host-starvation.md`](2026-10-01-irq0-host-starvation.md).
+
+The raw no-`-v` capture is preserved at
+`/var/tmp/encore-crashes/swe1-200-no-v-istack-20260930-211845`. Its
+`guest-ram.bin` SHA-256 is
+`762ac652413a18c0ec701016ef98902b7a5b84bfb955b7498089fac77cfc9092`.

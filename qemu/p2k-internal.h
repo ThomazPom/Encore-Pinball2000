@@ -7,6 +7,7 @@
 #define HW_PINBALL2000_INTERNAL_H
 
 #include "qemu/osdep.h"
+#include "qemu/timer.h"
 #include "hw/boards.h"
 #include "hw/i386/x86.h"
 #include "hw/irq.h"
@@ -241,6 +242,11 @@ uint64_t p2k_timing_audit_get_irq0_serviced(void);
 void p2k_timing_audit_note_clkint_enter(uint64_t eip);
 void p2k_timing_audit_note_pic_eoi(bool master, int irq, uint8_t ocw2);
 bool p2k_clkint_tcg_match_pc(uint64_t pc, uint64_t cs_base);
+bool p2k_timer_callback_observer_enabled(void);
+void p2k_timer_callback_observe(QEMUTimerCB *cb, void *opaque,
+                                QEMUClockType clock_type,
+                                int64_t expire_ns, int64_t observed_ns,
+                                int64_t start_wall_ns, int64_t end_wall_ns);
 
 /* p2k-stall-profile.c: opt-in EIP/IF/halted ring-buffer profiler that
  * samples CPU state every PIT-tap rising edge whose unservice gap
