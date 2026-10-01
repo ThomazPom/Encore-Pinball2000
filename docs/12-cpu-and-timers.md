@@ -113,6 +113,74 @@ MediaGX instructions are implemented in TCG and enabled only while the
 The entry registers and memory layout belong in the
 [boot recipe](14-boot-recipe.md) and [memory map](13-memory-map.md).
 
+## Temporary host CPU shield
+
+A host pause can prevent the TCG vCPU from reaching its next device deadline.
+The guest then receives a dense IRQ0 sequence when execution resumes. Encore
+does not try to hide that condition by dropping, capping or synthesizing guest
+interrupts. Its default host-side mitigation instead reserves scheduler space
+for the existing emulator threads.
+
+On the first interactive launch, the runner offers to install a small managed
+systemd broker. That one-time operation needs root authorization. Every normal
+launch after it follows this boundary:
+
+```text
+unprivileged runner
+    ├─ starts one stopped, unprivileged QEMU child
+    └─ asks root-owned socket broker to attach that exact sibling PID
+            ├─ reserves logical CPUs while the child exists
+            ├─ gives QEMU a protected physical-core pool
+            └─ restores the previous masks when QEMU exits or crashes
+```
+
+The broker accepts a PID, never a command. It checks the caller with Unix
+peer credentials, requires the target to have the same UID and parent, and
+requires it to be stopped before moving it. QEMU consequently never gains
+root privileges. Only the installed copy under `/usr/local/libexec` runs as
+root.
+
+CPU selection follows host topology rather than fixed numbers. It retains the
+first physical core for the host and reserves up to three other physical
+cores. It ranks candidate cores by cumulative hardware-IRQ activity and gives
+QEMU one logical CPU from each of the three quietest candidates. Linux remains
+free to place QEMU's synchronized main loop, helpers, `CPU 0/TCG` and
+`dcs-pcm` inside that private pool. Hard-pinning those roles measured slower
+and produced no safety benefit over the adequately sized pool. Every SMT
+sibling on the selected cores is kept out of ordinary host work; measuring
+only logical-CPU isolation proved insufficient under saturation. The QEMU
+threads receive `nice -15`, but still use normal CFS scheduling rather than a
+real-time policy. On smaller hosts, the pool uses the available reserved
+cores. A single-CPU host is rejected. On the development 4-core/8-thread host
+at the time of validation this yields:
+
+| Work | Logical CPUs |
+|---|---|
+| general user/system services | `0,4` |
+| all QEMU threads | protected pool `1,2,3` at `nice -15` |
+| idle SMT siblings of the three QEMU cores | `5,6,7` |
+
+During the run, the broker snapshots and restricts `user.slice`,
+`system.slice`, `init.scope` and `machine.slice`. QEMU lives in the broker's
+separate slice. Where Linux exposes a `performance` CPU-frequency governor,
+the policies covering the reserved cores use it for the same interval. This
+matters on hosts where a busy but isolated core otherwise remains at a low
+frequency. The original `AllowedCPUs` and governor values are restored after a
+normal exit, a QEMU crash or broker teardown; the socket then stays idle for
+the next launch. Only one shielded Encore process may run at a time.
+
+> [!IMPORTANT]
+> This protects the emulator from ordinary user and systemd service work. It
+> is not Linux `isolcpus`: kernel threads, hardware IRQ affinity and firmware
+> can still use a selected logical CPU. The design is intentionally temporary
+> and much less intrusive than hiding cores from the whole machine at boot.
+
+The default is `auto`: offer setup once, then use the broker whenever it is
+present. `--cpu-shield` requires it, while `--no-cpu-shield` performs an
+unshielded A/B run. A shield-selected DCS affinity supersedes the experimental
+`--dcs-pcm-cpu` value. See the [CLI reference](03-cli-reference.md) for the
+compact option list.
+
 ## What the permanent hooks observe
 
 The custom QEMU build adds narrow observation points around the upstream

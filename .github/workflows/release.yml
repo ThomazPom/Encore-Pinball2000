@@ -110,6 +110,7 @@ jobs:
           python3 guest-extensions/check-romset.py
           python3 -m py_compile \
             guest-extensions/check-romset.py \
+            scripts/internal/cpu-shield.py \
             docs/measurements/dcs-engines/run-comparison.py \
             docs/measurements/validation-matrix/run-matrix.py
 
@@ -168,6 +169,7 @@ jobs:
             scripts/run-qemu.sh scripts/demos \
             scripts/internal/bench-qemu.py \
             scripts/internal/build-pcm-cache.py \
+            scripts/internal/cpu-shield.py \
             scripts/internal/download-qemu-release.sh \
             scripts/internal/encore-session.sh \
             scripts/internal/fetch-assets-if-missing.sh \
@@ -192,6 +194,7 @@ jobs:
           test -x "$verify/Encore-Pinball2000/scripts/run-qemu.sh"
           test -r "$verify/Encore-Pinball2000/scripts/internal/runtime-packages.sh"
           test -r "$verify/Encore-Pinball2000/scripts/internal/network-validation.sh"
+          test -x "$verify/Encore-Pinball2000/scripts/internal/cpu-shield.py"
           test ! -e "$verify/Encore-Pinball2000/scripts/build-qemu.sh"
           test ! -e "$verify/Encore-Pinball2000/qemu"
           test ! -e "$verify/Encore-Pinball2000/tools"

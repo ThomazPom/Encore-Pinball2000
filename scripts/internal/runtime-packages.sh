@@ -6,6 +6,132 @@ ENCORE_DIRECT_INPUT_MARKER='# encore-pinball2000 managed direct-console input'
 ENCORE_RUNTIME_APPROVED=${ENCORE_RUNTIME_APPROVED:-0}
 ENCORE_NETWORK_TAP=encore-p2k0
 ENCORE_NETWORK_TAP_MARKER='encore-pinball2000 managed bridge tap'
+ENCORE_CPU_SHIELD_MARKER='# encore-pinball2000 managed CPU shield'
+ENCORE_CPU_SHIELD_CONFIG=/etc/encore-pinball2000/cpu-shield-user
+ENCORE_CPU_SHIELD_HELPER=/usr/local/libexec/encore-pinball2000-cpu-shield
+ENCORE_CPU_SHIELD_SOCKET=/run/encore-pinball2000/cpu-shield.sock
+ENCORE_CPU_SHIELD_SLICE=/etc/systemd/system/encore-cpu-shield.slice
+ENCORE_CPU_SHIELD_SOCKET_UNIT=/etc/systemd/system/encore-cpu-shield.socket
+ENCORE_CPU_SHIELD_SERVICE=/etc/systemd/system/encore-cpu-shield@.service
+
+encore_cpu_shield_ready() {
+    local root="$1" owner="$2" owner_uid source
+    source="$root/scripts/internal/cpu-shield.py"
+    owner_uid="$(id -u "$owner" 2>/dev/null)" || return 1
+    [[ -r "$source" && -x "$ENCORE_CPU_SHIELD_HELPER" ]] || return 1
+    cmp -s "$source" "$ENCORE_CPU_SHIELD_HELPER" || return 1
+    [[ "$(cat "$ENCORE_CPU_SHIELD_CONFIG" 2>/dev/null)" == "$owner_uid:$owner" ]] || return 1
+    grep -qxF "$ENCORE_CPU_SHIELD_MARKER" "$ENCORE_CPU_SHIELD_SLICE" 2>/dev/null || return 1
+    grep -qxF "$ENCORE_CPU_SHIELD_MARKER" "$ENCORE_CPU_SHIELD_SOCKET_UNIT" 2>/dev/null || return 1
+    grep -qxF "$ENCORE_CPU_SHIELD_MARKER" "$ENCORE_CPU_SHIELD_SERVICE" 2>/dev/null || return 1
+    [[ -S "$ENCORE_CPU_SHIELD_SOCKET" ]] || return 1
+}
+
+encore_install_cpu_shield() {
+    local root="$1" owner="$2" owner_uid owner_group source file
+    [[ $EUID -eq 0 ]] || {
+        echo "[run-qemu] CPU shield installation requires root" >&2
+        return 2
+    }
+    [[ -d /sys/fs/cgroup && "$(stat -fc %T /sys/fs/cgroup 2>/dev/null)" == cgroup2fs ]] || {
+        echo "[run-qemu] CPU shield requires unified cgroup v2" >&2
+        return 2
+    }
+    command -v systemctl >/dev/null 2>&1 || {
+        echo "[run-qemu] CPU shield requires systemd" >&2
+        return 2
+    }
+    source="$root/scripts/internal/cpu-shield.py"
+    [[ -r "$source" ]] || {
+        echo "[run-qemu] missing CPU shield helper: $source" >&2
+        return 2
+    }
+    python3 "$source" --check >/dev/null || {
+        echo "[run-qemu] this host cannot provide the requested CPU shield" >&2
+        return 2
+    }
+    owner_uid="$(id -u "$owner" 2>/dev/null)" || {
+        echo "[run-qemu] CPU shield user does not exist: $owner" >&2
+        return 2
+    }
+    owner_group="$(id -gn "$owner")"
+
+    for file in "$ENCORE_CPU_SHIELD_SLICE" "$ENCORE_CPU_SHIELD_SOCKET_UNIT" "$ENCORE_CPU_SHIELD_SERVICE"; do
+        if [[ -e "$file" ]] && ! grep -qxF "$ENCORE_CPU_SHIELD_MARKER" "$file"; then
+            echo "[run-qemu] refusing unrelated $file" >&2
+            return 3
+        fi
+    done
+    if [[ -e "$ENCORE_CPU_SHIELD_CONFIG" ]] &&
+       [[ "$(cat "$ENCORE_CPU_SHIELD_CONFIG")" != "$owner_uid:$owner" ]] &&
+       [[ ! -e "$ENCORE_CPU_SHIELD_SOCKET_UNIT" ]]; then
+        echo "[run-qemu] refusing unrelated $ENCORE_CPU_SHIELD_CONFIG" >&2
+        return 3
+    fi
+    if [[ -e "$ENCORE_CPU_SHIELD_HELPER" ]] &&
+       [[ ! -e "$ENCORE_CPU_SHIELD_SOCKET_UNIT" ]]; then
+        echo "[run-qemu] refusing unrelated $ENCORE_CPU_SHIELD_HELPER" >&2
+        return 3
+    fi
+
+    install -d -m 0755 /etc/encore-pinball2000 /usr/local/libexec
+    install -o root -g root -m 0755 "$source" "$ENCORE_CPU_SHIELD_HELPER"
+    printf '%s:%s\n' "$owner_uid" "$owner" > "$ENCORE_CPU_SHIELD_CONFIG"
+    # The unprivileged readiness check compares this non-secret identity.
+    # Authorization itself uses socket ownership plus SO_PEERCRED.
+    chmod 0644 "$ENCORE_CPU_SHIELD_CONFIG"
+
+    cat > "$ENCORE_CPU_SHIELD_SLICE" <<EOF
+$ENCORE_CPU_SHIELD_MARKER
+[Unit]
+Description=Encore temporary CPU shield
+
+[Slice]
+EOF
+    cat > "$ENCORE_CPU_SHIELD_SOCKET_UNIT" <<EOF
+$ENCORE_CPU_SHIELD_MARKER
+[Unit]
+Description=Encore CPU shield broker socket
+
+[Socket]
+ListenStream=$ENCORE_CPU_SHIELD_SOCKET
+SocketUser=$owner
+SocketGroup=$owner_group
+SocketMode=0600
+DirectoryMode=0755
+Accept=yes
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target
+EOF
+    cat > "$ENCORE_CPU_SHIELD_SERVICE" <<EOF
+$ENCORE_CPU_SHIELD_MARKER
+[Unit]
+Description=Encore CPU shield broker
+Requires=encore-cpu-shield.socket
+After=encore-cpu-shield.socket
+
+[Service]
+Type=simple
+ExecStart=$ENCORE_CPU_SHIELD_HELPER --serve
+ExecStopPost=$ENCORE_CPU_SHIELD_HELPER --restore
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+Slice=encore-cpu-shield.slice
+KillMode=control-group
+TimeoutStopSec=10
+EOF
+    chmod 0644 "$ENCORE_CPU_SHIELD_SLICE" "$ENCORE_CPU_SHIELD_SOCKET_UNIT" "$ENCORE_CPU_SHIELD_SERVICE"
+    systemctl daemon-reload
+    systemctl enable --now encore-cpu-shield.socket
+    encore_cpu_shield_ready "$root" "$owner" || {
+        echo "[run-qemu] CPU shield installation did not become ready" >&2
+        return 2
+    }
+    echo "[run-qemu] CPU shield prepared for $owner; QEMU will still run unprivileged"
+}
 
 encore_root_prepare_runtime() {
     local prepare_input="$1"
@@ -222,6 +348,10 @@ encore_runtime_needs_root_phase() {
     [[ -z "${P2K_NETWORK_BRIDGE:-}" ]] || packages+=(iproute2)
     [[ "${P2K_NETWORK_PASST:-0}" != 1 ]] || packages+=(passt)
     [[ "${P2K_NETWORK_MIRROR:-0}" != 1 ]] || packages+=(iproute2)
+    if [[ "${ENCORE_CPU_SHIELD_INSTALL:-0}" == 1 ]] &&
+       ! encore_cpu_shield_ready "$ROOT" "${ENCORE_RUNTIME_USER:-$(id -un)}"; then
+        return 0
+    fi
     [[ "$backend" != direct-console ]] ||
         grep -qxF "$ENCORE_DIRECT_INPUT_MARKER" "$ENCORE_DIRECT_INPUT_RULE" \
             2>/dev/null || return 0
@@ -252,7 +382,7 @@ encore_runtime_needs_root_phase() {
 }
 
 encore_runtime_root_phase() {
-    local root="$1" backend="$2" owner="$3" owner_home="$4" qemu_bin="$5" lpt_device="${6:-auto}" network_bridge="${7:-}" network_passt="${8:-0}" network_mirror="${9:-0}"
+    local root="$1" backend="$2" owner="$3" owner_home="$4" qemu_bin="$5" lpt_device="${6:-auto}" network_bridge="${7:-}" network_passt="${8:-0}" network_mirror="${9:-0}" cpu_shield_install="${10:-0}"
     ROOT="$root"
     HOME="$owner_home"
     ENCORE_RUNTIME_USER="$owner"
@@ -261,7 +391,8 @@ encore_runtime_root_phase() {
     export P2K_NETWORK_BRIDGE="$network_bridge"
     export P2K_NETWORK_PASST="$network_passt"
     export P2K_NETWORK_MIRROR="$network_mirror"
-    encore_prepare_runtime "$backend"
+    encore_prepare_runtime "$backend" || return
+    [[ "$cpu_shield_install" != 1 ]] || encore_install_cpu_shield "$root" "$owner"
 }
 
 encore_acquire_qemu() {

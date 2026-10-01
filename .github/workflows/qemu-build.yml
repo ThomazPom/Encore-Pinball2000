@@ -50,6 +50,7 @@ jobs:
           python3 guest-extensions/check-romset.py
           python3 -m py_compile \
             guest-extensions/check-romset.py \
+            scripts/internal/cpu-shield.py \
             docs/measurements/dcs-engines/run-comparison.py \
             docs/measurements/validation-matrix/run-matrix.py
 

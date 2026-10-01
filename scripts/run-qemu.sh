@@ -101,6 +101,16 @@ TOURNAMENT_PROFILE=0
 TOURNAMENT_IP=""
 TOURNAMENT_ENABLED=1
 TOURNAMENT_FREE_PLAY=1
+CPU_SHIELD_MODE="${P2K_CPU_SHIELD:-auto}"
+case "$CPU_SHIELD_MODE" in
+  auto|on|off) ;;
+  *)
+    echo "[run-qemu] P2K_CPU_SHIELD: expected auto, on, or off" >&2
+    exit 2
+    ;;
+esac
+CPU_SHIELD_INSTALL=0
+CPU_SHIELD_ACTIVE=0
 
 # --- QEMU binary lookup -----------------------------------------------------
 resolve_qemu_bin() {
@@ -328,6 +338,12 @@ DISPLAY / UX
   --preflight               Follow the requested launch path and prepare every
                             runtime dependency and asset it encounters, then
                             stop immediately before a compositor or QEMU.
+  --cpu-shield              Require the temporary systemd CPU shield. Its
+                            one-time root setup reserves CPUs only while QEMU
+                            runs; QEMU itself remains unprivileged.
+  --no-cpu-shield           Disable the CPU shield for this run. By default it
+                            is offered once, then used automatically whenever
+                            its managed broker is installed.
   --flipscreen              Vertically reverse the displayed image, exactly as
                             if F2 had been pressed once. F2 toggles the same
                             state at run time.
@@ -754,6 +770,8 @@ while [[ $# -gt 0 ]]; do
     --preflight)
       PREFLIGHT=1
       shift ;;
+    --cpu-shield)      CPU_SHIELD_MODE=on; shift ;;
+    --no-cpu-shield)   CPU_SHIELD_MODE=off; shift ;;
     --flipscreen)
       export P2K_FLIPSCREEN=1
       shift ;;
@@ -1126,6 +1144,42 @@ if [[ -z "$RUNTIME_BACKEND" ]]; then
 fi
 ENCORE_SDL_DRIVER=""
 runtime_root_phase=0
+runtime_owner="${ENCORE_RUNTIME_USER:-$(id -un)}"
+runtime_home="$HOME"
+if [[ $EUID -eq 0 && "$runtime_owner" != root ]]; then
+  runtime_home="$(getent passwd "$runtime_owner" | cut -d: -f6)"
+  [[ -n "$runtime_home" ]] || {
+    echo "[run-qemu] unknown runtime user: $runtime_owner" >&2
+    exit 2
+  }
+fi
+
+if [[ $TCG_ONLY -eq 0 && "$CPU_SHIELD_MODE" != off ]]; then
+  if encore_cpu_shield_ready "$ROOT" "$runtime_owner"; then
+    CPU_SHIELD_ACTIVE=1
+  elif [[ "$CPU_SHIELD_MODE" == on ]]; then
+    CPU_SHIELD_INSTALL=1
+  elif [[ -t 0 ]]; then
+    echo "[run-qemu] Encore can temporarily reserve host CPUs for its vCPU and audio worker." >&2
+    echo "[run-qemu] This is a one-time systemd setup; QEMU continues to run as $runtime_owner." >&2
+    read -r -p "Install the temporary CPU shield now? [Y/n] " cpu_shield_answer
+    if [[ ! "$cpu_shield_answer" =~ ^[Nn]$ ]]; then
+      CPU_SHIELD_INSTALL=1
+    else
+      CPU_SHIELD_MODE=off
+    fi
+  else
+    if [[ -e "$ENCORE_CPU_SHIELD_CONFIG" || -e "$ENCORE_CPU_SHIELD_HELPER" ||
+          -e "$ENCORE_CPU_SHIELD_SOCKET_UNIT" ]]; then
+      echo "[run-qemu] the managed CPU shield needs a privileged refresh; run --preflight interactively" >&2
+      exit 2
+    fi
+    echo "[run-qemu] CPU shield has not been set up; continuing without it (use --cpu-shield to require it)" >&2
+    CPU_SHIELD_MODE=off
+  fi
+fi
+export ENCORE_CPU_SHIELD_INSTALL="$CPU_SHIELD_INSTALL"
+export ENCORE_RUNTIME_USER="$runtime_owner"
 
 # usermod updates the account database, but Linux cannot mutate the
 # supplementary groups of this already-running shell. Re-enter this wrapper
@@ -1150,21 +1204,24 @@ refresh_lp_membership() {
 }
 
 refresh_lp_membership
-if [[ $EUID -ne 0 ]] && encore_runtime_needs_root_phase "$RUNTIME_BACKEND"; then
-  runtime_owner="$(id -un)"
-  if command -v run0 >/dev/null 2>&1 && command -v pkttyagent >/dev/null 2>&1; then
+if encore_runtime_needs_root_phase "$RUNTIME_BACKEND"; then
+  if [[ $EUID -eq 0 ]]; then
+    encore_runtime_root_phase "$ROOT" "$RUNTIME_BACKEND" "$runtime_owner" \
+      "$runtime_home" "$QEMU_BIN" "$LPT_DEVICE" "$NETWORK_BRIDGE" \
+      "$NETWORK_PASST" "$NETWORK_MIRROR" "$CPU_SHIELD_INSTALL"
+  elif command -v run0 >/dev/null 2>&1 && command -v pkttyagent >/dev/null 2>&1; then
     run0 --description="Encore runtime preparation" -- \
       bash "$ROOT/scripts/internal/runtime-packages.sh" \
       --runtime-root-phase "$ROOT" "$RUNTIME_BACKEND" "$runtime_owner" \
-      "$HOME" "$QEMU_BIN" "$LPT_DEVICE" "$NETWORK_BRIDGE" "$NETWORK_PASST" "$NETWORK_MIRROR"
+      "$runtime_home" "$QEMU_BIN" "$LPT_DEVICE" "$NETWORK_BRIDGE" "$NETWORK_PASST" "$NETWORK_MIRROR" "$CPU_SHIELD_INSTALL"
   elif command -v sudo >/dev/null 2>&1; then
     sudo bash "$ROOT/scripts/internal/runtime-packages.sh" \
       --runtime-root-phase "$ROOT" "$RUNTIME_BACKEND" "$runtime_owner" \
-      "$HOME" "$QEMU_BIN" "$LPT_DEVICE" "$NETWORK_BRIDGE" "$NETWORK_PASST" "$NETWORK_MIRROR"
+      "$runtime_home" "$QEMU_BIN" "$LPT_DEVICE" "$NETWORK_BRIDGE" "$NETWORK_PASST" "$NETWORK_MIRROR" "$CPU_SHIELD_INSTALL"
   elif command -v pkexec >/dev/null 2>&1; then
     pkexec bash "$ROOT/scripts/internal/runtime-packages.sh" \
       --runtime-root-phase "$ROOT" "$RUNTIME_BACKEND" "$runtime_owner" \
-      "$HOME" "$QEMU_BIN" "$LPT_DEVICE" "$NETWORK_BRIDGE" "$NETWORK_PASST" "$NETWORK_MIRROR"
+      "$runtime_home" "$QEMU_BIN" "$LPT_DEVICE" "$NETWORK_BRIDGE" "$NETWORK_PASST" "$NETWORK_MIRROR" "$CPU_SHIELD_INSTALL"
   else
     echo "[run-qemu] runtime preparation needs root; no supported privilege helper found" >&2
     exit 2
@@ -1181,6 +1238,15 @@ else
     direct-console) ENCORE_SDL_DRIVER=KMSDRM ;;
     display-manager|wayland|cage|weston) ENCORE_SDL_DRIVER=wayland ;;
   esac
+fi
+
+if [[ "$CPU_SHIELD_MODE" != off ]]; then
+  if encore_cpu_shield_ready "$ROOT" "$runtime_owner"; then
+    CPU_SHIELD_ACTIVE=1
+  elif [[ "$CPU_SHIELD_MODE" == on || $CPU_SHIELD_INSTALL -eq 1 ]]; then
+    echo "[run-qemu] required CPU shield is not ready after runtime preparation" >&2
+    exit 2
+  fi
 fi
 
 if [[ $EUID -ne 0 && "$LPT_DEVICE" == /dev/parport[0-9]* &&
@@ -1642,6 +1708,8 @@ case "${DISPLAY_MODE%%,*}" in
     ;;
 esac
 ARGS=( -no-reboot -m 16 -display "$DISPLAY_ARG" -rtc base=localtime )
+[[ $CPU_SHIELD_ACTIVE -eq 0 ]] ||
+  ARGS+=( -name "encore,debug-threads=on" )
 [[ $FULLSCREEN -eq 1 ]] && ARGS+=( -full-screen )
 
 if [[ $SERIAL_STDIO -eq 1 ]]; then
@@ -1850,13 +1918,44 @@ echo "[run-qemu] cwd=$RUN_CWD"
 echo "[run-qemu] $QEMU_BIN ${ARGS[*]} ${EXTRA[*]:-}"
 cd "$RUN_CWD"
 
+launch_qemu() {
+  if [[ $CPU_SHIELD_ACTIVE -eq 0 ]]; then
+    if [[ ${QEMU_BACKGROUND_QUIET:-0} -eq 1 ]]; then
+      "$QEMU_BIN" "${ARGS[@]}" "${EXTRA[@]}" </dev/null >/dev/null 2>&1 &
+    else
+      "$QEMU_BIN" "${ARGS[@]}" "${EXTRA[@]}" &
+    fi
+    QEMU_PID=$!
+    return 0
+  fi
+
+  # Start an ordinary unprivileged child, but stop it before exec. The
+  # root-owned broker validates that this PID and its client are siblings,
+  # moves only that child into its service cgroup, applies the temporary
+  # masks, and resumes it. No user-controlled command crosses the socket.
+  if [[ ${QEMU_BACKGROUND_QUIET:-0} -eq 1 ]]; then
+    bash -c 'kill -STOP "$$"; exec "$@"' encore-qemu \
+      "$QEMU_BIN" "${ARGS[@]}" "${EXTRA[@]}" </dev/null >/dev/null 2>&1 &
+  else
+    bash -c 'kill -STOP "$$"; exec "$@"' encore-qemu \
+      "$QEMU_BIN" "${ARGS[@]}" "${EXTRA[@]}" &
+  fi
+  QEMU_PID=$!
+  if ! python3 "$ROOT/scripts/internal/cpu-shield.py" --client "$QEMU_PID"; then
+    kill -CONT "$QEMU_PID" 2>/dev/null || true
+    kill "$QEMU_PID" 2>/dev/null || true
+    wait "$QEMU_PID" 2>/dev/null || true
+    QEMU_PID=""
+    return 1
+  fi
+}
+
 if [[ $SERIAL_STDIO -eq 1 ]]; then
   # --serial: launch QEMU in background so it owns its own stdio (no
   # raw-mode fight with the terminal), then run `nc` in the foreground
   # of THIS terminal. Cooked-mode echo, line editing, signals all work
   # as the user's shell expects. nc exits → QEMU is killed.
-  "$QEMU_BIN" "${ARGS[@]}" "${EXTRA[@]}" </dev/null >/dev/null 2>&1 &
-  QEMU_PID=$!
+  QEMU_BACKGROUND_QUIET=1 launch_qemu
   trap '[[ -n "${QEMU_PID:-}" ]] && kill "$QEMU_PID" 2>/dev/null; [[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"; [[ -n "$PASST_DIR" ]] && rm -rf "$PASST_DIR"' EXIT INT TERM
   # Wait for the TCP server to come up (QEMU takes ~1s to bind).
   for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -1871,15 +1970,20 @@ if [[ $SERIAL_STDIO -eq 1 ]]; then
   mkdir -p "$HIST_DIR" 2>/dev/null || true
   if command -v rlwrap >/dev/null 2>&1; then
     echo "[run-qemu] --serial: COM1 → 127.0.0.1:${SERIAL_PORT}; bridging via rlwrap+nc (history: ${HIST_DIR}/serial.history, Ctrl-C to quit)" >&2
-    exec rlwrap -A -H "${HIST_DIR}/serial.history" nc 127.0.0.1 "$SERIAL_PORT"
+    set +e
+    rlwrap -A -H "${HIST_DIR}/serial.history" nc 127.0.0.1 "$SERIAL_PORT"
+    serial_status=$?
   else
     echo "[run-qemu] --serial: COM1 → 127.0.0.1:${SERIAL_PORT}; bridging via nc (install 'rlwrap' for history/up-arrow; Ctrl-C to quit)" >&2
-    exec nc 127.0.0.1 "$SERIAL_PORT"
+    set +e
+    nc 127.0.0.1 "$SERIAL_PORT"
+    serial_status=$?
   fi
+  set -e
+  exit "$serial_status"
 fi
 
-"$QEMU_BIN" "${ARGS[@]}" "${EXTRA[@]}" &
-QEMU_PID=$!
+launch_qemu
 trap 'status=$?; if [[ -n "${QEMU_PID:-}" ]]; then kill "$QEMU_PID" 2>/dev/null; wait "$QEMU_PID" 2>/dev/null || true; fi; [[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"; [[ -n "$AUTOMATION_DIR" ]] && rm -rf "$AUTOMATION_DIR"; [[ -n "$PASST_DIR" ]] && rm -rf "$PASST_DIR"; exit "$status"' EXIT INT TERM
 if [[ -n "$CONSOLE_SCRIPT" ]]; then
   __script_args=(

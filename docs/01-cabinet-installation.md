@@ -66,8 +66,11 @@ command line. Before changing cabinet integration it:
 
 Preflight owns runtime preparation. It may offer to install packages, acquire
 the custom QEMU executable, fetch absent ROM/update trees, add the session user
-to `lp`, or prepare a managed bridge TAP. QEMU itself still runs as the session
-user unless root diagnostic mode was explicitly selected.
+to `lp`, prepare a managed bridge TAP, or install the socket-activated CPU
+shield. The shield's root broker is idle outside a run and only applies its
+temporary CPU masks while QEMU exists. QEMU itself still runs as the session
+user unless root diagnostic mode was explicitly selected. The exact boundary
+is described in [CPU and timing](12-cpu-and-timers.md#temporary-host-cpu-shield).
 
 The final message asks for a reboot. Rebooting is significant: it starts the
 new default target, obtains a fresh login/PAM session and makes any new
@@ -335,8 +338,9 @@ original login shell and identities of files created by the installer. The
 ownership lock is written before any installer-owned boot/session mutation.
 If power is lost in the tiny interval before `install-mode` is written,
 `uninstall.sh` recognizes the Encore-owned partial marker and safely removes
-it. Runtime prerequisites that preflight prepared earlier—such as packages or
-shared group membership—are intentionally preserved.
+it. Runtime prerequisites that preflight prepared earlier—such as packages,
+shared group membership or the idle CPU-shield socket—are intentionally
+preserved.
 
 > [!WARNING]
 > Do not hand-edit generated unit or ownership files as a normal way to change

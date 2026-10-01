@@ -102,6 +102,8 @@ guaranteed base-ROM test that preserves installed state, combine
 | `--cage` | Start the launcher inside a standalone Cage Wayland kiosk. |
 | `--weston` | Start the launcher inside a standalone Weston kiosk. |
 | `--preflight` | Prepare dependencies, assets and the selected host path, then stop before a compositor or QEMU. |
+| `--cpu-shield` | Require Encore's temporary systemd CPU shield, installing its managed broker once if necessary. |
+| `--no-cpu-shield` | Disable the CPU shield for this run. |
 | `--flipscreen` | Start with the vertically reversed display state. |
 | `--switch-keymap FILE` | Load or initialize the editable A–Z switch map. Default: `$XDG_CONFIG_HOME/encore/switch-keymap.yaml`, otherwise `~/.config/encore/switch-keymap.yaml`. |
 | `--qemu-framebuffer` | Use the experimental fast renderer inside QEMU's display path. |
@@ -115,6 +117,12 @@ mutually exclusive. Explicit framebuffer modes cannot be combined with
 the session is observable unless `--uart-quiet` is supplied.
 
 The complete keyboard mapping is in [Desktop controls](41-cli-keyboard-guide.md).
+
+The CPU shield is `auto` by default: the first interactive launch offers its
+one-time privileged setup, and later launches use it without elevating QEMU.
+Set `P2K_CPU_SHIELD=on|off|auto` for the environment equivalent. Its CPU
+selection, exact privilege boundary and limitations are documented in
+[CPU and timing](12-cpu-and-timers.md#temporary-host-cpu-shield).
 
 ## Audio and clock
 

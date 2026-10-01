@@ -24,9 +24,10 @@ The defaults deliberately do the useful thing:
 > [!NOTE]
 > The first launch is longer. It may ask permission to install runtime
 > packages, then offer to **build the matching custom QEMU** or **download the
-> latest verified binary**. Choose download for the fastest start. Missing ROM
-> and update trees are fetched automatically. Later launches go straight to
-> the game.
+> latest verified binary**. It also offers a one-time temporary CPU-shield
+> setup; accept it on a dedicated play host to reduce emulator starvation.
+> Choose download for the fastest start. Missing ROM and update trees are
+> fetched automatically. Later launches go straight to the game.
 
 > [!IMPORTANT]
 > Encore uses its own `pinball2000` QEMU machine. Stock distribution QEMU
@@ -72,7 +73,8 @@ before the emulator starts:
 
 On Debian-family systems, preflight offers to install missing packages through
 the available privilege helper. It can also acquire custom QEMU and the absent
-asset trees. QEMU itself still runs as the invoking unprivileged user.
+asset trees, and prepare the temporary CPU shield. QEMU itself still runs as
+the invoking unprivileged user.
 
 Preflight is useful for provisioning or diagnosis; it is not a mandatory first
 step. It stops before update resolution, savedata loading and guest boot, so a

@@ -182,17 +182,18 @@ reset_overlay() {
 
 copy_checkout() {
     local lifecycle_stubs=${1:-0}
-    local host_runner_sha host_runtime_sha guest_hashes
+    local host_runner_sha host_runtime_sha host_shield_sha guest_hashes
     host_runner_sha=$(sha256sum "$REPO_ROOT/scripts/run-qemu.sh" | awk '{print $1}')
     host_runtime_sha=$(sha256sum "$REPO_ROOT/scripts/internal/runtime-packages.sh" | awk '{print $1}')
+    host_shield_sha=$(sha256sum "$REPO_ROOT/scripts/internal/cpu-shield.py" | awk '{print $1}')
     tar -C "$REPO_ROOT" --exclude=.git --exclude=build --exclude=savedata -cf - . |
         ssh_guest "rm -rf /opt/Encore-PB2K && mkdir -p /opt/Encore-PB2K && tar -C /opt/Encore-PB2K -xf - && chown -R root:root /opt/Encore-PB2K"
     # `ln -sfn` does not replace an existing real directory: it creates the
     # link inside it. Remove either an old checkout or link explicitly so the
     # command advertised to the tester always reaches the checkout just copied.
     ssh_guest 'rm -rf /home/cabinet/Encore-PB2K && ln -s /opt/Encore-PB2K /home/cabinet/Encore-PB2K'
-    guest_hashes=$(ssh_guest 'sha256sum /opt/Encore-PB2K/scripts/run-qemu.sh /opt/Encore-PB2K/scripts/internal/runtime-packages.sh | awk '\''{print $1}'\''')
-    [[ "$guest_hashes" == "$host_runner_sha"$'\n'"$host_runtime_sha" ]] ||
+    guest_hashes=$(ssh_guest 'sha256sum /opt/Encore-PB2K/scripts/run-qemu.sh /opt/Encore-PB2K/scripts/internal/runtime-packages.sh /opt/Encore-PB2K/scripts/internal/cpu-shield.py | awk '\''{print $1}'\''')
+    [[ "$guest_hashes" == "$host_runner_sha"$'\n'"$host_runtime_sha"$'\n'"$host_shield_sha" ]] ||
         die "guest checkout differs from the current host worktree"
     rm -f "$CHECKOUT_PENDING"
     echo "Copied current checkout (runner ${host_runner_sha:0:12})."
@@ -201,13 +202,33 @@ copy_checkout() {
     # real DRM rendering. Never install these stubs in the interactive lab:
     # that mode exists specifically for visual validation of the real stack.
     ssh_guest 'cat > /opt/Encore-PB2K/qemu-system-i386 <<'"'"'EOF'"'"'
-#!/bin/sh
-case " $* " in
-  *" -M help "*) echo "pinball2000 Williams Pinball 2000"; exit 0 ;;
-  *" -audio help "*) echo "Available audio drivers: sdl"; exit 0 ;;
-  *" --version "*) echo "QEMU emulator version 10.0.8"; exit 0 ;;
-esac
-exec sleep 15
+#!/usr/bin/env python3
+import ctypes
+import os
+import sys
+import threading
+import time
+
+args = " " + " ".join(sys.argv[1:]) + " "
+if " -M help " in args:
+    print("pinball2000 Williams Pinball 2000")
+    raise SystemExit
+if " -audio help " in args:
+    print("Available audio drivers: sdl")
+    raise SystemExit
+if " --version " in args:
+    print("QEMU emulator version 10.0.8")
+    raise SystemExit
+
+libc = ctypes.CDLL(None)
+def worker(name):
+    libc.prctl(15, name.encode(), 0, 0, 0)
+    while True:
+        time.sleep(1)
+
+threading.Thread(target=worker, args=("CPU 0/TCG",), daemon=True).start()
+threading.Thread(target=worker, args=("dcs-pcm",), daemon=True).start()
+time.sleep(float(os.environ.get("ENCORE_LAB_QEMU_SECONDS", "15")))
 EOF
 chmod 0755 /opt/Encore-PB2K/qemu-system-i386'
     ssh_guest 'cat > /usr/local/bin/cage <<'"'"'EOF'"'"'
@@ -241,11 +262,12 @@ chmod 0755 /usr/local/bin/wpctl'
 }
 
 assert_stripped_guest() {
-    ssh_guest 'command -v run0 >/dev/null && ! command -v pkttyagent >/dev/null && ! command -v pkexec >/dev/null && ! command -v sudo >/dev/null && ! dpkg-query -W polkitd >/dev/null 2>&1'
+    ssh_guest 'command -v run0 >/dev/null && ! command -v pkttyagent >/dev/null && ! command -v pkexec >/dev/null && ! command -v sudo >/dev/null && ! dpkg -s polkitd >/dev/null 2>&1'
 }
 
 enable_nonroot_escalation() {
-    ssh_guest 'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends polkitd >/dev/null'
+    ssh_guest 'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends polkitd >/dev/null
+systemctl start dbus.socket polkit.service'
 }
 
 install_as_cabinet() {
@@ -266,10 +288,10 @@ expect {
 expect {
     -re {Cabinet session user[^:]*:} {
         if {$env(LAB_PRESET) eq "alternate"} {
-            set answers [list cabinet rfm emulated n n n display-manager y y y]
+            set answers [list cabinet rfm emulated n n n n display-manager y y y]
         } else {
             set root_answer [expr {$env(LAB_RUN_AS_ROOT) ? "y" : "n"}]
-            set answers [list cabinet auto auto y $root_answer y n n y]
+            set answers [list cabinet auto auto n y $root_answer y n n y]
         }
         foreach answer $answers {
             send -- "$answer\r"
@@ -465,6 +487,83 @@ test ! -e /var/lib/encore-pinball2000'
     echo "PASS: lock-only interrupted installation is recoverable"
 }
 
+test_cpu_shield() {
+    reset_overlay; start_overlay; assert_stripped_guest; copy_checkout 1
+    ssh_guest 'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 >/dev/null
+cd /opt/Encore-PB2K
+bash scripts/internal/runtime-packages.sh --runtime-root-phase \
+    /opt/Encore-PB2K "" cabinet /home/cabinet \
+    /opt/Encore-PB2K/qemu-system-i386 emulated "" 0 0 1
+systemctl is-active --quiet encore-cpu-shield.socket
+test "$(stat -c %U:%G:%a /run/encore-pinball2000/cpu-shield.sock)" = cabinet:cabinet:600
+test "$(cat /etc/encore-pinball2000/cpu-shield-user)" = "$(id -u cabinet):cabinet"
+test ! -e /run/encore-pinball2000/cpu-shield-state.json
+for unit in user.slice system.slice init.scope machine.slice; do
+    systemctl show "$unit" -p AllowedCPUs --value > "/tmp/encore-before-$unit"
+done'
+
+    ssh_guest 'nohup runuser -u cabinet -- env ENCORE_LAB_QEMU_SECONDS=6 \
+    /opt/Encore-PB2K/scripts/run-qemu.sh --headless --uart-quiet \
+    --game swe1 --update none --no-savedata --audio none \
+    --lpt-device emulated >/tmp/encore-shield-run.log 2>&1 </dev/null &'
+    ssh_guest 'for i in $(seq 1 100); do
+    test -s /run/encore-pinball2000/cpu-shield-state.json && break
+    sleep .1
+done
+test -s /run/encore-pinball2000/cpu-shield-state.json
+pid=$(python3 -c "import json; print(json.load(open('\''/run/encore-pinball2000/cpu-shield-state.json'\''))['\''target_pid'\''])")
+grep -q encore-cpu-shield /proc/$pid/cgroup
+for i in $(seq 1 50); do
+    names=$(cat /proc/$pid/task/*/comm 2>/dev/null || true)
+    printf "%s\n" "$names" | grep -qx "CPU 0/TCG" &&
+        printf "%s\n" "$names" | grep -qx dcs-pcm && break
+    sleep .1
+done
+test "$(awk '\''/^Cpus_allowed_list:/ {print $2}'\'' /proc/$pid/status)" = 1
+for expected in "CPU 0/TCG:1" "dcs-pcm:1"; do
+    name=${expected%:*}; cpu=${expected##*:}; found=0
+    for task in /proc/$pid/task/*; do
+        if test "$(cat "$task/comm")" = "$name"; then
+            test "$(awk '\''/^Cpus_allowed_list:/ {print $2}'\'' "$task/status")" = "$cpu"
+            found=1
+        fi
+    done
+    test "$found" = 1
+done
+test "$(systemctl show user.slice -p EffectiveCPUs --value)" = 0
+test "$(systemctl show system.slice -p EffectiveCPUs --value)" = 0'
+    ssh_guest 'for i in $(seq 1 120); do
+    test ! -e /run/encore-pinball2000/cpu-shield-state.json && break
+    sleep .1
+done
+test ! -e /run/encore-pinball2000/cpu-shield-state.json
+for unit in user.slice system.slice init.scope machine.slice; do
+    systemctl show "$unit" -p AllowedCPUs --value | diff - "/tmp/encore-before-$unit"
+done'
+
+    ssh_guest 'nohup runuser -u cabinet -- env ENCORE_LAB_QEMU_SECONDS=30 \
+    /opt/Encore-PB2K/scripts/run-qemu.sh --headless --uart-quiet \
+    --game swe1 --update none --no-savedata --audio none \
+    --lpt-device emulated >/tmp/encore-shield-crash.log 2>&1 </dev/null &
+for i in $(seq 1 100); do
+    test -s /run/encore-pinball2000/cpu-shield-state.json && break
+    sleep .1
+done
+pid=$(python3 -c "import json; print(json.load(open('\''/run/encore-pinball2000/cpu-shield-state.json'\''))['\''target_pid'\''])")
+kill -KILL "$pid"
+for i in $(seq 1 100); do
+    test ! -e /run/encore-pinball2000/cpu-shield-state.json && break
+    sleep .1
+done
+test ! -e /run/encore-pinball2000/cpu-shield-state.json
+for unit in user.slice system.slice init.scope machine.slice; do
+    systemctl show "$unit" -p AllowedCPUs --value | diff - "/tmp/encore-before-$unit"
+done
+systemctl is-active --quiet encore-cpu-shield.socket'
+    stop_vm
+    echo "PASS: temporary CPU shield placement, normal restoration and crash restoration"
+}
+
 manual_vm() {
     [[ -f "$OVERLAY" ]] || die "no overlay; run '$0 reset' first"
     start_overlay
@@ -520,6 +619,7 @@ case "${1:-}" in
     test-acquire) prereqs; need sshpass; need expect; test_acquisition "${2:-release}" ;;
     test-alternates) prereqs; need sshpass; need expect; test_alternate_choices ;;
     test-interrupted) prereqs; need sshpass; test_interrupted_install ;;
+    test-shield) prereqs; need sshpass; test_cpu_shield ;;
     manual) prereqs; need sshpass; manual_vm ;;
     release) prereqs; need sshpass; release_vm ;;
     all) prepare; need expect
@@ -535,6 +635,7 @@ case "${1:-}" in
          test_acquisition release
          test_acquisition build
          test_alternate_choices
-         test_interrupted_install ;;
-    *) echo "Usage: $0 {all|prepare|reset|boot|manual|release|shell|stop|test {cage|weston|direct-console} [user|root]|test-dm [user|root]|test-git|test-assets|test-release|test-acquire [release|build]|test-alternates|test-interrupted}" >&2; exit 2 ;;
+         test_interrupted_install
+         test_cpu_shield ;;
+    *) echo "Usage: $0 {all|prepare|reset|boot|manual|release|shell|stop|test {cage|weston|direct-console} [user|root]|test-dm [user|root]|test-git|test-assets|test-release|test-acquire [release|build]|test-alternates|test-interrupted|test-shield}" >&2; exit 2 ;;
 esac
