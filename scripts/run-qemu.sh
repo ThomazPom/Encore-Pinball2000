@@ -257,7 +257,7 @@ CORE LAUNCH
                             Default: auto.
   --roms <dir>              ROM directory. Default: <repo>/roms.
   --savedata <dir>          Persistent savedata dir (reads
-                            <dir>/<game>.{flash,nvram2,see}).
+                            <dir>/<game>.{flash,nvram2,see,rtc}).
                             Default: <repo>/savedata.
   --no-savedata             Run without persistent savedata (also exports
                             P2K_NO_SAVEDATA=1) and switches cwd to a fresh

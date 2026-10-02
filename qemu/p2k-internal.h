@@ -11,6 +11,7 @@
 #include "hw/boards.h"
 #include "hw/i386/x86.h"
 #include "hw/irq.h"
+#include "hw/rtc/mc146818rtc.h"
 #include "qom/object.h"
 
 #include "pinball2000.h"
@@ -90,6 +91,13 @@ void p2k_smc_auto_ip_discovered(const char *address);
 bool p2k_smc_slirp_active(void);
 void p2k_install_pci_stub(void);
 void p2k_install_plx_bars(Pinball2000MachineState *s);
+
+/* p2k-rtc.c: preserve the battery-backed MC146818 state across process
+ * restarts.  XINA stores an absolute base year in BAR2 and deliberately uses
+ * RTC register 9 as a small rollover count; recreating register 9 from the
+ * host year at every launch makes the two values get added twice. */
+void p2k_install_rtc_persistence(Pinball2000MachineState *s,
+                                 MC146818RtcState *rtc);
 
 /* p2k-gx.c: 16 MiB Cyrix MediaGX MMIO + framebuffer stub at 0x40000000. */
 void p2k_install_gx_stub(void);

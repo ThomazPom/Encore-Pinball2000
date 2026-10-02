@@ -219,6 +219,7 @@ static void pinball2000_init(MachineState *machine)
     if (!s->savedata_dir) {
         s->savedata_dir = g_strdup("savedata");
     }
+    p2k_prepare_savedata_directory(s);
 
     /* RAM: alias machine->ram (auto-allocated by mc->default_ram_id) at 0. */
     x86ms->below_4g_mem_size = machine->ram_size;
@@ -271,16 +272,16 @@ static void pinball2000_init(MachineState *machine)
 
     p2k_install_isa_stubs();
     /* CMOS/RTC: use upstream QEMU mc146818 (default) rather than our
-     * hand-rolled CMOS in p2k-isa-stubs.c. The hand-rolled version
-     * caused XINA v2.10/v2.0 to display years as shown = 1999 + 2*y
-     * (a doubling bug in XINA's date routine triggered by some
-     * subtle CMOS behavioural difference). base_year=1999 lines
-     * also uses upstream mc146818). Legacy hand-rolled CMOS remains
-     * available for A/B via P2K_USE_MC146818=0. */
+     * hand-rolled CMOS in p2k-isa-stubs.c. The hand-rolled version caused
+     * XINA v2.10/v2.0 to display years as shown = 1999 + 2*y. base_year=1999
+     * matches XINA's fresh-state convention; p2k-rtc.c then preserves its
+     * relative year counter across process restarts. Legacy hand-rolled CMOS
+     * remains available for A/B via P2K_USE_MC146818=0. */
     {
         const char *mc = getenv("P2K_USE_MC146818");
         if (!mc || mc[0] != '0') {
-            mc146818_rtc_init(isa_bus, 1999, NULL);
+            MC146818RtcState *rtc = mc146818_rtc_init(isa_bus, 1999, NULL);
+            p2k_install_rtc_persistence(s, rtc);
         }
     }
     /* COM1/UART can fire IRQ4 on TX-empty so the guest's con_putc
@@ -289,7 +290,6 @@ static void pinball2000_init(MachineState *machine)
     p2k_install_superio();
     p2k_install_cyrix_ccr();
     p2k_install_pci_stub();
-    p2k_prepare_savedata_directory(s);
     p2k_install_plx_bars(s);
     p2k_install_plx_regs(s);
     p2k_install_bar3_flash(s);

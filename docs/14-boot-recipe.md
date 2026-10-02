@@ -140,8 +140,9 @@ emits a warning; current game boot is expected to have the asset available.
 
 A system reset restages PRISM and CPU entry state, but it is not a factory
 reset. BAR2 NVRAM, BAR3 update flash and the PLX SEEPROM retain their device
-state according to the selected savedata policy. The read-only base ROM images
-remain unchanged.
+state according to the selected savedata policy. The RTC also retains XINA's
+relative year counter and accounts for off-time year boundaries. The read-only
+base ROM images remain unchanged.
 
 Likewise, the BT-131 eight-byte LAN identity at `0x000d0008` is a read-only
 MMIO overlay installed during machine construction, not a per-reset write into

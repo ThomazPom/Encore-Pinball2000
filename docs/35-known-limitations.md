@@ -87,10 +87,10 @@ in [Testing and validation](26-testing-validation-matrix.md).
 
 ## Persistent state is single-instance and clean-exit oriented
 
-BAR2 NVRAM, BAR3 update flash and PLX SEEPROM are independent files. Their
-writers create a sibling temporary file and rename it over the destination,
-which protects the previous image from an ordinary partial write. There is no
-cross-process profile lock.
+BAR2 NVRAM, BAR3 update flash, PLX SEEPROM and RTC state are independent
+files. Their writers create a sibling temporary file and rename it over the
+destination, which protects the previous image from an ordinary partial write.
+There is no cross-process profile lock.
 
 Two emulator processes using the same game and savedata directory can race on
 the same device files and temporary names. The result is unsupported: one
@@ -107,7 +107,7 @@ file as strictly as the 128-byte SEEPROM reader. BAR2 leaves the unread range
 at its initial value; BAR3 leaves it erased. Treat a truncated `.nvram2` or
 `.flash` as corrupt rather than as a supported partial image.
 
-Use one process per profile, back up all three files together and quit with F1
+Use one process per profile, back up all four files together and quit with F1
 or the window close action. Full semantics are in
 [Persistent cabinet state](09-savedata.md).
 

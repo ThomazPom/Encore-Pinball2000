@@ -1,7 +1,7 @@
 # 09 — Persistent cabinet state
 
 Encore keeps mutable cabinet state outside the ROM and update trees. Each game
-owns three opaque device images under one savedata directory.
+owns four opaque device images under one savedata directory.
 
 ## Files and ownership
 
@@ -10,9 +10,11 @@ owns three opaque device images under one savedata directory.
 | `<game>.nvram2` | 196,608 bytes | 192 KiB battery-backed BAR2 SRAM | audits, high scores, adjustments and resource state |
 | `<game>.flash` | 4,194,304 bytes | 4 MiB BAR3 update flash | installed update plus later guest flash writes |
 | `<game>.see` | 128 bytes | PLX 93C46 SEEPROM | board configuration words |
+| `<game>.rtc` | 80 bytes | MC146818 RTC plus save timestamp | clock registers and off-time year rollover accounting |
 
-`<game>` is `swe1` or `rfm`. These are raw hardware images, not interchangeable
-configuration files. Do not edit, concatenate or truncate them.
+`<game>` is `swe1` or `rfm`. These are opaque device-state images, not
+interchangeable configuration files. Do not edit, concatenate or truncate
+them.
 
 The default directory is `savedata/` at the repository root. Select a separate
 one with:
@@ -46,12 +48,13 @@ below.
 `--fresh` and `--no-savedata` are mutually exclusive.
 
 > [!WARNING]
-> `--fresh` is a reset, not a temporary profile. It ignores all three existing
+> `--fresh` is a reset, not a temporary profile. It ignores all four existing
 > seeds, then replaces them with newly initialized images when Encore exits.
 > Back up the directory first if its audits, scores or adjustments matter.
 
 In this mode BAR2 starts empty, BAR3 starts erased before the selected update
-is installed, and SEEPROM starts from Encore's built-in board defaults.
+is installed, SEEPROM starts from Encore's built-in board defaults, and RTC
+starts from the current host date and time.
 
 `--no-savedata` exports `P2K_NO_SAVEDATA=1`, uses an empty throwaway working
 directory as a second isolation layer, discards every device change and removes
@@ -90,15 +93,15 @@ scripts/run-qemu.sh --game swe1 --update none --no-savedata
 
 > [!CAUTION]
 > Combining `--fresh` with `--update none` replaces the existing update flash
-> as well as NVRAM and SEEPROM. Prefer `--no-savedata` when the goal is only to
-> compare base ROM behavior.
+> as well as NVRAM, SEEPROM and RTC state. Prefer `--no-savedata` when the goal
+> is only to compare base ROM behavior.
 
 See [ROM and update loading](15-rom-loading.md) for bundle selection and flash
 layout.
 
 ## Back up, restore or separate profiles
 
-Exit Encore before copying state. A complete backup keeps the three devices
+Exit Encore before copying state. A complete backup keeps the four devices
 together:
 
 ```sh
@@ -131,6 +134,9 @@ Device images are flushed by QEMU's exit notifiers:
 - BAR3 flash is skipped when it was neither changed nor replaced;
 - SEEPROM is skipped unless a guest write changed it, except that `--fresh`
   deliberately persists its built-in defaults.
+- RTC is written as 64 register bytes plus the host save time. At the next
+  launch Encore refreshes wall-clock fields and adds only calendar-year
+  boundaries crossed while powered off to XINA's RTC year counter.
 
 Every save is written to a sibling `.tmp` file and renamed over the destination
 only after the expected byte count was written. This protects the previous

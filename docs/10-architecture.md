@@ -71,6 +71,7 @@ hooks.
 | ROMs and reset | `p2k-rom.c`, `p2k-plx9054.c`, `p2k-boot.c` | deinterleave chips, map immutable windows, enter the PRISM protected-mode entry point |
 | fixed platform surfaces | `p2k-pci.c`, `p2k-plx-regs.c`, `p2k-superio.c`, `p2k-cyrix-ccr.c`, `p2k-isa-stubs.c` | topology and I/O behavior consumed during XINA discovery |
 | persistent PRISM storage | `p2k-bars.c`, `p2k-bar3-flash.c`, `p2k-plx-regs.c` | BAR2 SRAM, BAR3 update flash and 93C46 SEEPROM |
+| real-time clock | `p2k-rtc.c`, upstream `mc146818rtc` | wall clock plus XINA-compatible relative-year persistence |
 | DCS sound | `p2k-dcs-core.c`, `p2k-dcs.c`, `p2k-dcs-uart.c`, `p2k-dcs-audio.c`, `p2k-dcs-adsp.c`, `p2k-adsp2105-core.c` | one protocol core, two guest frontends and selectable content engines feeding QEMU audio |
 | driver board and input | `p2k-lpt-board.c`, `p2k-switch-keymap.c` | emulated, physical or disconnected LPT plus cabinet/XINA keyboard routing |
 | MediaGX graphics | `p2k-mediagx-gate.c`, `p2k-gx.c`, `p2k-gp-blt.c`, `p2k-vsync.c`, `p2k-display.c`, `p2k-video-capture.c` | machine-gated instructions, graphics registers, blits, scan timing, host presentation and recording |
@@ -138,7 +139,7 @@ Several architectural rules prevent subtly divergent emulations:
   same input router and LPT state;
 - LPT switch inputs and lamp/coil outputs remain separate state even though
   they share the driver-board protocol;
-- savedata paths are owned by the three emulated persistent devices, with
+- savedata paths are owned by the four emulated persistent devices, with
   atomic full-image writes at exit;
 - timing accounting consumes upstream PIT/PIC/TCG events; its default deadline
   rendezvous only changes when the vCPU re-polls, not the IRQ source or guest
@@ -173,9 +174,9 @@ pulses the frame flag at roughly 57 Hz.
 
 ## Persistent and volatile mutation
 
-Normal guest writes may change BAR2 NVRAM, BAR3 update flash and the PLX
-SEEPROM; those three device images persist on clean exit. ROM chip inputs and
-mapped ROM windows are not modified. See
+Normal guest writes may change BAR2 NVRAM, BAR3 update flash, the PLX SEEPROM
+and the MC146818 RTC; those four device images persist on clean exit. ROM chip
+inputs and mapped ROM windows are not modified. See
 [Persistent cabinet state](09-savedata.md).
 
 Compatibility mutations remain narrow and explicit:
