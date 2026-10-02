@@ -4,7 +4,7 @@
  * Region layout:
  *
  *   0x40000000 .. 0x407FFFFF  registers (GP, DC, BC) — 8 MiB plain RAM
- *                              [+0x20000] = BC_DRAM_TOP, must be 0x007FFFFF
+ *                              [+0x08000] = BC_DRAM_TOP, must be 0x007FFFFF
  *                              so PRISM's BIOS path sees 8 MiB installed.
  *   0x40800000 .. 0x40BFFFFF  framebuffer — alias into system RAM 0x800000.
  *                              Every write into the GX FB window is mirrored
@@ -37,7 +37,7 @@
 #define GX_REGS2_OFF         0x00C00000u
 #define GX_REGS2_SIZE        0x00400000u    /* 4 MiB regs */
 
-#define GX_BC_DRAM_TOP_OFF   0x20000u
+#define GX_BC_DRAM_TOP_OFF   0x08000u
 #define GX_BC_DRAM_TOP_VAL   0x007FFFFFu    /* 8 MiB - 1 */
 
 #define GX_FB_RAM_MIRROR     0x00800000u    /* system-RAM offset of FB */
@@ -58,7 +58,7 @@ void p2k_install_gx_stub(void)
     MemoryRegion *fb_alias = g_new(MemoryRegion, 1);
     void         *host;
 
-    /* Regs1 (8 MiB) — covers GP @ +0x8100, DC @ +0x8300, BC @ +0x20000. */
+    /* Regs1 (8 MiB) — covers BC @ +0x8000, GP @ +0x8100, DC @ +0x8300. */
     memory_region_init_ram(regs1, NULL, "p2k.gx.regs1",
                            GX_REGS1_SIZE, &error_abort);
     memory_region_add_subregion(sys, GX_BASE + GX_REGS1_OFF, regs1);

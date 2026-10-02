@@ -88,7 +88,7 @@ The guest-visible GX block begins at `0x40000000`:
 
 | Range | Backing and behavior |
 |---:|---|
-| `0x40000000–0x407fffff` | 8 MiB RAM-like register backing; `BC_DRAM_TOP` at `+0x20000` starts as `0x007fffff` |
+| `0x40000000–0x407fffff` | 8 MiB RAM-like register backing; the BIU block starts at `+0x8000` and `BC_DRAM_TOP` starts as `0x007fffff` |
 | `0x40008100–0x4000820f` | priority-1 semantic Graphics Pipeline overlay |
 | `0x40800000–0x40bfffff` | 4 MiB alias of system RAM `0x00800000–0x00bfffff` |
 | `0x40c00000–0x40ffffff` | 4 MiB upper RAM-like register backing |

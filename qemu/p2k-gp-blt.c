@@ -22,8 +22,8 @@
  * Implementation: install a small MMIO overlay at GX_BASE+0x8100 of size
  * 0x110 with priority 1 over the regs1 RAM region (priority 0). The
  * overlay covers ONLY 0x40008100..0x4000820F, which is the GP block.
- * It deliberately does NOT cover the DC block at 0x40008300+ nor the
- * BC at 0x40020000 — those keep their plain-RAM behaviour (DC_FB_ST_OFFSET
+ * It deliberately does NOT cover the BIU block at 0x40008000 nor the DC
+ * block at 0x40008300+ — those keep their plain-RAM behaviour (DC_FB_ST_OFFSET
  * is read by p2k-display.c via address_space_ldl_le, BC_DRAM_TOP is
  * pre-seeded by p2k-gx.c). Reads of unknown GP slots and unhandled
  * writes are mirrored back to a small shadow so RMW patterns behave.
