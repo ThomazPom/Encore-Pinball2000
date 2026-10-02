@@ -29,8 +29,27 @@
 #define P2K_BAR3_SIZE        0x00400000u   /* 4 MiB */
 #define P2K_BAR3_MASK        (P2K_BAR3_SIZE - 1u)
 #define P2K_BAR3_ERASE_BLOCK  0x00020000u   /* 128 KiB: CFI 0x0200 * 256 */
+#define P2K_FLASH_DEVICE_WIDTH 2u           /* CFI interface 0x0002: x16 */
+#define P2K_FLASH_WRITE_BUFFER_SIZE 32u     /* CFI 0x2A: 2^5 bytes */
 #define P2K_FLASH_STATUS_READY 0x80u
 #define P2K_FLASH_STATUS_PROG_ERR 0x10u
+#define P2K_FLASH_STATUS_CMD_SEQ_ERR 0x30u  /* SR4 + SR5 */
+
+typedef enum P2KFlashBufferPhase {
+    P2K_FLASH_BUFFER_IDLE,
+    P2K_FLASH_BUFFER_COUNT,
+    P2K_FLASH_BUFFER_DATA,
+    P2K_FLASH_BUFFER_CONFIRM,
+} P2KFlashBufferPhase;
+
+typedef struct P2KFlashWriteBuffer {
+    P2KFlashBufferPhase phase;
+    uint32_t block_base;
+    unsigned expected;
+    unsigned loaded;
+    uint32_t offset[P2K_FLASH_WRITE_BUFFER_SIZE];
+    uint8_t data[P2K_FLASH_WRITE_BUFFER_SIZE];
+} P2KFlashWriteBuffer;
 
 static uint8_t *s_flash;            /* 4 MiB array */
 static uint8_t *s_flash_loaded;     /* startup image for no-op save guard */
@@ -39,6 +58,7 @@ static bool     s_cmd_act  = false; /* false = read array */
 static uint8_t  s_status   = P2K_FLASH_STATUS_READY;  /* bit7 = ready */
 static char     s_save_path[1024];  /* where to write back at exit */
 static bool     s_dirty    = false; /* any guest write since boot? */
+static P2KFlashWriteBuffer s_write_buffer;
 
 static uint8_t flash_read_byte(uint32_t off)
 {
@@ -95,8 +115,17 @@ static uint64_t p2k_bar3_read(void *opaque, hwaddr off, unsigned size)
     return v;
 }
 
+static void flash_write_buffer_reset(void)
+{
+    s_write_buffer.phase = P2K_FLASH_BUFFER_IDLE;
+    s_write_buffer.block_base = 0;
+    s_write_buffer.expected = 0;
+    s_write_buffer.loaded = 0;
+}
+
 static void flash_enter_status(uint8_t status)
 {
+    flash_write_buffer_reset();
     s_status  = status;
     s_cmd     = 0x70;
     s_cmd_act = true;
@@ -119,7 +148,7 @@ static void flash_erase_block(uint32_t foff)
     }
 }
 
-static void flash_program(uint32_t foff, uint64_t val, unsigned size)
+static bool flash_program_data(uint32_t foff, uint64_t val, unsigned size)
 {
     bool program_error = false;
 
@@ -137,6 +166,74 @@ static void flash_program(uint32_t foff, uint64_t val, unsigned size)
         }
     }
 
+    return program_error;
+}
+
+static void flash_program(uint32_t foff, uint64_t val, unsigned size)
+{
+    bool program_error = flash_program_data(foff, val, size);
+    flash_enter_status(P2K_FLASH_STATUS_READY |
+                       (program_error ? P2K_FLASH_STATUS_PROG_ERR : 0));
+}
+
+static void flash_write_buffer_fail(void)
+{
+    flash_enter_status(P2K_FLASH_STATUS_READY |
+                       P2K_FLASH_STATUS_CMD_SEQ_ERR);
+}
+
+static void flash_write_buffer_count(uint32_t foff, uint64_t val,
+                                     unsigned size)
+{
+    unsigned words = (val & 0xFF) + 1;
+    unsigned bytes = words * P2K_FLASH_DEVICE_WIDTH;
+
+    if (size != P2K_FLASH_DEVICE_WIDTH ||
+        bytes > P2K_FLASH_WRITE_BUFFER_SIZE) {
+        flash_write_buffer_fail();
+        return;
+    }
+
+    s_write_buffer.block_base =
+        foff & ~(P2K_BAR3_ERASE_BLOCK - 1u);
+    s_write_buffer.expected = bytes;
+    s_write_buffer.loaded = 0;
+    s_write_buffer.phase = P2K_FLASH_BUFFER_DATA;
+}
+
+static void flash_write_buffer_data(uint32_t foff, uint64_t val,
+                                    unsigned size)
+{
+    uint32_t last = foff + size - 1;
+
+    if (size == 0 || s_write_buffer.loaded + size > s_write_buffer.expected ||
+        last < foff || last >= P2K_BAR3_SIZE ||
+        (foff & ~(P2K_BAR3_ERASE_BLOCK - 1u)) !=
+            s_write_buffer.block_base ||
+        (last & ~(P2K_BAR3_ERASE_BLOCK - 1u)) !=
+            s_write_buffer.block_base) {
+        flash_write_buffer_fail();
+        return;
+    }
+
+    for (unsigned i = 0; i < size; i++) {
+        unsigned slot = s_write_buffer.loaded++;
+        s_write_buffer.offset[slot] = foff + i;
+        s_write_buffer.data[slot] = (val >> (i * 8)) & 0xFF;
+    }
+    if (s_write_buffer.loaded == s_write_buffer.expected) {
+        s_write_buffer.phase = P2K_FLASH_BUFFER_CONFIRM;
+    }
+}
+
+static void flash_write_buffer_commit(void)
+{
+    bool program_error = false;
+
+    for (unsigned i = 0; i < s_write_buffer.loaded; i++) {
+        program_error |= flash_program_data(s_write_buffer.offset[i],
+                                            s_write_buffer.data[i], 1);
+    }
     flash_enter_status(P2K_FLASH_STATUS_READY |
                        (program_error ? P2K_FLASH_STATUS_PROG_ERR : 0));
 }
@@ -146,6 +243,39 @@ static void p2k_bar3_write(void *opaque, hwaddr off, uint64_t val,
 {
     uint8_t cmd = val & 0xFF;
     uint32_t foff = off & P2K_BAR3_MASK;
+
+    if (s_write_buffer.phase == P2K_FLASH_BUFFER_COUNT) {
+        /* A retrying guest may issue E8 again while polling availability. */
+        if (cmd == 0xE8) {
+            return;
+        }
+        if (cmd == 0xFF) {
+            flash_write_buffer_reset();
+            s_cmd = 0xFF;
+            s_cmd_act = false;
+            return;
+        }
+        flash_write_buffer_count(foff, val, size);
+        return;
+    }
+    if (s_write_buffer.phase == P2K_FLASH_BUFFER_DATA) {
+        flash_write_buffer_data(foff, val, size);
+        return;
+    }
+    if (s_write_buffer.phase == P2K_FLASH_BUFFER_CONFIRM) {
+        if (cmd == 0xD0 &&
+            (foff & ~(P2K_BAR3_ERASE_BLOCK - 1u)) ==
+                s_write_buffer.block_base) {
+            flash_write_buffer_commit();
+        } else if (cmd == 0xFF) {
+            flash_write_buffer_reset();
+            s_cmd = 0xFF;
+            s_cmd_act = false;
+        } else {
+            flash_write_buffer_fail();
+        }
+        return;
+    }
 
     if (s_cmd_act && (s_cmd == 0x40 || s_cmd == 0x10)) {
         flash_program(foff, val, size);
@@ -161,6 +291,12 @@ static void p2k_bar3_write(void *opaque, hwaddr off, uint64_t val,
     case 0x40: case 0x10:
         s_cmd = cmd; s_cmd_act = true; return;
     case 0x60: s_cmd = 0x60; s_cmd_act = true;  return;
+    case 0xE8:
+        s_status = P2K_FLASH_STATUS_READY;
+        s_cmd = 0xE8;
+        s_cmd_act = true;
+        s_write_buffer.phase = P2K_FLASH_BUFFER_COUNT;
+        return;
     case 0x01: case 0x2F:
         flash_enter_status(P2K_FLASH_STATUS_READY);
         return;
@@ -481,6 +617,12 @@ static Notifier p2k_bar3_exit_notifier = {
 
 void p2k_install_bar3_flash(Pinball2000MachineState *s)
 {
+    s_cmd = 0xFF;
+    s_cmd_act = false;
+    s_status = P2K_FLASH_STATUS_READY;
+    s_dirty = false;
+    flash_write_buffer_reset();
+
     s_flash = g_malloc(P2K_BAR3_SIZE);
     s_flash_loaded = g_malloc(P2K_BAR3_SIZE);
     memset(s_flash, 0xFF, P2K_BAR3_SIZE);

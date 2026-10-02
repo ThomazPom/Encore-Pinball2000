@@ -1,0 +1,11 @@
+# Destructive native Intel-flash integration test. Always launch this with
+# --no-savedata so the test pattern cannot replace a persistent update image.
+# The hidden-shell token is game ID + '*' + the eight-byte build time stored
+# at boot-data offset 0x0B in the explicitly selected SWE1 2.10 bundle.
+@wait 30
+help 50069*07:16:34 &
+@wait 2
+@wait-for 60 pci flash query => dev_blk_size 131072
+@command 1800 pci flash test
+@assert completed with 0 error(s)
+@key f1

@@ -48,6 +48,7 @@ action. They do not search the complete serial transcript.
 | `@assert-not-regex REGEX` | require no such match |
 | `@wait-for SECONDS COMMAND => TEXT` | poll a command until literal text appears |
 | `@wait-for-regex SECONDS COMMAND => REGEX` | poll until a multiline regex matches |
+| `@command SECONDS COMMAND` | run one long command with an explicit timeout instead of the default 120 seconds |
 | `@screenshot [LABEL]` | trigger the emulator screenshot key and retain the new image |
 | `@record-audio SECONDS [LABEL]` | retain just that interval as a WAV file |
 | `@echo TEXT` | print a labelled progress message |
@@ -67,8 +68,9 @@ Prefer a condition when the guest exposes one:
 ```
 
 Polling uses a 0.5-second interval and preserves its final response for a
-following assertion. Each console command has a 120-second response timeout;
-the directive's own timeout bounds how long the condition may remain false.
+following assertion. Each ordinary console command has a 120-second response
+timeout; use `@command` for a known long-running diagnostic. A polling
+directive's own timeout bounds how long its condition may remain false.
 
 Use `@wait` only for a real dwell time, a deliberately paced input or a state
 that cannot be queried.

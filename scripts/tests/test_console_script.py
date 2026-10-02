@@ -55,12 +55,17 @@ class ConsoleScriptParserTests(unittest.TestCase):
             @assert-not-regex absent$
             @wait-for 2 ps => currently
             @wait-for-regex 2 ps => currently\\s+[0-9]+
+            @command 300 pci flash test
             @screenshot proof
             @record-audio 1 proof
             @echo still running
             """
         )
-        self.assertEqual(len(actions), 12)
+        self.assertEqual(len(actions), 13)
+
+    def test_command_requires_timeout_and_command(self):
+        with self.assertRaisesRegex(ValueError, "SECONDS COMMAND"):
+            self.parse("@command 300\n")
 
     def test_invalid_switch_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "NUMBER_11_TO_88"):

@@ -72,6 +72,15 @@ def parse_wait_for(path: Path, action: Action) -> tuple[float, str, str, bool]:
     return timeout, command, expected, regex
 
 
+def parse_command(path: Path, action: Action) -> tuple[float, str]:
+    directive, rest = split_directive(action)
+    parts = rest.split(None, 1)
+    if len(parts) != 2:
+        raise fail(path, action, f"{directive} expects SECONDS COMMAND")
+    timeout = positive_float(path, action, parts[0], "command timeout")
+    return timeout, parts[1]
+
+
 def validate_action(path: Path, action: Action) -> None:
     if not action.text.startswith("@"):
         return
@@ -102,6 +111,8 @@ def validate_action(path: Path, action: Action) -> None:
                 raise fail(path, action, f"invalid regular expression: {error}") from error
     elif directive in {"@wait-for", "@wait-for-regex"}:
         parse_wait_for(path, action)
+    elif directive == "@command":
+        parse_command(path, action)
     elif directive == "@screenshot":
         if rest and (Path(rest).name != rest or not re.fullmatch(r"[A-Za-z0-9_.-]+", rest)):
             raise fail(path, action, "@screenshot label must be a simple filename stem")
@@ -222,11 +233,12 @@ def console_command(
     console: socket.socket,
     command: str,
     show_response: bool = True,
+    timeout: float = DEFAULT_COMMAND_TIMEOUT,
 ) -> bytes:
     if show_response:
         print(f"[console-script] XINU> {command}", flush=True)
     console.sendall(command.encode() + b"\r")
-    response = wait_for(console, b"%", DEFAULT_COMMAND_TIMEOUT)
+    response = wait_for(console, b"%", timeout)
     if show_response:
         sys.stdout.buffer.write(response)
         sys.stdout.flush()
@@ -343,6 +355,9 @@ def run_actions(
         directive, rest = split_directive(action)
         if not action.text.startswith("@"):
             last_response = console_command(console, action.text)
+        elif directive == "@command":
+            timeout, command = parse_command(path, action)
+            last_response = console_command(console, command, timeout=timeout)
         elif directive == "@wait":
             delay = nonnegative_float(path, action, rest, "wait")
             print(f"[console-script] wait {delay:g}s", flush=True)
