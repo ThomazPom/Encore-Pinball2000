@@ -22,12 +22,13 @@ For what Encore has actually exercised, see
 
 ## Evidence labels
 
-The tables below use four deliberately narrow labels:
+The tables below use deliberately narrow labels:
 
 | Label | Meaning |
 |---|---|
 | **Published notes** | a release author or Williams/Bally support page describes the changes |
-| **Secondary transcript** | a preserved community post reproduces revision text whose original publisher page is no longer in the current catalogue |
+| **Archived release history** | a release-history file is preserved by an independent archive, while the original publisher page is no longer available |
+| **Secondary transcript** | a forum or collector post reproduces revision text, but the original release file or publisher page has not been recovered |
 | **Preserved payload** | the corresponding extracted ROM components exist locally |
 | **Installer preserved** | a source `.exe` exists under `updates/exe-sources/` |
 | **No recovered notes** | bytes exist, but this checkout has no attributable change list |
@@ -38,23 +39,52 @@ than a historical changelog.
 
 ## Sources of record
 
-The maintained source links checked on 2026-09-26 are:
+The source links and archives checked through 2026-10-02 are:
 
 - [Williams/Bally RFM revision history](https://www.planetarypinball.com/mm5/Williams/tech/pin2000/software/rfm_history.html)
   for RFM 1.00 through 1.50;
+- [IPDB-preserved RFM revision history](https://www.ipdb.org/files/4446/Bally_1999_Revenge_From_Mars_ROM_Revision_History.txt)
+  for RFM 1.00 through 1.60; this is the complete “Revenge From Mars -
+  Revision History” text, including the dated 2003 addition absent from the
+  current Planetary Pinball page;
+- [collector-preserved extended RFM revision text](https://pinside.com/pinball/forum/topic/rfm-190-software-do-you-have-the-exe-update-or-can-extract-from-pub#post-9286049)
+  for RFM 0.50 through 0.90 and the post-Williams 1.70--1.91 line; this remains
+  secondary evidence because the linked German source does not expose the
+  original release-note files;
 - [Williams/Bally SWE1 revision history](https://www.planetarypinball.com/mm5/Williams/tech/pin2000/software/sw_history.html)
   for SWE1 1.20 through 1.40;
-- [post-Williams 2003 revision-text transcript](https://pinside.com/pinball/forum/topic/swe1-worth-updating-from-13-to-15)
-  for SWE1 1.50 and RFM 1.60, treated here as a secondary source;
+- [IPDB-preserved SWE1 revision history](https://www.ipdb.org/files/4458/Williams_1999_Star_Wars_Episode_I_ROM_Revision_History.txt)
+  for SWE1 1.20 through 1.50; its complete “Star Wars Episode One - Revision
+  History” text adds the dated 2003 release above the 1.20--1.40 sequence;
 - [myPinballs RFM update log](https://mypinballs.com/software/rfm/code_updates.jsp)
   for the unofficial 2.x line;
 - [myPinballs SWE1 combined update notes](https://www.mypinballs.com/files/pin2k/starwars_updates_log.pdf)
   for SWE1 2.00 through 2.10.
 
 > [!NOTE]
-> The local outer-directory date records artifact provenance. Published notes
-> remain authoritative for the described change set even when their displayed
-> release date and the preserved artifact date differ.
+> The local outer-directory date records artifact provenance. A release date
+> printed in an attributable history answers a different question, so the two
+> dates are retained even when they differ.
+
+### Archived-source integrity anchors
+
+The links above establish provenance, but this page does not depend on them
+remaining online: the useful change assertions are retained below in
+paraphrased form. The first two hashes identify the Williams-history text after
+normalizing CRLF line endings to LF; the other two identify the author-source
+snapshots used for the community summaries:
+
+| Game | Archived filename | Covered releases | Normalized SHA-256 |
+|---|---|---|---|
+| RFM | `Bally_1999_Revenge_From_Mars_ROM_Revision_History.txt` | 1.00--1.60 | `179d4dd53589878985debccfd0c37e40109bc74670c39697a2792f9ae306c6f9` |
+| SWE1 | `Williams_1999_Star_Wars_Episode_I_ROM_Revision_History.txt` | 1.20--1.50 | `f1c011ddac97da29b21c5ea8e7d0eb99c4aed67de644f46945c16fe03b51e9bf` |
+| RFM | `code_updates.jsp`, captured 2026-10-02 | 2.00--2.60 | `2ee567612cdca8902c65885daa656673c54035481c0b876cc9772c75310a72b3` |
+| SWE1 | `starwars_updates_log.pdf`, captured 2026-10-02 | 2.00--2.10 | `71bc740163d9b063009784183cc868c9a8f2e8c08b5a02c5f1a598c3b4626099` |
+
+The Pinside page is a live thread whose full-page hash changes with replies and
+site markup, so a page hash would be misleading. Its dated, version-specific
+facts are instead embedded below, together with the post anchor and explicit
+secondary-evidence label.
 
 ## Preserved payload inventory
 
@@ -81,8 +111,8 @@ document.
 |---:|---:|---|---|---|
 | 1.30 | 1999-09-21 | core + PUB boot + sound flash | yes | Williams notes |
 | 1.40 | 2000-07-25 | core + PUB boot + sound flash | yes | Williams notes |
-| 1.50 | 2000-07-25 | core + PUB boot + sound flash | no | secondary transcript |
-| 1.50 | 2003-09-22 | core + PUB boot + sound flash | yes | secondary transcript |
+| 1.50 | 2000-07-25 | core + PUB boot + sound flash | no | archived release history |
+| 1.50 | 2003-09-22 | core + PUB boot + sound flash | yes | archived release history |
 | 1.66 | 2022-04-03 | core only | no | no recovered notes |
 | 2.00 | 2025-04-11 | core + PUB boot + sound flash | yes | myPinballs notes |
 | 2.01 | 2025-05-01 | core + PUB boot + sound flash | yes | myPinballs notes |
@@ -94,67 +124,447 @@ provenance; do not describe them as different builds without new byte evidence.
 
 ### Revenge From Mars (`50070`)
 
-| Version | Outer artifact date | Components | Source EXE | Notes status |
-|---:|---:|---|---|---|
-| 1.20 | 1999-06-09 | core + PUB boot + sound flash | yes | Williams notes |
-| 1.30 | 1999-11-24 | core + PUB boot + sound flash | yes | Williams notes |
-| 1.40 | 2000-01-31 | core + PUB boot + sound flash | yes | Williams notes |
-| 1.50 | 2000-07-25 | core + PUB boot + sound flash | yes | Williams notes |
-| 1.60 | 2003-09-22 | core + PUB boot + sound flash | yes | secondary transcript |
-| 1.80 | 2006-04-23 | core + PUB boot + sound flash | no | no recovered notes |
-| 1.90 | 2018-03-29 | core + PUB boot | no | no recovered notes |
-| 1.91 | 2018-05-30 | core + PUB boot + sound flash | no | no recovered notes |
-| 1.95 | 2018-03-29 | core + PUB boot | no | no recovered notes |
-| 2.00 | 2018-12-03 | core + PUB boot + sound flash | yes | myPinballs notes |
-| 2.10 | 2019-04-11 | core + PUB boot + sound flash | yes | myPinballs notes |
-| 2.20 | 2019-10-22 | core + PUB boot + sound flash | yes | myPinballs notes |
-| 2.21 | 2020-04-05 | core + PUB boot + sound flash | yes | myPinballs notes |
-| 2.22 | 2020-06-30 | core + PUB boot + sound flash | yes | myPinballs notes |
-| 2.23 | 2021-04-08 | core + PUB boot + sound flash | yes | myPinballs notes |
-| 2.24 | 2022-01-29 | core + PUB boot + sound flash | yes | myPinballs notes |
-| 2.50 | 2022-12-16 | core + PUB boot + sound flash | yes | myPinballs notes |
-| 2.60 | 2024-08-08 | core + PUB boot + sound flash | yes | myPinballs notes |
+| Version | Outer artifact date | Components                    | Source EXE | Notes status         |
+| ------: | ------------------: | ----------------------------- | ---------- | -------------------- |
+|    1.20 |          1999-06-09 | core + PUB boot + sound flash | yes        | Williams notes       |
+|    1.30 |          1999-11-24 | core + PUB boot + sound flash | yes        | Williams notes       |
+|    1.40 |          2000-01-31 | core + PUB boot + sound flash | yes        | Williams notes       |
+|    1.50 |          2000-07-25 | core + PUB boot + sound flash | yes        | Williams notes       |
+|    1.60 |          2003-09-22 | core + PUB boot + sound flash | yes        | archived release history |
+|    1.80 |          2006-04-23 | core + PUB boot + sound flash | no         | secondary transcript + binary evidence |
+|    1.90 |          2018-03-29 | core + PUB boot               | no         | no recovered notes   |
+|    1.91 |          2018-05-30 | core + PUB boot + sound flash | no         | secondary transcript |
+|    1.95 |          2018-03-29 | core + PUB boot               | no         | no recovered notes   |
+|    2.00 |          2018-12-03 | core + PUB boot + sound flash | yes        | myPinballs notes     |
+|    2.10 |          2019-04-11 | core + PUB boot + sound flash | yes        | myPinballs notes     |
+|    2.20 |          2019-10-22 | core + PUB boot + sound flash | yes        | myPinballs notes     |
+|    2.21 |          2020-04-05 | core + PUB boot + sound flash | yes        | myPinballs notes     |
+|    2.22 |          2020-06-30 | core + PUB boot + sound flash | yes        | myPinballs notes     |
+|    2.23 |          2021-04-08 | core + PUB boot + sound flash | yes        | myPinballs notes     |
+|    2.24 |          2022-01-29 | core + PUB boot + sound flash | yes        | myPinballs notes     |
+|    2.50 |          2022-12-16 | core + PUB boot + sound flash | yes        | myPinballs notes     |
+|    2.60 |          2024-08-08 | core + PUB boot + sound flash | yes        | myPinballs notes     |
 
 This is 26 extracted update paths in total: eight SWE1 and eighteen RFM. Twenty
 have a matching source EXE in this checkout. A local ZIP or extracted directory
 can preserve useful bytes without proving the history of the missing original
 installer.
 
-## Williams/Bally releases
+## Attested builds outside the extracted inventory
 
-The summaries in this section are paraphrases of the published revision
-histories, not claims inferred from Encore behavior.
-
-### Revenge From Mars
-
-| Version | Published change summary |
-|---:|---|
-| 1.00 | completed Attack Mars; added three question-mark modes, Hypno-Beam multiball, match/initials presentation, pricing and replay bookkeeping, switch compensation and several service diagnostics; included stability work against lockups and resets |
-| 1.10 | changed flipper timing to reduce heat, extended bookkeeping, revised regional pricing/reporting/replay behavior, and improved multiball lamps, Autopsy ejection and switch compensation |
-| 1.20 | restored UK pricing support, corrected Canadian bonus pricing, expanded system information and timestamps, added saucer-light and attract options, and fixed message/pricing display cases |
-| 1.30 | added Martian Champion, jet-bumper, ball-save and victory-lap rules; expanded family mode and ball-loop adjustments; fixed a multiball-start failure |
-| 1.40 | fixed a Martian Bowling reset and Martian Happy Hour animation issue; made the Bonus Wave total page unconditional |
-| 1.50 | updated the operating system and improved coin, bill and credit handling |
-
-RFM 1.00 and 1.10 are described by the published history but are not preserved
-as extracted update bundles here. The community transcript attributes RFM 1.60
-to the final XINA 1.19 and a factory-reset fix for the country-setting mismatch
-seen when the power-driver board is disconnected. Because the current
-Williams/Bally catalogue stops at 1.50, that 1.60 statement remains labelled a
-secondary transcript rather than silently promoted to primary evidence.
+The extracted inventory is intentionally not the complete historical version
+list. The following builds are supported by a filename, a contemporary report
+or an archived revision relationship, but are not runnable extracted updates
+in this checkout. They remain recovery leads rather than inferred changelogs.
 
 ### Star Wars Episode I
 
-| Version | Published change summary |
-|---:|---|
-| 1.20 | added translations, optional ball save, the GUNGAN/JARJAR bumper-spinner rule, status-report tables and attract instructions; corrected scoring, switch tolerance, replay, keyboard display and checksum cases |
-| 1.30 | fixed power cycling when Japanese DIP settings are selected |
-| 1.40 | updated the operating system and credit handling, and closed a tournament ramp-shot exploit |
-| 1.50 | the secondary revision-text transcript attributes the final XINA 1.19 and the same disconnected-power-driver country-setting/factory-reset fix as RFM 1.60 |
+| Version | Line | Surviving evidence |
+|---:|---|---|
+| 0.43 | Williams/Bally development | reported on a developer PRISM card; no distributed container or changelog recovered |
+| 1.00 | Williams/Bally | historical updater name `pin2000_50069_0100_07171999_B_10000000.exe` |
+| 1.10 | Williams/Bally | historical updater name `pin2000_50069_0110_09141999_B_10000000.exe` |
+| 1.20 | Williams/Bally | historical updater name and archived release notes, but no local extracted payload |
+| 1.60 | tournament/community | historical updater name `pin2000_50069_0160_02012013_B_10000000.exe`; no release notes recovered |
+| 1.65 | tournament/community | historical updater name `pin2000_50069_0165_02212018_B_10000000.exe`; no release notes recovered |
+| 2.00 (2016) | Question Mark experiment | historical updater name `pin2000_50069_0200_02262016_B_10000000.exe`; distinct from myPinballs 2.00 and discussed below |
+
+### Revenge From Mars
+
+| Version | Line | Surviving evidence |
+|---:|---|---|
+| 0.50 | Williams/Bally pre-release | secondary revision transcript dates the Waukegan startup release to 1999-03-07 |
+| 0.60 | Williams/Bally sample release | secondary revision transcript dates the sample release to 1999-03-16 |
+| 0.70 | Williams/Bally pre-release | historical updater name dated 1999-03-29 |
+| 0.71 | Williams/Bally pre-release | historical updater name dated 1999-03-29 |
+| 0.80 | Williams/Bally revision-2 prototype | preserved `rfm_080.zip`, but not an extracted update path |
+| 0.84 | Williams/Bally pre-release | historical updater name dated 1999-04-06 |
+| 0.85 | Williams/Bally pre-release | historical updater name dated 1999-04-05 |
+| 0.86 | Williams/Bally pre-release | historical updater name dated 1999-04-06 |
+| 0.87 | Williams/Bally pre-release | historical updater name dated 1999-04-06 |
+| 0.90 | Williams/Bally pre-release | named by the Williams 1.00 history as its predecessor; a secondary revision transcript survives, but no standalone updater is established |
+| 1.21 | tournament/community | historical updater name `pin2000_50070_0121_05202016_B_10000000.exe`; no release notes recovered |
+| 1.70 | tournament/community | historical updater name `pin2000_50070_0170_02062006_B_10000000.exe`; a secondary revision transcript dates a JTS-enabled 1.70 to 2006-04-16 |
+| 1.90 (2017) | tournament/community PUB build | historical updater name dated 2017-11-22; a secondary transcript attributes specific changes to a 2017-11-21 build, but the thread later warns that its exact differences remain uncertain |
+| 2.11 | myPinballs intermediate | build dated 2019-05-10; updater and complete notes have not been recovered |
+
+The dates attached to these names overlap and do not always sort numerically.
+They establish identities, not a trustworthy publication order. The full
+container-level provenance and the preserved Hemtoni bundles are recorded in
+[Community updates](47-community-updates.md).
+
+## Williams/Bally and post-Williams release histories
+
+This section is a self-contained, item-by-item paraphrase of the published and
+archived revision histories, not a set of claims inferred from Encore behavior.
+It deliberately preserves the complete factual changelog while avoiding a
+verbatim mirror of the source files.
+
+### Revenge From Mars
+
+#### Base ROM 0.1 — directly observed
+
+The ordinary unsuffixed RFM base chips predate the extracted update inventory.
+A disposable launch with no update or savedata, captured on the headless guest
+console:
+
+```bash
+scripts/run-qemu.sh \
+  --game rfm \
+  --update none \
+  --no-savedata \
+  --headless \
+  --audio none
+```
+
+reported the following through the guest console:
+
+```text
+system_version: 0.1
+game_version:   0.1
+Game(Bally - Revenge From Mars - 50070 - 0.1)
+Type(PRODUCTION_BUILD, FREE_PLAY_ONLY)
+```
+
+This establishes that the preserved base build exposes free play only; it does
+not establish exactly which later intermediate build first implemented credit
+play. The separate RFM revision-2 base pair selected by `--update r2` identifies
+as 0.80 and must not be conflated with this 0.1 production base.
+
+> [!IMPORTANT]
+> The 0.50--0.90 entries below come from a collector-preserved revision
+> transcript, not from the IPDB/Williams file used for 1.00--1.60. They retain
+> useful pre-release knowledge but carry the weaker **secondary transcript**
+> label. In particular, its single `0.7` entry does not establish whether the
+> surviving 0.70 and 0.71 filenames contained identical changes.
+
+#### Version 0.50 — 1999-03-07 (secondary transcript)
+
+- Identified as the RFM release used for the Waukegan startup.
+
+#### Version 0.60 — 1999-03-16 (secondary transcript)
+
+- Identified as the RFM release prepared for sample games.
+- Corrected Shoot Again presentation that requested music without telling the
+  updater that the effect had played with music.
+- Improved error handling at scene completion and changed the audio track used
+  for the scene-selection group-change sound.
+- Reduced the frequency of the Joe Dillon tribute in attract mode.
+- Corrected missing audits for Capture Multiball super jackpot, Question Mark
+  starts, and Attack Mars starts and wins.
+- Moved the Martian Aerobics ship into ball range at the end, suppressed its
+  zero-value bonus page and reduced the ship-hit score.
+- Fixed unsafe Abduction score-box access from award effects.
+- Corrected Mother Ship totals and a ship that could remain at the top after a
+  Shoot Again effect.
+- Added an Attack Mars enable lamp effect and made its flasher pulse during the
+  mode.
+- Added device `force_game_over` hooks so a test-system game termination could
+  leave mechanisms in a stable state.
+- Reorganized several audit and adjustment priorities.
+
+#### Version 0.70 — 1999-03-26 (secondary transcript labels it `0.7`)
+
+- Prevented top-lane hits from starting timers while a recent jet event was
+  active; shortened the retry period for multiball-device pre-kick sounds; and
+  removed an erroneous scene-completion nonfatal.
+- Reworked Attack Mars display depth, fixed a Final Frontier case that could
+  end the mode when balls should have been returned, added its total page, and
+  changed crosshair arrows and steering back to the ship's perspective.
+- Added a Mars Kneads Women difficulty control for the number of static TVs.
+- Made initials entry start on `A` instead of a space and removed the unwanted
+  leading ` AA` result.
+- Forced Alien Abduction items into a stable, tournament-friendly order,
+  paused its countdown when its background effect was not running, and added
+  redundant detection for its scoring shots.
+- Fixed score-box hiding, added custom font-pointer support to text boxes,
+  enabled movie blowoff in Mars Kneads Women and reorganized total-page display
+  and lamp effects around `scene_completed_finish`.
+- Removed shooter-lane lights from the upper-playfield lamp effect so the
+  ball-shooter effect could appear again.
+- Added an intentionally empty extra-ball-award effect hook because the
+  awarding sites already handled those effects themselves.
+- Made Mother Ship easier so players could reach its later, higher-scoring
+  waves, and increased Drive In Demolition scoring.
+- Added score boxes, switch compensation, health bars and preset-driven
+  difficulty adjustments to Tower Struggle and Big-O-Beam.
+- Removed `Start Attack Mars` from Stroke of Luck because the center shot starts
+  it, and added `Start Capture Multiball` under ready/last-ball conditions.
+- Added a still-incomplete valid-playfield check intended to suppress scene
+  start/end effects when appropriate.
+- Turned the coin-door illumination on continuously at power-up and cleaned up
+  status-report diagnostics.
+- Updated circle-shot and lock lamps immediately when Stroke of Luck granted
+  their awards.
+- Reworked Martian Attack suspension and restored its timer to five seconds
+  after a kill when less time remained.
+- Held Capture Multiball in its grace period when play dropped to one ball but
+  the moving ship remained available for a super jackpot.
+
+#### Version 0.80 — 1999-03-30 (secondary transcript)
+
+- Added a spinning-coin impact sound to Secret Weapon and fixed a missing final
+  move animation after some ending shots.
+- Fixed a Happy Hour pre-emption case that could raise an oversized bitmap
+  decompression nonfatal.
+- Began a rewrite of Attack Mars stage two: the mechanism was present, but its
+  new scoring was not yet complete.
+- Added and corrected Attack Mars sounds, including the large-explosion drone
+  overload sound.
+- Removed unused Fireworks variables.
+- Roughed in Skill Shot and Super Skill Shot, but deliberately left them out of
+  that release because they had not been tested sufficiently.
+
+#### Version 0.90 — 1999-04-07 (secondary transcript)
+
+- Reworked lock-diverter jam-switch logic.
+- Moved Shoot Again lamp blinking into a background autofire lamp effect.
+- Added sound when circle shots lit Extra Ball.
+- Cleaned up Martian Attack and made ten small-Martian kills during Martian
+  Multiball award one saucer light.
+- Added game-specific default replay values to the factory-overwrite preset.
+- Added a Hypno-Beam Multiball difficulty preset.
+- Moved the Skill Shot award display so it no longer overlapped the bonus box.
+- Added Hypno-Beam Multiball, guaranteed as the third—or first subsequent—
+  Stroke of Luck award.
+
+#### Version 1.00 — 1999-05-05
+
+- Low-level system work targeted lockups and resets; the release history
+  characterizes the resulting build as exceptionally stable.
+- Stroke of Luck could now award Hypno-Beam multiball.
+- The fifth, question-mark round gained Martian Bowling, Martian Autopsy and
+  Martian Tank.
+- Attack Mars was completed.
+- Flipper presses could cancel selected effects.
+- Numerous difficulty adjustments were implemented.
+- After completing a round, the introduction to a later round was suppressed
+  while the ball remained live instead of being captured by the playfield post.
+- Match gained sound and graphics, while Enter Initials gained sound.
+- Broken-switch compensation for the flippers and Action button was improved.
+- Attract and pricing messages became available and editable from test mode by
+  either the cabinet test controls or a keyboard.
+- `Score Award 2` gained a credit-award setting, and replay-score management
+  gained automatic percentage adjustment.
+- Service mode gained an `Empty Balls` test.
+- Failure to detect the power-driver board now produced a diagnostic pointing
+  to a disconnected board or fuse F108.
+- Separate audit totals were maintained for credits awarded by high score,
+  score award, match and special.
+- The shell gained real-time `Switch Trace` output.
+- The solenoid test was corrected to operate the flipper coils.
+- The test system gained keyboard control, including its help map and flip
+  function.
+- Test reports began listing fuse values.
+- The hourly-earnings chart was extended to the preceding seven days.
+
+#### Version 1.10 — 1999-05-24
+
+- Flipper-circuit timing was changed to reduce operating temperature.
+- Hourly bookkeeping was extended to seven days.
+- Pricing behavior changed for Norway, the Netherlands and Holland.
+- Printed adjustments gained replay information and DIP-switch settings.
+- Replay boost became available when score awards were configured to grant
+  credits.
+- Coin-door-open messages began showing the game name and version.
+- Multiball start and multiball awards gained lamp effects.
+- Martian Autopsy began ejecting items as a fan, starting from the center shot.
+- Switch compensation was improved in several areas.
+
+> [!NOTE]
+> A long-running [RFM technical archive](https://www.pinball2000.de/rfm_techinfo.htm)
+> reports that 1.00 overpowered flipper coils in 50 Hz countries and recommends
+> 1.10 or later. The 1.10 history independently records cooler flipper timing;
+> the agreement is strong contextual evidence, but the Williams note itself
+> does not explicitly say that the timing change fixed the 50 Hz field failure.
+
+#### Version 1.20 — 1999-06-09
+
+- The United Kingdom country option, absent from 1.10, was restored.
+- Canadian-dollar bonus pricing was corrected.
+- The System Information page was reorganized and gained the game and serial
+  numbers.
+- Tilt and replay records gained timestamps.
+- New adjustments controlled the number of defeated Martians required to award
+  saucer lights.
+- Attract-mode sounds and their adjustment were added.
+- Attract and game-over screens began honoring the `Insert Coins` adjustment,
+  allowing that phrase to stay hidden at swipe-card locations.
+- A custom-message boundary bug that displayed garbage when a line used its
+  final available character was fixed.
+- Attract pricing changed to two lines per page, skipped empty lines
+  intelligently and centered a page containing only one line.
+
+#### Version 1.30 — 1999-11-24
+
+- Martian Champion was added.
+- A jet-bumper rule and a start-of-ball ball saver were added.
+- Winning Attack Mars could start a victory-lap rule modeled on Attack From
+  Mars.
+- The ball could be allowed to loop when a scene had no action for that shot or
+  when `LOCK` was lit. New adjustments controlled this behavior and defaulted
+  it to off.
+- A separate adjustment allowed loop shots during Bonus Wave sudden death.
+- `Bonus Wave Ending` gained a new `Ramp Only` choice alongside the original
+  `Ramps+Loops` behavior.
+- Family Mode logic was expanded.
+- Debouncing was added to the service-credit switch.
+- A Mother Ship startup fault that could leave multiball balls unejected was
+  fixed.
+
+#### Version 1.40 — 2000-01-31
+
+- A Martian Bowling fault that could reset the game was fixed.
+- The Bonus Wave total page was made unconditional, including when the Jet Exit
+  Post was disabled.
+- Missing Martian Happy Hour animations were corrected.
+
+#### Version 1.50 — 2000-07-31
+
+- The operating system was updated to the then-current release.
+- Coin, bill and credit handling was enhanced.
+
+#### Version 1.60 — 2003-09-22
+
+- Final XINA 1.19 fixed a possible factory reset after booting without the
+  power-driver board: the last country DIP value stored in CMOS could otherwise
+  disagree with the country value used for an open PDB cable.
+
+RFM 1.00 and 1.10 are described by the published history but are not preserved
+as extracted update bundles here. RFM 1.60 is not merely supported by the
+previously cited forum transcript: the IPDB file preserves the complete RFM
+revision history, retains the Williams copyright notice and adds a dated 1.60
+entry above the same 1.00--1.50 history independently preserved elsewhere.
+That makes it **archived release-history evidence**, not a current first-party
+web publication and not a community changelog.
+
+#### Version 1.70 — 2006-04-16 (secondary transcript)
+
+- Packaged XINA 1.20.
+- Added JTS tournament-system support.
+
+The transcript date differs from the date encoded in the separately attested
+`0170_02062006` updater name. Both values are retained; neither is silently
+rewritten to make the chronology look cleaner.
+
+#### Version 1.80 — 2006-04-23 (secondary transcript plus binary evidence)
+
+- Packaged XINA 1.21.
+- Required 8 MiB of system memory.
+
+The memory statement is independently supported by the preserved binary's
+`sizmem()` implementation and by the tournament-system technical setup. The
+exact code evidence and the later return to 4 MiB are documented in
+[Why RFM 1.80 needs 8 MiB](#why-rfm-180-needs-8-mib).
+
+#### Version 1.90 — transcript date 2017-11-21 (identity disputed)
+
+The secondary transcript attributes the following changes to a 1.90 build
+using XINA 1.22:
+
+- removed the 8 MiB requirement;
+- retained English and German while removing Spanish and French to save ROM
+  space;
+- restored the Joe Dillon tributes;
+- added spider and ant as the fifth and sixth Big-O-Beam animals;
+- enabled Ball Saver and Loop Dead Scene by default; and
+- replaced the blinking attract lamp show with revised choreography.
+
+It also speculates about other unused animation and sound content; that phrase
+is preserved here as an unresolved suggestion, not promoted into a confirmed
+change.
+
+> [!WARNING]
+> The thread later distinguishes the November 2017 tournament-server PUB build
+> from Hemtoni's locally preserved March 2018 `1.90`. It explicitly says their
+> precise differences remain unclear. Therefore the list above belongs only to
+> the **secondary transcript's dated 2017 identity** and must not be presented
+> as the changelog of Encore's 2018 Hemtoni payload.
+
+The PUB owner also reproduces separate XINA notes in which 1.22b fixes a TCP
+port bug and translations and returns to the factory 4 MiB memory model. The
+local Hemtoni 1.90 binary likewise reports 4 MiB, corroborating the memory
+outcome only—not identity with the unavailable 2017 image.
+
+#### Version 1.91 — transcript date 2018-05-31 (secondary transcript)
+
+- Identifies XINA 1.22.
+- Adds sounds, notably new attract-mode speech announcing the 3D presentation.
+
+The preserved Hemtoni bundle carries a 2018-05-30 outer date. This one-day
+difference is recorded rather than used to infer a second build. No recovered
+revision text describes 1.95.
+
+### Star Wars Episode I
+
+#### Base ROM 0.40 — directly observed
+
+The ordinary SWE1 base-chip set is preserved locally; 0.40 is not merely a
+production-cabinet report. A fresh launch with update discovery disabled and
+no savedata:
+
+```bash
+scripts/run-qemu.sh \
+  --game swe1 \
+  --update none \
+  --no-savedata \
+  --headless \
+  --audio none
+```
+
+loaded `swe1_u100` through `u107` plus `u109`/`u110`, left the update flash
+erased, and reported through the guest console:
+
+```text
+system_version: 1.12
+game_version:   0.40
+Game(Williams - Episode I - 50069 - 0.40)
+Type(PRODUCTION_BUILD, ALLOW_SCORE_CREDIT)
+```
+
+This directly establishes a preserved production base with credit support. It
+does not recover a change list for 0.40 or establish the contents of the
+separately reported 0.43 developer image.
+
+#### Version 1.20 — 1999-09-16
+
+- Translations were added.
+- An optional ball saver was introduced, disabled by default.
+- The bumpers and spinner gained the G-U-N-G-A-N/J-A-R-J-A-R rule.
+- Locked balls began ejecting immediately when a game ended.
+- The status report gained high-score-to-date tables.
+- Attract mode gained instructions.
+- During initials entry, the Action buttons could move one line up or down.
+- Various scoring, lamp and display-choreography issues were adjusted.
+- Ramp/spinner combinations became tolerant of ramp or switch errors.
+- A replay-boost bug was fixed.
+- The display shown when a PC keyboard was attached was corrected.
+- An adjustment was added to let slam tilt reset the game.
+- An operating-system checksum-calculation bug affecting some ROMs was fixed.
+
+#### Version 1.30 — 1999-09-21
+
+- Power cycling caused by Japanese DIP-switch settings was fixed. The archived
+  note says this update was unnecessary for a machine already on 1.20 unless it
+  used those Japanese settings.
+
+#### Version 1.40 — 2000-07-31
+
+- The operating system was updated to the then-current release.
+- Coin, bill and credit handling was enhanced.
+- Tournament mode was fixed to prevent exploitation of ramp shots.
+
+#### Version 1.50 — 2003-09-22
+
+- Final XINA 1.19 fixed a possible factory reset after booting without the
+  power-driver board: the last country DIP value stored in CMOS could otherwise
+  disagree with the country value used for an open PDB cable.
 
 SWE1 1.20 is described by the source history but is not preserved as an
-extracted bundle here. No recovered note supports a separate change summary
-for 1.66.
+extracted bundle here. As with RFM 1.60, the IPDB document promotes SWE1 1.50
+from a forum-only transcript to **archived release-history evidence**; it does
+not turn the archive into a current first-party publisher page. No recovered
+note supports a separate change summary for 1.66.
 
 ### Question Mark and community test scenes
 
@@ -283,17 +693,102 @@ release for every physical playfield configuration.
 
 ### Revenge From Mars 2.x
 
-| Version | Published change themes |
-|---:|---|
-| 2.00 | introduced Quick-Shot, expanded circle-shot and champion awards, added attract effects, allowed scenes from the centre saucer, and revised ball-save/autolaunch behavior |
-| 2.10 | expanded Quick-Shot and Capture Multiball, added add-a-ball paths, repaired Super Skill Shot, added shaker and real-knocker controls, and revised several mode awards |
-| 2.20 | added Midnight Madness and party/flipper modes, expanded shaker and lamp effects, and added LED-oriented lamp-test options |
-| 2.21 | added two saucer-related high-score records, corrected a shaker case, and added optional credit clearing at boot |
-| 2.22 (internal 2.30) | added Power Drain, generalized multiball logic for larger troughs, corrected scene/hurry-up interactions, and expanded updater baud support |
-| 2.23 (internal 2.40) | added Score War and new Stroke of Luck awards, repaired Payback Time and popper interactions, and added player-score reduction support |
-| 2.24 (internal 2.42) | added scene backgrounds and bonus-wave shaker effects; its XINA update raised the future game-update size ceiling to 8 MiB |
-| 2.50 | added Double Scoring, improved family-mode filtering and added shaker-power adjustment |
-| 2.60 | added physical-lock and three-ball-lock behavior plus more shaker effects and mode content |
+#### 2.00 — 2018-12-03
+
+- Introduced the progressive Quick-Shot hurry-up with graphics and speech.
+- Rebalanced Secret Weapon's speech and progression, added an optional round
+  announcement and made the Martian regenerate after inactivity.
+- Expanded Circle Shot thresholds with Martian bombs, ball-save restarts and
+  Quick-Shot awards; added missile and Hypno-Beam champion records.
+- Added attract lamp shows, champion pages and more flipper-button speech.
+- Allowed scenes to start from the center saucer, corrected autolaunch timing
+  and expanded Stroke of Luck awards.
+- Optimized service graphics and flash use, and updated the packaged system to
+  XINA 1.30.
+
+#### 2.10 — 2019-04-11
+
+- Refined Quick-Shot timing, display behavior, speech, lamps and shaker
+  feedback.
+- Expanded Capture Multiball and added add-a-ball paths through locks, bottom
+  lanes and Stroke of Luck; revised initial ball counts and Bonus Wave sudden
+  death.
+- Improved missile-circle progression, repaired Super Skill Shot and corrected
+  several lamp, speech and champion cases.
+- Added configurable shaker and physical-knocker support with feedback across
+  the major modes.
+- Added an initial Payback Time implementation, revised several mode awards and
+  updated the packaged system to XINA 1.31.
+
+#### 2.11 — 2019-05-10
+
+This intermediate build is historically attested, but neither its updater nor
+a complete original change list has been recovered. Its version number alone
+is not used to infer behavior.
+
+#### 2.20 — 2019-10-22
+
+- Added an attract clock/date display and Midnight Madness.
+- Added party-mode infrastructure, including the drunk-flipper Happy Hour
+  option.
+- Expanded lamp and shaker effects and lowered the default Attack Mars
+  champion score to 200 million.
+- Added LED-oriented lamp-test controls and updated the packaged system to XINA
+  1.32.
+
+#### 2.21 — 2020-04-05
+
+- Added attract high-score pages and per-player tracking for saucer lights
+  collected and saucers destroyed.
+- Fixed missing shaker feedback for some destroyed ships.
+- Added optional credit clearing at boot, new color definitions and packaged
+  XINA 1.33.
+
+#### 2.22 / internal 2.30 — 2020-06-30
+
+- Added Power Drain, which temporarily attacks the flippers during Martian
+  Attack Multiball.
+- Generalized Midnight Madness and Capture Multiball add-a-ball logic for
+  different trough capacities.
+- Fixed scene ball save, hurry-up cleanup/presentation and restoration of Happy
+  Hour flippers around higher-priority modes.
+- Recognized a six-ball trough, restored the original 1.50 sound file, added
+  updater baud rates, freed flash space and packaged XINA 1.34.
+
+#### 2.23 / internal 2.40 — 2021-04-08
+
+- Added Score War, in which Stroke of Luck can reduce opponents' scores during
+  multiplayer games.
+- Expanded Stroke of Luck with random points, player-score changes, Martian
+  bombs, bonus multiplier and improved Collect Bonus presentation.
+- Fixed Happy Hour restoration, queued Power Drain, Stroke of Luck/Payback Time
+  ball conflicts, Payback Time shot/lamp state and duplicate mode starts.
+- Made Mothership adapt to trough capacity, added extensive speech and packaged
+  XINA 1.35 score-reduction support.
+
+#### 2.24 / internal 2.42 — 2022-01-29
+
+- Added new presentation for ball save, Martian Attack, multiball and extra
+  ball, plus Bonus Wave shaker feedback.
+- Packaged XINA 1.36, raising the maximum future game-update size from 4 to
+  8 MiB.
+
+#### 2.50 — 2022-12-16
+
+- Added Double Scoring as a Stroke of Luck award.
+- Let upgraded troughs use smart bombs to add three balls to Capture Multiball.
+- Tightened Family Mode speech filtering and added adjustable shaker intensity.
+
+#### 2.60 — 2024-08-08
+
+- Added system, multiball and right-lock support for the physical three-ball
+  lock hardware.
+- Expanded Mothership targets, added an adult Mothership option and added
+  shaker feedback to Mothership, Autopsy, Tank, Bowling and Invaders.
+- Equalized the four Mystery Mode probabilities and added diagnostic output for
+  the Bowling fault.
+- Added tournament-score attract content, revised tournament display flow and
+  changed the default shaker power to 100.
 
 > [!WARNING]
 > The author states that RFM 2.60 and later require the full four-opto hardware
@@ -303,11 +798,54 @@ release for every physical playfield configuration.
 
 ### Star Wars Episode I 2.x
 
-| Version | Published change themes |
-|---:|---|
-| 2.00 | added random awards, Double Scoring, shaker support, test scenes, Quick Multiball and Droid Hurry Up; revised Jar Jar options, C-3PO awards, autolaunch and multiball behavior |
-| 2.01 | repaired attract persistence and Jar Jar graphics, expanded attract speech/effects and corrected the imported hurry-up scoring scale |
-| 2.10 | repaired Multiball Champion and ball release, added a C-3PO champion, Midnight Madness, extensive shaker effects, new narration and revised autolaunch behavior |
+#### 2.00 — 2025-04-11
+
+- Expanded Random Awards with ball-save restart, opponent-score reduction,
+  two million points, Double Scoring and Collect Bonus; introduced the Double
+  Scoring and shaker modules.
+- Added four sample scenes, Sub Escape start lamps and settings to reduce Jar
+  Jar content or exclude Jar Jar Juggle.
+- Expanded Podrace to eight checkpoints by default, made the C-3PO overlay
+  translucent, reduced the build requirement from four to two, reordered its
+  awards and added three million points plus a Multiball Champion.
+- Added Watto captive-ball rules and Quick Multiball, which can stack with
+  other modes and scores jackpots from captive-ball hits.
+- Added R2-D2 to the sneaky lane and introduced Droid Hurry Up, qualified there
+  and collected at the left drop target.
+- Reworked autolaunch and ball-save control, temporarily made regular
+  multiball four balls, and changed Jedi Multiball to 20 seconds of unlimited
+  autolaunch followed by sudden death.
+- Prevented the left saucer from locking a ball during Quick Multiball and
+  aligned ball-save/autofire lamp behavior with RFM.
+- Packaged XINA 1.38 changes for per-game physical-knocker driver IDs, delayed
+  coin-door messages and SWE1 ball-save behavior without an autolauncher.
+
+#### 2.01 — 2025-05-01
+
+- Added the Searchlight attract effect and returned the other lamp effects to
+  the attract loop more frequently.
+- Fixed Jedi tables being reset at every startup.
+- Updated the version/contact presentation, removed the Williams web address
+  and added the myPinballs site and logo.
+- Greatly expanded attract flipper-button speech and restored missing Jar Jar
+  Juggle junk graphics.
+- Added shaker feedback to Multiball, Battle Droids and R2-D2.
+- Reduced Droid Hurry Up scoring by a factor of ten to match SWE1 rather than
+  RFM's score scale.
+
+#### 2.10 — 2025-10-31
+
+- Fixed Multiball Champion and improved ball release at multiball start.
+- Added a C-3PO Build Champion to the left loop and attract mode, plus basic
+  C-3PO shaker feedback.
+- Added shaker effects to Battle Droids, Federation Fighter, R2-D2, Queen's
+  Fashion, Pod Race, Hangar Escape, Jar Jar Juggle, Sub Escape, Probe Droid,
+  Skill Shot and the right target-bank magnet.
+- Ported Midnight Madness from RFM and added its attract clock.
+- Added the Bounty Hunter narrator and jibes to gameplay, outlanes, ball save
+  and attract mode.
+- Updated multi-device autolaunch handling and expanded attract-logo color
+  transitions from three to sixteen.
 
 The combined source note says the 2.00 line includes XINA 1.38 changes. Treat
 that as part of the packaged community release, not as an Encore operating
@@ -318,13 +856,16 @@ system version.
 The repository or surviving histories attest more versions than this checkout
 can pair with primary change notes. The most useful open gaps are:
 
-- SWE1 1.00, 1.10 and community/tournament builds 1.60 and 1.65;
+- SWE1 0.40 change notes, the separate 0.43 developer image, 1.00, 1.10 and
+  community/tournament builds 1.60 and 1.65;
 - SWE1 1.66, whose four-component payload is preserved without notes;
 - the 2016 community “2.00” Question Mark test build, whose exact updater and
   original accompanying note are not preserved here;
-- RFM community/tournament builds 1.21, 1.70 and the remaining 1.80 gameplay
-  changes beyond the now-established memory/tournament facts;
-- preserved RFM 1.90, 1.91 and 1.95 payloads; and
+- RFM 1.21, primary identity-specific notes for the 1.70/1.80 tournament line,
+  and any 1.80 gameplay changes beyond the established JTS/memory facts;
+- definitive changelogs tying the distinct 2017 tournament 1.90 and 2018
+  Hemtoni 1.90 bytes to their changes, plus complete notes for preserved 1.91
+  and 1.95; and
 - RFM 2.11, reported between 2.10 and 2.20 but absent from both the current
   local payload set and the author's continuous changelog.
 

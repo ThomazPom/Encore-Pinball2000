@@ -213,7 +213,7 @@ The current default matrix contains four game paths and all six DCS engines:
 
 | Game path | Revision selection |
 |---|---|
-| SWE1 base | `--update none --no-savedata` |
+| SWE1 base 0.40 | `--update none --no-savedata` |
 | SWE1 latest | latest installed SWE1 bundle |
 | RFM base | `--update none --no-savedata` |
 | RFM latest | latest installed RFM bundle |

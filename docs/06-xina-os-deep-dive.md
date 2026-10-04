@@ -18,11 +18,12 @@ it, start with [Architecture](10-architecture.md). For the timer contract, see
 The preserved game images identify the platform literally as **“XINA - Xina
 Is Not Apple”**, identify the underlying kernel as **XINU V7**, and credit Tom
 Uban with the concept, architecture and XINA system design, alongside Graham
-West's graphics/XINA design credit. The
-[Gerwiki Pinball 2000 XINA page](https://www.gerwiki.de/xina/p2k) republishes an
-older PinRepair field reference that describes XINA as an application/platform
-layer built over PC-XINU, the small operating system associated with Douglas
-Comer.
+West's graphics/XINA design credit. An older PinRepair field reference,
+republished by the [GerWiki Pinball 2000 XINA
+page](https://www.gerwiki.de/xina/p2k), describes XINA as an
+application/platform layer built over PC-XINU, the small operating system
+associated with Douglas Comer. It also preserves command research credited in
+part to Jim Hicks.
 
 The historical account says PC-XINU was attractive as a compact multithreaded
 embedded base that Williams could adapt for real-time work, with licensing
@@ -31,11 +32,14 @@ would then have required. That explains the architecture; it does not mean the
 preserved game contains an off-the-shelf, unmodified PC-XINU release. XINA and
 the linked game add the device, resource, service and game layers visible here.
 
-Treat that page as a historical secondary source. It is valuable for command
-names and original-cabinet context, but it combines RFM XINA 1.18, physical-PC
-procedures and later community networking notes. Claims in this guide are
-therefore retained only when the selected guest, symbols or current Encore
-implementation corroborate them.
+This chapter incorporates the durable technical content of that field
+reference so the external page is provenance, not a required part of Encore's
+manual. The raw page consulted on 2026-10-04 had SHA-256
+`42940493dd16a4d5cf469ebee3c3258730d74e935e953f4c83a51f77aaeda370`.
+It remains a historical secondary source: it combines RFM XINA 1.18,
+physical-PC procedures and later community networking notes. Its claims below
+are labelled or corrected whenever the selected guest, symbols, decompilation
+or current Encore implementation provide stronger evidence.
 
 ```text
 RFM / SWE1 game rules and game-specific shell commands
@@ -292,22 +296,133 @@ This proves both why the historical list is useful and why it must not be
 presented as a universal XINA API. Even a newer XINA can expose fewer commands
 when the linked game does not register RFM's objects.
 
-### Command map
+### XINA 1.18 field-command atlas
 
-| Area | Primarily observational examples | Commands with obvious state/effect risk |
+This is the local, normalized replacement for the historical online command
+reference. It covers the complete 99-command RFM 1.50 inventory above without
+pretending that the set or syntax is stable across games. The descriptions
+combine four evidence levels:
+
+- **field** — the historical XINA 1.18 reference and original-cabinet usage;
+- **live** — `help`, usage or output observed in a preserved update;
+- **static** — matching symbols and decompiled guest code; and
+- **Encore** — behavior seen against the current emulated hardware.
+
+Names and short forms are normalized to lower case. Brackets indicate an
+optional argument; a slash separates alternatives. Before using a modifying
+form, ask that exact guest for its own usage and use disposable savedata.
+
+#### Shell, XINU kernel and memory
+
+| Command | Useful forms and actual role | Evidence or correction |
 |---|---|---|
-| kernel/runtime | `conf`, `ps`, `mem stat`, `sem`, `queue`, `timerq`, `stack history`, `devs`, `pty stat` | `kill`, `zombie`, arbitrary `sleep` in scripts |
-| errors/audits | `errors`, `fatal`, `nonfatal`, `eventlog stats`, `hstd`, `printout` | reset/flush forms offered by individual commands |
-| resources/storage | `resources`, `reslist`, selected info/view forms | `cmos ... reset`, `bootdata`, `fupdate` |
-| display/audio | `gx`, `bitmap info`, `dcs version`, manager list/info forms | `fb`, DCS reset/raw/volume commands, manager on/off/debug forms |
-| cabinet hardware | `pdb`, `dipsw`, switch counters/status | `drive`, `lamp`, switch test/break and mechanism commands |
-| game | `game info`, price/high-score/replay info | `credit`, `pinevents`, `attack_mars`, `scenemgr`, replay mutation |
-| network | `ether info`, `netstat`, `routes`, `httpd stats` | `net start`, route changes, IGMP join/leave and exposed services |
-| raw forensics/update | bounded `dump` of a known address | arbitrary memory reads, `pub ... dump`, firmware/update operations |
+| `?`, `help` | List the commands registered by this game image. | Live inventories are authoritative; the 99-command claim is RFM 1.50-specific. |
+| `clear` | `clear cmos`; clears persistent CMOS state. | The old reference called the function unknown despite documenting the destructive operand. |
+| `continue`, `exit` | Continue or terminate a command script. | Script control, not host-shell job control. |
+| `echo`, `history` | Echo script/console text; show recently entered commands. | Console conveniences. |
+| `conf`, `devs` | Show compiled XINU table limits and registered device slots. | A device-table entry proves registration, not successful emulation or initialization. |
+| `dump` | `dump <address> [count]`; read guest memory. | Raw forensic primitive; a wrong address can still fault the guest. |
+| `kevents` | Toggle logging for resource, process, semaphore and hook events. | Diagnostic state changes can create substantial serial load. |
+| `kill`, `zombie` | Terminate a PID; `zombie <pid>` forces the selected process into XINU's zombie path. | Static code resolves the historically “unknown” `zombie`; both can destroy essential tasks. |
+| `mem` | `stat`, `free`, per-PID usage and allocation listings. | Reports XINU's managed memory, not host RSS. |
+| `mon`, `reboot` | Enter the monitor/reboot path; `mon` emits the more extensive diagnostic path. | Both interrupt normal gameplay. |
+| `pool`, `bpool` | `pool stat` summarizes fixed-block pools; `bpool` reports buffer-pool block sizes, counts, semaphore, current use and high-water use. | Both “unknowns” are resolved by static code. |
+| `ps` | Show each XINU process, state, priority, stack range/use, semaphore and message. | Process stacks are not the shared interrupt stack. |
+| `pty` | `pty stat [N]`; inspect pseudo-terminal slots used by network/console services. | It does not describe the physical UART alone. |
+| `queue` | `queue sleep/ready`; dump XINU's sleep or ready queue links. | Resolved from `x_queue_dump`; observational unless the guest is already corrupt. |
+| `sem` | Show semaphore table/state. | Pair with `ps` and queues when diagnosing a wait. |
+| `sleep` | Delay the current script/shell task by guest ticks. | Not a host sleep and not a general timing benchmark. |
+| `stack` | `stack history`; inspect recorded process-stack events/history. | Does not replace Encore's IStack margin probe. |
+| `term` | Toggle terminal behavior including output, caps/control handling and swapping. | Changes the guest console path and can make the shell appear lost. |
+| `time`, `timerq` | Show guest date/time; dump XINU's timer queue through `tqwrite`. | Static code resolves the historically “unknown” `timerq`. RTC persistence is documented under [savedata writes](09-savedata.md#when-files-are-written). |
 
-“Observational” does not mean harmless in every build: ask the command for its
-usage first, use disposable savedata, and do not assume a subcommand named
-`info` avoids all device traffic.
+#### Persistence, errors, audits and commercial state
+
+| Command | Useful forms and actual role | Evidence or correction |
+|---|---|---|
+| `bootdata` | Select/view current, ROM or flash boot image, optionally verifying it. | Boot-selection mutation; not an ordinary information command. |
+| `cmos`, `cmos_buffer` | View headers/utilization; flash, reset or disable storage paths depending on the command. | These operate on XINA's persistent stores and can invalidate the evidence under study. |
+| `errors`, `fatal`, `nonfatal` | Show summarized, fatal and recoverable error records. | A recorded guest error does not by itself assign fault to Encore. |
+| `eventlog` | Dump, flush, count or classify event-log buffers. | `flush` is destructive; capture raw output first. |
+| `flags` | List local, global or static game flags. | Game-state observation, not CPU flags. |
+| `hstd` | Print high-score-to-date tables. | Reads game/accounting records. |
+| `price_current`, `price_dyn`, `price_table` | Inspect current coin value, dynamic pricing and the price/coin table. | Read-only historical forms as documented; values are backed by native resources. |
+| `printout` | Emit audits, adjustments, high scores, hourly/daily data, pricing and error reports. | Serial equivalent of operator/report output. |
+| `replay` | Inspect buckets/checks or reset/add/boost replay state. | Several forms mutate awards and replay history. |
+| `reslist`, `resources` | Dump the typed resource registry and active resource state. | Core tools for proving native setting names and persistence. |
+| `rtc` | `rtc dump`; show RTC registers. | Encore now models the RTC register/calendar contract and persistent year; see [savedata writes](09-savedata.md#when-files-are-written). |
+| `vdai` | `vdai info`; report whether the audit/accounting interface is enabled and healthy, plus readout, abort and error counters. | Static code resolves another historical “unknown”; it is not a generic video diagnostic. |
+
+#### Display, sound and effect managers
+
+| Command | Useful forms and actual role | Evidence or correction |
+|---|---|---|
+| `audio` | Initialize or inspect audio policy; adjust quiet/min/default/max/current volume. | Platform audio policy above the DCS device itself. |
+| `bitmap` | Show main allocation and waste information for bitmap memory. | Guest graphics-memory accounting. |
+| `dcs` | Play a track/raw command, change track volume/pan, inspect signals/version, quiet or reset DCS. | Directly exercises the sound path; see [DCS sound](25-dcs-sound.md). |
+| `deffmgr` | List display effects/names, inspect an entry, toggle debug/logging or unrequest an effect. | Decompiled `DeffManager` code resolves the old “unknown” label. |
+| `dispmgr` | List displayables/locks, inspect an entry, enable/disable the manager and inspect/clear rendered-frame counters. | Decompiled `DisplayManager` code confirms this is the composition/render manager. |
+| `fb` | Clear/test the framebuffer, draw bars/borders/pillars, inspect vsyncs, flip or change H/V sync. | Hardware-facing and stateful; `fb flip` was the field technician's glass-off display flip. |
+| `gx` | Dump MediaGX/CX5520 configuration-register groups and IDs. | Original-chipset diagnostic; emulation fidelity determines the returned values. |
+| `info` | Show the linked game's flipper information/display diagnostic. | `x_info` calls `show_flipper_info_deff`; the historical “function unknown” was misleading. |
+| `lamp` | Test/set lamp, blink, effect and mask duties; dump layers; configure saver timing. | Can energize physical outputs on real/passthrough hardware. |
+| `lampmgr` | List lamp matrices and toggle manager debug/log/activation. | Manager-level view above individual `lamp` writes. |
+| `leffmgr` | List lamp effects/names, toggle debug/logging or unrequest an effect by address. | Static manager code resolves the historical “unknown”. |
+| `updtmgr` | List or request manager updates spanning scenes/backgrounds/sound/music. | “Update” here is runtime content scheduling, not ROM installation. |
+
+#### Cabinet, game and RFM-specific mechanisms
+
+| Command | Useful forms and actual role | Evidence or correction |
+|---|---|---|
+| `attack_mars` | Start/stop the RFM mode or manipulate its ramp/multiball/mode flags. | RFM development/practice command, not a generic XINA service. |
+| `bs` | Enable/disable Ball Search or its debugging. | Static `BallSearch` calls resolve the historical “unknown”. |
+| `credit` | Initialize, inspect or decrement current credits. | Mutates normal pricing/game state. |
+| `dipsw` | Show DIP-switch value. | Hardware/configuration observation. |
+| `diverter`, `droptgt`, `flapgate`, `flipramp`, `lockpost`, `martians` | `info`, `debugon`, `debugoff` for named RFM mechanisms. | Game-specific mechanism objects; not present in SWE1 2.10's command set. |
+| `down`, `enter`, `escape`, `start`, `up` | Inject the corresponding coin-door/operator action. | Software actions routed inside the guest; do not confuse them with every physical switch contact. |
+| `drive` | Select outputs 0–47, list them, switch them off or toggle high-power drive. | Potentially dangerous on physical hardware. |
+| `flip` | Assign player/computer control, enable/disable or drive flippers, with debug support. | Direct playfield behavior, not screen flipping (`fb flip`). |
+| `game` | Inspect/name/collect state or trigger tilt/game-over paths. | State-changing debug forms can bypass natural switch sequences. |
+| `loops`, `ramps` | Inspect or debug the corresponding RFM shot/mechanism groups. | The old reference left their purpose unknown even though the object names and forms constrain it. |
+| `multi` | List multiball/multi-state flags. | Game-state diagnostic. |
+| `pal` | Toggle an RFM `pal` facility. | Purpose remains unresolved; no stronger claim is made from the two-word interface alone. |
+| `pdb` | Show Power Driver Board status and faults. | Exercises Encore's emulated PDB contract; output is stronger than command presence. |
+| `pinevents` | Enable/disable logging for game lifecycle, multiball/audit, ball-time, tilt and update-event families. | A tracing switchboard, not a command that directly synthesizes all those events. |
+| `rasys` | Toggle debugging for the RFM ramp/award subsystem. | The exact expansion remains unproven; it is game-specific and omitted from SWE1 2.10. |
+| `scenemgr` | Inspect/select/start/stop/reset RFM scenes and award shots/switches. | Development control over game modes; see the Question Mark example below. |
+| `switch` | Inspect callbacks/timers/counters; enable test/trace; break on a switch number. | Diagnostic controls can materially alter timing and log volume. |
+| `zc` | Run `ZeroCrossDebug`, reporting the zero-cross subsystem state. | Static code resolves the historical “unknown”; it concerns lamp/AC timing, not CPU zero flags. |
+
+#### Network, update and external protocols
+
+| Command | Useful forms and actual role | Evidence or correction |
+|---|---|---|
+| `ether` | Show Ethernet interface statistics. | Requires an initialized NIC for meaningful data. |
+| `dgstat` | Dump up to 16 XINU datagram endpoints with device, local/foreign ports, mode, transport and peer address. | Static code resolves the historical “unknown”; this is UDP endpoint state. |
+| `fupdate` | Load firmware over COM1/COM2 at a chosen baud rate; enable/disable the updater. | Firmware path, not the normal Pinball 2000 game-update installer. |
+| `httpd` | List configured hyperlinks or HTTP-server statistics. | Command presence does not prove that the daemon is running or reachable. |
+| `ifstat` | Show a selected interface, such as `ifstat 1`. | Encore uses its output only as a fallback to learn XINA's active address in automatic NAT. |
+| `igmp` | Join or leave an IPv4 multicast group. | Multicast behavior is separate from the unicast TTL correction. |
+| `midas` | Inspect/enable a serial accounting protocol, monitor/debug it, send ACK/NACK/RVI/EOT, and simulate cash-door, denomination/token and high-score records. | Guest hooks tie it to coin-door, coin-collection and high-score events; it was not actually “unknown”. |
+| `net` | Start networking, toggle packet monitoring or select an interface. | **Never use a second `net start` to reconfigure a running stack**; save resources and reboot. |
+| `netstat` | Show live guest network endpoints/state. | An empty valid table is not a NIC failure. |
+| `nslookup`, `ping` | Exercise name resolution or ICMP reachability. | `nslookup` needs a valid native DNS resource; ping success does not validate UDP/JTS. |
+| `pub` | Dump game or sound address ranges through the Prism Update Board service. | Low-level update-board forensic surface; addresses and side effects are build-dependent. |
+| `route`, `routes` | Add/delete a route; display the routing table. | The historical add form includes destination, mask, gateway, metric and TTL. |
+
+> [!IMPORTANT]
+> “Observational” does not mean harmless in every build. Manager dumps may take
+> locks, network/status commands may touch devices, and verbose traces can
+> perturb the timing being diagnosed. On a real or passthrough cabinet,
+> output-driving commands can also energize hardware.
+
+> [!NOTE]
+> The largest improvements over the historical page are not cosmetic. The
+> number 99 is now scoped to one measured build; twelve RFM-only commands are
+> separated from XINA proper; many formerly “unknown” facilities are given
+> code-backed roles; process stacks are distinguished from the IRQ IStack; and
+> network TTL, duplicate `net start` behavior and command/device liveness are
+> described from captures rather than inferred from command names.
 
 The live samples also illustrate important interpretation limits:
 
@@ -400,13 +515,44 @@ The shell inventory includes `ether`, `net`, `ifstat`, `netstat`, `route`,
 Ethernet, UDP, 16 datagram endpoints, TCP, 16 TCP endpoints and 16 PTYs. These
 are real guest facilities, not host commands proxied by the launcher.
 
-The historical source describes HTTP and Telnet administration and shared
-factory credentials. That is evidence of the era's trust model, not a setup
-recommendation. Keep services localhost-only unless a specific trusted-LAN
-test requires otherwise. Also, never use a second `net start` to apply new
-addresses: preserved builds create another set of network processes rather
-than reconfiguring the first, which has reproduced an IStack failure. Save the
-resource change and reboot instead; see [Optional networking](48-network.md).
+The historical cabinet recipe required the explicitly supported **SMC EtherEZ
+SMC8416T**, a 16-bit ISA 10-Mbit/s card in the spare motherboard slot. One
+later forum excerpt says `8415T`; the field reference, the guest's own output
+and Encore's device target agree on `8416T`, so the former is treated as a
+typo. Some physical motherboards also needed onboard audio disabled to avoid
+an IRQ conflict. Those BIOS and ISA installation steps describe original
+hardware; they are not Encore setup requirements.
+
+Once configured with static address, mask and gateway resources, the original
+stack could provide Telnet shell and HTTP administration. The preserved field
+credentials were username `Pin2000` and password `Manager`, case-sensitive and
+shared across cabinets. That is evidence of the era's trusted-LAN model, not a
+safe modern default. Never expose either service to the Internet; Encore's
+`--http-port` deliberately binds to host loopback unless the user asks for a
+different forward.
+
+The field guide's wireless recipe simply put an Ethernet-to-wireless bridge
+between the cabinet and router. Later JTS instructions added UDP/TCP port 2069
+rules and an OpenWrt/DD-WRT firewall rule that rewrote the cabinet's IP TTL to
+64. Community discussion correctly localized a routing problem but sometimes
+called TTL a packet-size setting and did not establish the guest's exact
+value.
+
+Encore closed that evidence gap. Packet captures showed unicast UDP leaving
+XINA's common `udpsend()` path at **TTL 1**: correct for a flat LAN, but consumed
+by Slirp's one router hop before NAT. Under a Slirp-backed network only, Encore
+therefore changes the unique live-RAM instruction from 1 to 64 before
+`netstart`. Update files, savedata and multicast TTL behavior remain unchanged.
+This replaces the old router firmware/firewall workaround and applies to DNS
+and other unicast UDP as well as JTS. Tournament traffic has an additional
+reply-port peculiarity documented in [Tournament/JTS](49-tournament-server.md);
+it must not be confused with the stack-wide TTL defect.
+
+Finally, never use a second `net start` to apply new addresses. Preserved
+builds create another set of network processes rather than reconfiguring the
+first, which has reproduced an IStack failure. Save the native resources and
+reboot instead; see [Optional networking](48-network.md) for current topology,
+security and validation details.
 
 ## Optional volatile guest extensions
 

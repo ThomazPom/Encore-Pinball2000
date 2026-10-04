@@ -65,6 +65,12 @@ use, rejects another explicit game, loads `rfm_u100r2`/`rfm_u101r2`, and
 suppresses update discovery. It is the RFM 0.80 revision-2 base-ROM path, not
 an update-flash version.
 
+The ordinary unsuffixed `rfm_u100`/`rfm_u101` pair is a different base-ROM
+identity. With an erased update flash it reports RFM system/game version 0.1
+and `Type(PRODUCTION_BUILD, FREE_PLAY_ONLY)`. Use
+`--update none --no-savedata` to reproduce that path without an older
+persistent BAR3 image silently supplying an update.
+
 ## Update bundle format
 
 SWE1 uses game number `50069`; RFM uses `50070`. A normal bundle has an outer
@@ -156,6 +162,15 @@ read-only concatenated file. The model supplies array, status, ID and CFI read
 modes plus program and 128 KiB erase-block behavior. Programming can clear
 bits from 1 to 0; attempts to set a programmed 0 back to 1 raise the program-
 error status until the guest erases the block.
+
+Both single-value programming (`0x40`/`0x10`) and Intel write-buffer
+programming are supported. The buffered sequence consists of `0xE8`, an x16
+word count minus one, up to 16 data words (32 bytes), then `0xD0` to commit.
+Data remains staged until that confirmation. The complete transfer must stay
+inside one 128 KiB erase block. An invalid count, payload exceeding its
+declared length or leaving the selected block, or confirmation in another
+block reports command-sequence error status. Buffered commits obey the same
+1-to-0 programming rule as individual writes.
 
 That protocol matters during XINU resource discovery. Returning ordinary
 array bytes for status commands can be interpreted as flash errors even when

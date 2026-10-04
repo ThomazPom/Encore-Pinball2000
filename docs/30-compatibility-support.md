@@ -39,9 +39,10 @@ The public launcher accepts exactly two game identities:
 | Revenge From Mars | `rfm` | 50070 | `--update none --no-savedata` | 2.60 (`0260`) |
 
 Both mandatory base-ROM pairs are present in the maintained asset tree. RFM
-also has a separate revision-2 prototype pair, selected with `--update r2`;
-that path identifies itself as RFM 0.80 revision 2 and is not an update-flash
-bundle.
+with the ordinary unsuffixed pair and an erased update flash identifies itself
+as version 0.1 and `PRODUCTION_BUILD, FREE_PLAY_ONLY`. It also has a separate
+revision-2 prototype pair, selected with `--update r2`; that path identifies
+itself as RFM 0.80 revision 2 and is not an update-flash bundle.
 
 `--game auto` chooses from those same two games. A recognized physical driver
 board may identify the cabinet; the emulated-board fallback selects SWE1. For
@@ -97,7 +98,7 @@ cabinet input at 11 seconds, no savedata, no display and WAV output:
 
 | Path | Resolved update | GP blits | Live DSP cycles | Health | Result |
 |---|---:|---:|---:|---|---|
-| SWE1 base | none | 20 | 205,206,940 | PASS | PASS |
+| SWE1 base 0.40 | none | 20 | 205,206,940 | PASS | PASS |
 | SWE1 latest | 2.10 | 20 | 191,076,220 | PASS | PASS |
 | RFM base | none | 20 | 148,560,000 | PASS | PASS |
 | RFM latest | 2.60 | 20 | 176,945,500 | PASS | PASS |

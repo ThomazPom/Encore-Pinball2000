@@ -20,22 +20,22 @@ Use a dedicated cabinet account on a systemd-based Linux installation with a
 working Wayland login. If GDM or SDDM is already installed, start with:
 
 ```bash
-./install.sh --display-manager
+./install.sh
 ```
 
 Accept the safe defaults for a first installation:
 
-| Choice | First-install recommendation | Reason |
-|---|---|---|
-| session user | dedicated normal user, UID at least 1000 | owns the graphical and emulator session |
-| game | `auto` | follows a recognized real board, otherwise selects SWE1 |
-| LPT | `emulated` during commissioning | prevents an accidental physical-board probe |
-| network card | disabled | removes an unrelated configuration variable |
-| flipscreen | enabled for a mounted cabinet display | matches the normal cabinet orientation; `F2` changes it live |
-| execution | session user | root mode is diagnostic only |
-| host audio | authorize only on a dedicated cabinet | unmutes and sets the current default output to 100% at every start |
-| quiet boot | optional | changes presentation, not emulator behavior |
-| zero-second GRUB menu | leave disabled until recovery is proven | otherwise local boot recovery is harder |
+| Choice                | First-install recommendation             | Reason                                                             |
+| --------------------- | ---------------------------------------- | ------------------------------------------------------------------ |
+| session user          | dedicated normal user, UID at least 1000 | owns the graphical and emulator session                            |
+| game                  | `auto`                                   | follows a recognized real board, otherwise selects SWE1            |
+| LPT                   | `emulated` during commissioning          | prevents an accidental physical-board probe                        |
+| network card          | disabled                                 | removes an unrelated configuration variable                        |
+| flipscreen            | enabled for a mounted cabinet display    | matches the normal cabinet orientation; `F2` changes it live       |
+| execution             | session user                             | root mode is diagnostic only                                       |
+| host audio            | authorize only on a dedicated cabinet    | unmutes and sets the current default output to 100% at every start |
+| quiet boot            | optional                                 | changes presentation, not emulator behavior                        |
+| zero-second GRUB menu | leave disabled until recovery is proven  | otherwise local boot recovery is harder                            |
 
 Confirm that this conservative profile boots, accepts controls, produces
 sound and exits cleanly before selecting `auto` or `required` LPT, networking,
