@@ -57,17 +57,17 @@ reproducible diagnosis or validation, name the game explicitly.
 
 ## Preserved update inventory
 
-The current asset set contains 26 extracted update bundles. Their complete
+The current asset set contains 25 extracted update bundles. Their complete
 directory identities matter because a version number alone is not unique.
 
 | Game | Preserved bundles |
 |---|---|
-| SWE1 | `0130_09211999`, `0140_07252000`, `0150_07252000`, `0150_09222003`, `0166_04032022`, `0200_04112025`, `0201_05012025`, `0210_10312025` |
+| SWE1 | `0130_09211999`, `0140_07252000`, `0150_09222003`, `0166_04032022`, `0200_04112025`, `0201_05012025`, `0210_10312025` |
 | RFM | `0120_06091999`, `0130_11241999`, `0140_01312000`, `0150_07252000`, `0160_09222003`, `0180_04232006`, `0190_03292018`, `0191_05302018`, `0195_03292018`, `0200_12032018`, `0210_04112019`, `0220_10222019`, `0221_04052020`, `0222_06302020`, `0223_04082021`, `0224_01292022`, `0250_12162022`, `0260_08082024` |
 
-With the two base paths, `--all-updates` therefore discovers 28 game paths.
-Across the six DCS engines, the exhaustive local cross-product is 168 cells.
-That complete 168-cell matrix has **not** been rerun for this documentation
+With the two base paths, `--all-updates` therefore discovers 27 game paths.
+Across the six DCS engines, the exhaustive local cross-product is 162 cells.
+That complete 162-cell matrix has **not** been rerun for this documentation
 refresh; inventory is not certification.
 
 ### Guest-extension compatibility is narrower
@@ -111,7 +111,7 @@ update, every engine or a physical cabinet.
 
 For a release claim, run the default 24-cell matrix at its normal 60 seconds
 per cell and perform a real desktop acceptance session. Use `--all-updates`
-only when the broader 168-cell cost and artifact review are intended.
+only when the broader 162-cell cost and artifact review are intended.
 
 ## QEMU compatibility
 
@@ -271,14 +271,14 @@ was normal or reduced/headless.
 > [!NOTE]
 > Current CI builds QEMU 10.0.8, checks repository tooling and extension
 > signatures, verifies machine registration, then runs the ROM-backed switch
-> smoke. It does not run the timing benchmark, 24/168-cell matrices, an
+> smoke. It does not run the timing benchmark, 24/162-cell matrices, an
 > interactive desktop session or physical cabinet hardware.
 
 ## Deliberate non-claims
 
 Encore does not currently claim:
 
-- complete current validation of all 26 update bundles across all six engines;
+- complete current validation of all 25 update bundles across all six engines;
 - binary support outside Linux x86_64;
 - equivalence of an experimental backend to the standard SDL path;
 - accurate behaviour for every feature of the physical PCI, SuperIO, PLX,

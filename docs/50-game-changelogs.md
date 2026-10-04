@@ -39,7 +39,7 @@ than a historical changelog.
 
 ## Sources of record
 
-The source links and archives checked through 2026-10-02 are:
+The source links and archives checked through 2026-10-04 are:
 
 - [Williams/Bally RFM revision history](https://www.planetarypinball.com/mm5/Williams/tech/pin2000/software/rfm_history.html)
   for RFM 1.00 through 1.50;
@@ -109,11 +109,17 @@ document.
 
 | Version | Outer artifact date | Components | Source EXE | Notes status |
 |---:|---:|---|---|---|
+| 1.00 | 1999-07-17 | core + PUB boot + sound flash | yes | no recovered notes |
+| 1.10 | 1999-09-14 | core + PUB boot + sound flash | yes | no recovered notes |
+| 1.20 | 1999-09-16 | core + PUB boot + sound flash | yes | Williams notes |
 | 1.30 | 1999-09-21 | core + PUB boot + sound flash | yes | Williams notes |
 | 1.40 | 2000-07-25 | core + PUB boot + sound flash | yes | Williams notes |
-| 1.50 | 2000-07-25 | core + PUB boot + sound flash | no | archived release history |
+| 1.50 | 2000-07-25 | not recovered | no | historical server listing only |
 | 1.50 | 2003-09-22 | core + PUB boot + sound flash | yes | archived release history |
+| 1.60 | 2013-02-01 | core + PUB boot + sound flash | yes | no recovered notes |
+| 1.65 | 2018-02-21 | core + PUB boot + sound flash | yes | no recovered notes |
 | 1.66 | 2022-04-03 | core only | no | no recovered notes |
+| 2.00 | 2016-02-26 | core + PUB boot + sound flash | yes | Question Mark owner reports; no recovered notes |
 | 2.00 | 2025-04-11 | core + PUB boot + sound flash | yes | myPinballs notes |
 | 2.01 | 2025-05-01 | core + PUB boot + sound flash | yes | myPinballs notes |
 | 2.10 | 2025-10-31 | core + PUB boot + sound flash | yes | myPinballs notes |
@@ -126,12 +132,21 @@ provenance; do not describe them as different builds without new byte evidence.
 
 | Version | Outer artifact date | Components                    | Source EXE | Notes status         |
 | ------: | ------------------: | ----------------------------- | ---------- | -------------------- |
+|    0.70 |          1999-03-29 | core + sound flash            | yes        | secondary transcript |
+|    0.71 |          1999-03-29 | core + sound flash            | yes        | no recovered notes   |
+|    0.84 |          1999-04-06 | core + sound flash            | yes        | no recovered notes   |
+|    0.85 |          1999-04-05 | core + sound flash            | yes        | no recovered notes   |
+|    0.86 |          1999-04-06 | core + sound flash            | yes        | no recovered notes   |
+|    0.87 |          1999-04-06 | core + sound flash            | yes        | no recovered notes   |
 |    1.20 |          1999-06-09 | core + PUB boot + sound flash | yes        | Williams notes       |
+|    1.21 |          2016-05-20 | core + PUB boot + sound flash | yes        | no recovered notes   |
 |    1.30 |          1999-11-24 | core + PUB boot + sound flash | yes        | Williams notes       |
 |    1.40 |          2000-01-31 | core + PUB boot + sound flash | yes        | Williams notes       |
 |    1.50 |          2000-07-25 | core + PUB boot + sound flash | yes        | Williams notes       |
 |    1.60 |          2003-09-22 | core + PUB boot + sound flash | yes        | archived release history |
+|    1.70 |          2006-02-06 | core + PUB boot + sound flash | yes        | secondary transcript |
 |    1.80 |          2006-04-23 | core + PUB boot + sound flash | no         | secondary transcript + binary evidence |
+|    1.90 |          2017-11-22 | core + PUB boot + sound flash | yes        | disputed secondary transcript |
 |    1.90 |          2018-03-29 | core + PUB boot               | no         | no recovered notes   |
 |    1.91 |          2018-05-30 | core + PUB boot + sound flash | no         | secondary transcript |
 |    1.95 |          2018-03-29 | core + PUB boot               | no         | no recovered notes   |
@@ -145,29 +160,23 @@ provenance; do not describe them as different builds without new byte evidence.
 |    2.50 |          2022-12-16 | core + PUB boot + sound flash | yes        | myPinballs notes     |
 |    2.60 |          2024-08-08 | core + PUB boot + sound flash | yes        | myPinballs notes     |
 
-This is 26 extracted update paths in total: eight SWE1 and eighteen RFM. Twenty
-have a matching source EXE in this checkout. A local ZIP or extracted directory
-can preserve useful bytes without proving the history of the missing original
-installer.
+This is 40 extracted update paths in total: thirteen SWE1 and twenty-seven RFM.
+Thirty-five have a matching source EXE in this checkout. A local ZIP or
+extracted directory can preserve useful bytes without proving the history of
+the missing original installer.
 
 ## Attested builds outside the extracted inventory
 
 The extracted inventory is intentionally not the complete historical version
-list. The following builds are supported by a filename, a contemporary report
-or an archived revision relationship, but are not runnable extracted updates
-in this checkout. They remain recovery leads rather than inferred changelogs.
+list. The following builds are supported by a contemporary report or an
+archived revision relationship, but are not runnable extracted updates in this
+checkout. They remain recovery leads rather than inferred changelogs.
 
 ### Star Wars Episode I
 
 | Version | Line | Surviving evidence |
 |---:|---|---|
 | 0.43 | Williams/Bally development | reported on a developer PRISM card; no distributed container or changelog recovered |
-| 1.00 | Williams/Bally | historical updater name `pin2000_50069_0100_07171999_B_10000000.exe` |
-| 1.10 | Williams/Bally | historical updater name `pin2000_50069_0110_09141999_B_10000000.exe` |
-| 1.20 | Williams/Bally | historical updater name and archived release notes, but no local extracted payload |
-| 1.60 | tournament/community | historical updater name `pin2000_50069_0160_02012013_B_10000000.exe`; no release notes recovered |
-| 1.65 | tournament/community | historical updater name `pin2000_50069_0165_02212018_B_10000000.exe`; no release notes recovered |
-| 2.00 (2016) | Question Mark experiment | historical updater name `pin2000_50069_0200_02262016_B_10000000.exe`; distinct from myPinballs 2.00 and discussed below |
 
 ### Revenge From Mars
 
@@ -175,17 +184,8 @@ in this checkout. They remain recovery leads rather than inferred changelogs.
 |---:|---|---|
 | 0.50 | Williams/Bally pre-release | secondary revision transcript dates the Waukegan startup release to 1999-03-07 |
 | 0.60 | Williams/Bally sample release | secondary revision transcript dates the sample release to 1999-03-16 |
-| 0.70 | Williams/Bally pre-release | historical updater name dated 1999-03-29 |
-| 0.71 | Williams/Bally pre-release | historical updater name dated 1999-03-29 |
 | 0.80 | Williams/Bally revision-2 prototype | preserved `rfm_080.zip`, but not an extracted update path |
-| 0.84 | Williams/Bally pre-release | historical updater name dated 1999-04-06 |
-| 0.85 | Williams/Bally pre-release | historical updater name dated 1999-04-05 |
-| 0.86 | Williams/Bally pre-release | historical updater name dated 1999-04-06 |
-| 0.87 | Williams/Bally pre-release | historical updater name dated 1999-04-06 |
 | 0.90 | Williams/Bally pre-release | named by the Williams 1.00 history as its predecessor; a secondary revision transcript survives, but no standalone updater is established |
-| 1.21 | tournament/community | historical updater name `pin2000_50070_0121_05202016_B_10000000.exe`; no release notes recovered |
-| 1.70 | tournament/community | historical updater name `pin2000_50070_0170_02062006_B_10000000.exe`; a secondary revision transcript dates a JTS-enabled 1.70 to 2006-04-16 |
-| 1.90 (2017) | tournament/community PUB build | historical updater name dated 2017-11-22; a secondary transcript attributes specific changes to a 2017-11-21 build, but the thread later warns that its exact differences remain uncertain |
 | 2.11 | myPinballs intermediate | build dated 2019-05-10; updater and complete notes have not been recovered |
 
 The dates attached to these names overlap and do not always sort numerically.
@@ -560,11 +560,19 @@ separately reported 0.43 developer image.
   power-driver board: the last country DIP value stored in CMOS could otherwise
   disagree with the country value used for an open PDB cable.
 
-SWE1 1.20 is described by the source history but is not preserved as an
-extracted bundle here. As with RFM 1.60, the IPDB document promotes SWE1 1.50
-from a forum-only transcript to **archived release-history evidence**; it does
-not turn the archive into a current first-party publisher page. No recovered
-note supports a separate change summary for 1.66.
+> [!NOTE]
+> A [cached historical server listing](https://pinside.com/pinball/forum/topic/rfm-190-software-do-you-have-the-exe-update-or-can-extract-from-pub#post-9286049)
+> also shows `pin2000_50069_0150_07252000_B_10000000.exe` as a distinct 1.4M
+> file alongside the September 2003 1.50. Its binary and release notes have not
+> been recovered, so this page does not assign the 2003 change above to the July
+> 2000 artifact. A former local July directory was removed because its bytes were
+> only a mislabelled duplicate of the preserved 2003 payload.
+
+SWE1 1.20 is now preserved as both its original updater and extracted payload.
+As with RFM 1.60, the IPDB document promotes SWE1 1.50 from a forum-only
+transcript to **archived release-history evidence**; it does not turn the
+archive into a current first-party publisher page. No recovered note supports
+a separate change summary for 1.60, 1.65 or 1.66.
 
 ### Question Mark and community test scenes
 
@@ -576,19 +584,20 @@ game image contains `Question Mark Started`, `Question Mark Finished` and
 
 #### The 2016 tournament/community experiment
 
-An exact historical updater identity,
-`pin2000_50069_0200_02262016_B_10000000.exe`, is attested for a rewritten SWE1
-1.30 test build exposing the otherwise unreachable “Questionmark Mission”. It
-was numbered 2.00 but was not a chronological successor to the factory line.
+The exact historical updater
+`pin2000_50069_0200_02262016_B_10000000.exe` and its six ROM components are
+now preserved. Owner reports describe it as a rewritten SWE1 1.30 test build
+exposing the otherwise unreachable “Questionmark Mission”. It was numbered
+2.00 but was not a chronological successor to the factory line.
 A [contemporary owner discussion](https://pinside.com/pinball/forum/topic/p2k-swep1-question-mark-mission)
 independently confirms the puzzle that motivated such a build: the stock game
 recorded Question Mark started/ended statistics, yet owners could not identify
 a normal way to play it.
 
-That updater is not locally preserved. Its identity and reported purpose are
-historical evidence, while its exact code changes and runtime presentation
-remain unverified until the payload is recovered. It must not be confused with
-the unrelated myPinballs 2.00 released in 2025.
+The recovered bytes establish the build identity, but they do not by themselves
+prove the reported purpose. Its exact code changes and runtime presentation
+remain to be characterized. It must not be confused with the unrelated
+myPinballs 2.00 released in 2025.
 
 #### The 2025 myPinballs re-exposure
 
@@ -599,19 +608,19 @@ of `scene_table_data` supplies the missing identity evidence:
 | SWE1 build | Destroyer Droid | Hover Tank | Watto's Chance | Question Mark |
 |---|---|---|---|---|
 | 1.50 | `(0,1,0)` | `(0,1,0)` | `(0,1,0)` | `(0,4,2)` |
-| community 2.0 | `(0,1,0)` | `(0,1,0)` | `(0,1,0)` | `(0,1,0)` |
+| myPinballs 2.00 (2025) | `(0,1,0)` | `(0,1,0)` | `(0,1,0)` | `(0,1,0)` |
 
 The tuple labels are not preserved, so this document does not invent names for
-the three fields. The relevant fact is the exact transition: community 2.0
+the three fields. The relevant fact is the exact transition: myPinballs 2.00
 reclassifies Question Mark to match the three other late sample scenes while
 its release note announces four test modes. Taken together, these are strong
 evidence that **Question Mark is the fourth test scene exposed by the 2025
 community release**. This locally verifiable result independently supports the
-reported purpose of the missing 2016 experiment; it does not prove the two
+reported purpose of the now-preserved 2016 experiment; it does not prove the two
 builds implemented the exposure identically.
 
 The reproducibility anchors are `scene_table_data` at `0x002e02a0` in 1.50 and
-`0x002de9b8` in community 2.0. Each table row is five little-endian 32-bit
+`0x002de9b8` in myPinballs 2.00. Each table row is five little-endian 32-bit
 values; the second value resolves through the matching symbol ROM to the
 corresponding `jedi_scene_*` object. Addresses and interpretation are scoped to
 those exact builds.
@@ -635,7 +644,7 @@ patched image and raw capture were not retained, so a future reproduction
 should additionally preserve input/output hashes, the patch, scripted inputs,
 video/log evidence and clean-state policy. That reproducibility gap does not
 erase the observed result, but the result characterises the scene inherited by
-2.10—not necessarily the missing 2016 build byte for byte.
+2.10—not necessarily the now-preserved 2016 build byte for byte.
 
 ## Why RFM 1.80 needs 8 MiB
 
@@ -859,8 +868,9 @@ can pair with primary change notes. The most useful open gaps are:
 - SWE1 0.40 change notes, the separate 0.43 developer image, 1.00, 1.10 and
   community/tournament builds 1.60 and 1.65;
 - SWE1 1.66, whose four-component payload is preserved without notes;
-- the 2016 community “2.00” Question Mark test build, whose exact updater and
-  original accompanying note are not preserved here;
+- the 2016 community “2.00” Question Mark test build, whose updater is now
+  preserved but whose original accompanying note and exact code changes remain
+  uncharacterized;
 - RFM 1.21, primary identity-specific notes for the 1.70/1.80 tournament line,
   and any 1.80 gameplay changes beyond the established JTS/memory facts;
 - definitive changelogs tying the distinct 2017 tournament 1.90 and 2018
@@ -912,9 +922,11 @@ scripts/run-qemu.sh \
 
 > [!CAUTION]
 > A numeric version is not a unique artifact identifier. This matters for
-> SWE1 1.50, which has two outer paths even though their current component
-> hashes match. Evidence reports should record the complete resolved path and
-> component hashes.
+> SWE1 1.50: a [cached historical server listing](https://pinside.com/pinball/forum/topic/rfm-190-software-do-you-have-the-exe-update-or-can-extract-from-pub#post-9286049)
+> attests separate July 2000 and September 2003 filenames, but only the 2003
+> binary is preserved. A former local July path contained a mislabelled copy of
+> the 2003 payload and was removed. Evidence reports should record the complete
+> resolved path and component hashes.
 
 Do not reuse persistent flash when the question is “what does this release do
 from a clean state?” `--update none` alone does not erase an existing saved
@@ -961,10 +973,11 @@ for bundle in updates/pin2000_*/*; do
 done
 ```
 
-Compare the two preserved SWE1 1.50 payloads by content rather than name:
+Hash the preserved SWE1 1.50 payload and its source container:
 
 ```bash
-sha256sum updates/pin2000_50069_0150_*/50069/*.rom
+sha256sum updates/pin2000_50069_0150_09222003_B_10000000/50069/*.rom \
+  updates/exe-sources/pin2000_50069_0150_09222003_B_10000000.exe
 ```
 
 For release evidence, preserve together:
