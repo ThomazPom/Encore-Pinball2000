@@ -68,7 +68,7 @@ def run_case(directory: Path, name: str, yaml: str,
     keymap.write_text(yaml)
     command = [
         "bash", str(RUNNER), "--game", "swe1", "--no-savedata",
-        "--update", "210",
+        "--update", "166",
         "--display", "none", "--audio", "none", "--uart-quiet", "-v",
         "--switch-keymap", str(keymap), "--",
         "-qmp", f"unix:{qmp},server=on,wait=off",
@@ -83,14 +83,17 @@ def run_case(directory: Path, name: str, yaml: str,
             wait_for_socket(qmp, process)
             qmp_run(qmp, commands)
             process.wait(timeout=10)
-        except Exception:
+        except Exception as error:
             process.terminate()
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
-            raise
+            output = log_path.read_text(errors="replace")
+            raise RuntimeError(
+                f"{error}\n{name} emulator log:\n{output}"
+            ) from error
     return log_path.read_text(errors="replace")
 
 
