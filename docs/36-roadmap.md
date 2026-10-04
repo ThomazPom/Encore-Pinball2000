@@ -74,7 +74,7 @@ Create a retained bundle containing:
 - QEMU/build/host identity, raw logs, JSON/Markdown reports and asset inventory;
 - explicit statements for physical hardware and combinations not tested.
 
-The 168-cell all-update matrix is a separate, broader claim and should not be
+The 162-cell all-update matrix is a separate, broader claim and should not be
 silently substituted with a short run.
 
 **Complete when:** another maintainer can reproduce the commands, relate every

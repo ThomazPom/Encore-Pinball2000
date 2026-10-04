@@ -17,7 +17,7 @@ fidelity or invalidate a support claim.
 | Area | Current limitation | Safe response |
 |---|---|---|
 | timing | host scheduling can still create long PDB/IRQ tails; Encore is not hard real time | run the clean benchmark on the target host and retain depth/IStack evidence |
-| validation | all 168 installed update/engine cells have not been rerun on the current tree | scope claims to the tested paths and keep artifacts |
+| validation | all 162 installed update/engine cells have not been rerun on the current tree | scope claims to the tested paths and keep artifacts |
 | saved state | same-profile instances are not locked; forced exit can lose the last session | run one instance per profile and quit normally |
 | assets | an existing partial ROM/update tree is neither audited nor repaired automatically | move it aside and reacquire, or name a verified complete tree |
 | sound | sample engines are mono and fixed libraries may omit newer tracks | use the default live ADSP engine for normal play |
@@ -65,10 +65,10 @@ to answer a narrower question. See
 
 ## Current validation gaps
 
-The installed assets provide two base paths and 26 extracted updates. With six
-DCS engines, `--all-updates` enumerates 168 cells. The current documentation
+The installed assets provide two base paths and 25 extracted updates. With six
+DCS engines, `--all-updates` enumerates 162 cells. The current documentation
 refresh ran only short default-engine smoke cells for SWE1/RFM base and latest,
-plus focused normal launches. The complete current 168-cell cross-product has
+plus focused normal launches. The complete current 162-cell cross-product has
 not been run.
 
 CI is intentionally narrower still. It builds QEMU 10.0.8, checks machine
@@ -76,7 +76,7 @@ registration, repository units, guest-extension signatures and ROM-backed
 switch routing. It does not run:
 
 - the host-load-sensitive timing benchmark;
-- the 24-cell normal release matrix or 168-cell all-update matrix;
+- the 24-cell normal release matrix or 162-cell all-update matrix;
 - a human desktop/audio acceptance session;
 - physical parallel hardware or a powered cabinet;
 - every networking, PUB or experimental renderer combination.

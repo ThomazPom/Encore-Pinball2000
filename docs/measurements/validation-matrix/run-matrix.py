@@ -67,8 +67,8 @@ def artifact_cell_key(update: str, label: str) -> str:
         return "base"
     if update == "latest":
         return "latest"
-    # Version numbers are not unique: the preserved tree contains two SWE1
-    # 1.50 bundles with different build dates. Keep the full bundle identity.
+    # Version numbers are not unique: distinct dated identities may share one
+    # version number. Keep the full bundle identity.
     return Path(update).parent.name
 
 
