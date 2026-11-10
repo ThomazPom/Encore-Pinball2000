@@ -572,6 +572,27 @@ static char *find_default_update(const char *roms_dir, const char *game)
 static void p2k_bar3_save_cb(Notifier *n, void *data)
 {
     if (!s_flash || !s_save_path[0]) return;
+    const char *snapshot = getenv("P2K_BAR3_FLASH_SNAPSHOT");
+    const char *transaction = getenv("P2K_FUPDATE_STATUS_PATH");
+    if (snapshot && *snapshot && transaction && *transaction &&
+        access(transaction, F_OK) == 0) {
+        g_autofree char *temporary = g_strdup_printf("%s.tmp", snapshot);
+        FILE *stream = fopen(temporary, "wb");
+        size_t written = stream ? fwrite(s_flash, 1, P2K_BAR3_SIZE, stream) : 0;
+        bool failed = !stream || written != P2K_BAR3_SIZE;
+        if (stream) {
+            failed |= fflush(stream) != 0 || fsync(fileno(stream)) != 0;
+            failed |= fclose(stream) != 0;
+        }
+        if (failed || rename(temporary, snapshot) != 0) {
+            warn_report("pinball2000: BAR3 snapshot failed for %s: %s",
+                        snapshot, strerror(errno));
+            unlink(temporary);
+        } else {
+            info_report("pinball2000: BAR3 snapshot saved to %s (%u bytes)",
+                        snapshot, P2K_BAR3_SIZE);
+        }
+    }
     if (p2k_no_savedata_enabled()) {
         info_report("pinball2000: P2K_NO_SAVEDATA set — discarding BAR3 flash changes");
         return;

@@ -129,7 +129,7 @@ selection, exact privilege boundary and limitations are documented in
 | Option | Effect |
 |---|---|
 | `--audio auto\|none\|DRIVER` | Auto-select, disable or explicitly select a QEMU audio driver. |
-| `--no-audio` | Force audio off, overriding `--audio`. |
+| `--no-audio` | Force host audio and the current native ADSP engine off, overriding `--audio`. |
 | `--dcs-engine ENGINE` | Select `pb2kslib`, `pb2kslib-adsp`, `adsp`, `adsp-thread`, `adsp-clock-thread` or `adsp-hybrid-thread`. |
 | `--dcs-pcm-cpu CPU` | Experimentally pin a threaded ADSP producer to one Linux logical CPU. |
 | `--dcs-sound-flash FILE` | Use an explicit 1 MiB ADSP sound-flash image. |
@@ -145,6 +145,12 @@ selection, exact privilege boundary and limitations are documented in
 It tries `sdl`, `pa`, `alsa`, `oss`, `sndio` and `dbus` in that order, while
 requiring both QEMU support and the relevant host check. Explicit drivers are
 rejected when absent from the selected QEMU binary.
+
+> [!IMPORTANT]
+> The native ADSP/DCS model is currently initialized through the audio path.
+> Use ordinary `--audio auto` for a serial update containing sound. With
+> `--no-audio`, XINA can report that the DCS2 board failed to initialize and a
+> `full`/`sfonly` transfer cannot program the sound flash.
 
 The native ADSP engines fall back to `pb2kslib` when their original-format
 assets are incomplete. If neither native assets nor a valid library are
@@ -189,8 +195,8 @@ See [Optional network card](48-network.md) for topology and guest setup.
 | `--serial-tcp PORT` | Alias for `--uart-tcp 127.0.0.1:PORT`. |
 | `--script FILE` | Validate and execute a console/cabinet automation script, leaving QEMU open afterward. |
 | `--console-script FILE` | Compatibility alias for `--script`. |
-| `--uart-quiet` | Disable the UART sink and stderr mirror; bounded boot input is pre-stuffed unless overridden. |
-| `--uart-drop TEXT` | Remove UART lines containing `TEXT`; repeatable. |
+| `--uart-quiet` | Disable the UART stderr mirror; without a TCP UART, use a null sink. A selected TCP COM1 transport remains raw and bidirectional. |
+| `--uart-drop TEXT` | Remove UART lines containing `TEXT` from the stderr mirror; repeatable. The raw TCP wire is never filtered. |
 | `--uart-no-filter` | Disable the default `swd Debug:` filter and custom drop rules. |
 | `--monitor SPEC` | Set the QEMU monitor target. |
 | `--debug ITEMS` | Enable QEMU `-d` items and write them to `/tmp/p2k_qemu.log`. |
@@ -213,6 +219,12 @@ manual UART TCP target, a manual monitor or `--headless`. Script syntax is in
 [Console scripting](42-console-scripting.md). `--serial` requires an `nc`
 implementation such as Debian's `netcat-openbsd`. The screenshot directory
 and the parent directory of a video output must already exist.
+
+`--uart-tcp` and `--serial-tcp` also carry XINA's binary `fupdate` protocol
+without line buffering. A guest-accepted update is reconstructed and pinned as
+described in [ROMs, updates and software selection](15-rom-loading.md#serial-installed-updates).
+Known exact bundles are referenced from the official catalog; custom or hybrid
+results stay in the savedata profile's private `.serial-updates` directory.
 
 ## Self-diagnostic
 

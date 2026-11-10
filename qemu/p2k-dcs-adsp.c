@@ -32,6 +32,23 @@
 
 static uint8_t *s_sound_flash;
 static char s_sound_flash_path[1024];
+static char s_sound_flash_snapshot_path[1024];
+static bool s_sound_flash_dirty;
+static bool s_adsp_exit_registered;
+static bool s_flash_loader_active;
+
+typedef enum P2KDcsFlashMode {
+    P2K_DCS_FLASH_ARRAY,
+    P2K_DCS_FLASH_STATUS,
+    P2K_DCS_FLASH_PROGRAM,
+    P2K_DCS_FLASH_ERASE_SETUP,
+} P2KDcsFlashMode;
+
+static P2KDcsFlashMode s_dcs_flash_mode;
+/* The 28F800 is used as one x16 device.  Its status register occupies the
+ * low byte: DQ7 is ready and DQ3..DQ5 are the error bits tested by Williams'
+ * host-booted flash loader. */
+static uint16_t s_dcs_flash_status = 0x0080;
 
 typedef struct {
     uint16_t data[0x4000];
@@ -47,6 +64,10 @@ typedef struct {
     uint16_t commands[65536];
     unsigned command_head;
     unsigned command_count;
+    /* Physical DCS has a single host-input latch.  Keep it busy until the
+     * DSP has both read the word and acknowledged the mailbox interrupt;
+     * command_count alone becomes zero slightly too early. */
+    bool input_busy;
     uint16_t output_data;
     uint16_t output_control;
     bool output_full;
@@ -101,6 +122,7 @@ static P2KDcsAdsp s_adsp;
 
 static void *adsp_mailbox_worker(void *opaque);
 static void adsp_worker_shutdown(Notifier *notifier, void *data);
+static void sound_flash_snapshot_save(void);
 static void adsp_worker_start(void);
 static void adsp_render_direct(int16_t *samples, int frames, int output_rate,
                                bool mailbox_pending);
@@ -110,6 +132,122 @@ static void adsp_render_direct(int16_t *samples, int frames, int output_rate,
 static void adsp_assert_mailbox_irq_locked(void)
 {
     p2k_adsp2105_set_irq_line(P2K_ADSP_IRQ2, 1);
+}
+
+/* Resolve the SDRC ROM window used by the DCS flash-update loader.  The
+ * 28F800 occupies the first 0x80000 16-bit words of the unified region. */
+static bool dcs_flash_rom_word(uint16_t address, size_t *word)
+{
+    unsigned rom_st = s_adsp.sdrc[0] & 3;
+    if (rom_st == 3) {
+        return false;
+    }
+    unsigned base = rom_st == 0 ? 0x0000 : rom_st == 1 ? 0x3000 : 0x3400;
+    unsigned page_words = (rom_st != 0 && !(s_adsp.sdrc[0] & 0x10))
+                          ? 4096 : 1024;
+    if (address < base || address >= base + page_words) {
+        return false;
+    }
+    if (s_adsp.sdrc[0] & 0x20) {
+        *word = ((size_t)(s_adsp.sdrc[2] & 0x1fff) * page_words +
+                 address - base) % s_adsp.sound_words;
+    } else {
+        unsigned page = (s_adsp.sdrc[0] >> 7) & 7;
+        *word = (size_t)page * page_words + address - base;
+    }
+    return *word < P2K_DCS_SOUND_FLASH_SIZE / 2;
+}
+
+static void dcs_flash_store_word(size_t word, uint16_t value)
+{
+    if (s_adsp.sound_data[word] == value) {
+        return;
+    }
+    s_adsp.sound_data[word] = value;
+    stw_le_p(s_sound_flash + word * 2, value);
+    s_sound_flash_dirty = true;
+}
+
+/* Intel 28F800 command subset exercised by Williams' host-booted flash
+ * loader.  Operations complete immediately in virtual time but retain the
+ * chip's status/read-array modes and NOR 1->0 programming semantics. */
+static void dcs_flash_write(size_t word, uint16_t value)
+{
+    if (s_dcs_flash_mode == P2K_DCS_FLASH_PROGRAM) {
+        dcs_flash_store_word(word, s_adsp.sound_data[word] & value);
+        s_dcs_flash_status = 0x0080;
+        s_dcs_flash_mode = P2K_DCS_FLASH_STATUS;
+        return;
+    }
+    if (s_dcs_flash_mode == P2K_DCS_FLASH_ERASE_SETUP) {
+        if ((value & 0xff) == 0xd0) {
+            /* The DCS board uses an Intel 28F800B5 bottom-boot device in x16
+             * mode.  Its word-addressed erase geometry is 16 KiB, 8 KiB,
+             * 8 KiB, 96 KiB, then seven 128 KiB main blocks.  Williams'
+             * loader confirms this directly by issuing erases at 00000,
+             * 02000, 03000, 04000, then 10000-word boundaries. */
+            size_t first;
+            size_t block_words;
+
+            if (word < 0x2000) {
+                first = 0x0000;
+                block_words = 0x2000;
+            } else if (word < 0x3000) {
+                first = 0x2000;
+                block_words = 0x1000;
+            } else if (word < 0x4000) {
+                first = 0x3000;
+                block_words = 0x1000;
+            } else if (word < 0x10000) {
+                first = 0x4000;
+                block_words = 0xc000;
+            } else {
+                first = word & ~((size_t)0xffff);
+                block_words = 0x10000;
+            }
+            size_t end = MIN(first + block_words,
+                             (size_t)P2K_DCS_SOUND_FLASH_SIZE / 2);
+            if (getenv("P2K_DCS_FLASH_TRACE")) {
+                error_report("dcs-adsp: flash erase confirm word=%05zx "
+                             "range=%05zx..%05zx", word, first, end - 1);
+            }
+            for (size_t current = first; current < end; current++) {
+                dcs_flash_store_word(current, 0xffff);
+            }
+            s_dcs_flash_status = 0x0080;
+            s_dcs_flash_mode = P2K_DCS_FLASH_STATUS;
+            return;
+        }
+        s_dcs_flash_status = 0x00a0;
+        s_dcs_flash_mode = P2K_DCS_FLASH_STATUS;
+        return;
+    }
+
+    switch (value & 0xff) {
+    case 0x10:
+    case 0x40:
+        s_dcs_flash_mode = P2K_DCS_FLASH_PROGRAM;
+        break;
+    case 0x20:
+        if (getenv("P2K_DCS_FLASH_TRACE")) {
+            error_report("dcs-adsp: flash erase setup word=%05zx", word);
+        }
+        s_dcs_flash_mode = P2K_DCS_FLASH_ERASE_SETUP;
+        break;
+    case 0x50:
+        s_dcs_flash_status = 0x0080;
+        s_dcs_flash_mode = P2K_DCS_FLASH_STATUS;
+        break;
+    case 0x70:
+        s_dcs_flash_mode = P2K_DCS_FLASH_STATUS;
+        break;
+    case 0xff:
+        s_dcs_flash_mode = P2K_DCS_FLASH_ARRAY;
+        break;
+    default:
+        /* Unknown writes are commands, never raw array stores. */
+        break;
+    }
 }
 
 static Notifier adsp_exit_notifier = {
@@ -146,12 +284,17 @@ void p2k_dcs_adsp_profile_snapshot(P2KDcsProfileSnapshot *snapshot)
     qemu_mutex_unlock(&s_adsp.lock);
 }
 
-/* Caller holds s_adsp.lock. Diagnostic commands retain their established
- * synchronous response loop and must never be stolen by the worker. */
+/* Caller holds s_adsp.lock. Runtime diagnostic commands retain their
+ * established synchronous response loop and must never be stolen by the
+ * worker.  A host-booted flash loader receives opaque 16-bit data, including
+ * those same values. */
 static bool adsp_worker_has_command(void)
 {
     if (!s_adsp.command_count) {
         return false;
+    }
+    if (s_flash_loader_active) {
+        return true;
     }
     uint16_t command = s_adsp.commands[s_adsp.command_head];
     return command != 0x003a && command != 0x001b && command != 0x00aa;
@@ -193,7 +336,7 @@ static uint16_t adsp_data_read(uint16_t address)
     }
     if (address == 0x0403) {
         qemu_mutex_lock(&s_adsp.lock);
-        bool full = s_adsp.command_count != 0;
+        bool full = s_adsp.input_busy;
         qemu_mutex_unlock(&s_adsp.lock);
         return (full ? 0x80 : 0) | (s_adsp.output_full ? 0 : 0x40);
     }
@@ -220,6 +363,12 @@ static uint16_t adsp_data_read(uint16_t address)
     unsigned page_words = (rom_st != 0 && !(s_adsp.sdrc[0] & 0x10))
                           ? 4096 : 1024;
     if (rom_enabled && address >= rom_base && address < rom_base + page_words) {
+        size_t flash_word;
+        if (s_flash_loader_active &&
+            dcs_flash_rom_word(address, &flash_word) &&
+            s_dcs_flash_mode == P2K_DCS_FLASH_STATUS) {
+            return s_dcs_flash_status;
+        }
         /* The runtime mixer's sample fetch loop lives below PM 0x0800. */
         if (s_adsp.sdrc[0] & 0x20) {
             size_t word = ((size_t)(s_adsp.sdrc[2] & 0x1fff) * page_words +
@@ -228,8 +377,12 @@ static uint16_t adsp_data_read(uint16_t address)
         }
         unsigned page = (s_adsp.sdrc[0] >> 7) & 7;
         size_t word = (size_t)page * page_words + address - rom_base;
-        return lduw_le_p(s_sound_flash + ((word * 2) &
-                                          (P2K_DCS_SOUND_FLASH_SIZE - 1)));
+        /* sound_data is the canonical mutable 16-bit view. Reading the
+         * original byte copy here made a serially programmed flash appear to
+         * revert on the boot-ROM path while runtime sample reads saw the new
+         * contents. */
+        word &= (P2K_DCS_SOUND_FLASH_SIZE / 2) - 1;
+        return s_adsp.sound_data[word];
     }
 
     unsigned dm_st = s_adsp.sdrc[1] & 3;
@@ -280,10 +433,17 @@ static void adsp_data_write(uint16_t address, uint16_t value)
         }
         bool more = s_adsp.command_count != 0;
         qemu_mutex_unlock(&s_adsp.lock);
+
+        /* Do not expose an empty host latch between popping the word and
+         * lowering IRQ2.  A host write in that window would raise an IRQ
+         * which this trailing clear immediately loses. */
         p2k_adsp2105_set_irq_line(P2K_ADSP_IRQ2, 0);
         if (more) {
             p2k_adsp2105_set_irq_line(P2K_ADSP_IRQ2, 1);
         }
+        qemu_mutex_lock(&s_adsp.lock);
+        s_adsp.input_busy = more;
+        qemu_mutex_unlock(&s_adsp.lock);
         return;
     }
     if (address == 0x0401) {
@@ -335,12 +495,24 @@ static void adsp_data_write(uint16_t address, uint16_t value)
         return;
     }
 
+    size_t flash_word;
+    if (s_flash_loader_active && dcs_flash_rom_word(address, &flash_word)) {
+        dcs_flash_write(flash_word, value);
+        return;
+    }
+
     unsigned dm_st = s_adsp.sdrc[1] & 3;
     unsigned dm_base = dm_st == 1 ? 0x0000 : dm_st == 2 ? 0x3000 : 0x3400;
     if (dm_st && address >= dm_base && address < dm_base + 0x400) {
         size_t word = ((size_t)(s_adsp.sdrc[2] & 0x7ff) * 1024 +
                        address - dm_base) % s_adsp.sound_words;
-        s_adsp.sound_data[word] = value;
+        if (s_adsp.sound_data[word] != value) {
+            s_adsp.sound_data[word] = value;
+            if (word < P2K_DCS_SOUND_FLASH_SIZE / 2) {
+                stw_le_p(s_sound_flash + word * 2, value);
+                s_sound_flash_dirty = true;
+            }
+        }
         return;
     }
 
@@ -567,6 +739,13 @@ bool p2k_dcs_adsp_prepare(Pinball2000MachineState *s)
         warn_report("dcs-adsp: no valid 1 MiB sound flash at %s", path);
         return false;
     }
+    s_sound_flash_dirty = false;
+    s_dcs_flash_mode = P2K_DCS_FLASH_ARRAY;
+    s_dcs_flash_status = 0x0080;
+    const char *snapshot = getenv("P2K_DCS_FLASH_SNAPSHOT");
+    snprintf(s_sound_flash_snapshot_path,
+             sizeof(s_sound_flash_snapshot_path), "%s",
+             snapshot && *snapshot ? snapshot : "");
 
     if (!s_adsp.initialized) {
         qemu_mutex_init(&s_adsp.lock);
@@ -599,6 +778,7 @@ bool p2k_dcs_adsp_prepare(Pinball2000MachineState *s)
     s_adsp.rom_bank = 0;
     s_adsp.command_head = 0;
     s_adsp.command_count = 0;
+    s_adsp.input_busy = false;
     s_adsp.output_data = 0;
     s_adsp.output_control = 0;
     s_adsp.output_full = false;
@@ -648,6 +828,10 @@ bool p2k_dcs_adsp_prepare(Pinball2000MachineState *s)
     s_adsp.hybrid_thread_engine = engine &&
                                   !strcmp(engine, "adsp-hybrid-thread");
     snprintf(s_sound_flash_path, sizeof(s_sound_flash_path), "%s", path);
+    if (!s_adsp_exit_registered) {
+        qemu_add_exit_notifier(&adsp_exit_notifier);
+        s_adsp_exit_registered = true;
+    }
     info_report("dcs-adsp: original assets ready (u109/u110=%u MiB, "
                 "sound-flash=%s, %u KiB)",
                 (unsigned)(P2K_DCS_BANK_SIZE / (1024 * 1024)),
@@ -694,18 +878,31 @@ void p2k_dcs_adsp_write_cmd(uint16_t command)
             qemu_mutex_unlock(&s_adsp.core_lock);
             return;
         }
-        /* pci_dcs_host_boot() repeats its final byte after a 1us delay. */
+        /* pci_dcs_host_boot() repeats its final byte after a 1us delay.
+         *
+         * On the physical DCS2 host port that write both starts the ADSP and
+         * remains in the host-input latch.  Williams' flash loaders account
+         * for it explicitly: after returning their 0x000c ready word, their
+         * first input-latch read is deliberately discarded.  Dropping the
+         * repeated byte here shifted the following stream by one word: the
+         * packed 0x0007/0xffff image bounds were decoded as 0xffff/first-data
+         * and the loader reported 0xeeee before programming anything. */
         s_adsp.host_boot = false;
         s_adsp.host_boot_completions++;
+        s_flash_loader_active = s_adsp.host_boot_words == 256;
         s_adsp.command_head = 0;
-        s_adsp.command_count = 0;
+        s_adsp.commands[0] = command;
+        s_adsp.command_count = 1;
+        s_adsp.input_busy = true;
         s_adsp.output_full = false;
         p2k_adsp2105_reset();
+        adsp_assert_mailbox_irq_locked();
         for (unsigned cycles = 0; cycles < 200000; cycles += 100) {
             qemu_mutex_lock(&s_adsp.lock);
             bool responded = s_adsp.output_full;
+            bool trigger_consumed = s_adsp.command_count == 0;
             qemu_mutex_unlock(&s_adsp.lock);
-            if (responded) {
+            if (responded && trigger_consumed) {
                 break;
             }
             p2k_adsp2105_execute(100);
@@ -721,10 +918,10 @@ void p2k_dcs_adsp_write_cmd(uint16_t command)
     static unsigned command_logs;
     /* Last word of SWE1's ACE1/DCS runtime mixer initialization.  The
      * optional test trigger must follow it, never split an in-flight triple. */
-    if (command == 0x8280) {
+    if (!s_flash_loader_active && command == 0x8280) {
         s_adsp.selftest_ready = true;
     }
-    if (command == 0xace1) {
+    if (!s_flash_loader_active && command == 0xace1) {
         s_adsp.host_ack[0] = 0x0100;
         s_adsp.host_ack[1] = 0x000c;
         s_adsp.host_ack_head = 0;
@@ -735,6 +932,7 @@ void p2k_dcs_adsp_write_cmd(uint16_t command)
         unsigned tail = (s_adsp.command_head + s_adsp.command_count) & 65535;
         s_adsp.commands[tail] = command;
         s_adsp.command_count++;
+        s_adsp.input_busy = true;
         s_adsp.commands_enqueued++;
         queued_after = s_adsp.command_count;
         if (getenv("P2K_DCS_ADSP_TRACE") && command_logs++ < 64) {
@@ -745,9 +943,16 @@ void p2k_dcs_adsp_write_cmd(uint16_t command)
                     command);
     }
     qemu_mutex_unlock(&s_adsp.lock);
-    bool synchronous_diag = command == 0x003a || command == 0x001b ||
-                            command == 0x00aa;
-    bool start_worker = s_adsp.threaded_engine &&
+    /* The runtime diagnostics use these three command values as requests
+     * that need an immediate answer.  A host-booted flash loader instead
+     * receives an arbitrary 16-bit image stream: 0x003a, 0x001b and 0x00aa
+     * are then ordinary data.  Treating a flash word as a diagnostic ran up
+     * to 250 million ADSP cycles synchronously on the vCPU thread, freezing
+     * guest time long enough to overflow XINA's interrupt stack. */
+    bool synchronous_diag = !s_flash_loader_active &&
+                            (command == 0x003a || command == 0x001b ||
+                             command == 0x00aa);
+    bool start_worker = !s_flash_loader_active && s_adsp.threaded_engine &&
                         !s_adsp.worker_started && command == 0x8280;
     if (s_adsp.threaded_engine && s_adsp.worker_started &&
         !synchronous_diag) {
@@ -776,7 +981,7 @@ void p2k_dcs_adsp_write_cmd(uint16_t command)
         adsp_worker_start();
         p2k_dcs_audio_adsp_runtime_ready();
     }
-    if (command == 0x003a || command == 0x001b || command == 0x00aa) {
+    if (synchronous_diag) {
         unsigned limit = command == 0x001b ? 250000000 : 20000000;
         qemu_mutex_lock(&s_adsp.core_lock);
         adsp_assert_mailbox_irq_locked();
@@ -831,7 +1036,7 @@ static void *adsp_mailbox_worker(void *opaque)
             qemu_mutex_lock(&s_adsp.lock);
             while (s_adsp.worker_run &&
                    !adsp_worker_has_command() &&
-                   (s_adsp.clock_output_rate <= 0 ||
+                   (s_adsp.host_boot || s_adsp.clock_output_rate <= 0 ||
                     s_adsp.clock_ring_count > ADSP_HYBRID_LOW_FRAMES)) {
                 qemu_cond_wait(&s_adsp.worker_cond, &s_adsp.lock);
             }
@@ -977,8 +1182,47 @@ static void adsp_worker_start(void)
     qemu_mutex_unlock(&s_adsp.lock);
     qemu_thread_create(&s_adsp.worker, "dcs-mailbox",
                        adsp_mailbox_worker, NULL, QEMU_THREAD_JOINABLE);
-    qemu_add_exit_notifier(&adsp_exit_notifier);
     info_report("dcs-adsp: runtime mailbox DSP worker started");
+}
+
+static void sound_flash_snapshot_save(void)
+{
+    const char *transaction = getenv("P2K_FUPDATE_STATUS_PATH");
+    if (!s_sound_flash || !s_sound_flash_snapshot_path[0] ||
+        !transaction || !*transaction || access(transaction, F_OK) != 0) {
+        return;
+    }
+    char temporary[sizeof(s_sound_flash_snapshot_path) + 8];
+    snprintf(temporary, sizeof(temporary), "%s.tmp",
+             s_sound_flash_snapshot_path);
+    FILE *stream = fopen(temporary, "wb");
+    if (!stream) {
+        warn_report("dcs-adsp: cannot create sound-flash snapshot %s: %s",
+                    temporary, strerror(errno));
+        return;
+    }
+    size_t written = fwrite(s_sound_flash, 1, P2K_DCS_SOUND_FLASH_SIZE,
+                            stream);
+    bool failed = written != P2K_DCS_SOUND_FLASH_SIZE ||
+                  fflush(stream) != 0 || fsync(fileno(stream)) != 0;
+    if (fclose(stream) != 0) {
+        failed = true;
+    }
+    if (failed) {
+        warn_report("dcs-adsp: short/failed sound-flash snapshot %s",
+                    temporary);
+        unlink(temporary);
+        return;
+    }
+    if (rename(temporary, s_sound_flash_snapshot_path) != 0) {
+        warn_report("dcs-adsp: cannot publish sound-flash snapshot %s: %s",
+                    s_sound_flash_snapshot_path, strerror(errno));
+        unlink(temporary);
+        return;
+    }
+    info_report("dcs-adsp: sound flash snapshot saved to %s (%u bytes%s)",
+                s_sound_flash_snapshot_path, P2K_DCS_SOUND_FLASH_SIZE,
+                s_sound_flash_dirty ? ", modified" : ", unchanged");
 }
 
 static void adsp_worker_shutdown(Notifier *notifier, void *data)
@@ -993,6 +1237,9 @@ static void adsp_worker_shutdown(Notifier *notifier, void *data)
         qemu_thread_join(&s_adsp.worker);
         s_adsp.worker_started = false;
     }
+    qemu_mutex_lock(&s_adsp.core_lock);
+    sound_flash_snapshot_save();
+    qemu_mutex_unlock(&s_adsp.core_lock);
     p2k_dcs_adsp_health_report();
 }
 
@@ -1051,13 +1298,29 @@ void p2k_dcs_adsp_host_reset(void)
     if (adsp_program_read(0x3deb) == 0x0000ff) {
         adsp_program_write(0x3deb, 0xffffff);
     }
+    /* pci_reset() resets the DSP-side board registers as well as the ADSP
+     * core.  Keeping the runtime SDRC mapping (for example 0c7c/7e4c) across
+     * an x86 host boot makes the serial-update flash loader address the old
+     * mixer map.  It then accepts its header but stalls on the first data
+     * word.  The physical reset state is all zero; the freshly host-booted
+     * loader programs the mapping it needs itself. */
+    memset(s_adsp.control, 0, sizeof(s_adsp.control));
+    memset(s_adsp.sdrc, 0, sizeof(s_adsp.sdrc));
+    s_adsp.output_control = 0;
+    s_adsp.sport_enabled = false;
     qemu_mutex_lock(&s_adsp.lock);
     s_adsp.host_boot = true;
+    s_flash_loader_active = false;
+    s_dcs_flash_mode = P2K_DCS_FLASH_ARRAY;
+    s_dcs_flash_status = 0x0080;
     s_adsp.host_boot_pos = 0;
     s_adsp.host_boot_words = 0;
     s_adsp.host_boot_compare_logged = false;
     s_adsp.command_head = 0;
     s_adsp.command_count = 0;
+    s_adsp.input_busy = false;
+    s_adsp.host_ack_head = 0;
+    s_adsp.host_ack_count = 0;
     s_adsp.output_full = false;
     s_adsp.clock_ring_head = 0;
     s_adsp.clock_ring_count = 0;
@@ -1069,7 +1332,7 @@ void p2k_dcs_adsp_host_reset(void)
 uint8_t p2k_dcs_adsp_flag_byte(void)
 {
     qemu_mutex_lock(&s_adsp.lock);
-    uint8_t flags = (s_adsp.command_count == 0 ? 0x40 : 0) |
+    uint8_t flags = (!s_adsp.input_busy ? 0x40 : 0) |
                     ((s_adsp.output_full || s_adsp.host_ack_count) ? 0x80 : 0);
     qemu_mutex_unlock(&s_adsp.lock);
     return flags;

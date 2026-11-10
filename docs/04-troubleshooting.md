@@ -224,10 +224,41 @@ scripts/run-qemu.sh --game swe1 --serial-tcp 4444
 nc 127.0.0.1 4444
 ```
 
-`--uart-quiet` suppresses both the UART mirror and chardev output; it wins over
-`-v`. The launcher also supplies a bounded boot input sequence in quiet mode to
-avoid leaving XINA in a synchronous polled read. See
+`--uart-quiet` suppresses the stderr mirror and uses a null sink when no TCP
+UART was requested; an explicit `--serial-tcp`/`--uart-tcp` connection remains
+a raw bidirectional COM1 transport. It wins over `-v`. The launcher also
+supplies a bounded boot input sequence in quiet mode to avoid leaving XINA in a
+synchronous polled read. See
 [Console scripting](42-console-scripting.md) for repeatable automation.
+
+## A serial update does not start or does not produce a pin
+
+Use the ordinary audio path and the factory-compatible rate first:
+
+```sh
+scripts/run-qemu.sh --game swe1 --update auto --serial-tcp 5599
+scripts/internal/serial-update-send.py updates/<bundle>/50069 \
+  --port 5599 --baud 115200 --mode full
+```
+
+| Symptom | Meaning and action |
+|---|---|
+| XINA prints `baudrate = <9600 ... 115200>` and returns to `%` | the running factory update rejected `230400`; use the helper default, `115200` |
+| `DCS2 board failed to initialize` or the first DCS packet times out | do not use `--no-audio`; it currently also disables the native ADSP/DCS model |
+| every frame was ACKed but no pin exists yet | close the QEMU window or press Ctrl-C on the direct runner so it can snapshot and promote |
+| a partial update has a `-serial-...` directory | expected: `game` and `sfonly` preserve the untouched device and therefore create a content-addressed hybrid |
+| no pin after stopping a `run-qemu.sh | tee ...` pipeline | repeat the runner directly; the pipeline can terminate before its ordered promotion handler finishes |
+
+No bundle or pin is published merely because bytes arrived on COM1. Encore
+requires XINA's final ACK, then snapshots the emulated devices after QEMU has
+stopped. Compare the five printed SHA-256 values with the intended source; a
+known exact bundle is reported as `reused`, while a new/hybrid state is
+reported as `created` with a `-serial-<content hash>` suffix. See the measured
+[cross-version matrix](15-rom-loading.md#observed-cross-version-matrix).
+Created states live only in `<savedata>/.serial-updates`; ordinary update
+discovery does not scan that directory, and successful replacement keeps only
+the active managed state for that game. The official `updates/` tree is never
+modified.
 
 ## Timing, stalls and rare fatal monitors
 
