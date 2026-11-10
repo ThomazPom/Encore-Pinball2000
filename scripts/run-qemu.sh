@@ -70,6 +70,7 @@ UART_QUIET=0
 AUDIO=""
 SOUND_LOADING="lazy"
 UART_TCP=""
+SERIAL_DEVICE=""
 FUPDATE_DIR=""
 SERIAL_STDIO=0
 CONSOLE_SCRIPT=""
@@ -532,7 +533,7 @@ CONSOLE / DIAGNOSTICS
                             invocation (set to "" to keep RX truly silent).
   --uart-drop <substr>      Drop any UART line containing <substr>
                             from the human-readable stderr mirror. The raw
-                            TCP COM1 wire is never filtered. By
+                            selected raw COM1 backend is never filtered. By
                             default the wrapper drops "swd Debug:"
                             (phantom switch debug spam from XINA).
                             Repeatable. Set the empty string via
@@ -551,6 +552,11 @@ CONSOLE / DIAGNOSTICS
                             bidirectional behavior — type XINA
                             commands like `?` or `continue` directly
                             into nc and watch the guest respond.
+  --serial-device <device>  Connect guest COM1 byte-for-byte to a host serial
+                            TTY such as /dev/serial/by-id/... or /dev/ttyS0.
+                            XINA controls its baud, parity and framing. Use a
+                            stable by-id path for USB adapters. Mutually
+                            exclusive with other COM1 transports and headless.
   --monitor <spec>          QEMU -monitor target (e.g. stdio,
                             unix:/tmp/qmon,server,nowait).
   --debug <opts>            QEMU -d options (e.g. int,cpu_reset,in_asm).
@@ -810,6 +816,13 @@ while [[ $# -gt 0 ]]; do
         *) shift 2 ;;
       esac ;;
     --serial)          SERIAL_STDIO=1; shift ;;
+    --serial-device)
+      [[ -n "${2:-}" ]] || {
+        echo "[run-qemu] --serial-device: expected a /dev serial device" >&2
+        exit 2
+      }
+      SERIAL_DEVICE="$2"
+      shift 2 ;;
     --network)         NETWORK=1; shift ;;
     --network-nat)     NETWORK=1; NETWORK_NAT=1; shift ;;
     --network-passt)   NETWORK=1; NETWORK_PASST=1; shift ;;
@@ -1107,6 +1120,31 @@ if [[ "$LPT_INPUT" == hybrid &&
 fi
 export P2K_LPT_DEVICE="$LPT_DEVICE"
 export P2K_LPT_INPUT="$LPT_INPUT"
+
+if [[ -n "$SERIAL_DEVICE" ]]; then
+  [[ "$SERIAL_DEVICE" == /dev/* ]] || {
+    echo "[run-qemu] --serial-device: expected an absolute path below /dev" >&2
+    exit 2
+  }
+  [[ -c "$SERIAL_DEVICE" ]] || {
+    echo "[run-qemu] --serial-device: '$SERIAL_DEVICE' is missing or is not a character device" >&2
+    exit 2
+  }
+  if [[ $SERIAL_STDIO -eq 1 || -n "$UART_TCP" || $HEADLESS -eq 1 || -n "$CONSOLE_SCRIPT" ]]; then
+    echo "[run-qemu] --serial-device is mutually exclusive with --serial, --uart-tcp/--serial-tcp, --headless and --script" >&2
+    exit 2
+  fi
+  if [[ $EUID -ne 0 && ( ! -r "$SERIAL_DEVICE" || ! -w "$SERIAL_DEVICE" ) ]]; then
+    echo "[run-qemu] --serial-device: '$SERIAL_DEVICE' is not readable and writable by $(id -un)" >&2
+    echo "[run-qemu] grant the session user access through the device's udev group, then log in again" >&2
+    exit 2
+  fi
+  if ! stty -F "$SERIAL_DEVICE" -a >/dev/null 2>&1; then
+    echo "[run-qemu] --serial-device: '$SERIAL_DEVICE' is not a usable host TTY" >&2
+    exit 2
+  fi
+  UART_QUIET=1
+fi
 
 if [[ ! "$SPEED_TARGET" =~ ^[0-9]+([.][0-9]+)?$ ]] ||
    ! awk -v value="$SPEED_TARGET" 'BEGIN { exit !(value >= 25 && value <= 300) }'; then
@@ -1783,12 +1821,12 @@ SERIAL_UPDATE_ROOT="$SAVEDATA_DIR/.serial-updates"
 # images after QEMU exits; the serial wire copy is deliberately not trusted as
 # the installed result.  --no-savedata remains fully ephemeral and cannot pin
 # a received update.
-if [[ -n "$UART_TCP" && $NO_SAVEDATA -eq 0 ]]; then
+if [[ ( -n "$UART_TCP" || -n "$SERIAL_DEVICE" ) && $NO_SAVEDATA -eq 0 ]]; then
   FUPDATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/encore-fupdate.XXXXXX")"
   export P2K_FUPDATE_STATUS_PATH="$FUPDATE_DIR/status"
   export P2K_BAR3_FLASH_SNAPSHOT="$FUPDATE_DIR/bar3.flash"
   export P2K_DCS_FLASH_SNAPSHOT="$FUPDATE_DIR/dcs.flash"
-elif [[ -n "$UART_TCP" && $NO_SAVEDATA -eq 1 ]]; then
+elif [[ ( -n "$UART_TCP" || -n "$SERIAL_DEVICE" ) && $NO_SAVEDATA -eq 1 ]]; then
   echo "[run-qemu] serial updates are ephemeral with --no-savedata and will not be pinned" >&2
 fi
 
@@ -1894,6 +1932,9 @@ elif [[ -n "$UART_TCP" ]]; then
     echo "[run-qemu] --uart-tcp + --headless: serial0 -> tcp://${UART_TCP}; "\
 "host-stderr UART mirror still active (use --uart-quiet to silence)." >&2
   fi
+elif [[ -n "$SERIAL_DEVICE" ]]; then
+  ARGS+=( -serial "$SERIAL_DEVICE" )
+  echo "[run-qemu] COM1 -> $SERIAL_DEVICE (guest-controlled serial parameters)" >&2
 elif [[ $HEADLESS -eq 1 ]]; then
   if [[ $UART_QUIET -eq 1 ]]; then
     ARGS+=( -serial null )

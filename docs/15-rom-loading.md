@@ -157,8 +157,9 @@ same profile. `--no-savedata` skips the seed and discards all BAR3 changes.
 
 ## Serial-installed updates
 
-Encore's TCP-backed COM1 accepts XINA's original binary `fupdate` protocol, so
-an external updater can use the guest's own validation and flashing path:
+Encore's COM1 accepts XINA's original binary `fupdate` protocol, so an external
+updater can use the guest's own validation and flashing path through TCP or a
+physical host serial port:
 
 ```sh
 scripts/run-qemu.sh --game swe1 --update auto --serial-tcp 5599
@@ -177,6 +178,31 @@ The helper defaults to `115200`, the fastest rate accepted by the tested 1999
 factory receivers as well as current updates. Newer receivers can also be
 tested explicitly with `--baud 230400`; SWE 1.00 rejects that rate and prints
 its `9600`–`115200` usage instead of entering the binary receiver.
+
+For Jim/myPinballs or another updater attached to a physical port, select the
+adapter in the cabinet installer or launch explicitly:
+
+```sh
+scripts/run-qemu.sh --game swe1 --update auto \
+  --serial-device /dev/serial/by-id/<adapter>
+```
+
+The transport remains byte-exact. Encore's emulated 16550 propagates XINA's
+divisor, parity, data-bit and stop-bit changes to QEMU's host serial backend,
+so the adapter follows the guest's transition from console traffic to the
+requested update rate. No host-side `stty` command should race that change.
+The update tool and Encore must still select the same update rate, and the
+cable/adapter must provide electrically compatible RS-232 with the wiring
+expected by the two endpoints.
+
+A host pseudo-TTY test exercised this exact QEMU serial backend end to end.
+XINA first programmed the host endpoint to `9600`, then `fupdate load com1
+115200 sfonly` changed it to `115200`; all 2,048 DCS frames and the final frame
+were acknowledged. After shutdown, Encore reconstructed a SWE 1.00/SWE 2.10
+sound-flash hybrid: its four BAR3 hashes still matched SWE 1.00 and its sound
+hash matched SWE 2.10 exactly. This proves the line-parameter handoff, binary
+transport, final-device snapshots and pin pipeline independently of TCP. Final
+electrical and cable validation still requires the target adapter.
 
 | Helper mode | XINA command suffix | Device state after success |
 |---|---|---|

@@ -22,7 +22,7 @@ usage() {
 Usage: ./uninstall.sh
 
 Remove only the system integration created by install.sh. Project files,
-ROMs, savedata and shared lp-group membership are left untouched.
+ROMs, savedata and shared hardware-access group memberships are left untouched.
 EOF
 }
 

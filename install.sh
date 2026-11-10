@@ -167,6 +167,139 @@ read -r -p "LPT device [auto/emulated/required] (auto): " lpt_device
 lpt_device="${lpt_device:-auto}"
 case "$lpt_device" in auto|emulated|required) ;; *) echo "Invalid LPT device" >&2; exit 2 ;; esac
 
+serial_device=""
+serial_target=""
+serial_access_group=""
+serial_detector="$ROOT/scripts/internal/serial-device-detect.py"
+serial_candidates=()
+
+prepare_serial_device() {
+    local serial_mode serial_group_digit
+
+    [[ "$serial_device" == /dev/* ]] || {
+        echo "Serial device must be an absolute /dev/... path: $serial_device" >&2
+        exit 2
+    }
+    [[ -c "$serial_device" ]] || {
+        echo "Serial device is not a character device: $serial_device" >&2
+        exit 2
+    }
+    serial_target="$(readlink -f "$serial_device" 2>/dev/null || true)"
+    [[ -n "$serial_target" && -c "$serial_target" ]] || {
+        echo "Serial device target is missing: $serial_device" >&2
+        exit 2
+    }
+    stty -F "$serial_device" -a >/dev/null 2>&1 || {
+        echo "Serial device is not a usable host TTY: $serial_device" >&2
+        exit 2
+    }
+    serial_group="$(stat -Lc %G "$serial_device")"
+
+    if runuser -u "$session_user" -- test -r "$serial_device" &&
+       runuser -u "$session_user" -- test -w "$serial_device"; then
+        return
+    fi
+
+    serial_mode="$(stat -Lc %a "$serial_device")"
+    serial_group_digit="${serial_mode: -2:1}"
+    if [[ "$serial_group" != root && "$serial_group" != 0 &&
+          ( "$serial_group_digit" == 6 || "$serial_group_digit" == 7 ) ]] &&
+       getent group "$serial_group" >/dev/null; then
+        serial_access_group="$serial_group"
+        return
+    fi
+
+    echo "The cabinet user cannot read/write $serial_device, and its current" >&2
+    echo "udev permissions do not expose a safe device group to grant." >&2
+    echo "Configure host udev permissions, reconnect the adapter, then rerun the installer." >&2
+    exit 2
+}
+
+detect_serial_without_python() {
+    local path target name type group kind label
+    local -A seen=()
+    local -a paths=()
+    shopt -s nullglob
+    paths+=(/dev/serial/by-id/* /dev/serial/by-path/*)
+    paths+=(/dev/ttyUSB* /dev/ttyACM* /dev/ttyS* /dev/ttyAMA* /dev/ttyTHS* /dev/ttymxc*)
+    shopt -u nullglob
+    for path in "${paths[@]}"; do
+        target="$(readlink -f "$path" 2>/dev/null || true)"
+        [[ -n "$target" && -c "$target" && -z "${seen[$target]:-}" ]] || continue
+        name="${target##*/}"
+        if [[ "$name" == ttyS* && -r "/sys/class/tty/$name/type" ]]; then
+            read -r type < "/sys/class/tty/$name/type"
+            [[ "$type" != 0 ]] || continue
+        fi
+        seen[$target]=1
+        group="$(stat -Lc %G "$target")"
+        case "$name" in
+            ttyUSB*|ttyACM*) kind="USB serial adapter" ;;
+            ttyS*) kind="built-in/PCI serial port" ;;
+            *) kind="serial port" ;;
+        esac
+        case "$path" in
+            /dev/serial/by-id/*) label="$kind (stable device ID)" ;;
+            /dev/serial/by-path/*) label="$kind (stable USB/PCI path)" ;;
+            *) label="$kind (kernel name may change)" ;;
+        esac
+        printf '%s\t%s\t%s\t%s\t%s\n' "$path" "$target" "$kind" "$label" "$group"
+    done
+}
+
+if command -v python3 >/dev/null 2>&1 &&
+   [[ -x "$serial_detector" || -r "$serial_detector" ]]; then
+    mapfile -t serial_candidates < <(python3 "$serial_detector")
+else
+    # The stripped installation lab intentionally starts without Python; the
+    # runner installs it during preflight. Keep hardware discovery available
+    # before that point using the same ordered/de-duplicated kernel surfaces.
+    mapfile -t serial_candidates < <(detect_serial_without_python)
+fi
+if ((${#serial_candidates[@]})); then
+    echo
+    echo "Host serial ports detected:"
+    for ((i=0; i<${#serial_candidates[@]}; i++)); do
+        IFS=$'\t' read -r candidate_path candidate_target candidate_kind candidate_label candidate_group \
+            <<<"${serial_candidates[i]}"
+        printf '  %d. %s\n     %s -> %s\n' \
+            "$((i + 1))" "$candidate_label" "$candidate_path" "$candidate_target"
+    done
+    printf '  %d. Enter another /dev/... path manually\n' "$(( ${#serial_candidates[@]} + 1 ))"
+    echo
+    echo "A USB serial adapter is a real serial TTY to Encore, even when it has"
+    echo "no DB9 connector. Linux cannot detect the connector wiring or whether"
+    echo "the attached cable is straight-through/null-modem."
+    if ask "Connect one of these host ports directly to Encore COM1?" N; then
+        read -r -p "Serial port [1-$(( ${#serial_candidates[@]} + 1 ))] (1): " serial_pick
+        serial_pick="${serial_pick:-1}"
+        [[ "$serial_pick" =~ ^[0-9]+$ && "$serial_pick" -ge 1 &&
+           "$serial_pick" -le $(( ${#serial_candidates[@]} + 1 )) ]] || {
+            echo "Invalid serial port" >&2; exit 2;
+        }
+        if ((serial_pick <= ${#serial_candidates[@]})); then
+            IFS=$'\t' read -r serial_device serial_target serial_kind serial_label serial_group \
+                <<<"${serial_candidates[serial_pick - 1]}"
+        else
+            read -r -p "Serial device path (/dev/...): " serial_device
+            serial_kind="manually selected serial port"
+            serial_label="$serial_kind"
+        fi
+        prepare_serial_device
+    fi
+else
+    echo
+    echo "No usable host serial controller or USB serial adapter is currently detected."
+    if ask "Enter a serial device path manually?" N; then
+        read -r -p "Serial device path (/dev/...): " serial_device
+        serial_kind="manually selected serial port"
+        serial_label="$serial_kind"
+        prepare_serial_device
+    else
+        echo "You can reconnect one later with --serial-device /dev/serial/by-id/..."
+    fi
+fi
+
 network=0
 network_mode=""
 network_bridge=""
@@ -381,6 +514,13 @@ echo "  setup        : $backend"
 echo "  session user : $session_user (unprivileged)"
 echo "  game         : $game"
 echo "  LPT device   : $lpt_device"
+if [[ -n "$serial_device" ]]; then
+    echo "  guest COM1   : $serial_device ($serial_kind)"
+    [[ -z "$serial_access_group" ]] || \
+        echo "  serial access: add $session_user to $serial_access_group (effective next login/reboot)"
+else
+    echo "  guest COM1   : internal/disabled (no physical host port)"
+fi
 if [[ -n "$network_bridge" ]]; then
     echo "  network      : SMC8416T on bridge $network_bridge (LAN-exposed)"
 elif [[ $network -eq 1 ]]; then
@@ -418,9 +558,16 @@ if ((${#missing_packages[@]})); then
     fi
 fi
 
+if [[ -n "$serial_access_group" ]] &&
+   ! id -nG "$session_user" | tr ' ' '\n' | grep -qx "$serial_access_group"; then
+    usermod -aG "$serial_access_group" "$session_user"
+    echo "[install.sh] added $session_user to $serial_access_group for $serial_device"
+fi
+
 launch_args=()
 [[ "$start_flipped" -eq 0 ]] || launch_args+=(--flipscreen)
 launch_args+=(--lpt-device "$lpt_device")
+[[ -z "$serial_device" ]] || launch_args+=(--serial-device "$serial_device")
 if [[ $network -eq 1 ]]; then
     case "$network_mode" in
         auto) launch_args+=(--network-auto) ;;
@@ -449,6 +596,7 @@ release_qemu="$release_dir/qemu-system-i386"
 # --preflight changes only its terminal action. The following reboot makes a
 # newly granted supplementary group effective before Encore starts.
 preflight_args=(--preflight --fullscreen --game "$game" --lpt-device "$lpt_device")
+[[ -z "$serial_device" ]] || preflight_args+=(--serial-device "$serial_device")
 if [[ $network -eq 1 ]]; then
     case "$network_mode" in
         auto) preflight_args+=(--network-auto) ;;

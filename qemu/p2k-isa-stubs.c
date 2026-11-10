@@ -14,8 +14,8 @@
  *   0x2F8..0x2FF      COM2 16550 UART — probe-compatible register model
  *   0x3F8..0x3FF      COM1 16550 UART — register model + console bridge
  *                     LSR (offset 5) reports THRE|TEMT so puts() does
- *                     not spin; the actual character is dropped (or
- *                     forwarded to host stderr if P2K_UART_TO_STDERR=1).
+ *                     not spin; COM1 bytes reach the configured QEMU chardev
+ *                     and may also be mirrored to filtered host stderr.
  *
  * These are intentionally minimum-viable.  If a future PRISM path needs
  * more (e.g. PCI cf8/cfc, MediaGX 0x22/0x23, VGA 0x3DA toggle, LPT
@@ -29,6 +29,7 @@
 #include "system/system.h"
 #include "chardev/char-fe.h"
 #include "chardev/char.h"
+#include "chardev/char-serial.h"
 
 #include "p2k-internal.h"
 
@@ -204,10 +205,10 @@ static const MemoryRegionOps p2k_post_ops = {
  *
  * Registers (DLAB-aware enough for printf to work):
  *   0  THR/RBR/DLL  -- write: emit char (or DLL latch when LCR.7=1)
- *   1  IER/DLM      -- ignored
+ *   1  IER/DLM      -- interrupt enables / high divisor latch
  *   2  IIR/FCR      -- read: 0x01 (no interrupt pending)
  *   3  LCR          -- stored, used for DLAB only
- *   4  MCR          -- ignored
+ *   4  MCR          -- stored; bit 4 enables local loopback
  *   5  LSR          -- 0x60 (THRE+TEMT, no RX data, no errors)
  *   6  MSR          -- 0x00
  *   7  SCR          -- scratch register, stored
@@ -268,6 +269,33 @@ static CharFrontend s_uart_be;
 static CharBackend s_uart_be;
 #endif
 static bool        s_uart_be_inited;
+
+/* A socket/file chardev ignores these controls, while QEMU's host-serial
+ * backend applies them through termios.  Propagating the guest's divisor is
+ * what lets a physical USB/PCI UART follow XINA from its console rate to the
+ * fupdate rate without a host-side stty race. */
+static void p2k_uart_update_backend_parameters(P2KUartState *uart)
+{
+    QEMUSerialSetParams params;
+    unsigned divisor;
+
+    if (!s_uart_be_inited || uart != &s_uart[0]) {
+        return;
+    }
+    divisor = ((unsigned)uart->dlm << 8) | uart->dll;
+    if (divisor == 0) {
+        return;
+    }
+    params.speed = 115200 / divisor;
+    params.data_bits = (uart->lcr & 0x03) + 5;
+    params.stop_bits = (uart->lcr & 0x04) ? 2 : 1;
+    if (!(uart->lcr & 0x08)) {
+        params.parity = 'N';
+    } else {
+        params.parity = (uart->lcr & 0x10) ? 'E' : 'O';
+    }
+    qemu_chr_fe_ioctl(&s_uart_be, CHR_IOCTL_SERIAL_SET_PARAMS, &params);
+}
 
 /* XINA fupdate uses fixed 518-byte frames: sequence, data length and checksum
  * are little-endian 16-bit fields followed by a 512-byte payload. Observing
@@ -700,6 +728,7 @@ static void p2k_uart_write(void *opaque, hwaddr addr,
     case 0:
         if (uart->lcr & 0x80) {
             uart->dll = val & 0xff;
+            p2k_uart_update_backend_parameters(uart);
         } else {
             uint8_t c = val & 0xFF;
             if (uart->mcr & 0x10) {
@@ -727,6 +756,7 @@ static void p2k_uart_write(void *opaque, hwaddr addr,
     case 1:
         if (uart->lcr & 0x80) {
             uart->dlm = val & 0xff;
+            p2k_uart_update_backend_parameters(uart);
         } else {
             uart->ier = val & 0x0F;
             /* Newly enabled THRI on an already-empty transmitter must fire
@@ -745,6 +775,7 @@ static void p2k_uart_write(void *opaque, hwaddr addr,
         break;
     case 3:
         uart->lcr = val & 0xFF;
+        p2k_uart_update_backend_parameters(uart);
         break;
     case 4:
         uart->mcr = val & 0x1f;

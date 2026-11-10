@@ -245,6 +245,9 @@ scripts/internal/serial-update-send.py updates/<bundle>/50069 \
 |---|---|
 | XINA prints `baudrate = <9600 ... 115200>` and returns to `%` | the running factory update rejected `230400`; use the helper default, `115200` |
 | `DCS2 board failed to initialize` or the first DCS packet times out | do not use `--no-audio`; it currently also disables the native ADSP/DCS model |
+| `--serial-device` says the path is missing after reconnect | select its `/dev/serial/by-id/...` name instead of an enumeration-dependent `/dev/ttyUSB<N>` name |
+| the physical updater sees no prompt or receives garbage | verify both ends use the same rate, an RS-232-level adapter rather than USB-TTL, and the required straight/null-modem wiring |
+| the device exists but is not readable/writable | rerun the cabinet installer to grant its detected udev group, then start a fresh login session or reboot |
 | every frame was ACKed but no pin exists yet | close the QEMU window or press Ctrl-C on the direct runner so it can snapshot and promote |
 | a partial update has a `-serial-...` directory | expected: `game` and `sfonly` preserve the untouched device and therefore create a content-addressed hybrid |
 | no pin after stopping a `run-qemu.sh | tee ...` pipeline | repeat the runner directly; the pipeline can terminate before its ordered promotion handler finishes |

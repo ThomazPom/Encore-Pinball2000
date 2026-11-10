@@ -191,12 +191,13 @@ See [Optional network card](48-network.md) for topology and guest setup.
 | Option | Effect |
 |---|---|
 | `--serial` | Open an interactive local XINA console through a temporary TCP UART and foreground `nc`. |
+| `--serial-device DEVICE` | Attach guest COM1 directly to a host character TTY such as `/dev/serial/by-id/...`, `/dev/ttyUSB0` or `/dev/ttyS0`; XINA controls its line parameters. |
 | `--uart-tcp HOST:PORT` | Expose COM1 as a bidirectional TCP server. |
 | `--serial-tcp PORT` | Alias for `--uart-tcp 127.0.0.1:PORT`. |
 | `--script FILE` | Validate and execute a console/cabinet automation script, leaving QEMU open afterward. |
 | `--console-script FILE` | Compatibility alias for `--script`. |
-| `--uart-quiet` | Disable the UART stderr mirror; without a TCP UART, use a null sink. A selected TCP COM1 transport remains raw and bidirectional. |
-| `--uart-drop TEXT` | Remove UART lines containing `TEXT` from the stderr mirror; repeatable. The raw TCP wire is never filtered. |
+| `--uart-quiet` | Disable the UART stderr mirror; without an explicit COM1 backend, use a null sink. A selected TCP or physical COM1 transport remains raw and bidirectional. |
+| `--uart-drop TEXT` | Remove UART lines containing `TEXT` from the stderr mirror; repeatable. The raw COM1 backend is never filtered. |
 | `--uart-no-filter` | Disable the default `swd Debug:` filter and custom drop rules. |
 | `--monitor SPEC` | Set the QEMU monitor target. |
 | `--debug ITEMS` | Enable QEMU `-d` items and write them to `/tmp/p2k_qemu.log`. |
@@ -220,11 +221,18 @@ manual UART TCP target, a manual monitor or `--headless`. Script syntax is in
 implementation such as Debian's `netcat-openbsd`. The screenshot directory
 and the parent directory of a video output must already exist.
 
-`--uart-tcp` and `--serial-tcp` also carry XINA's binary `fupdate` protocol
-without line buffering. A guest-accepted update is reconstructed and pinned as
-described in [ROMs, updates and software selection](15-rom-loading.md#serial-installed-updates).
+`--uart-tcp`, `--serial-tcp` and `--serial-device` carry XINA's binary
+`fupdate` protocol without line buffering. A guest-accepted update is
+reconstructed and pinned as described in
+[ROMs, updates and software selection](15-rom-loading.md#serial-installed-updates).
 Known exact bundles are referenced from the official catalog; custom or hybrid
 results stay in the savedata profile's private `.serial-updates` directory.
+
+Prefer `/dev/serial/by-id/...` for a USB adapter: it names the adapter rather
+than the order in which Linux happened to enumerate it. A USB device does not
+need a DB9 shell to be a serial port; USB-to-TTL and USB-to-RS-232 devices both
+expose TTYs, but only electrically compatible RS-232 hardware and the correct
+straight/null-modem wiring should be connected to another RS-232 endpoint.
 
 ## Self-diagnostic
 

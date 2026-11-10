@@ -30,6 +30,7 @@ Accept the safe defaults for a first installation:
 | session user          | dedicated normal user, UID at least 1000 | owns the graphical and emulator session                            |
 | game                  | `auto`                                   | follows a recognized real board, otherwise selects SWE1            |
 | LPT                   | `emulated` during commissioning          | prevents an accidental physical-board probe                        |
+| physical COM1         | disconnected until an update test        | avoids claiming an unrelated modem/console adapter                  |
 | network card          | disabled                                 | removes an unrelated configuration variable                        |
 | flipscreen            | enabled for a mounted cabinet display    | matches the normal cabinet orientation; `F2` changes it live       |
 | execution             | session user                             | root mode is diagnostic only                                       |
@@ -53,7 +54,8 @@ The installer is interactive even when a display profile is named on the
 command line. Before changing cabinet integration it:
 
 1. finds or asks for a non-system session user;
-2. collects game, LPT, optional network, display, execution and boot choices;
+2. collects game, LPT, optional physical COM1, network, display, execution
+   and boot choices;
 3. shows the complete configuration and asks for confirmation;
 4. runs the normal launcher in `--preflight --fullscreen` mode for the future
    session user's runtime identity;
@@ -66,7 +68,8 @@ command line. Before changing cabinet integration it:
 
 Preflight owns runtime preparation. It may offer to install packages, acquire
 the custom QEMU executable, fetch absent ROM/update trees, add the session user
-to `lp`, prepare a managed bridge TAP, or install the socket-activated CPU
+to a detected LPT/serial device group, prepare a managed bridge TAP, or install
+the socket-activated CPU
 shield. The shield's root broker is idle outside a run and only applies its
 temporary CPU masks while QEMU exists. QEMU itself still runs as the session
 user unless root diagnostic mode was explicitly selected. The exact boundary
@@ -182,7 +185,7 @@ rule. Run this profile only from the active local seat with DRM available.
 > runtime directory, D-Bus session, device ACLs and session teardown expected
 > by a normal graphical login.
 
-## Game, LPT and network choices
+## Game, LPT, COM1 and network choices
 
 The persistent game choice is `auto`, `swe1` or `rfm`. `auto` is useful in a
 finished two-game cabinet; an explicit game is easier to diagnose while
@@ -201,6 +204,31 @@ Use the ordinary launcher to commission an explicit port first, then choose a
 stable installed policy. See [LPT driver board](26-lpt-board.md) for protocol
 behavior and [Real LPT passthrough](46-real-lpt-passthrough.md) for the host
 device procedure.
+
+Before installing the cabinet session, the installer enumerates usable host
+serial character devices. It prefers persistent udev names under
+`/dev/serial/by-id/`, then stable hardware paths, and finally kernel names such
+as `/dev/ttyUSB0`, `/dev/ttyACM0` or a detected native UART. Placeholder
+`ttyS*` nodes whose kernel UART type is `PORT_UNKNOWN` are not offered.
+The final list entry accepts an explicit absolute `/dev/...` path for hardware
+with an unusual kernel name or a stable administrator-created udev link. If no
+candidate is found, the installer offers the same optional manual entry
+directly. It rejects non-character devices and paths that do not implement the
+TTY interface before changing the installed configuration.
+
+When a port is selected, guest COM1 is connected directly to it. USB serial
+adapters are supported: Linux and QEMU care about the TTY interface, not
+whether the adapter ends in DB9, a pin header or another connector. The
+installer displays the udev vendor/model/serial identity when available, but
+cannot infer voltage levels or cable wiring. A USB-to-TTL adapter is not an
+RS-232 adapter, and a PC-to-PC DB9 link commonly needs null-modem wiring.
+
+The installer verifies read/write access for the unprivileged cabinet user. If
+the device's udev policy exposes a writable group such as `dialout`, it offers
+that exact detected device and records the required group membership before
+the next login/reboot. It does not make Encore run as root or install a broad
+world-writable serial rule. A stable by-ID path survives unplug/replug and USB
+enumeration changes; a kernel name may not.
 
 Networking is disabled by default. When enabled, the installer exposes the
 same `auto`, `mirror`, `nat`, `passt`, `isolated` and existing-Linux-bridge
@@ -372,7 +400,8 @@ A `.hushlogin` created for a standalone cabinet is removed only when it is
 still empty and has the same device/inode identity recorded at installation.
 
 It intentionally preserves the project directory, ROMs, updates, savedata,
-download/build caches and shared `lp` group membership. Inspect its passive
+download/build caches and shared hardware-access group membership (for example
+`lp` or `dialout`). Inspect its passive
 contract with:
 
 ```bash
