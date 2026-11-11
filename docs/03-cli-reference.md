@@ -221,6 +221,17 @@ manual UART TCP target, a manual monitor or `--headless`. Script syntax is in
 implementation such as Debian's `netcat-openbsd`. The screenshot directory
 and the parent directory of a video output must already exist.
 
+`--serial-device` is mutually exclusive with `--serial`, `--uart-tcp` /
+`--serial-tcp`, `--headless` and `--script`. It requires an absolute character
+device below `/dev`, usable as a TTY and readable/writable by the current user.
+
+Quiet and explicit TCP/physical COM1 paths inject one bounded CR/LF startup
+sequence through `P2K_UART_INPUT`. It releases an early synchronous XINA read
+that could otherwise stop the vCPU before newly arriving chardev bytes can be
+delivered. This one-shot boot seed is separate from the external serial stream;
+the updater's bytes are not filtered or rewritten. Set `P2K_UART_INPUT=`
+explicitly only when an exactly empty startup RX FIFO is required.
+
 `--uart-tcp`, `--serial-tcp` and `--serial-device` carry XINA's binary
 `fupdate` protocol without line buffering. A guest-accepted update is
 reconstructed and pinned as described in

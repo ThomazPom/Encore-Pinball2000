@@ -25,6 +25,8 @@ belongs with [CPU and timer timing](12-cpu-and-timers.md),
 | cross-game/update/engine matrix | `docs/measurements/validation-matrix/run-matrix.py` |
 | repeatable DCS-engine workload | `docs/measurements/dcs-engines/run-comparison.py` |
 | console-script parser tests | `scripts/tests/test_console_script.py` |
+| serial-update reconstruction, exact-match reuse and pin lifecycle | `scripts/tests/test_serial_update_bundle.py` |
+| host serial-device discovery and stable-path ordering | `scripts/tests/test_serial_device_detect.py` |
 | matrix-verdict parser tests | `scripts/tests/test_validation_matrix.py` |
 | symbol-table and loaded-bench resolution tests | `scripts/tests/test_symbol_tools.py` |
 | ROM-backed key/switch smoke | `scripts/tests/smoke-switch-keymap.py` |
@@ -52,6 +54,12 @@ release or risky subsystem change.
 An emulator change normally needs the focused test that owns it plus one real
 normal launch. Timing, interrupt, audio-worker and LPT changes additionally
 need `--bench`. Release-wide compatibility claims need the matrix.
+
+Serial-update changes need their two unit suites plus a guest-driven transfer.
+The retained cross-version evidence covers TCP and a host pseudo-TTY, including
+exact five-component SHA-256 reconstruction; it does not certify voltage
+levels, cable wiring or a physical USB/DB9 adapter. The procedure and measured
+matrix are in [Serial-installed updates](15-rom-loading.md#observed-cross-version-matrix).
 
 ## Fast local gates
 

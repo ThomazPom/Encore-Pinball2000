@@ -16,6 +16,18 @@ owns four opaque device images under one savedata directory.
 interchangeable configuration files. Do not edit, concatenate or truncate
 them.
 
+A successful COM1 update may also create runner-owned selection metadata:
+
+| Path | Purpose |
+|---|---|
+| `<game>.update-pin` | absolute pointer to the exact bundle selected by later `--update auto` runs |
+| `.serial-updates/` | at most one private, content-addressed serial bundle per game when no official five-component bundle matches |
+
+These paths are not guest devices and must not be hand-edited. A malformed,
+wrong-game or unavailable pin stops startup instead of silently selecting a
+different update. See [Serial-installed updates](15-rom-loading.md#serial-installed-updates)
+for creation, validation and cleanup rules.
+
 The default directory is `savedata/` at the repository root. Select a separate
 one with:
 
@@ -50,7 +62,9 @@ below.
 > [!WARNING]
 > `--fresh` is a reset, not a temporary profile. It ignores all four existing
 > seeds, then replaces them with newly initialized images when Encore exits.
-> Back up the directory first if its audits, scores or adjustments matter.
+> It deliberately keeps an existing update pin, so `--update auto` still
+> installs that pinned update into the fresh BAR3 image. Back up the directory
+> first if its audits, scores or adjustments matter.
 
 In this mode BAR2 starts empty, BAR3 starts erased before the selected update
 is installed, SEEPROM starts from Encore's built-in board defaults, and RTC
@@ -59,7 +73,8 @@ starts from the current host date and time.
 `--no-savedata` exports `P2K_NO_SAVEDATA=1`, uses an empty throwaway working
 directory as a second isolation layer, discards every device change and removes
 that working directory on normal launcher exit. The selected savedata files are
-neither read nor written.
+neither read nor written. Existing update pins are ignored, and a serial update
+performed in this mode is not reconstructed or pinned.
 
 For a normal disposable run:
 
@@ -72,12 +87,15 @@ scripts/run-qemu.sh --game swe1 --no-savedata
 The active update is represented by `<game>.flash`, so changing update
 selection can change persistent state:
 
-- the default `--update auto` compares saved BAR3 with the newest matching
-  local bundle and installs the bundle in memory when they differ;
+- `--update auto` first honors a valid game pin; without one, it compares saved
+  BAR3 with the newest matching local bundle and installs that bundle in memory
+  when they differ;
 - an explicit update does the same comparison with the selected bundle;
 - a successfully installed bundle is saved to `<game>.flash` on exit;
 - `--update none` suppresses staging and auto-discovery, but still loads an
-  existing `<game>.flash` seed.
+  existing `<game>.flash` seed;
+- a valid `<game>.update-pin` affects only `--update auto`: explicit `none`,
+  `latest`, version, `r2` or directory selectors remain authoritative.
 
 Therefore this command does **not** guarantee base ROMs when saved flash exists:
 
@@ -101,8 +119,8 @@ layout.
 
 ## Back up, restore or separate profiles
 
-Exit Encore before copying state. A complete backup keeps the four devices
-together:
+Exit Encore before copying state. A complete backup keeps the four devices,
+serial bundles and pins together:
 
 ```sh
 cp -a savedata savedata.backup

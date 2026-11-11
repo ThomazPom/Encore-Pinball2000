@@ -230,6 +230,11 @@ the next login/reboot. It does not make Encore run as root or install a broad
 world-writable serial rule. A stable by-ID path survives unplug/replug and USB
 enumeration changes; a kernel name may not.
 
+The selected path is stored as `--serial-device` in
+`/etc/encore-pinball2000/launch.args` and is attached on every cabinet launch
+until the profile is reinstalled. If that device is later absent, Encore stops
+with an explicit error rather than silently attaching another serial port.
+
 Networking is disabled by default. When enabled, the installer exposes the
 same `auto`, `mirror`, `nat`, `passt`, `isolated` and existing-Linux-bridge
 modes as the launcher. Automatic mode is the normal choice. Bridge mode

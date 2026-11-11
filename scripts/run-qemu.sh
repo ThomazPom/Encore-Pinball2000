@@ -525,12 +525,12 @@ CONSOLE / DIAGNOSTICS
   --uart-quiet              Silence the COM1/UART stderr mirror. Without a
                             TCP transport COM1 uses a null sink. A selected
                             --uart-tcp/--serial-tcp transport remains a raw,
-                            unfiltered COM1 wire. Wins over -v. Also pre-stuffs
-                            P2K_UART_INPUT='\r\n\r\n\r\n\r\n' so XINU's
-                            synchronous polled-getc loop (op=22) does not
-                            wedge swe1 boot when interrupts are disabled.
-                            Override by exporting P2K_UART_INPUT before
-                            invocation (set to "" to keep RX truly silent).
+                            unfiltered COM1 wire. Wins over -v. Quiet and
+                            explicit TCP transports also pre-stuff a bounded
+                            P2K_UART_INPUT CR/LF sequence so XINU's synchronous
+                            polled-getc loop (op=22) does not wedge SWE1 boot
+                            with interrupts disabled. Override P2K_UART_INPUT
+                            before invocation (set it to "" for empty RX).
   --uart-drop <substr>      Drop any UART line containing <substr>
                             from the human-readable stderr mirror. The raw
                             selected raw COM1 backend is never filtered. By

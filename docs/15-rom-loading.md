@@ -167,7 +167,10 @@ scripts/run-qemu.sh --game swe1 --update auto --serial-tcp 5599
 
 Connect the updater, or a serial-to-TCP bridge, to `127.0.0.1:5599`. The TCP
 stream is byte-exact: UART line filters apply only to the optional stderr
-mirror. For a deterministic developer check, Encore also includes:
+mirror. Before an updater connects, the launcher supplies a bounded one-shot
+CR/LF boot seed so XINA can leave its early synchronous COM1 reads; this does
+not rewrite any byte subsequently sent by the updater. For a deterministic
+developer check, Encore also includes:
 
 ```sh
 scripts/internal/serial-update-send.py updates/<bundle>/50069 \
@@ -247,6 +250,14 @@ The other game and unrelated files are not touched. It then writes
 `<savedata>/<game>.update-pin`; later `--update auto` runs use that exact
 bundle. Any explicit selector (`none`, a version, `latest`, `r2` or a path)
 still wins over the pin.
+
+With `--game auto`, one valid game pin selects both that game and its bundle.
+If both games have pins, neither pin may choose the cabinet identity: normal
+driver-board detection remains authoritative and ordinary auto-update policy
+is used for that launch. Name `--game swe1` or `--game rfm` when the pinned
+choice must be deterministic. A malformed pin, a pin for the wrong game or a
+missing/incomplete target is a startup error, never a silent fallback. Pins
+are runner-managed files and should not be edited manually.
 
 > [!NOTE]
 > Serial reception never writes into the repository's `updates/` tree or any

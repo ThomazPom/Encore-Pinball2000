@@ -55,6 +55,20 @@ reproducible diagnosis or validation, name the game explicitly.
 > [ROM and update selection](15-rom-loading.md) and
 > [Persistent cabinet state](09-savedata.md).
 
+## Serial-update support boundary
+
+XINA's native COM1 `fupdate` path is implemented through `--serial-tcp` /
+`--uart-tcp` and `--serial-device`. Complete and partial transfers have been
+guest-driven across the oldest/newest preserved SWE1 and RFM pairs. Their final
+BAR3 and DCS flash images were reconstructed into five components and matched
+the intended SHA-256 values exactly. A host pseudo-TTY also proved that XINA's
+baud/framing changes reach QEMU's host serial backend.
+
+That establishes the emulated UART, guest flash path, snapshot and pinning
+pipeline. A real RS-232/USB adapter, its voltage levels and straight/null-modem
+cable remain hardware validation, not a consequence of the pseudo-TTY result.
+See [Serial-installed updates](15-rom-loading.md#serial-installed-updates).
+
 ## Preserved update inventory
 
 The current asset set contains 25 extracted update bundles. Their complete
