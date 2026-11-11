@@ -229,9 +229,10 @@ electrical and cable validation still requires the target adapter.
 > [!CAUTION]
 > `game` and `sfonly` intentionally create a five-component hybrid. Encore
 > preserves that exact state; it does not silently fill the untouched device
-> from the submitted bundle. A newly reconstructed bundle therefore always
-> carries `-serial-<content hash>` in its directory name. Only a known bundle
-> whose **five** SHA-256 hashes match is reused under its existing name.
+> from the submitted bundle. Only a known bundle whose **five** SHA-256 hashes
+> match is reused under its official name. Otherwise the result replaces that
+> game's single user-owned custom bundle; the component hashes remain in its
+> manifest and the promotion log, not in its directory name.
 
 > [!IMPORTANT]
 > Encore does not install a copy captured from the serial wire. It waits for
@@ -241,13 +242,13 @@ electrical and cable validation still requires the target adapter.
 
 If all five reconstructed components already exist byte-for-byte in a known
 bundle, Encore reuses it directly from the read-only update catalog. Otherwise
-it atomically creates a private bundle under
-`<savedata>/.serial-updates`, with a `-serial-<content hash>` suffix. This
-private directory is never searched by ordinary version discovery. Encore
-keeps at most one managed serial bundle per game in each savedata profile;
-after the new pin is durable, an older managed bundle for that game is removed.
-The other game and unrelated files are not touched. It then writes
-`<savedata>/<game>.update-pin`; later `--update auto` runs use that exact
+it replaces the game's single private bundle under
+`$XDG_DATA_HOME/encore/serial-updates/<game>/` (normally
+`~/.local/share/encore/serial-updates/<game>/`). This directory is never
+searched by ordinary version discovery and does not accumulate every possible
+BAR3/DCS combination. The other game and unrelated files are not touched.
+Encore then writes `$XDG_CONFIG_HOME/encore/update-pins/<game>.update-pin`
+(normally below `~/.config/encore`); later `--update auto` runs use that exact
 bundle. Any explicit selector (`none`, a version, `latest`, `r2` or a path)
 still wins over the pin.
 
@@ -262,16 +263,17 @@ are runner-managed files and should not be edited manually.
 > [!NOTE]
 > Serial reception never writes into the repository's `updates/` tree or any
 > other official update catalog. Exact official matches are referenced in
-> place; custom and hybrid states remain private to the savedata profile.
+> place; only the one current custom or hybrid state per game occupies the
+> user's Encore data directory.
 
-The pin belongs to the savedata profile. Both `--fresh` and `--no-savedata`
-read it for `--update auto`, so resetting or suppressing mutable cabinet state
-does not silently downgrade the software. `--fresh` may persist the resulting
-device images; `--no-savedata` writes no device image and never creates or
-changes a pin. After XINA reports a completed update in an ordinary persistent
-run, closing the window or pressing Ctrl-C is safe: the runner first stops QEMU
-so both flash snapshots are published, then promotes the acknowledged
-transaction.
+The pin belongs to the Encore user configuration, independently of every
+savedata profile. Both `--fresh` and `--no-savedata` read it for `--update
+auto`, so resetting or suppressing mutable cabinet state does not silently
+downgrade the software. `--fresh` may persist the resulting device images;
+`--no-savedata` writes no device image and never creates or changes a pin.
+After XINA reports a completed update in an ordinary persistent run, closing
+the window or pressing Ctrl-C is safe: the runner first stops QEMU so both
+flash snapshots are published, then promotes the acknowledged transaction.
 
 Run the launcher directly while installing. Do not put it on the left side of
 a diagnostic `| tee` pipeline: the terminal can terminate that foreground

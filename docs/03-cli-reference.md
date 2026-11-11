@@ -51,7 +51,7 @@ See the [Quickstart](02-quickstart.md) for the complete first-run sequence.
 | `--game auto\|swe1\|rfm` | Select the title. `auto` is the default. |
 | `--roms DIR` | Use `DIR` instead of the repository `roms/` tree. |
 | `--savedata DIR` | Read and write `<game>.flash`, `<game>.nvram2`, `<game>.see` and `<game>.rtc` under `DIR`. |
-| `--no-savedata` | Ignore mutable guest device-state seeds, disable their writes and use a fresh throwaway working directory; `--update auto` still reads the profile's update pin. |
+| `--no-savedata` | Ignore mutable guest device-state seeds, disable their writes and use a fresh throwaway working directory; `--update auto` still reads the user's global update pin. |
 | `--fresh` | Ignore existing state for this boot, then replace it with newly initialized state in the same directory on exit. |
 | `--update SPEC` | Select `auto`, `latest`, `none`, `r2`, a short version code or an explicit inner bundle directory. |
 | `--pub-card DIR` | Experimental Prism Update Board backed by a bundle directory; incompatible with network modes because both boards decode `0xD0000`. |
@@ -237,7 +237,9 @@ explicitly only when an exactly empty startup RX FIFO is required.
 reconstructed and pinned as described in
 [ROMs, updates and software selection](15-rom-loading.md#serial-installed-updates).
 Known exact bundles are referenced from the official catalog; custom or hybrid
-results stay in the savedata profile's private `.serial-updates` directory.
+results replace the one current bundle for that game below
+`$XDG_DATA_HOME/encore/serial-updates`, selected by the global pin below
+`$XDG_CONFIG_HOME/encore/update-pins`.
 
 Prefer `/dev/serial/by-id/...` for a USB adapter: it names the adapter rather
 than the order in which Linux happened to enumerate it. A USB device does not

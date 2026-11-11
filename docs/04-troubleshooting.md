@@ -249,21 +249,21 @@ scripts/internal/serial-update-send.py updates/<bundle>/50069 \
 | the physical updater sees no prompt or receives garbage | verify both ends use the same rate, an RS-232-level adapter rather than USB-TTL, and the required straight/null-modem wiring |
 | the device exists but is not readable/writable | rerun the cabinet installer to grant its detected udev group, then start a fresh login session or reboot |
 | every frame was ACKed but no pin exists yet | close the QEMU window or press Ctrl-C on the direct runner so it can snapshot and promote |
-| a partial update has a `-serial-...` directory | expected: `game` and `sfonly` preserve the untouched device and therefore create a content-addressed hybrid |
+| a partial update selects the user-owned custom bundle | expected: `game` and `sfonly` preserve the untouched device and therefore replace the game's one current hybrid |
 | no pin after stopping a `run-qemu.sh | tee ...` pipeline | repeat the runner directly; the pipeline can terminate before its ordered promotion handler finishes |
-| startup reports a malformed, wrong-game or unavailable update pin | do not expect fallback; restore the complete savedata profile or deliberately select an explicit known bundle, then inspect the pin rules before removing managed metadata |
+| startup reports a malformed, wrong-game or unavailable update pin | do not expect fallback; deliberately select an explicit known bundle, then inspect the global pin below `$XDG_CONFIG_HOME/encore/update-pins` before removing managed metadata |
 | SWE1 1.10 prints `FLASH Update Complete!`, then `MASKED IMAGE BANK (0) MISMATCH` and a fatal error | expected historical 1.10 checksum bug; let it reset and verify the target version, as described in the [serial updater note](15-rom-loading.md#swe-110-post-update-mismatch) |
 
 No bundle or pin is published merely because bytes arrived on COM1. Encore
 requires XINA's final ACK, then snapshots the emulated devices after QEMU has
 stopped. Compare the five printed SHA-256 values with the intended source; a
 known exact bundle is reported as `reused`, while a new/hybrid state is
-reported as `created` with a `-serial-<content hash>` suffix. See the measured
-[cross-version matrix](15-rom-loading.md#observed-cross-version-matrix).
-Created states live only in `<savedata>/.serial-updates`; ordinary update
-discovery does not scan that directory, and successful replacement keeps only
-the active managed state for that game. The official `updates/` tree is never
-modified.
+reported as `created` in the game's single replaceable custom location. See
+the measured [cross-version matrix](15-rom-loading.md#observed-cross-version-matrix).
+Created states live only below `$XDG_DATA_HOME/encore/serial-updates`;
+ordinary update discovery does not scan that directory, and successful
+replacement keeps only the active managed state for that game. The official
+`updates/` tree is never modified.
 
 ## Timing, stalls and rare fatal monitors
 

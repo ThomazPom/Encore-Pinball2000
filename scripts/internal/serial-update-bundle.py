@@ -4,7 +4,8 @@
 The guest programs two devices: the 4 MiB PRISM BAR3 flash and the 1 MiB DCS
 sound flash.  This tool treats those final device images as the source of
 truth, reconstructs the five runtime ROM components, reuses an identical
-existing bundle when possible, and atomically updates a per-game pin.
+official bundle when possible, replaces the game's single custom bundle, and
+atomically updates a per-game pin.
 """
 
 from __future__ import annotations
@@ -195,22 +196,17 @@ def install_bundle(
     install_root: Path,
 ) -> Path:
     install_root.mkdir(parents=True, exist_ok=True)
-    fingerprint = hashlib.sha256(
-        "".join(hashes[kind] for kind in KINDS).encode("ascii")
-    ).hexdigest()
     # A newly reconstructed serial installation is not necessarily the
     # canonical full release named by its BAR3 bootdata: the original tool's
     # `game` and `sfonly` modes deliberately produce mixed BAR3/DCS states.
     # Exact known five-component bundles are reused before this function is
-    # called.  Everything created here therefore carries a content-derived
-    # suffix, avoiding a canonical-looking name for a hybrid or unknown build.
-    destination = install_root / f"{identity.outer_name}-serial-{fingerprint[:12]}"
-    if destination.exists():
-        raise FileExistsError(
-            f"different serial-update destination already exists: {destination}"
-        )
+    # called. Everything created here is the one current custom state for the
+    # game; a later custom state replaces it instead of accumulating every
+    # possible BAR3/DCS combination under a content-derived name.
+    destination = install_root / identity.game
 
     temporary = Path(tempfile.mkdtemp(prefix=".incoming-", dir=install_root))
+    previous: Path | None = None
     try:
         inner = temporary / str(identity.game_id)
         inner.mkdir()
@@ -229,10 +225,46 @@ def install_bundle(
         write_file(temporary / "serial-install.json", manifest_data)
         fsync_directory(inner)
         fsync_directory(temporary)
+
+        if destination.exists() or destination.is_symlink():
+            if destination.is_symlink() or not destination.is_dir():
+                raise FileExistsError(
+                    f"refusing unmanaged serial-update destination: {destination}"
+                )
+            try:
+                existing_manifest = json.loads(
+                    (destination / "serial-install.json").read_text(encoding="utf-8")
+                )
+            except (OSError, ValueError) as error:
+                raise FileExistsError(
+                    f"refusing unmanaged serial-update destination: {destination}"
+                ) from error
+            if (existing_manifest.get("source") != "xina-fupdate-com1" or
+                    existing_manifest.get("game") != identity.game):
+                raise FileExistsError(
+                    f"refusing unmanaged serial-update destination: {destination}"
+                )
+            previous = Path(tempfile.mkdtemp(
+                prefix=f".previous-{identity.game}-", dir=install_root
+            ))
+            previous.rmdir()
+            os.rename(destination, previous)
         os.rename(temporary, destination)
         fsync_directory(install_root)
+        if previous is not None:
+            try:
+                shutil.rmtree(previous)
+                fsync_directory(install_root)
+            except OSError as error:
+                print(
+                    f"[serial-update] warning: could not remove replaced custom "
+                    f"bundle {previous}: {error}",
+                    file=os.sys.stderr,
+                )
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
+        if previous is not None and previous.exists() and not destination.exists():
+            os.rename(previous, destination)
         raise
     return (destination / str(identity.game_id)).resolve()
 
@@ -253,34 +285,37 @@ def write_pin(pin: Path, inner: Path) -> None:
         raise
 
 
-def prune_managed_bundles(install_root: Path, game_id: int, keep: Path) -> None:
-    """Keep only the active managed serial bundle for one game/profile."""
-    root = install_root.resolve()
-    keep_outer = keep.resolve().parent
-    if not root.is_dir():
+def remove_managed_bundle(install_root: Path, game: str) -> None:
+    """Remove the game's replaceable custom bundle after selecting official data."""
+    destination = install_root / game
+    if not destination.exists():
         return
-    for inner in sorted(root.glob(f"pin2000_{game_id}_*-serial-*/{game_id}")):
-        outer = inner.parent
-        if outer.resolve() == keep_outer:
-            continue
-        # Only our exact content-addressed outer-directory shape is managed.
-        # Symlinks and unrelated user content are never traversed or removed.
-        if outer.is_symlink() or not inner.is_dir() or inner.is_symlink():
-            continue
-        try:
-            shutil.rmtree(outer)
-        except OSError as error:
-            print(
-                f"[serial-update] warning: could not prune obsolete managed "
-                f"bundle {outer}: {error}",
-                file=os.sys.stderr,
-            )
+    if destination.is_symlink() or not destination.is_dir():
+        return
     try:
-        fsync_directory(root)
+        manifest = json.loads(
+            (destination / "serial-install.json").read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return
+    if (manifest.get("source") != "xina-fupdate-com1" or
+            manifest.get("game") != game):
+        return
+    try:
+        shutil.rmtree(destination)
     except OSError as error:
         print(
-            f"[serial-update] warning: could not sync managed bundle "
-            f"directory {root}: {error}",
+            f"[serial-update] warning: could not remove obsolete custom "
+            f"bundle {destination}: {error}",
+            file=os.sys.stderr,
+        )
+        return
+    try:
+        fsync_directory(install_root)
+    except OSError as error:
+        print(
+            f"[serial-update] warning: could not sync custom bundle "
+            f"directory {install_root}: {error}",
             file=os.sys.stderr,
         )
 
@@ -300,14 +335,13 @@ def promote(
         )
     hashes = component_hashes(components)
     roots = [root.resolve() for root in search_roots]
-    if install_root.resolve() not in roots:
-        roots.append(install_root.resolve())
     inner = find_identical_bundle(identity, hashes, roots)
     created = inner is None
     if inner is None:
         inner = install_bundle(identity, components, hashes, install_root)
     write_pin(pin, inner)
-    prune_managed_bundles(install_root, identity.game_id, inner)
+    if not created:
+        remove_managed_bundle(install_root, identity.game)
     return inner, identity, hashes, created
 
 
@@ -323,7 +357,7 @@ def parse_args() -> argparse.Namespace:
     pin.add_argument("--pin", type=Path)
     pin.add_argument(
         "--pin-dir", type=Path,
-        help="write <detected-game>.update-pin in this profile directory",
+        help="write <detected-game>.update-pin in this configuration directory",
     )
     parser.add_argument("--expected-game", choices=("swe1", "rfm"))
     return parser.parse_args()

@@ -58,6 +58,10 @@ esac
 unset P2K_FRAMEBUFFER_THREAD
 NO_SAVEDATA=0
 FRESH_SAVEDATA=0
+ENCORE_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/encore"
+ENCORE_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/encore"
+UPDATE_PIN_ROOT="${P2K_UPDATE_PIN_DIR:-$ENCORE_CONFIG_HOME/update-pins}"
+SERIAL_UPDATE_ROOT="${P2K_SERIAL_UPDATE_DIR:-$ENCORE_DATA_HOME/serial-updates}"
 CLEAR_PB2K_ADSP_CACHE=0
 PB2K_ADSP_CACHE_DIR="${P2K_PB2K_ADSP_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/encore-pb2k/pb2kslib-adsp}"
 PB2K_ADSP_CACHE_WORKERS="${P2K_PB2K_ADSP_CACHE_WORKERS:-6}"
@@ -1552,7 +1556,7 @@ ROM_REVISION=""
 
 update_pin_path() {
   local game="$1"
-  printf '%s/%s.update-pin\n' "$(realpath -m "$SAVEDATA_DIR")" "$game"
+  printf '%s/%s.update-pin\n' "$(realpath -m "$UPDATE_PIN_ROOT")" "$game"
 }
 
 read_update_pin() {
@@ -1815,7 +1819,8 @@ else
   fi
 fi
 SAVEDATA_DIR="$(realpath -m "$SAVEDATA_DIR")"
-SERIAL_UPDATE_ROOT="$SAVEDATA_DIR/.serial-updates"
+UPDATE_PIN_ROOT="$(realpath -m "$UPDATE_PIN_ROOT")"
+SERIAL_UPDATE_ROOT="$(realpath -m "$SERIAL_UPDATE_ROOT")"
 
 # A COM1 fupdate is accepted only when XINA ACKs its final protocol frame.
 # Device exit notifiers then snapshot the resulting BAR3 and DCS flashes into
@@ -1853,7 +1858,7 @@ promote_completed_serial_update() {
     --sound-flash "$dcs"
     --install-root "$SERIAL_UPDATE_ROOT"
     --search-root "$ROOT/updates"
-    --pin-dir "$SAVEDATA_DIR"
+    --pin-dir "$UPDATE_PIN_ROOT"
   )
   case "$GAME" in
     swe1|rfm) promote_args+=(--expected-game "$GAME") ;;

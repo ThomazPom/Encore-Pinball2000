@@ -99,7 +99,9 @@ class SerialUpdateBundleTests(unittest.TestCase):
                 "swe1",
             )
             self.assertTrue(created)
-            self.assertIn("-serial-", inner.parent.name)
+            self.assertEqual(
+                inner, (root / "installed" / "swe1" / "50069").resolve()
+            )
             self.assertEqual(identity.outer_name,
                              "pin2000_50069_0210_10312025_B_10000000")
             output_paths = SERIAL_UPDATE.component_paths(inner)
@@ -134,7 +136,7 @@ class SerialUpdateBundleTests(unittest.TestCase):
                 str(source.resolve()),
             )
 
-    def test_partial_update_state_is_preserved_as_distinct_serial_bundle(self):
+    def test_partial_update_state_becomes_current_custom_bundle(self):
         target = fixture_components(50069, 2, 10)
         source = fixture_components(50069, 1, 0)
         mixed = dict(target)
@@ -155,7 +157,9 @@ class SerialUpdateBundleTests(unittest.TestCase):
 
             self.assertTrue(created)
             self.assertEqual(identity.version, "0210")
-            self.assertIn("-serial-", inner.parent.name)
+            self.assertEqual(
+                inner, (root / "installed" / "swe1" / "50069").resolve()
+            )
             output = SERIAL_UPDATE.component_paths(inner)
             for kind in ("bootdata", "im_flsh0", "game", "symbols"):
                 with self.subTest(kind=kind):
@@ -197,17 +201,21 @@ class SerialUpdateBundleTests(unittest.TestCase):
                     game,
                 )
 
-            swe_dirs = list(install_root.glob("pin2000_50069_*-serial-*"))
-            rfm_dirs = list(install_root.glob("pin2000_50070_*-serial-*"))
-            self.assertEqual(len(swe_dirs), 1)
-            self.assertEqual(len(rfm_dirs), 1)
+            swe_dir = install_root / "swe1"
+            rfm_dir = install_root / "rfm"
+            self.assertTrue((swe_dir / "50069").is_dir())
+            self.assertTrue((rfm_dir / "50070").is_dir())
+            self.assertEqual(
+                SERIAL_UPDATE.component_paths(swe_dir / "50069")["game"].read_bytes(),
+                swe_second["game"],
+            )
             self.assertTrue((unrelated / "keep").is_file())
             self.assertEqual(
                 (root / "state" / "swe1.update-pin").read_text().strip(),
-                str((swe_dirs[0] / "50069").resolve()),
+                str((swe_dir / "50069").resolve()),
             )
 
-    def test_reusing_known_bundle_prunes_obsolete_managed_copy(self):
+    def test_reusing_known_bundle_removes_obsolete_custom_copy(self):
         components = fixture_components()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -235,7 +243,7 @@ class SerialUpdateBundleTests(unittest.TestCase):
             )
             self.assertFalse(created)
             self.assertEqual(reused, known.resolve())
-            self.assertFalse(managed.parent.exists())
+            self.assertFalse((install_root / "swe1").exists())
             self.assertEqual(
                 (root / "state" / "swe1.update-pin").read_text().strip(),
                 str(known.resolve()),

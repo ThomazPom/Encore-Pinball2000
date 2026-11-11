@@ -18,16 +18,19 @@ class UpdatePinLauncherTests(unittest.TestCase):
             temp = Path(temporary)
             profile = temp / "savedata"
             bundle = (
-                profile
-                / ".serial-updates"
-                / "pin2000_50069_0210_10312025_B_10000000-test"
+                temp
+                / "data"
+                / "encore"
+                / "serial-updates"
+                / "swe1"
                 / "50069"
             )
             bundle.mkdir(parents=True)
             for kind in ("bootdata", "im_flsh0", "game", "symbols", "sf"):
                 (bundle / f"pin2000_50069_0210_{kind}.rom").write_bytes(b"test")
 
-            pin = profile / "swe1.update-pin"
+            pin = temp / "config" / "encore" / "update-pins" / "swe1.update-pin"
+            pin.parent.mkdir(parents=True)
             pin.write_text(f"{bundle}\n")
             pin_hash = hashlib.sha256(pin.read_bytes()).hexdigest()
 
@@ -51,6 +54,8 @@ class UpdatePinLauncherTests(unittest.TestCase):
                     "QEMU_BIN": str(fake_qemu),
                     "FAKE_QEMU_CAPTURE": str(capture),
                     "XDG_CACHE_HOME": str(temp / "cache"),
+                    "XDG_CONFIG_HOME": str(temp / "config"),
+                    "XDG_DATA_HOME": str(temp / "data"),
                 }
             )
             result = subprocess.run(
