@@ -174,6 +174,19 @@ scripts/internal/serial-update-send.py updates/<bundle>/50069 \
   --port 5599 --mode full
 ```
 
+<a id="swe-110-post-update-mismatch"></a>
+
+> [!IMPORTANT]
+> **Any SWE1 update started while version 1.10 is running finishes by showing
+> `FLASH Update Complete!`, followed by `MASKED IMAGE BANK (0) MISMATCH` and a
+> fatal error.** The flash write has succeeded: let the machine reset, then
+> verify that the selected target version boots. Encore can snapshot and pin
+> the installed target normally when the runner exits. SWE1 1.10 mistakenly
+> expects masked-ROM checksum `0778a4ce` instead of the U100/U101 set's actual
+> `047ba1d1`; 1.20 corrected this historical OS bug. Do not replace the mask
+> ROM files because of this particular post-update message. See the
+> [SWE1 1.20 changelog entry](50-game-changelogs.md#swe-120-rom-checksum-fix).
+
 The helper defaults to `115200`, the fastest rate accepted by the tested 1999
 factory receivers as well as current updates. Newer receivers can also be
 tested explicitly with `--baud 230400`; SWE 1.00 rejects that rate and prints

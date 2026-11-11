@@ -251,6 +251,7 @@ scripts/internal/serial-update-send.py updates/<bundle>/50069 \
 | every frame was ACKed but no pin exists yet | close the QEMU window or press Ctrl-C on the direct runner so it can snapshot and promote |
 | a partial update has a `-serial-...` directory | expected: `game` and `sfonly` preserve the untouched device and therefore create a content-addressed hybrid |
 | no pin after stopping a `run-qemu.sh | tee ...` pipeline | repeat the runner directly; the pipeline can terminate before its ordered promotion handler finishes |
+| SWE1 1.10 prints `FLASH Update Complete!`, then `MASKED IMAGE BANK (0) MISMATCH` and a fatal error | expected historical 1.10 checksum bug; let it reset and verify the target version, as described in the [serial updater note](15-rom-loading.md#swe-110-post-update-mismatch) |
 
 No bundle or pin is published merely because bytes arrived on COM1. Encore
 requires XINA's final ACK, then snapshots the emulated devices after QEMU has
