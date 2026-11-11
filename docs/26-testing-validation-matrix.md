@@ -27,6 +27,7 @@ belongs with [CPU and timer timing](12-cpu-and-timers.md),
 | console-script parser tests | `scripts/tests/test_console_script.py` |
 | serial-update reconstruction, exact-match reuse and pin lifecycle | `scripts/tests/test_serial_update_bundle.py` |
 | host serial-device discovery and stable-path ordering | `scripts/tests/test_serial_device_detect.py` |
+| legacy GUI serial discovery and repeatable PTY reconnects | `scripts/tests/test_serial_updater_bridge.py` |
 | matrix-verdict parser tests | `scripts/tests/test_validation_matrix.py` |
 | symbol-table and loaded-bench resolution tests | `scripts/tests/test_symbol_tools.py` |
 | ROM-backed key/switch smoke | `scripts/tests/smoke-switch-keymap.py` |

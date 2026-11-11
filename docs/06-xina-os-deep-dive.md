@@ -22,8 +22,8 @@ West's graphics/XINA design credit. An older PinRepair field reference,
 republished by the [GerWiki Pinball 2000 XINA
 page](https://www.gerwiki.de/xina/p2k), describes XINA as an
 application/platform layer built over PC-XINU, the small operating system
-associated with Douglas Comer. It also preserves command research credited in
-part to Jim Hicks.
+associated with Douglas Comer. It also preserves later community command
+research.
 
 The historical account says PC-XINU was attractive as a compact multithreaded
 embedded base that Williams could adapt for real-time work, with licensing

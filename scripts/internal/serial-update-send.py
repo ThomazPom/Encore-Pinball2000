@@ -1,24 +1,102 @@
 #!/usr/bin/env python3
 """Send an Encore update bundle through XINA's native COM1 fupdate protocol.
 
-This is a deterministic test client, not the product UI.  It exercises the
-same 518-byte protocol as the historical updater and Jim's updater so the
-emulator can be validated without treating the received wire bytes as the
-resulting flash contents.
+This is a deterministic test client, not a product UI. It exercises the
+historical 518-byte protocol so the emulator can be validated without treating
+the received wire bytes as the resulting flash contents.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
+import select
 import socket
+import stat
 import struct
 import sys
+import termios
 import time
+import tty
 from pathlib import Path
 
 
 KINDS = ("bootdata", "im_flsh0", "game", "symbols", "sf")
 PAYLOAD_SIZE = 512
+
+
+BAUD_RATES = {
+    baud: getattr(termios, f"B{baud}")
+    for baud in (9600, 19200, 38400, 57600, 115200, 230400)
+}
+
+
+class SerialStream:
+    """Small socket-like wrapper around a raw host serial device."""
+
+    def __init__(self, path: Path, baud: int = 9600) -> None:
+        mode = path.stat().st_mode
+        if not stat.S_ISCHR(mode):
+            raise ValueError(f"serial device is not a character device: {path}")
+        self.path = path
+        self.fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        self.timeout: float | None = None
+        self.original = termios.tcgetattr(self.fd)
+        tty.setraw(self.fd, termios.TCSANOW)
+        self.set_baud(baud)
+
+    def __enter__(self) -> "SerialStream":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if self.fd < 0:
+            return
+        try:
+            termios.tcsetattr(self.fd, termios.TCSANOW, self.original)
+        finally:
+            os.close(self.fd)
+            self.fd = -1
+
+    def gettimeout(self) -> float | None:
+        return self.timeout
+
+    def settimeout(self, timeout: float | None) -> None:
+        self.timeout = timeout
+
+    def set_baud(self, baud: int) -> None:
+        speed = BAUD_RATES[baud]
+        attributes = termios.tcgetattr(self.fd)
+        attributes[4] = speed
+        attributes[5] = speed
+        termios.tcsetattr(self.fd, termios.TCSANOW, attributes)
+
+    def _wait(self, readable: bool) -> None:
+        readers = [self.fd] if readable else []
+        writers = [] if readable else [self.fd]
+        ready = select.select(readers, writers, [], self.timeout)
+        if not ready[0] and not ready[1]:
+            raise TimeoutError(f"serial device timed out: {self.path}")
+
+    def recv(self, count: int) -> bytes:
+        while True:
+            self._wait(readable=True)
+            try:
+                return os.read(self.fd, count)
+            except BlockingIOError:
+                continue
+
+    def sendall(self, data: bytes) -> None:
+        view = memoryview(data)
+        while view:
+            self._wait(readable=False)
+            try:
+                written = os.write(self.fd, view)
+            except BlockingIOError:
+                continue
+            view = view[written:]
 
 
 def unique_component(bundle: Path, kind: str) -> Path:
@@ -39,7 +117,7 @@ def make_frame(sequence: int, payload: bytes = b"") -> bytes:
     )
 
 
-def recv_exact(stream: socket.socket, count: int) -> bytes:
+def recv_exact(stream: socket.socket | SerialStream, count: int) -> bytes:
     result = bytearray()
     while len(result) < count:
         block = stream.recv(count - len(result))
@@ -49,7 +127,7 @@ def recv_exact(stream: socket.socket, count: int) -> bytes:
     return bytes(result)
 
 
-def recv_protocol_reply(stream: socket.socket) -> bytes:
+def recv_protocol_reply(stream: socket.socket | SerialStream) -> bytes:
     """Find ACK/NAK even when asynchronous XINA diagnostics precede it."""
     diagnostic = bytearray()
     while True:
@@ -63,7 +141,7 @@ def recv_protocol_reply(stream: socket.socket) -> bytes:
 
 
 def drain_until_quiet(
-    stream: socket.socket,
+    stream: socket.socket | SerialStream,
     quiet: float = 0.25,
     max_total: float = 2.0,
 ) -> bytes:
@@ -86,7 +164,7 @@ def drain_until_quiet(
 
 
 def wait_for_prompt(
-    stream: socket.socket,
+    stream: socket.socket | SerialStream,
     timeout: float,
     ready_markers: tuple[bytes, ...] = (
         b"Game(",
@@ -137,7 +215,11 @@ def wait_for_prompt(
     raise TimeoutError(f"XINA prompt did not appear within {timeout:g} seconds")
 
 
-def send_frame(stream: socket.socket, sequence: int, payload: bytes = b"") -> None:
+def send_frame(
+    stream: socket.socket | SerialStream,
+    sequence: int,
+    payload: bytes = b"",
+) -> None:
     stream.sendall(make_frame(sequence, payload))
     reply = recv_protocol_reply(stream)
     if reply[0] != 0x06:
@@ -147,7 +229,7 @@ def send_frame(stream: socket.socket, sequence: int, payload: bytes = b"") -> No
 
 
 def send_image(
-    stream: socket.socket,
+    stream: socket.socket | SerialStream,
     data: bytes,
     sequence: int,
     label: str,
@@ -163,11 +245,17 @@ def send_image(
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Send a five-component update bundle to XINA over COM1/TCP"
+        description="Send a five-component update bundle through XINA COM1"
     )
     parser.add_argument("bundle", type=Path, help="inner 50069/50070 bundle directory")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", required=True, type=int)
+    transport = parser.add_mutually_exclusive_group(required=True)
+    transport.add_argument("--port", type=int, help="raw COM1 TCP port")
+    transport.add_argument(
+        "--device",
+        type=Path,
+        help="raw host serial device, for example /dev/serial/by-id/...",
+    )
     parser.add_argument(
         "--baud",
         default=115200,
@@ -225,15 +313,20 @@ def main() -> int:
                 f"sound flash must be 1048576 bytes, got {len(sound_image)}"
             )
 
-        deadline = time.monotonic() + args.connect_timeout
-        while True:
-            try:
-                stream = socket.create_connection((args.host, args.port), timeout=5)
-                break
-            except OSError:
-                if time.monotonic() >= deadline:
-                    raise
-                time.sleep(0.25)
+        if args.device is not None:
+            stream = SerialStream(args.device, 9600)
+        else:
+            deadline = time.monotonic() + args.connect_timeout
+            while True:
+                try:
+                    stream = socket.create_connection(
+                        (args.host, args.port), timeout=5
+                    )
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.25)
         with stream:
             stream.settimeout(args.reply_timeout)
             if args.boot_newlines:
@@ -262,6 +355,8 @@ def main() -> int:
                 f"fupdate load com1 {args.baud}{suffix}\r\n"
             ).encode("ascii")
             stream.sendall(command)
+            if isinstance(stream, SerialStream):
+                stream.set_baud(args.baud)
             time.sleep(args.start_delay)
             diagnostic = drain_until_quiet(stream, 1.0)
             if diagnostic:

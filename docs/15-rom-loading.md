@@ -195,8 +195,8 @@ factory receivers as well as current updates. Newer receivers can also be
 tested explicitly with `--baud 230400`; SWE 1.00 rejects that rate and prints
 its `9600`–`115200` usage instead of entering the binary receiver.
 
-For Jim/myPinballs or another updater attached to a physical port, select the
-adapter in the cabinet installer or launch explicitly:
+For an external updater attached to a physical port, select the adapter in the
+cabinet installer or launch explicitly:
 
 ```sh
 scripts/run-qemu.sh --game swe1 --update auto \
@@ -210,6 +210,23 @@ requested update rate. No host-side `stty` command should race that change.
 The update tool and Encore must still select the same update rate, and the
 cable/adapter must provide electrically compatible RS-232 with the wiring
 expected by the two endpoints.
+
+An external Linux updater which cannot enumerate PTYs directly can use the
+rootless private bridge in `tools/serial-updater-bridge/`. Its compatibility
+shim handles host-side port discovery and the PTY-exclusive-lock request. It
+also compensates one measured emulation boundary: a legacy desktop updater's
+roughly two-second close/reopen handoff is longer than XINA's CPU-loop receive
+timeout on an unthrottled QEMU vCPU. The bridge holds only the ASCII `fupdate`
+command until the first binary write, consumes XINA's command echo, then
+forwards every 518-byte protocol frame unchanged. See the bridge
+[README](../tools/serial-updater-bridge/README.md) for the exact scope and
+two-terminal procedure.
+
+A clean SWE1 1.20 → 1.30 run through that bridge acknowledged all 8,280 data
+frames and the final `0xffff` frame without a retry. The reset guest reported
+version 1.30 and `game code is: OK`; the exit snapshots matched all five
+official 1.30 component hashes, reused the catalog bundle and wrote the SWE1
+pin to it.
 
 A host pseudo-TTY test exercised this exact QEMU serial backend end to end.
 XINA first programmed the host endpoint to `9600`, then `fupdate load com1
