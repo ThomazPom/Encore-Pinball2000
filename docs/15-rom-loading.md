@@ -270,7 +270,8 @@ The pin belongs to the Encore user configuration, independently of every
 savedata profile. Both `--fresh` and `--no-savedata` read it for `--update
 auto`, so resetting or suppressing mutable cabinet state does not silently
 downgrade the software. `--fresh` may persist the resulting device images;
-`--no-savedata` writes no device image and never creates or changes a pin.
+an update received during a disposable `--no-savedata` run is not published
+as the user's later software selection.
 After XINA reports a completed update in an ordinary persistent run, closing
 the window or pressing Ctrl-C is safe: the runner first stops QEMU so both
 flash snapshots are published, then promotes the acknowledged transaction.

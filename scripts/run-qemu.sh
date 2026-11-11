@@ -267,9 +267,9 @@ CORE LAUNCH
                             Default: <repo>/savedata.
   --no-savedata             Ignore guest device-state seeds and disable their
                             writes (also exports P2K_NO_SAVEDATA=1), using a
-                            fresh throwaway cwd. With --update auto, an
-                            existing update pin is still read so disposable
-                            runs keep the installed software selection.
+                            fresh throwaway cwd. A COM1 update installed during
+                            this disposable run is not retained or promoted
+                            as the user's software selection.
   --fresh                   Ignore existing savedata for this boot, then
                             replace it with the newly initialized state on
                             exit. Back up state first if it matters.
@@ -288,10 +288,11 @@ CORE LAUNCH
                             COM2 barcode-reader setup. This does not start a
                             tournament server or select a network backend.
   --update <spec>           Update bundle selection. Spec is one of:
-                              auto      (default) machine auto-discovers
-                                        the newest matching bundle in
-                                        ./updates/. Falls back to base ROMs
-                                        if no bundle is found.
+                              auto      (default) use the user's global update
+                                        selection when present; otherwise the
+                                        machine discovers the newest matching
+                                        bundle in ./updates/ and falls back to
+                                        base ROMs if none is found.
                               latest    explicitly resolve to the highest
                                         version bundle for this game.
                               none      suppress update staging and discovery.

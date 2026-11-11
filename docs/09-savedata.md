@@ -53,7 +53,7 @@ if neither location is usable.
 |---|---|---|---|
 | ordinary launch | yes | yes | normal cabinet or desktop play |
 | `--fresh` | no | yes, to the selected directory | intentionally replace a cabinet state |
-| `--no-savedata` | no device images; yes global update pin | no | disposable tests without changing cabinet state or software selection |
+| `--no-savedata` | no | no | disposable tests without changing cabinet state |
 
 An ordinary launch uses any files already present. Missing devices start from
 their reset contents and are persisted only according to the write rules
@@ -64,9 +64,8 @@ below.
 > [!WARNING]
 > `--fresh` is a reset, not a temporary profile. It ignores all four existing
 > seeds, then replaces them with newly initialized images when Encore exits.
-> It deliberately keeps the global update pin, so `--update auto` still
-> installs that pinned update into the fresh BAR3 image. Back up the directory
-> first if its audits, scores or adjustments matter.
+> The independently selected software is staged into the fresh BAR3 image.
+> Back up the directory first if its audits, scores or adjustments matter.
 
 In this mode BAR2 starts empty, BAR3 starts erased before the selected update
 is installed, SEEPROM starts from Encore's built-in board defaults, and RTC
@@ -75,11 +74,9 @@ starts from the current host date and time.
 `--no-savedata` exports `P2K_NO_SAVEDATA=1`, uses an empty throwaway working
 directory as a second isolation layer, discards every device change and removes
 that working directory on normal launcher exit. The device-image files are
-neither read nor written. With `--update auto`, however, the existing update
-pin and its referenced bundle are still read from Encore's global user
-configuration: software selection is configuration, not mutable cabinet
-state. A serial update performed in this mode remains ephemeral and is not
-reconstructed or pinned.
+neither read nor written. A serial update performed in this mode remains
+ephemeral: Encore does not publish its final flash contents or promote it as
+the user's later software selection.
 
 For a normal disposable run:
 
@@ -87,10 +84,12 @@ For a normal disposable run:
 scripts/run-qemu.sh --game swe1 --no-savedata
 ```
 
-## Installed update flash also lives in savedata
+## BAR3 remains device state, not selection metadata
 
-The active update is represented by `<game>.flash`, so changing update
-selection can change persistent state:
+Software selection and savedata are separate. The selected bundle says what
+Encore should stage; `<game>.flash` represents the current physical contents
+of the emulated BAR3 device. Staging software can therefore change that device
+state without making its selection metadata part of savedata:
 
 - `--update auto` first honors a valid game pin; without one, it compares saved
   BAR3 with the newest matching local bundle and installs that bundle in memory

@@ -51,7 +51,7 @@ See the [Quickstart](02-quickstart.md) for the complete first-run sequence.
 | `--game auto\|swe1\|rfm` | Select the title. `auto` is the default. |
 | `--roms DIR` | Use `DIR` instead of the repository `roms/` tree. |
 | `--savedata DIR` | Read and write `<game>.flash`, `<game>.nvram2`, `<game>.see` and `<game>.rtc` under `DIR`. |
-| `--no-savedata` | Ignore mutable guest device-state seeds, disable their writes and use a fresh throwaway working directory; `--update auto` still reads the user's global update pin. |
+| `--no-savedata` | Ignore mutable guest device-state seeds, disable their writes and use a fresh throwaway working directory. A COM1 update performed during this run is not retained or promoted as the user's software selection. |
 | `--fresh` | Ignore existing state for this boot, then replace it with newly initialized state in the same directory on exit. |
 | `--update SPEC` | Select `auto`, `latest`, `none`, `r2`, a short version code or an explicit inner bundle directory. |
 | `--pub-card DIR` | Experimental Prism Update Board backed by a bundle directory; incompatible with network modes because both boards decode `0xD0000`. |
@@ -75,7 +75,7 @@ Update specifications:
 
 | Specification | Resolution |
 |---|---|
-| `auto` | Leave selection to the machine's local auto-discovery; this is the default. |
+| `auto` | Use the user's global update selection when present; otherwise leave selection to the machine's local auto-discovery. This is the default. |
 | `latest` | Highest four-digit version present for the selected game. |
 | `none` | Suppress update staging and auto-discovery; an existing persistent `<game>.flash` seed still loads. |
 | `r2` | RFM revision-2 prototype ROM names; no update bundle. |
