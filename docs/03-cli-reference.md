@@ -51,7 +51,7 @@ See the [Quickstart](02-quickstart.md) for the complete first-run sequence.
 | `--game auto\|swe1\|rfm` | Select the title. `auto` is the default. |
 | `--roms DIR` | Use `DIR` instead of the repository `roms/` tree. |
 | `--savedata DIR` | Read and write `<game>.flash`, `<game>.nvram2`, `<game>.see` and `<game>.rtc` under `DIR`. |
-| `--no-savedata` | Ignore persistent state, disable its writes and use a fresh throwaway working directory. |
+| `--no-savedata` | Ignore mutable guest device-state seeds, disable their writes and use a fresh throwaway working directory. A COM1 update performed during this run is not retained or promoted as the user's software selection. |
 | `--fresh` | Ignore existing state for this boot, then replace it with newly initialized state in the same directory on exit. |
 | `--update SPEC` | Select `auto`, `latest`, `none`, `r2`, a short version code or an explicit inner bundle directory. |
 | `--pub-card DIR` | Experimental Prism Update Board backed by a bundle directory; incompatible with network modes because both boards decode `0xD0000`. |
@@ -75,7 +75,7 @@ Update specifications:
 
 | Specification | Resolution |
 |---|---|
-| `auto` | Leave selection to the machine's local auto-discovery; this is the default. |
+| `auto` | Use the user's global update selection when present; otherwise leave selection to the machine's local auto-discovery. This is the default. |
 | `latest` | Highest four-digit version present for the selected game. |
 | `none` | Suppress update staging and auto-discovery; an existing persistent `<game>.flash` seed still loads. |
 | `r2` | RFM revision-2 prototype ROM names; no update bundle. |
@@ -129,7 +129,7 @@ selection, exact privilege boundary and limitations are documented in
 | Option | Effect |
 |---|---|
 | `--audio auto\|none\|DRIVER` | Auto-select, disable or explicitly select a QEMU audio driver. |
-| `--no-audio` | Force audio off, overriding `--audio`. |
+| `--no-audio` | Force host audio and the current native ADSP engine off, overriding `--audio`. |
 | `--dcs-engine ENGINE` | Select `pb2kslib`, `pb2kslib-adsp`, `adsp`, `adsp-thread`, `adsp-clock-thread` or `adsp-hybrid-thread`. |
 | `--dcs-pcm-cpu CPU` | Experimentally pin a threaded ADSP producer to one Linux logical CPU. |
 | `--dcs-sound-flash FILE` | Use an explicit 1 MiB ADSP sound-flash image. |
@@ -145,6 +145,12 @@ selection, exact privilege boundary and limitations are documented in
 It tries `sdl`, `pa`, `alsa`, `oss`, `sndio` and `dbus` in that order, while
 requiring both QEMU support and the relevant host check. Explicit drivers are
 rejected when absent from the selected QEMU binary.
+
+> [!IMPORTANT]
+> The native ADSP/DCS model is currently initialized through the audio path.
+> Use ordinary `--audio auto` for a serial update containing sound. With
+> `--no-audio`, XINA can report that the DCS2 board failed to initialize and a
+> `full`/`sfonly` transfer cannot program the sound flash.
 
 The native ADSP engines fall back to `pb2kslib` when their original-format
 assets are incomplete. If neither native assets nor a valid library are
@@ -185,12 +191,13 @@ See [Optional network card](48-network.md) for topology and guest setup.
 | Option | Effect |
 |---|---|
 | `--serial` | Open an interactive local XINA console through a temporary TCP UART and foreground `nc`. |
+| `--serial-device DEVICE` | Attach guest COM1 directly to a host character TTY such as `/dev/serial/by-id/...`, `/dev/ttyUSB0` or `/dev/ttyS0`; XINA controls its line parameters. |
 | `--uart-tcp HOST:PORT` | Expose COM1 as a bidirectional TCP server. |
 | `--serial-tcp PORT` | Alias for `--uart-tcp 127.0.0.1:PORT`. |
 | `--script FILE` | Validate and execute a console/cabinet automation script, leaving QEMU open afterward. |
 | `--console-script FILE` | Compatibility alias for `--script`. |
-| `--uart-quiet` | Disable the UART sink and stderr mirror; bounded boot input is pre-stuffed unless overridden. |
-| `--uart-drop TEXT` | Remove UART lines containing `TEXT`; repeatable. |
+| `--uart-quiet` | Disable the UART stderr mirror; without an explicit COM1 backend, use a null sink. A selected TCP or physical COM1 transport remains raw and bidirectional. |
+| `--uart-drop TEXT` | Remove UART lines containing `TEXT` from the stderr mirror; repeatable. The raw COM1 backend is never filtered. |
 | `--uart-no-filter` | Disable the default `swd Debug:` filter and custom drop rules. |
 | `--monitor SPEC` | Set the QEMU monitor target. |
 | `--debug ITEMS` | Enable QEMU `-d` items and write them to `/tmp/p2k_qemu.log`. |
@@ -213,6 +220,32 @@ manual UART TCP target, a manual monitor or `--headless`. Script syntax is in
 [Console scripting](42-console-scripting.md). `--serial` requires an `nc`
 implementation such as Debian's `netcat-openbsd`. The screenshot directory
 and the parent directory of a video output must already exist.
+
+`--serial-device` is mutually exclusive with `--serial`, `--uart-tcp` /
+`--serial-tcp`, `--headless` and `--script`. It requires an absolute character
+device below `/dev`, usable as a TTY and readable/writable by the current user.
+
+Quiet and explicit TCP/physical COM1 paths inject one bounded CR/LF startup
+sequence through `P2K_UART_INPUT`. It releases an early synchronous XINA read
+that could otherwise stop the vCPU before newly arriving chardev bytes can be
+delivered. This one-shot boot seed is separate from the external serial stream;
+the updater's bytes are not filtered or rewritten. Set `P2K_UART_INPUT=`
+explicitly only when an exactly empty startup RX FIFO is required.
+
+`--uart-tcp`, `--serial-tcp` and `--serial-device` carry XINA's binary
+`fupdate` protocol without line buffering. A guest-accepted update is
+reconstructed and pinned as described in
+[ROMs, updates and software selection](15-rom-loading.md#serial-installed-updates).
+Known exact bundles are referenced from the official catalog; custom or hybrid
+results replace the one current bundle for that game below
+`$XDG_DATA_HOME/encore/serial-updates`, selected by the global pin below
+`$XDG_CONFIG_HOME/encore/update-pins`.
+
+Prefer `/dev/serial/by-id/...` for a USB adapter: it names the adapter rather
+than the order in which Linux happened to enumerate it. A USB device does not
+need a DB9 shell to be a serial port; USB-to-TTL and USB-to-RS-232 devices both
+expose TTYs, but only electrically compatible RS-232 hardware and the correct
+straight/null-modem wiring should be connected to another RS-232 endpoint.
 
 ## Self-diagnostic
 

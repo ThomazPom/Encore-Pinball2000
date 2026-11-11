@@ -272,6 +272,10 @@ systemctl start dbus.socket polkit.service'
 
 install_as_cabinet() {
     local backend=${1:-cage} run_as_root=${2:-0} acquisition=${3:-existing} preset=${4:-default}
+    # Every lab VM is launched with QEMU's real 16550 ttyS0. Keep the scripted
+    # answer sequence honest: this must be detected and produce the optional
+    # physical-COM1 question that the lab declines below.
+    ssh_guest 'test -c /dev/ttyS0; test "$(cat /sys/class/tty/ttyS0/type)" != 0'
     export LAB_SSH_PORT=$SSH_PORT
     export LAB_BACKEND=$backend
     export LAB_RUN_AS_ROOT=$run_as_root
@@ -288,10 +292,13 @@ expect {
 expect {
     -re {Cabinet session user[^:]*:} {
         if {$env(LAB_PRESET) eq "alternate"} {
-            set answers [list cabinet rfm emulated n n n n display-manager y y y]
+            # The VM exposes its emulated ttyS0 as a real UART. Select the
+            # explicit-path entry to cover manual COM1 commissioning even
+            # when automatic discovery already found the same controller.
+            set answers [list cabinet rfm emulated y 2 /dev/ttyS0 n n n n display-manager y y y]
         } else {
             set root_answer [expr {$env(LAB_RUN_AS_ROOT) ? "y" : "n"}]
-            set answers [list cabinet auto auto n y $root_answer y n n y]
+            set answers [list cabinet auto auto n n y $root_answer y n n y]
         }
         foreach answer $answers {
             send -- "$answer\r"
@@ -319,7 +326,7 @@ test_install() {
     case "$execution" in user) ;; root) run_as_root=1 ;; *) die "execution must be user or root" ;; esac
     reset_overlay; start_overlay; assert_stripped_guest; copy_checkout 1; enable_nonroot_escalation
     install_as_cabinet "$backend" "$run_as_root"
-    ssh_guest "test -s /etc/encore-pinball2000/session.conf; grep -qx BACKEND=$backend /etc/encore-pinball2000/session.conf; grep -qx GAME=auto /etc/encore-pinball2000/session.conf; grep -qx RUN_AS_ROOT=$run_as_root /etc/encore-pinball2000/session.conf; grep -qx CABINET_AUDIO=1 /etc/encore-pinball2000/session.conf; grep -qx MAINTENANCE=tty /etc/encore-pinball2000/session.conf; grep -q 'Restart=no' /etc/systemd/system/getty@tty1.service.d/49-encore.conf; grep -qx -- --lpt-device /etc/encore-pinball2000/launch.args; grep -qx -- auto /etc/encore-pinball2000/launch.args; id -nG cabinet | tr ' ' '\\n' | grep -qx lp; test ! -e /opt/Encore-PB2K/savedata"
+    ssh_guest "test -s /etc/encore-pinball2000/session.conf; grep -qx BACKEND=$backend /etc/encore-pinball2000/session.conf; grep -qx GAME=auto /etc/encore-pinball2000/session.conf; grep -qx RUN_AS_ROOT=$run_as_root /etc/encore-pinball2000/session.conf; grep -qx CABINET_AUDIO=1 /etc/encore-pinball2000/session.conf; grep -qx MAINTENANCE=tty /etc/encore-pinball2000/session.conf; grep -q 'Restart=no' /etc/systemd/system/getty@tty1.service.d/49-encore.conf; grep -qx -- --lpt-device /etc/encore-pinball2000/launch.args; grep -qx -- auto /etc/encore-pinball2000/launch.args; ! grep -qx -- --serial-device /etc/encore-pinball2000/launch.args; id -nG cabinet | tr ' ' '\\n' | grep -qx lp; test ! -e /opt/Encore-PB2K/savedata"
     # A display manager and SSH invoke the account shell with `-c`. That must
     # delegate to the original shell instead of starting another cabinet
     # backend outside tty1.
@@ -469,7 +476,7 @@ EOF
 ln -sfn /etc/systemd/system/sddm.service /etc/systemd/system/display-manager.service
 systemctl daemon-reload'
     install_as_cabinet cage 0 existing alternate
-    ssh_guest 'grep -qx BACKEND=cage /etc/encore-pinball2000/session.conf; grep -qx GAME=rfm /etc/encore-pinball2000/session.conf; grep -qx CABINET_AUDIO=0 /etc/encore-pinball2000/session.conf; grep -qx MAINTENANCE=display-manager /etc/encore-pinball2000/session.conf; ! grep -qx -- --flipscreen /etc/encore-pinball2000/launch.args; grep -qx -- --lpt-device /etc/encore-pinball2000/launch.args; grep -qx -- emulated /etc/encore-pinball2000/launch.args; test -f /etc/default/grub.d/99-encore-pinball2000.cfg; test -x /etc/grub.d/01_encore_pinball2000_quiet'
+    ssh_guest 'grep -qx BACKEND=cage /etc/encore-pinball2000/session.conf; grep -qx GAME=rfm /etc/encore-pinball2000/session.conf; grep -qx CABINET_AUDIO=0 /etc/encore-pinball2000/session.conf; grep -qx MAINTENANCE=display-manager /etc/encore-pinball2000/session.conf; ! grep -qx -- --flipscreen /etc/encore-pinball2000/launch.args; grep -qx -- --lpt-device /etc/encore-pinball2000/launch.args; grep -qx -- emulated /etc/encore-pinball2000/launch.args; grep -qx -- --serial-device /etc/encore-pinball2000/launch.args; grep -qx -- /dev/ttyS0 /etc/encore-pinball2000/launch.args; id -nG cabinet | tr " " "\n" | grep -qx dialout; test -f /etc/default/grub.d/99-encore-pinball2000.cfg; test -x /etc/grub.d/01_encore_pinball2000_quiet'
     ssh_guest 'cd /opt/Encore-PB2K && ./uninstall.sh'
     ssh_guest 'test ! -e /etc/default/grub.d/99-encore-pinball2000.cfg; test ! -e /etc/grub.d/01_encore_pinball2000_quiet; test ! -e /var/lib/pinball2000-cabinet.lock'
     stop_vm

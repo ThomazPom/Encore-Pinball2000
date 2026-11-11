@@ -58,6 +58,10 @@ esac
 unset P2K_FRAMEBUFFER_THREAD
 NO_SAVEDATA=0
 FRESH_SAVEDATA=0
+ENCORE_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/encore"
+ENCORE_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/encore"
+UPDATE_PIN_ROOT="${P2K_UPDATE_PIN_DIR:-$ENCORE_CONFIG_HOME/update-pins}"
+SERIAL_UPDATE_ROOT="${P2K_SERIAL_UPDATE_DIR:-$ENCORE_DATA_HOME/serial-updates}"
 CLEAR_PB2K_ADSP_CACHE=0
 PB2K_ADSP_CACHE_DIR="${P2K_PB2K_ADSP_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/encore-pb2k/pb2kslib-adsp}"
 PB2K_ADSP_CACHE_WORKERS="${P2K_PB2K_ADSP_CACHE_WORKERS:-6}"
@@ -70,6 +74,8 @@ UART_QUIET=0
 AUDIO=""
 SOUND_LOADING="lazy"
 UART_TCP=""
+SERIAL_DEVICE=""
+FUPDATE_DIR=""
 SERIAL_STDIO=0
 CONSOLE_SCRIPT=""
 AUTOMATION_DIR=""
@@ -259,9 +265,11 @@ CORE LAUNCH
   --savedata <dir>          Persistent savedata dir (reads
                             <dir>/<game>.{flash,nvram2,see,rtc}).
                             Default: <repo>/savedata.
-  --no-savedata             Run without persistent savedata (also exports
-                            P2K_NO_SAVEDATA=1) and switches cwd to a fresh
-                            throwaway dir for the run.
+  --no-savedata             Ignore guest device-state seeds and disable their
+                            writes (also exports P2K_NO_SAVEDATA=1), using a
+                            fresh throwaway cwd. A COM1 update installed during
+                            this disposable run is not retained or promoted
+                            as the user's software selection.
   --fresh                   Ignore existing savedata for this boot, then
                             replace it with the newly initialized state on
                             exit. Back up state first if it matters.
@@ -280,10 +288,11 @@ CORE LAUNCH
                             COM2 barcode-reader setup. This does not start a
                             tournament server or select a network backend.
   --update <spec>           Update bundle selection. Spec is one of:
-                              auto      (default) machine auto-discovers
-                                        the newest matching bundle in
-                                        ./updates/. Falls back to base ROMs
-                                        if no bundle is found.
+                              auto      (default) use the user's global update
+                                        selection when present; otherwise the
+                                        machine discovers the newest matching
+                                        bundle in ./updates/ and falls back to
+                                        base ROMs if none is found.
                               latest    explicitly resolve to the highest
                                         version bundle for this game.
                               none      suppress update staging and discovery.
@@ -520,16 +529,18 @@ CONSOLE / DIAGNOSTICS
                             stays open when the file completes. Example:
                             `--script scripts/demos/start-game.p2k`.
   --console-script <file>   Compatibility alias for --script.
-  --uart-quiet              Silence ALL COM1/UART output (stderr mirror
-                            AND chardev sink, the latter via
-                            -serial null). Wins over -v. Also pre-stuffs
-                            P2K_UART_INPUT='\r\n\r\n\r\n\r\n' so XINU's
-                            synchronous polled-getc loop (op=22) does not
-                            wedge swe1 boot when interrupts are disabled.
-                            Override by exporting P2K_UART_INPUT before
-                            invocation (set to "" to keep RX truly silent).
+  --uart-quiet              Silence the COM1/UART stderr mirror. Without a
+                            TCP transport COM1 uses a null sink. A selected
+                            --uart-tcp/--serial-tcp transport remains a raw,
+                            unfiltered COM1 wire. Wins over -v. Quiet and
+                            explicit TCP transports also pre-stuff a bounded
+                            P2K_UART_INPUT CR/LF sequence so XINU's synchronous
+                            polled-getc loop (op=22) does not wedge SWE1 boot
+                            with interrupts disabled. Override P2K_UART_INPUT
+                            before invocation (set it to "" for empty RX).
   --uart-drop <substr>      Drop any UART line containing <substr>
-                            before it reaches stdout/tcp/stderr. By
+                            from the human-readable stderr mirror. The raw
+                            selected raw COM1 backend is never filtered. By
                             default the wrapper drops "swd Debug:"
                             (phantom switch debug spam from XINA).
                             Repeatable. Set the empty string via
@@ -548,6 +559,11 @@ CONSOLE / DIAGNOSTICS
                             bidirectional behavior — type XINA
                             commands like `?` or `continue` directly
                             into nc and watch the guest respond.
+  --serial-device <device>  Connect guest COM1 byte-for-byte to a host serial
+                            TTY such as /dev/serial/by-id/... or /dev/ttyS0.
+                            XINA controls its baud, parity and framing. Use a
+                            stable by-id path for USB adapters. Mutually
+                            exclusive with other COM1 transports and headless.
   --monitor <spec>          QEMU -monitor target (e.g. stdio,
                             unix:/tmp/qmon,server,nowait).
   --debug <opts>            QEMU -d options (e.g. int,cpu_reset,in_asm).
@@ -807,6 +823,13 @@ while [[ $# -gt 0 ]]; do
         *) shift 2 ;;
       esac ;;
     --serial)          SERIAL_STDIO=1; shift ;;
+    --serial-device)
+      [[ -n "${2:-}" ]] || {
+        echo "[run-qemu] --serial-device: expected a /dev serial device" >&2
+        exit 2
+      }
+      SERIAL_DEVICE="$2"
+      shift 2 ;;
     --network)         NETWORK=1; shift ;;
     --network-nat)     NETWORK=1; NETWORK_NAT=1; shift ;;
     --network-passt)   NETWORK=1; NETWORK_PASST=1; shift ;;
@@ -1105,6 +1128,31 @@ fi
 export P2K_LPT_DEVICE="$LPT_DEVICE"
 export P2K_LPT_INPUT="$LPT_INPUT"
 
+if [[ -n "$SERIAL_DEVICE" ]]; then
+  [[ "$SERIAL_DEVICE" == /dev/* ]] || {
+    echo "[run-qemu] --serial-device: expected an absolute path below /dev" >&2
+    exit 2
+  }
+  [[ -c "$SERIAL_DEVICE" ]] || {
+    echo "[run-qemu] --serial-device: '$SERIAL_DEVICE' is missing or is not a character device" >&2
+    exit 2
+  }
+  if [[ $SERIAL_STDIO -eq 1 || -n "$UART_TCP" || $HEADLESS -eq 1 || -n "$CONSOLE_SCRIPT" ]]; then
+    echo "[run-qemu] --serial-device is mutually exclusive with --serial, --uart-tcp/--serial-tcp, --headless and --script" >&2
+    exit 2
+  fi
+  if [[ $EUID -ne 0 && ( ! -r "$SERIAL_DEVICE" || ! -w "$SERIAL_DEVICE" ) ]]; then
+    echo "[run-qemu] --serial-device: '$SERIAL_DEVICE' is not readable and writable by $(id -un)" >&2
+    echo "[run-qemu] grant the session user access through the device's udev group, then log in again" >&2
+    exit 2
+  fi
+  if ! stty -F "$SERIAL_DEVICE" -a >/dev/null 2>&1; then
+    echo "[run-qemu] --serial-device: '$SERIAL_DEVICE' is not a usable host TTY" >&2
+    exit 2
+  fi
+  UART_QUIET=1
+fi
+
 if [[ ! "$SPEED_TARGET" =~ ^[0-9]+([.][0-9]+)?$ ]] ||
    ! awk -v value="$SPEED_TARGET" 'BEGIN { exit !(value >= 25 && value <= 300) }'; then
   echo "[run-qemu] --speed-target: expected a number from 25 through 300, got '$SPEED_TARGET'" >&2
@@ -1313,7 +1361,7 @@ export P2K_SPEED_TARGET_PERCENT="$SPEED_TARGET"
 # session would be completely silent — defeats the purpose).
 # --serial implies --uart-quiet (otherwise every byte appears twice:
 # once on stdout via the chardev, once on stderr via the mirror).
-# --uart-quiet always wins (forces UART silent regardless of level).
+# --uart-quiet always wins for the stderr mirror regardless of level.
 if [[ $SERIAL_STDIO -eq 1 ]]; then
   UART_QUIET=1
 fi
@@ -1343,13 +1391,18 @@ else
 fi
 if [[ $UART_QUIET -eq 1 ]]; then
   export P2K_NO_UART_STDERR=1
+fi
+if [[ $UART_QUIET -eq 1 || -n "$UART_TCP" ]]; then
   # SWE1 (and possibly other titles) reach an XINU control() op=22 callback
   # (killsafe_waits_msg → ttysputc) early in boot which performs a SYNCHRONOUS
   # polled read on COM1 LSR.DR with interrupts disabled (cli). With -serial null
   # no byte ever arrives and the guest wedges forever — IMR=0xff, IRQ0 cannot
   # deliver, replay BH cannot fire, clock is dead. Pre-stuff a few CRs into
-  # the RX FIFO so the polling loop completes and the boot can proceed. Users
-  # who want a strictly silent UART can explicitly set P2K_UART_INPUT= to "".
+  # the RX FIFO so the polling loop completes and the boot can proceed.
+  # A TCP client cannot rescue that loop after the vCPU has entered it because
+  # the main loop no longer gets to deliver newly arrived chardev bytes. Seed
+  # TCP-backed COM1 too. Users who need an exact empty startup UART can set
+  # P2K_UART_INPUT= explicitly.
   if [[ -z "${P2K_UART_INPUT+x}" ]]; then
     # Bounded one-shot pattern: enough CR/LF pairs to satisfy ALL op=22
     # reads during boot, then deliberately empty so the diag handler
@@ -1501,6 +1554,84 @@ fi
 # in base-ROM mode).
 UPDATE_DIR_ABS=""
 ROM_REVISION=""
+
+update_pin_path() {
+  local game="$1"
+  printf '%s/%s.update-pin\n' "$(realpath -m "$UPDATE_PIN_ROOT")" "$game"
+}
+
+read_update_pin() {
+  local game="$1" pin value kind
+  local -a pin_lines matches
+  pin="$(update_pin_path "$game")"
+  [[ -e "$pin" ]] || return 1
+  [[ -f "$pin" && ! -L "$pin" ]] || {
+    echo "[run-qemu] ERROR: update pin is not a regular file: $pin" >&2
+    return 2
+  }
+  mapfile -t pin_lines < "$pin"
+  [[ ${#pin_lines[@]} -eq 1 && -n "${pin_lines[0]}" ]] || {
+    echo "[run-qemu] ERROR: malformed update pin: $pin" >&2
+    return 2
+  }
+  value="${pin_lines[0]}"
+  [[ "$value" = /* && -d "$value" ]] || {
+    echo "[run-qemu] ERROR: pinned update directory is unavailable: $value" >&2
+    return 2
+  }
+  case "$game:$value" in
+    swe1:*/50069|rfm:*/50070) ;;
+    *)
+      echo "[run-qemu] ERROR: update pin does not match game $game: $value" >&2
+      return 2 ;;
+  esac
+  for kind in bootdata im_flsh0 game symbols sf; do
+    matches=("$value"/*_"${kind}.rom")
+    [[ ${#matches[@]} -eq 1 && -f "${matches[0]}" ]] || {
+      echo "[run-qemu] ERROR: pinned update needs exactly one *_${kind}.rom: $value" >&2
+      return 2
+    }
+  done
+  printf '%s\n' "$value"
+}
+
+# A successful serial install writes a per-game pin. It overrides only the
+# implicit/explicit `auto` policy: an operator's --update none, numeric
+# selector, latest, r2, or directory remains authoritative. Pins describe the
+# selected software, not mutable guest state: both --fresh and --no-savedata
+# read them, while --no-savedata still forbids creating or changing a pin.
+if [[ "$UPDATE_TOKEN" == auto ]]; then
+  pinned_update=""
+  case "$GAME" in
+    swe1|rfm)
+      if pinned_update="$(read_update_pin "$GAME")"; then
+        UPDATE_TOKEN="$pinned_update"
+        echo "[run-qemu] --update auto pinned for $GAME → $UPDATE_TOKEN" >&2
+      else
+        pin_status=$?
+        [[ $pin_status -eq 1 ]] || exit "$pin_status"
+      fi
+      ;;
+    auto)
+      swe1_pin=""; rfm_pin=""
+      if swe1_pin="$(read_update_pin swe1)"; then :; else
+        pin_status=$?; [[ $pin_status -eq 1 ]] || exit "$pin_status"
+      fi
+      if rfm_pin="$(read_update_pin rfm)"; then :; else
+        pin_status=$?; [[ $pin_status -eq 1 ]] || exit "$pin_status"
+      fi
+      if [[ -n "$swe1_pin" && -z "$rfm_pin" ]]; then
+        GAME=swe1; UPDATE_TOKEN="$swe1_pin"
+        echo "[run-qemu] --update auto selected sole SWE1 pin → $UPDATE_TOKEN" >&2
+      elif [[ -n "$rfm_pin" && -z "$swe1_pin" ]]; then
+        GAME=rfm; UPDATE_TOKEN="$rfm_pin"
+        echo "[run-qemu] --update auto selected sole RFM pin → $UPDATE_TOKEN" >&2
+      elif [[ -n "$swe1_pin" && -n "$rfm_pin" ]]; then
+        echo "[run-qemu] --game auto has pins for both games; board detection retains ordinary auto policy" >&2
+      fi
+      ;;
+  esac
+fi
 
 resolve_update_token() {
   local token="$1" gn=""
@@ -1689,6 +1820,79 @@ else
   fi
 fi
 SAVEDATA_DIR="$(realpath -m "$SAVEDATA_DIR")"
+UPDATE_PIN_ROOT="$(realpath -m "$UPDATE_PIN_ROOT")"
+SERIAL_UPDATE_ROOT="$(realpath -m "$SERIAL_UPDATE_ROOT")"
+
+# A COM1 fupdate is accepted only when XINA ACKs its final protocol frame.
+# Device exit notifiers then snapshot the resulting BAR3 and DCS flashes into
+# this private transaction directory.  The launcher promotes those device
+# images after QEMU exits; the serial wire copy is deliberately not trusted as
+# the installed result.  --no-savedata remains fully ephemeral and cannot pin
+# a received update.
+if [[ ( -n "$UART_TCP" || -n "$SERIAL_DEVICE" ) && $NO_SAVEDATA -eq 0 ]]; then
+  FUPDATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/encore-fupdate.XXXXXX")"
+  export P2K_FUPDATE_STATUS_PATH="$FUPDATE_DIR/status"
+  export P2K_BAR3_FLASH_SNAPSHOT="$FUPDATE_DIR/bar3.flash"
+  export P2K_DCS_FLASH_SNAPSHOT="$FUPDATE_DIR/dcs.flash"
+elif [[ ( -n "$UART_TCP" || -n "$SERIAL_DEVICE" ) && $NO_SAVEDATA -eq 1 ]]; then
+  echo "[run-qemu] serial updates are ephemeral with --no-savedata and will not be pinned" >&2
+fi
+
+promote_completed_serial_update() {
+  [[ -n "$FUPDATE_DIR" && -f "$FUPDATE_DIR/status" ]] || return 0
+  grep -q '^complete ' "$FUPDATE_DIR/status" || return 0
+
+  local bar3="$FUPDATE_DIR/bar3.flash"
+  local dcs="$FUPDATE_DIR/dcs.flash"
+  local bar3_size=0 dcs_size=0
+  [[ -f "$bar3" ]] && bar3_size="$(stat -c %s "$bar3")"
+  [[ -f "$dcs" ]] && dcs_size="$(stat -c %s "$dcs")"
+  if [[ "$bar3_size" -ne $((4 * 1024 * 1024)) ||
+        "$dcs_size" -ne $((1024 * 1024)) ]]; then
+    echo "[run-qemu] ERROR: XINA completed fupdate, but final flash snapshots are incomplete (BAR3=$bar3_size, DCS=$dcs_size)" >&2
+    return 1
+  fi
+
+  local promote_args=(
+    "$ROOT/scripts/internal/serial-update-bundle.py"
+    --game-flash "$bar3"
+    --sound-flash "$dcs"
+    --install-root "$SERIAL_UPDATE_ROOT"
+    --search-root "$ROOT/updates"
+    --pin-dir "$UPDATE_PIN_ROOT"
+  )
+  case "$GAME" in
+    swe1|rfm) promote_args+=(--expected-game "$GAME") ;;
+  esac
+  python3 "${promote_args[@]}"
+}
+
+cleanup_runtime_dirs() {
+  [[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"
+  [[ -n "$AUTOMATION_DIR" ]] && rm -rf "$AUTOMATION_DIR"
+  [[ -n "$PASST_DIR" ]] && rm -rf "$PASST_DIR"
+  [[ -n "$FUPDATE_DIR" ]] && rm -rf "$FUPDATE_DIR"
+  return 0
+}
+
+# A successful serial update commonly resets XINA while QEMU keeps running.
+# Users naturally close the window or press Ctrl-C at that point.  Stop QEMU
+# first so its exit notifiers can snapshot both flashes, then promote the
+# already-ACKed transaction before removing its private directory.
+finish_qemu_run() {
+  local status="${1:-0}"
+  trap - EXIT INT TERM
+  set +e
+  if [[ -n "${QEMU_PID:-}" ]]; then
+    kill "$QEMU_PID" 2>/dev/null
+    wait "$QEMU_PID" 2>/dev/null
+  fi
+  if ! promote_completed_serial_update; then
+    status=1
+  fi
+  cleanup_runtime_dirs
+  exit "$status"
+}
 
 # --- assemble QEMU command line --------------------------------------------
 # Auto-append display options so QEMU never captures the host pointer
@@ -1737,6 +1941,9 @@ elif [[ -n "$UART_TCP" ]]; then
     echo "[run-qemu] --uart-tcp + --headless: serial0 -> tcp://${UART_TCP}; "\
 "host-stderr UART mirror still active (use --uart-quiet to silence)." >&2
   fi
+elif [[ -n "$SERIAL_DEVICE" ]]; then
+  ARGS+=( -serial "$SERIAL_DEVICE" )
+  echo "[run-qemu] COM1 -> $SERIAL_DEVICE (guest-controlled serial parameters)" >&2
 elif [[ $HEADLESS -eq 1 ]]; then
   if [[ $UART_QUIET -eq 1 ]]; then
     ARGS+=( -serial null )
@@ -1763,7 +1970,7 @@ if [[ $NETWORK -eq 1 ]]; then
     PASST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/encore-passt.XXXXXX")"
     PASST_SOCKET="$PASST_DIR/network.sock"
     PASST_PID_FILE="$PASST_DIR/passt.pid"
-    trap '[[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"; [[ -n "$PASST_DIR" ]] && rm -rf "$PASST_DIR"' EXIT INT TERM
+    trap '[[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"; [[ -n "$PASST_DIR" ]] && rm -rf "$PASST_DIR"; [[ -n "$FUPDATE_DIR" ]] && rm -rf "$FUPDATE_DIR"' EXIT INT TERM
     PASST_TCP_SPEC=""
     PASST_ARGS=(--socket "$PASST_SOCKET" --pid "$PASST_PID_FILE"
       --runas "$(id -u):$(id -g)" --one-off --ipv4-only)
@@ -1956,7 +2163,7 @@ if [[ $SERIAL_STDIO -eq 1 ]]; then
   # of THIS terminal. Cooked-mode echo, line editing, signals all work
   # as the user's shell expects. nc exits → QEMU is killed.
   QEMU_BACKGROUND_QUIET=1 launch_qemu
-  trap '[[ -n "${QEMU_PID:-}" ]] && kill "$QEMU_PID" 2>/dev/null; [[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"; [[ -n "$PASST_DIR" ]] && rm -rf "$PASST_DIR"' EXIT INT TERM
+  trap '[[ -n "${QEMU_PID:-}" ]] && kill "$QEMU_PID" 2>/dev/null; [[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"; [[ -n "$PASST_DIR" ]] && rm -rf "$PASST_DIR"; [[ -n "$FUPDATE_DIR" ]] && rm -rf "$FUPDATE_DIR"' EXIT INT TERM
   # Wait for the TCP server to come up (QEMU takes ~1s to bind).
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     if (exec 3<>/dev/tcp/127.0.0.1/"$SERIAL_PORT") 2>/dev/null; then
@@ -1984,7 +2191,7 @@ if [[ $SERIAL_STDIO -eq 1 ]]; then
 fi
 
 launch_qemu
-trap 'status=$?; if [[ -n "${QEMU_PID:-}" ]]; then kill "$QEMU_PID" 2>/dev/null; wait "$QEMU_PID" 2>/dev/null || true; fi; [[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"; [[ -n "$AUTOMATION_DIR" ]] && rm -rf "$AUTOMATION_DIR"; [[ -n "$PASST_DIR" ]] && rm -rf "$PASST_DIR"; exit "$status"' EXIT INT TERM
+trap 'finish_qemu_run $?' EXIT INT TERM
 if [[ -n "$CONSOLE_SCRIPT" ]]; then
   __script_args=(
     "$ROOT/scripts/internal/run-console-script.py" "$CONSOLE_SCRIPT"
@@ -1997,10 +2204,13 @@ if [[ -n "$CONSOLE_SCRIPT" ]]; then
   fi
   python3 "${__script_args[@]}"
 fi
+set +e
 wait "$QEMU_PID"
 QEMU_STATUS=$?
+set -e
+if ! promote_completed_serial_update; then
+  QEMU_STATUS=1
+fi
 trap - EXIT INT TERM
-[[ -n "$CLEANUP" ]] && rm -rf "$CLEANUP"
-[[ -n "$AUTOMATION_DIR" ]] && rm -rf "$AUTOMATION_DIR"
-[[ -n "$PASST_DIR" ]] && rm -rf "$PASST_DIR"
+cleanup_runtime_dirs
 exit "$QEMU_STATUS"

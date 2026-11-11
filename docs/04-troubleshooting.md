@@ -224,10 +224,46 @@ scripts/run-qemu.sh --game swe1 --serial-tcp 4444
 nc 127.0.0.1 4444
 ```
 
-`--uart-quiet` suppresses both the UART mirror and chardev output; it wins over
-`-v`. The launcher also supplies a bounded boot input sequence in quiet mode to
-avoid leaving XINA in a synchronous polled read. See
+`--uart-quiet` suppresses the stderr mirror and uses a null sink when no TCP
+UART was requested; an explicit `--serial-tcp`/`--uart-tcp` connection remains
+a raw bidirectional COM1 transport. It wins over `-v`. The launcher also
+supplies a bounded boot input sequence in quiet mode to avoid leaving XINA in a
+synchronous polled read. See
 [Console scripting](42-console-scripting.md) for repeatable automation.
+
+## A serial update does not start or does not produce a pin
+
+Use the ordinary audio path and the factory-compatible rate first:
+
+```sh
+scripts/run-qemu.sh --game swe1 --update auto --serial-tcp 5599
+scripts/internal/serial-update-send.py updates/<bundle>/50069 \
+  --port 5599 --baud 115200 --mode full
+```
+
+| Symptom | Meaning and action |
+|---|---|
+| XINA prints `baudrate = <9600 ... 115200>` and returns to `%` | the running factory update rejected `230400`; use the helper default, `115200` |
+| `DCS2 board failed to initialize` or the first DCS packet times out | do not use `--no-audio`; it currently also disables the native ADSP/DCS model |
+| `--serial-device` says the path is missing after reconnect | select its `/dev/serial/by-id/...` name instead of an enumeration-dependent `/dev/ttyUSB<N>` name |
+| the physical updater sees no prompt or receives garbage | verify both ends use the same rate, an RS-232-level adapter rather than USB-TTL, and the required straight/null-modem wiring |
+| the device exists but is not readable/writable | rerun the cabinet installer to grant its detected udev group, then start a fresh login session or reboot |
+| every frame was ACKed but no pin exists yet | close the QEMU window or press Ctrl-C on the direct runner so it can snapshot and promote |
+| a partial update selects the user-owned custom bundle | expected: `game` and `sfonly` preserve the untouched device and therefore replace the game's one current hybrid |
+| no pin after stopping a `run-qemu.sh | tee ...` pipeline | repeat the runner directly; the pipeline can terminate before its ordered promotion handler finishes |
+| startup reports a malformed, wrong-game or unavailable update pin | do not expect fallback; deliberately select an explicit known bundle, then inspect the global pin below `$XDG_CONFIG_HOME/encore/update-pins` before removing managed metadata |
+| SWE1 1.10 prints `FLASH Update Complete!`, then `MASKED IMAGE BANK (0) MISMATCH` and a fatal error | expected historical 1.10 checksum bug; let it reset and verify the target version, as described in the [serial updater note](15-rom-loading.md#swe-110-post-update-mismatch) |
+
+No bundle or pin is published merely because bytes arrived on COM1. Encore
+requires XINA's final ACK, then snapshots the emulated devices after QEMU has
+stopped. Compare the five printed SHA-256 values with the intended source; a
+known exact bundle is reported as `reused`, while a new/hybrid state is
+reported as `created` in the game's single replaceable custom location. See
+the measured [cross-version matrix](15-rom-loading.md#observed-cross-version-matrix).
+Created states live only below `$XDG_DATA_HOME/encore/serial-updates`;
+ordinary update discovery does not scan that directory, and successful
+replacement keeps only the active managed state for that game. The official
+`updates/` tree is never modified.
 
 ## Timing, stalls and rare fatal monitors
 

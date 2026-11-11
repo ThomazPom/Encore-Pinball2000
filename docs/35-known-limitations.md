@@ -23,6 +23,7 @@ fidelity or invalidate a support claim.
 | sound | sample engines are mono and fixed libraries may omit newer tracks | use the default live ADSP engine for normal play |
 | capture | video capture records no audio and samples at a host 60 fps | capture audio separately and expect repeated frames |
 | hardware | no current powered-cabinet/physical-LPT certification exists on this host | follow the staged real-board procedure on the target cabinet |
+| serial hardware | COM1 updates pass TCP and pseudo-TTY tests, but no physical RS-232 adapter/cable is certified | validate voltage level, wiring and a complete transfer on the target hardware |
 | platform | published binaries target Linux x86_64 only | treat another architecture/OS as a new port |
 | device fidelity | PCI, SuperIO, MediaGX and PUB models implement game-used surfaces, not complete chips | do not infer hotplug, arbitrary firmware or general hardware compatibility |
 | networking | XINA services are historical; the JTS relay is an unlicensed Python 2 lab artifact without card-reader support | bind locally and treat tournament work as preservation research |
@@ -195,6 +196,20 @@ rows.
 Do not use `auto` fallback as proof that hardware worked. Commission an
 explicit `/dev/parportN`, verify the game's own diagnostics and only then
 install `required`. Follow [Real LPT passthrough](46-real-lpt-passthrough.md).
+
+## Physical COM1 boundary
+
+The COM1 updater path has byte-exact TCP coverage and an end-to-end host
+pseudo-TTY transfer that exercised guest-selected baud/framing, BAR3/DCS flash
+programming, snapshots and update pinning. Those software results cannot prove
+that a USB adapter uses RS-232 rather than TTL levels, that a cable is wired
+straight-through rather than null-modem, or that a specific physical updater
+and adapter complete a transfer without electrical errors.
+
+The cabinet installer can detect, persist and grant safe group access to a
+host TTY; this is device plumbing, not electrical certification. Finish that
+claim with a complete physical transfer on the intended adapter and cable. See
+[Serial-installed updates](15-rom-loading.md#serial-installed-updates).
 
 ## Optional network and guest extensions
 

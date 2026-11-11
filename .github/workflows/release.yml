@@ -8,6 +8,7 @@ on:
       - 'qemu/**'
       - 'guest-extensions/**'
       - 'scripts/**'
+      - 'tools/serial-updater-bridge/**'
       - 'docs/**'
       - 'README.md'
       - 'install.sh'
@@ -46,7 +47,7 @@ jobs:
         run: |
           apt-get -qq update >/tmp/apt.log 2>&1
           apt-get -qq install -y --no-install-recommends \
-            ca-certificates curl git gh xz-utils file binutils \
+            ca-certificates curl git gh xz-utils file binutils socat \
             build-essential ninja-build meson pkg-config python3 python3-venv \
             libglib2.0-dev libpixman-1-dev libsdl2-dev \
             libvorbis-dev libogg-dev libslirp-dev zlib1g-dev \
@@ -102,6 +103,7 @@ jobs:
         run: |
           bash -n install.sh uninstall.sh scripts/run-qemu.sh scripts/build-qemu.sh \
             scripts/internal/encore-session.sh scripts/internal/network-validation.sh \
+            tools/serial-updater-bridge/serial-updater-bridge.sh \
             tools/capture-live-crash.sh \
             tools/debian-qemu/lab.sh
           ./install.sh --help >/dev/null
@@ -111,6 +113,9 @@ jobs:
           python3 -m py_compile \
             guest-extensions/check-romset.py \
             scripts/internal/cpu-shield.py \
+            scripts/internal/serial-device-detect.py \
+            scripts/internal/serial-update-bundle.py \
+            scripts/internal/serial-update-send.py \
             docs/measurements/dcs-engines/run-comparison.py \
             docs/measurements/validation-matrix/run-matrix.py
 
@@ -179,6 +184,10 @@ jobs:
             scripts/internal/run-console-script.py \
             scripts/internal/network-validation.sh \
             scripts/internal/runtime-packages.sh \
+            scripts/internal/serial-device-detect.py \
+            scripts/internal/serial-update-bundle.py \
+            scripts/internal/serial-update-send.py \
+            tools/serial-updater-bridge \
             | tar -x -C "$full_root"
           install -m 0755 "$package/qemu-system-i386" "$full_root/qemu-system-i386"
           install -m 0644 "$package/build-info.txt" "$full_root/build-info.txt"
@@ -195,9 +204,14 @@ jobs:
           test -r "$verify/Encore-Pinball2000/scripts/internal/runtime-packages.sh"
           test -r "$verify/Encore-Pinball2000/scripts/internal/network-validation.sh"
           test -r "$verify/Encore-Pinball2000/scripts/internal/cpu-shield.py"
+          test -x "$verify/Encore-Pinball2000/scripts/internal/serial-device-detect.py"
+          test -r "$verify/Encore-Pinball2000/scripts/internal/serial-update-bundle.py"
+          test -x "$verify/Encore-Pinball2000/scripts/internal/serial-update-send.py"
+          test -x "$verify/Encore-Pinball2000/tools/serial-updater-bridge/serial-updater-bridge.sh"
+          test -r "$verify/Encore-Pinball2000/tools/serial-updater-bridge/serial-pty-compat.c"
+          test -r "$verify/Encore-Pinball2000/tools/serial-updater-bridge/README.md"
           test ! -e "$verify/Encore-Pinball2000/scripts/build-qemu.sh"
           test ! -e "$verify/Encore-Pinball2000/qemu"
-          test ! -e "$verify/Encore-Pinball2000/tools"
           test ! -e "$verify/Encore-Pinball2000/scripts/tests"
           test ! -e "$verify/Encore-Pinball2000/roms"
           test ! -e "$verify/Encore-Pinball2000/updates"
@@ -205,6 +219,12 @@ jobs:
           grep -aq 'volatile guest extensions armed' \
             "$verify/Encore-Pinball2000/qemu-system-i386"
           "$verify/Encore-Pinball2000/scripts/run-qemu.sh" --help >/dev/null
+          python3 \
+            "$verify/Encore-Pinball2000/scripts/internal/serial-update-bundle.py" \
+            --help >/dev/null
+          "$verify/Encore-Pinball2000/scripts/internal/serial-update-send.py" --help >/dev/null
+          bash -n \
+            "$verify/Encore-Pinball2000/tools/serial-updater-bridge/serial-updater-bridge.sh"
 
       - name: Publish GitHub release
         if: steps.publication.outputs.publish == '1'

@@ -24,6 +24,7 @@ organized by task first, then by implementation subsystem and evidence.
 | use desktop cabinet keys or XINA keyboard mode | [Desktop controls](41-cli-keyboard-guide.md) |
 | automate XINA commands, switches and captures | [Console scripting](42-console-scripting.md) |
 | understand or safely reset persistent state | [Persistent cabinet state](09-savedata.md) |
+| install an update through COM1 | [Serial-installed updates](15-rom-loading.md#serial-installed-updates) |
 | connect a real driver board | [Real LPT passthrough](46-real-lpt-passthrough.md) |
 
 ## Understand the emulator

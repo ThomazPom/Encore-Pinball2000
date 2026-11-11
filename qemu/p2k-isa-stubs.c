@@ -14,8 +14,8 @@
  *   0x2F8..0x2FF      COM2 16550 UART — probe-compatible register model
  *   0x3F8..0x3FF      COM1 16550 UART — register model + console bridge
  *                     LSR (offset 5) reports THRE|TEMT so puts() does
- *                     not spin; the actual character is dropped (or
- *                     forwarded to host stderr if P2K_UART_TO_STDERR=1).
+ *                     not spin; COM1 bytes reach the configured QEMU chardev
+ *                     and may also be mirrored to filtered host stderr.
  *
  * These are intentionally minimum-viable.  If a future PRISM path needs
  * more (e.g. PCI cf8/cfc, MediaGX 0x22/0x23, VGA 0x3DA toggle, LPT
@@ -29,6 +29,7 @@
 #include "system/system.h"
 #include "chardev/char-fe.h"
 #include "chardev/char.h"
+#include "chardev/char-serial.h"
 
 #include "p2k-internal.h"
 
@@ -204,10 +205,10 @@ static const MemoryRegionOps p2k_post_ops = {
  *
  * Registers (DLAB-aware enough for printf to work):
  *   0  THR/RBR/DLL  -- write: emit char (or DLL latch when LCR.7=1)
- *   1  IER/DLM      -- ignored
+ *   1  IER/DLM      -- interrupt enables / high divisor latch
  *   2  IIR/FCR      -- read: 0x01 (no interrupt pending)
  *   3  LCR          -- stored, used for DLAB only
- *   4  MCR          -- ignored
+ *   4  MCR          -- stored; bit 4 enables local loopback
  *   5  LSR          -- 0x60 (THRE+TEMT, no RX data, no errors)
  *   6  MSR          -- 0x00
  *   7  SCR          -- scratch register, stored
@@ -235,11 +236,14 @@ static P2KUartState *p2k_uart_state(void *opaque)
     return &s_uart[(uintptr_t)opaque == 0x2f8 ? 1 : 0];
 }
 
-/* TX line filter — drops whole lines from the UART output stream that
+/* TX diagnostic filter — drops whole lines from the stderr mirror that
  * match any space-separated substring in P2K_UART_DROP (default
  * "swd Debug:"). Bytes are buffered until '\n' (or buffer full); on
- * flush, the line is forwarded to chardev/stderr ONLY if no filter
- * substring matches. Set P2K_UART_DROP="" to disable. */
+ * flush, the line is written to stderr only if no filter substring matches.
+ * The bidirectional chardev is a wire, not a log sink: every byte reaches it
+ * immediately and unfiltered so binary protocols such as fupdate retain
+ * ACK/NAK bytes that have no trailing newline. Set P2K_UART_DROP="" to
+ * disable filtering of the diagnostic mirror. */
 #define P2K_TX_LINE_MAX 1024
 static char     s_tx_line[P2K_TX_LINE_MAX];
 static size_t   s_tx_line_len;
@@ -266,7 +270,170 @@ static CharBackend s_uart_be;
 #endif
 static bool        s_uart_be_inited;
 
-#define P2K_UART_RX_RING 256
+/* A socket/file chardev ignores these controls, while QEMU's host-serial
+ * backend applies them through termios.  Propagating the guest's divisor is
+ * what lets a physical USB/PCI UART follow XINA from its console rate to the
+ * fupdate rate without a host-side stty race. */
+static void p2k_uart_update_backend_parameters(P2KUartState *uart)
+{
+    QEMUSerialSetParams params;
+    unsigned divisor;
+
+    if (!s_uart_be_inited || uart != &s_uart[0]) {
+        return;
+    }
+    divisor = ((unsigned)uart->dlm << 8) | uart->dll;
+    if (divisor == 0) {
+        return;
+    }
+    params.speed = 115200 / divisor;
+    params.data_bits = (uart->lcr & 0x03) + 5;
+    params.stop_bits = (uart->lcr & 0x04) ? 2 : 1;
+    if (!(uart->lcr & 0x08)) {
+        params.parity = 'N';
+    } else {
+        params.parity = (uart->lcr & 0x10) ? 'E' : 'O';
+    }
+    qemu_chr_fe_ioctl(&s_uart_be, CHR_IOCTL_SERIAL_SET_PARAMS, &params);
+}
+
+/* XINA fupdate uses fixed 518-byte frames: sequence, data length and checksum
+ * are little-endian 16-bit fields followed by a 512-byte payload. Observing
+ * the protocol here does not consume or alter it; it only creates a completion
+ * marker after XINA itself ACKs the final frame. The launcher then promotes
+ * the device images, never the observed wire copy. */
+#define P2K_FUPDATE_FRAME_SIZE 518
+static char s_fupdate_command[128];
+static size_t s_fupdate_command_len;
+static uint8_t s_fupdate_frame[P2K_FUPDATE_FRAME_SIZE];
+static size_t s_fupdate_frame_len;
+static bool s_fupdate_active;
+static bool s_fupdate_skip_lf;
+static bool s_fupdate_final_frame;
+static unsigned s_fupdate_reply_remaining;
+static uint64_t s_fupdate_packets;
+static uint64_t s_fupdate_payload_bytes;
+
+static void p2k_fupdate_publish_complete(void)
+{
+    const char *path = getenv("P2K_FUPDATE_STATUS_PATH");
+    if (!path || !*path) {
+        return;
+    }
+    g_autofree char *status = g_strdup_printf(
+        "complete packets=%" PRIu64 " bytes=%" PRIu64 "\n",
+        s_fupdate_packets, s_fupdate_payload_bytes);
+    g_autofree char *temporary = g_strdup_printf("%s.tmp", path);
+    GError *error = NULL;
+    if (!g_file_set_contents(temporary, status, -1, &error) ||
+        rename(temporary, path) != 0) {
+        warn_report("pinball2000: cannot publish fupdate completion %s: %s",
+                    path, error ? error->message : strerror(errno));
+        g_clear_error(&error);
+        unlink(temporary);
+        return;
+    }
+    info_report("pinball2000: XINA acknowledged complete COM1 fupdate "
+                "(%" PRIu64 " packets, %" PRIu64 " payload bytes)",
+                s_fupdate_packets, s_fupdate_payload_bytes);
+}
+
+static void p2k_fupdate_observe_frame(void)
+{
+    uint16_t sequence = lduw_le_p(s_fupdate_frame);
+    uint16_t length = lduw_le_p(s_fupdate_frame + 2);
+    uint16_t checksum = lduw_le_p(s_fupdate_frame + 4);
+    uint16_t sum = 0;
+
+    if (length <= 512) {
+        for (unsigned i = 0; i < length; i++) {
+            sum += s_fupdate_frame[6 + i];
+        }
+    }
+    bool valid = length <= 512 && (uint16_t)(sum + checksum) == 0;
+    if (s_fupdate_packets == 0 || !valid || sequence >= UINT16_MAX - 1) {
+        info_report("pinball2000: fupdate frame seq=0x%04x length=%u "
+                    "checksum=%s", sequence, length,
+                    valid ? "valid" : "INVALID");
+    }
+    s_fupdate_reply_remaining = 4;
+    s_fupdate_final_frame = valid && sequence == UINT16_MAX && length == 0;
+    if (valid) {
+        s_fupdate_packets++;
+        s_fupdate_payload_bytes += length;
+    }
+}
+
+static void p2k_fupdate_observe_rx_byte(uint8_t byte)
+{
+    if (s_fupdate_active) {
+        if (s_fupdate_skip_lf) {
+            s_fupdate_skip_lf = false;
+            if (byte == '\n') {
+                return;
+            }
+        }
+        s_fupdate_frame[s_fupdate_frame_len++] = byte;
+        if (s_fupdate_frame_len == sizeof(s_fupdate_frame)) {
+            p2k_fupdate_observe_frame();
+            s_fupdate_frame_len = 0;
+        }
+        return;
+    }
+
+    if (byte == '\r' || byte == '\n') {
+        s_fupdate_command[s_fupdate_command_len] = '\0';
+        if (g_str_has_prefix(s_fupdate_command, "fupdate load com1 ")) {
+            s_fupdate_active = true;
+            s_fupdate_skip_lf = byte == '\r';
+            s_fupdate_frame_len = 0;
+            s_fupdate_final_frame = false;
+            s_fupdate_reply_remaining = 0;
+            s_fupdate_packets = 0;
+            s_fupdate_payload_bytes = 0;
+            info_report("pinball2000: observing XINA COM1 fupdate transaction");
+        }
+        s_fupdate_command_len = 0;
+        return;
+    }
+    if (s_fupdate_command_len + 1 < sizeof(s_fupdate_command)) {
+        s_fupdate_command[s_fupdate_command_len++] = byte;
+    } else {
+        s_fupdate_command_len = 0;
+    }
+}
+
+/* Return true for the four-byte binary ACK/NAK reply so it bypasses the
+ * human-oriented stderr line buffer. It has already been sent raw to the
+ * chardev by the caller. */
+static bool p2k_fupdate_observe_tx_byte(uint8_t byte)
+{
+    if (!s_fupdate_reply_remaining) {
+        return false;
+    }
+    bool first = s_fupdate_reply_remaining == 4;
+    /* XINA may emit human diagnostics before the binary reply. The historical
+     * updater likewise scans until ACK/NAK, then consumes the remaining three
+     * reply bytes. Do not let unrelated console text cancel completion. */
+    if (first && byte != 0x06 && byte != 0x15) {
+        return false;
+    }
+    s_fupdate_reply_remaining--;
+    if (first && s_fupdate_final_frame) {
+        if (byte == 0x06) {
+            p2k_fupdate_publish_complete();
+            s_fupdate_active = false;
+        }
+        s_fupdate_final_frame = false;
+    }
+    return true;
+}
+
+/* One fupdate frame is 518 bytes (6-byte header plus 512-byte payload).  Keep
+ * several complete frames so a single host write can never be truncated at
+ * the old 255-byte effective capacity. The mask arithmetic below requires a
+ * power of two. */
+#define P2K_UART_RX_RING 4096
 static uint8_t  s_rx_ring[P2K_UART_RX_RING];
 static unsigned s_rx_head;       /* next byte to consume */
 static unsigned s_rx_tail;       /* next free slot      */
@@ -287,15 +454,30 @@ static int p2k_uart_can_read(void *opaque)
 
 static void p2k_uart_receive(void *opaque, const uint8_t *buf, int size)
 {
+    int accepted = 0;
+
+    for (int i = 0; i < size; i++) {
+        p2k_fupdate_observe_rx_byte(buf[i]);
+    }
     qemu_mutex_lock(&s_rx_lock);
     for (int i = 0; i < size; i++) {
         unsigned next = (s_rx_tail + 1) & (P2K_UART_RX_RING - 1);
-        if (next == s_rx_head) break;     /* ring full, drop */
+        if (next == s_rx_head) {
+            break;
+        }
         s_rx_ring[s_rx_tail] = buf[i];
         s_rx_tail = next;
+        accepted++;
     }
     bool has = (s_rx_head != s_rx_tail);
     qemu_mutex_unlock(&s_rx_lock);
+    if (accepted != size) {
+        /* can_read() promises the available capacity, so reaching this path
+         * indicates a frontend/backend contract violation. Never hide binary
+         * update loss behind an apparently successful transfer. */
+        warn_report("pinball2000: COM1 RX overflow (%d/%d bytes accepted)",
+                    accepted, size);
+    }
     /* Edge-triggered ISA IRQ4: pulse if the guest enabled RDA. */
     if (has && s_uart_irq && (s_uart[0].ier & 0x01)) {
         qemu_irq_pulse(s_uart_irq);
@@ -337,6 +519,7 @@ static const char *s_uart_input;
 
 static bool p2k_uart_pop_rx(uint8_t *out)
 {
+    static uint64_t consumed;
     qemu_mutex_lock(&s_rx_lock);
     if (s_rx_head == s_rx_tail) {
         qemu_mutex_unlock(&s_rx_lock);
@@ -344,11 +527,24 @@ static bool p2k_uart_pop_rx(uint8_t *out)
     }
     *out = s_rx_ring[s_rx_head];
     s_rx_head = (s_rx_head + 1) & (P2K_UART_RX_RING - 1);
+    consumed++;
     bool more = (s_rx_head != s_rx_tail);
+    unsigned remaining = p2k_rx_count();
     qemu_mutex_unlock(&s_rx_lock);
+    if (s_uart_be_inited) {
+        /* A chardev suspends host reads after can_read() returns zero. Tell it
+         * that consuming one RBR byte reopened capacity, otherwise the rest
+         * of a packet can remain indefinitely in the host socket. */
+        qemu_chr_fe_accept_input(&s_uart_be);
+    }
     /* If more bytes remain, re-pulse so the guest comes back for them. */
     if (more && s_uart_irq && (s_uart[0].ier & 0x01)) {
         qemu_irq_pulse(s_uart_irq);
+    }
+    if (getenv("P2K_DIAG") &&
+        (consumed == 1 || (consumed & 127) == 0 || !more)) {
+        info_report("pinball2000: COM1 RX consumed=%" PRIu64 " remaining=%u",
+                    consumed, remaining);
     }
     return true;
 }
@@ -456,15 +652,12 @@ static bool p2k_tx_line_matches_drop(const char *line, size_t len)
     return false;
 }
 
-static void p2k_tx_emit(const char *buf, size_t len)
+static void p2k_tx_emit_stderr(const char *buf, size_t len)
 {
     if (!len) return;
     if (s_uart_to_stderr) {
         fwrite(buf, 1, len, stderr);
         fflush(stderr);
-    }
-    if (s_uart_be_inited) {
-        qemu_chr_fe_write_all(&s_uart_be, (const uint8_t *)buf, len);
     }
 }
 
@@ -521,7 +714,7 @@ static void p2k_tx_push_byte(uint8_t c)
     p2k_guest_extensions_observe_uart_line(s_tx_line, s_tx_line_len);
     p2k_uart_auto_ifstat_observe(s_tx_line, s_tx_line_len, xinu_prompt);
     if (!p2k_tx_line_matches_drop(s_tx_line, s_tx_line_len)) {
-        p2k_tx_emit(s_tx_line, s_tx_line_len);
+        p2k_tx_emit_stderr(s_tx_line, s_tx_line_len);
     }
     s_tx_line_len = 0;
 }
@@ -535,13 +728,22 @@ static void p2k_uart_write(void *opaque, hwaddr addr,
     case 0:
         if (uart->lcr & 0x80) {
             uart->dll = val & 0xff;
+            p2k_uart_update_backend_parameters(uart);
         } else {
             uint8_t c = val & 0xFF;
             if (uart->mcr & 0x10) {
                 uart->loopback_rx = c;
                 uart->loopback_rx_valid = true;
             } else if (com1) {
-                p2k_tx_push_byte(c);
+                /* Preserve the physical COM1 byte stream exactly. In
+                 * particular, fupdate writes four-byte ACK/NAK replies that
+                 * must not wait for the stderr line buffer to see '\n'. */
+                if (s_uart_be_inited) {
+                    qemu_chr_fe_write_all(&s_uart_be, &c, 1);
+                }
+                if (!p2k_fupdate_observe_tx_byte(c)) {
+                    p2k_tx_push_byte(c);
+                }
             }
             /* TX is instant — flag THR-empty so the next IIR read (or our
              * pulse below) signals the guest. */
@@ -554,6 +756,7 @@ static void p2k_uart_write(void *opaque, hwaddr addr,
     case 1:
         if (uart->lcr & 0x80) {
             uart->dlm = val & 0xff;
+            p2k_uart_update_backend_parameters(uart);
         } else {
             uart->ier = val & 0x0F;
             /* Newly enabled THRI on an already-empty transmitter must fire
@@ -572,6 +775,7 @@ static void p2k_uart_write(void *opaque, hwaddr addr,
         break;
     case 3:
         uart->lcr = val & 0xFF;
+        p2k_uart_update_backend_parameters(uart);
         break;
     case 4:
         uart->mcr = val & 0x1f;

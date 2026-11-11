@@ -526,6 +526,8 @@ This directly establishes a preserved production base with credit support. It
 does not recover a change list for 0.40 or establish the contents of the
 separately reported 0.43 developer image.
 
+<a id="swe-120-rom-checksum-fix"></a>
+
 #### Version 1.20 — 1999-09-16
 
 - Translations were added.
@@ -541,6 +543,16 @@ separately reported 0.43 developer image.
 - The display shown when a PC keyboard was attached was corrected.
 - An adjustment was added to let slam tilt reset the game.
 - An operating-system checksum-calculation bug affecting some ROMs was fixed.
+
+> [!NOTE]
+> Operationally, any update launched while SWE1 1.10 is running finishes its
+> successful flash write, prints `FLASH Update Complete!`, then reports
+> `MASKED IMAGE BANK (0) MISMATCH` and a fatal error before resetting. After
+> reset, the selected target version is installed. The preserved U100/U101
+> pair produces `047ba1d1`, expected by 1.00 and 1.20 onward; only 1.10
+> declares the erroneous `0778a4ce`. This is the historical OS bug described
+> above, not evidence for another mask-ROM set. See the corresponding
+> [serial updater behavior](15-rom-loading.md#swe-110-post-update-mismatch).
 
 #### Version 1.30 — 1999-09-21
 

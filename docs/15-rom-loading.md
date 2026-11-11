@@ -155,6 +155,181 @@ At normal startup the precedence is:
 `--fresh` skips the old seed but can save the newly selected update back to the
 same profile. `--no-savedata` skips the seed and discards all BAR3 changes.
 
+## Serial-installed updates
+
+Encore's COM1 accepts XINA's original binary `fupdate` protocol, so an external
+updater can use the guest's own validation and flashing path through TCP or a
+physical host serial port:
+
+```sh
+scripts/run-qemu.sh --game swe1 --update auto --serial-tcp 5599
+```
+
+Connect the updater, or a serial-to-TCP bridge, to `127.0.0.1:5599`. The TCP
+stream is byte-exact: UART line filters apply only to the optional stderr
+mirror. Before an updater connects, the launcher supplies a bounded one-shot
+CR/LF boot seed so XINA can leave its early synchronous COM1 reads; this does
+not rewrite any byte subsequently sent by the updater. For a deterministic
+developer check, Encore also includes:
+
+```sh
+scripts/internal/serial-update-send.py updates/<bundle>/50069 \
+  --port 5599 --mode full
+```
+
+<a id="swe-110-post-update-mismatch"></a>
+
+> [!IMPORTANT]
+> **Any SWE1 update started while version 1.10 is running finishes by showing
+> `FLASH Update Complete!`, followed by `MASKED IMAGE BANK (0) MISMATCH` and a
+> fatal error.** The flash write has succeeded: let the machine reset, then
+> verify that the selected target version boots. Encore can snapshot and pin
+> the installed target normally when the runner exits. SWE1 1.10 mistakenly
+> expects masked-ROM checksum `0778a4ce` instead of the U100/U101 set's actual
+> `047ba1d1`; 1.20 corrected this historical OS bug. Do not replace the mask
+> ROM files because of this particular post-update message. See the
+> [SWE1 1.20 changelog entry](50-game-changelogs.md#swe-120-rom-checksum-fix).
+
+The helper defaults to `115200`, the fastest rate accepted by the tested 1999
+factory receivers as well as current updates. Newer receivers can also be
+tested explicitly with `--baud 230400`; SWE 1.00 rejects that rate and prints
+its `9600`–`115200` usage instead of entering the binary receiver.
+
+For an external updater attached to a physical port, select the adapter in the
+cabinet installer or launch explicitly:
+
+```sh
+scripts/run-qemu.sh --game swe1 --update auto \
+  --serial-device /dev/serial/by-id/<adapter>
+```
+
+The transport remains byte-exact. Encore's emulated 16550 propagates XINA's
+divisor, parity, data-bit and stop-bit changes to QEMU's host serial backend,
+so the adapter follows the guest's transition from console traffic to the
+requested update rate. No host-side `stty` command should race that change.
+The update tool and Encore must still select the same update rate, and the
+cable/adapter must provide electrically compatible RS-232 with the wiring
+expected by the two endpoints.
+
+An external Linux updater which cannot enumerate PTYs directly can use the
+rootless private bridge in `tools/serial-updater-bridge/`. Its compatibility
+shim handles host-side port discovery and the PTY-exclusive-lock request. It
+also compensates one measured emulation boundary: a legacy desktop updater's
+roughly two-second close/reopen handoff is longer than XINA's CPU-loop receive
+timeout on an unthrottled QEMU vCPU. The bridge holds only the ASCII `fupdate`
+command until the first binary write, consumes XINA's command echo, then
+forwards every 518-byte protocol frame unchanged. See the bridge
+[README](../tools/serial-updater-bridge/README.md) for the exact scope and
+two-terminal procedure.
+
+A clean SWE1 1.20 → 1.30 run through that bridge acknowledged all 8,280 data
+frames and the final `0xffff` frame without a retry. The reset guest reported
+version 1.30 and `game code is: OK`; the exit snapshots matched all five
+official 1.30 component hashes, reused the catalog bundle and wrote the SWE1
+pin to it.
+
+A host pseudo-TTY test exercised this exact QEMU serial backend end to end.
+XINA first programmed the host endpoint to `9600`, then `fupdate load com1
+115200 sfonly` changed it to `115200`; all 2,048 DCS frames and the final frame
+were acknowledged. After shutdown, Encore reconstructed a SWE 1.00/SWE 2.10
+sound-flash hybrid: its four BAR3 hashes still matched SWE 1.00 and its sound
+hash matched SWE 2.10 exactly. This proves the line-parameter handoff, binary
+transport, final-device snapshots and pin pipeline independently of TCP. Final
+electrical and cable validation still requires the target adapter.
+
+| Helper mode | XINA command suffix | Device state after success |
+|---|---|---|
+| `full` | `sf` | BAR3 and DCS sound flash come from the submitted bundle |
+| `game` | none | BAR3 comes from the submitted bundle; DCS sound flash remains from the running installation |
+| `sfonly` | `sfonly` | DCS sound flash comes from the submitted bundle; BAR3 remains from the running installation |
+
+> [!CAUTION]
+> `game` and `sfonly` intentionally create a five-component hybrid. Encore
+> preserves that exact state; it does not silently fill the untouched device
+> from the submitted bundle. Only a known bundle whose **five** SHA-256 hashes
+> match is reused under its official name. Otherwise the result replaces that
+> game's single user-owned custom bundle; the component hashes remain in its
+> manifest and the promotion log, not in its directory name.
+
+> [!IMPORTANT]
+> Encore does not install a copy captured from the serial wire. It waits for
+> XINA to acknowledge the final protocol frame, lets the emulated PRISM BAR3
+> and DCS 28F800 devices contain the result, snapshots both devices when QEMU
+> exits, and reconstructs the five-component bundle from those snapshots.
+
+If all five reconstructed components already exist byte-for-byte in a known
+bundle, Encore reuses it directly from the read-only update catalog. Otherwise
+it replaces the game's single private bundle under
+`$XDG_DATA_HOME/encore/serial-updates/<game>/` (normally
+`~/.local/share/encore/serial-updates/<game>/`). This directory is never
+searched by ordinary version discovery and does not accumulate every possible
+BAR3/DCS combination. The other game and unrelated files are not touched.
+Encore then writes `$XDG_CONFIG_HOME/encore/update-pins/<game>.update-pin`
+(normally below `~/.config/encore`); later `--update auto` runs use that exact
+bundle. Any explicit selector (`none`, a version, `latest`, `r2` or a path)
+still wins over the pin.
+
+With `--game auto`, one valid game pin selects both that game and its bundle.
+If both games have pins, neither pin may choose the cabinet identity: normal
+driver-board detection remains authoritative and ordinary auto-update policy
+is used for that launch. Name `--game swe1` or `--game rfm` when the pinned
+choice must be deterministic. A malformed pin, a pin for the wrong game or a
+missing/incomplete target is a startup error, never a silent fallback. Pins
+are runner-managed files and should not be edited manually.
+
+> [!NOTE]
+> Serial reception never writes into the repository's `updates/` tree or any
+> other official update catalog. Exact official matches are referenced in
+> place; only the one current custom or hybrid state per game occupies the
+> user's Encore data directory.
+
+The pin belongs to the Encore user configuration, independently of every
+savedata profile. Both `--fresh` and `--no-savedata` read it for `--update
+auto`, so resetting or suppressing mutable cabinet state does not silently
+downgrade the software. `--fresh` may persist the resulting device images;
+an update received during a disposable `--no-savedata` run is not published
+as the user's later software selection.
+After XINA reports a completed update in an ordinary persistent run, closing
+the window or pressing Ctrl-C is safe: the runner first stops QEMU so both
+flash snapshots are published, then promotes the acknowledged transaction.
+
+Run the launcher directly while installing. Do not put it on the left side of
+a diagnostic `| tee` pipeline: the terminal can terminate that foreground
+pipeline before the runner completes its ordered QEMU-stop, snapshot and pin
+handler. The update in emulated flash is not thereby corrupted, but automatic
+promotion is not guaranteed.
+
+### Observed cross-version matrix
+
+The following are complete guest-driven transfers, not host-side assembly
+tests. Each source update booted XINA and its own `fupdate`/DCS loaders; each
+destination passed every protocol ACK, was reconstructed from final BAR3 and
+DCS device snapshots, matched all five preserved component SHA-256 hashes and
+was selected again by `--fresh --update auto`.
+
+| Game | Running source | Submitted destination | BAR3 frames | DCS frames | Result |
+|---|---:|---:|---:|---:|---|
+| SWE1 | 1.00 (1999) | 2.10 (2025) | 6,593 | 2,048 | exact 5/5; pin 2.10 |
+| SWE1 | 2.10 (2025) | 1.00 (1999) | 6,112 | 2,048 | exact 5/5; pin 1.00 |
+| RFM | 0.70 (1999) | 2.60 (2024) | 7,612 | 2,048 | exact 5/5; pin 2.60 |
+| RFM | 2.60 (2024) | 0.70 (1999) | 5,997 | 2,048 | exact 5/5; pin 0.70 |
+
+The reverse runs prove that Encore is not assuming monotonically increasing
+versions and that shorter destinations do not retain bytes from a larger
+source. They prove these four emulated paths; they are not a recommendation to
+downgrade a physical cabinet or a claim about every historical updater.
+
+The partial paths were also exercised across the oldest/newest pair. SWE
+1.00→2.10 `game` produced the four exact 2.10 BAR3 components plus the exact
+1.00 sound flash. RFM 0.70→2.60 `sfonly` retained the four exact 0.70 BAR3
+components and installed the exact 2.60 sound flash. Both were pinned as
+distinct serial-content bundles.
+
+> [!IMPORTANT]
+> Keep the normal audio path active for `full` and `sfonly`. In the current
+> architecture `--no-audio` also leaves the native ADSP/DCS model
+> uninitialized; XINA then cannot perform the sound-flash stage.
+
 ## Emulated update flash
 
 BAR3 is an Intel-compatible 28F320-style 4 MiB flash at `0x12000000`, not a

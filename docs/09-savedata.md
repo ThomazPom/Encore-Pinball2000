@@ -16,6 +16,20 @@ owns four opaque device images under one savedata directory.
 interchangeable configuration files. Do not edit, concatenate or truncate
 them.
 
+A successful COM1 update may also create runner-owned software selection
+outside savedata:
+
+| Path | Purpose |
+|---|---|
+| `$XDG_CONFIG_HOME/encore/update-pins/<game>.update-pin` | absolute pointer to the bundle selected by later `--update auto` runs |
+| `$XDG_DATA_HOME/encore/serial-updates/<game>/` | the single replaceable custom or hybrid bundle when no official five-component bundle matches |
+
+These paths are not guest devices and must not be hand-edited. A malformed,
+wrong-game or unavailable pin stops startup instead of silently selecting a
+different update. See [Serial-installed updates](15-rom-loading.md#serial-installed-updates)
+for creation, validation and replacement rules. When the XDG variables are
+unset, the roots are `~/.config/encore` and `~/.local/share/encore`.
+
 The default directory is `savedata/` at the repository root. Select a separate
 one with:
 
@@ -39,7 +53,7 @@ if neither location is usable.
 |---|---|---|---|
 | ordinary launch | yes | yes | normal cabinet or desktop play |
 | `--fresh` | no | yes, to the selected directory | intentionally replace a cabinet state |
-| `--no-savedata` | no | no | disposable tests and reproducible diagnostics |
+| `--no-savedata` | no | no | disposable tests without changing cabinet state |
 
 An ordinary launch uses any files already present. Missing devices start from
 their reset contents and are persisted only according to the write rules
@@ -50,6 +64,7 @@ below.
 > [!WARNING]
 > `--fresh` is a reset, not a temporary profile. It ignores all four existing
 > seeds, then replaces them with newly initialized images when Encore exits.
+> The independently selected software is staged into the fresh BAR3 image.
 > Back up the directory first if its audits, scores or adjustments matter.
 
 In this mode BAR2 starts empty, BAR3 starts erased before the selected update
@@ -58,8 +73,10 @@ starts from the current host date and time.
 
 `--no-savedata` exports `P2K_NO_SAVEDATA=1`, uses an empty throwaway working
 directory as a second isolation layer, discards every device change and removes
-that working directory on normal launcher exit. The selected savedata files are
-neither read nor written.
+that working directory on normal launcher exit. The device-image files are
+neither read nor written. A serial update performed in this mode remains
+ephemeral: Encore does not publish its final flash contents or promote it as
+the user's later software selection.
 
 For a normal disposable run:
 
@@ -67,17 +84,22 @@ For a normal disposable run:
 scripts/run-qemu.sh --game swe1 --no-savedata
 ```
 
-## Updates also live in savedata
+## BAR3 remains device state, not selection metadata
 
-The active update is represented by `<game>.flash`, so changing update
-selection can change persistent state:
+Software selection and savedata are separate. The selected bundle says what
+Encore should stage; `<game>.flash` represents the current physical contents
+of the emulated BAR3 device. Staging software can therefore change that device
+state without making its selection metadata part of savedata:
 
-- the default `--update auto` compares saved BAR3 with the newest matching
-  local bundle and installs the bundle in memory when they differ;
+- `--update auto` first honors a valid game pin; without one, it compares saved
+  BAR3 with the newest matching local bundle and installs that bundle in memory
+  when they differ;
 - an explicit update does the same comparison with the selected bundle;
 - a successfully installed bundle is saved to `<game>.flash` on exit;
 - `--update none` suppresses staging and auto-discovery, but still loads an
-  existing `<game>.flash` seed.
+  existing `<game>.flash` seed;
+- a valid global `<game>.update-pin` affects only `--update auto`: explicit `none`,
+  `latest`, version, `r2` or directory selectors remain authoritative.
 
 Therefore this command does **not** guarantee base ROMs when saved flash exists:
 
@@ -101,8 +123,8 @@ layout.
 
 ## Back up, restore or separate profiles
 
-Exit Encore before copying state. A complete backup keeps the four devices
-together:
+Exit Encore before copying state. A savedata backup contains the four emulated
+devices only:
 
 ```sh
 cp -a savedata savedata.backup
@@ -113,6 +135,10 @@ Restore only while the emulator is stopped:
 ```sh
 cp -a savedata.backup/. savedata/
 ```
+
+Software selection is deliberately shared across savedata profiles. Back up
+`~/.config/encore/update-pins` and `~/.local/share/encore/serial-updates`
+separately only if the current user-selected software must be preserved too.
 
 For independent profiles, keep separate directories rather than repeatedly
 copying individual files:
