@@ -264,11 +264,14 @@ are runner-managed files and should not be edited manually.
 > other official update catalog. Exact official matches are referenced in
 > place; custom and hybrid states remain private to the savedata profile.
 
-The pin belongs to the savedata profile. `--fresh` keeps the selection while
-resetting emulated device state; `--no-savedata` neither uses nor creates a
-pin. After XINA reports a completed update, closing the window or pressing
-Ctrl-C is safe: the runner first stops QEMU so both flash snapshots are
-published, then promotes the acknowledged transaction.
+The pin belongs to the savedata profile. Both `--fresh` and `--no-savedata`
+read it for `--update auto`, so resetting or suppressing mutable cabinet state
+does not silently downgrade the software. `--fresh` may persist the resulting
+device images; `--no-savedata` writes no device image and never creates or
+changes a pin. After XINA reports a completed update in an ordinary persistent
+run, closing the window or pressing Ctrl-C is safe: the runner first stops QEMU
+so both flash snapshots are published, then promotes the acknowledged
+transaction.
 
 Run the launcher directly while installing. Do not put it on the left side of
 a diagnostic `| tee` pipeline: the terminal can terminate that foreground

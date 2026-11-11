@@ -261,9 +261,11 @@ CORE LAUNCH
   --savedata <dir>          Persistent savedata dir (reads
                             <dir>/<game>.{flash,nvram2,see,rtc}).
                             Default: <repo>/savedata.
-  --no-savedata             Run without persistent savedata (also exports
-                            P2K_NO_SAVEDATA=1) and switches cwd to a fresh
-                            throwaway dir for the run.
+  --no-savedata             Ignore guest device-state seeds and disable their
+                            writes (also exports P2K_NO_SAVEDATA=1), using a
+                            fresh throwaway cwd. With --update auto, an
+                            existing update pin is still read so disposable
+                            runs keep the installed software selection.
   --fresh                   Ignore existing savedata for this boot, then
                             replace it with the newly initialized state on
                             exit. Back up state first if it matters.
@@ -1590,10 +1592,10 @@ read_update_pin() {
 
 # A successful serial install writes a per-game pin. It overrides only the
 # implicit/explicit `auto` policy: an operator's --update none, numeric
-# selector, latest, r2, or directory remains authoritative. --no-savedata is
-# deliberately profile-free and therefore ignores pins; --fresh keeps them.
-if [[ "$UPDATE_TOKEN" == auto && $NO_SAVEDATA -eq 0 &&
-      ( -z "${P2K_NO_SAVEDATA:-}" || "${P2K_NO_SAVEDATA:-}" == 0 ) ]]; then
+# selector, latest, r2, or directory remains authoritative. Pins describe the
+# selected software, not mutable guest state: both --fresh and --no-savedata
+# read them, while --no-savedata still forbids creating or changing a pin.
+if [[ "$UPDATE_TOKEN" == auto ]]; then
   pinned_update=""
   case "$GAME" in
     swe1|rfm)
@@ -1864,6 +1866,7 @@ cleanup_runtime_dirs() {
   [[ -n "$AUTOMATION_DIR" ]] && rm -rf "$AUTOMATION_DIR"
   [[ -n "$PASST_DIR" ]] && rm -rf "$PASST_DIR"
   [[ -n "$FUPDATE_DIR" ]] && rm -rf "$FUPDATE_DIR"
+  return 0
 }
 
 # A successful serial update commonly resets XINA while QEMU keeps running.

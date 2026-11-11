@@ -51,7 +51,7 @@ See the [Quickstart](02-quickstart.md) for the complete first-run sequence.
 | `--game auto\|swe1\|rfm` | Select the title. `auto` is the default. |
 | `--roms DIR` | Use `DIR` instead of the repository `roms/` tree. |
 | `--savedata DIR` | Read and write `<game>.flash`, `<game>.nvram2`, `<game>.see` and `<game>.rtc` under `DIR`. |
-| `--no-savedata` | Ignore persistent state, disable its writes and use a fresh throwaway working directory. |
+| `--no-savedata` | Ignore mutable guest device-state seeds, disable their writes and use a fresh throwaway working directory; `--update auto` still reads the profile's update pin. |
 | `--fresh` | Ignore existing state for this boot, then replace it with newly initialized state in the same directory on exit. |
 | `--update SPEC` | Select `auto`, `latest`, `none`, `r2`, a short version code or an explicit inner bundle directory. |
 | `--pub-card DIR` | Experimental Prism Update Board backed by a bundle directory; incompatible with network modes because both boards decode `0xD0000`. |

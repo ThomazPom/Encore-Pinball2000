@@ -51,7 +51,7 @@ if neither location is usable.
 |---|---|---|---|
 | ordinary launch | yes | yes | normal cabinet or desktop play |
 | `--fresh` | no | yes, to the selected directory | intentionally replace a cabinet state |
-| `--no-savedata` | no | no | disposable tests and reproducible diagnostics |
+| `--no-savedata` | no device images; yes update pin | no | disposable tests without changing cabinet state or software selection |
 
 An ordinary launch uses any files already present. Missing devices start from
 their reset contents and are persisted only according to the write rules
@@ -72,9 +72,11 @@ starts from the current host date and time.
 
 `--no-savedata` exports `P2K_NO_SAVEDATA=1`, uses an empty throwaway working
 directory as a second isolation layer, discards every device change and removes
-that working directory on normal launcher exit. The selected savedata files are
-neither read nor written. Existing update pins are ignored, and a serial update
-performed in this mode is not reconstructed or pinned.
+that working directory on normal launcher exit. The device-image files are
+neither read nor written. With `--update auto`, however, the existing update
+pin and its referenced bundle are still read: software selection is
+configuration, not mutable cabinet state. A serial update performed in this
+mode remains ephemeral and is not reconstructed or pinned.
 
 For a normal disposable run:
 
