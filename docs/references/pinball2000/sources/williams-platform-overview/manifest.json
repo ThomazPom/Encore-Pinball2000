@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Williams Pinball 2000 platform overview",
+    "kind": "html",
+    "source_url": "https://www.planetarypinball.com/mm5/Williams/pinball2000/home.html",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 3839,
+      "sha256": "264a80c6309b88a2f5e81f1c523be700569262b8ae15255cd9da5674bcf48ee1",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/_clear.gif",
+      "role": "asset",
+      "size": 43,
+      "sha256": "e586a84d8523747f42e510d78e141015b6424cf67d612854e892a7bcedc8ec9e",
+      "media_type": "image/gif",
+      "source_url": "https://www.planetarypinball.com/mm5/Williams/pinball2000/_clear.gif"
+    },
+    {
+      "path": "assets/about.gif",
+      "role": "asset",
+      "size": 708,
+      "sha256": "87a5422740d22ad86b71bd5aca4e04052ca6563ba35a814719f64d5a14679857",
+      "media_type": "image/gif",
+      "source_url": "https://www.planetarypinball.com/mm5/Williams/pinball2000/images/about.gif"
+    },
+    {
+      "path": "assets/about_dot.gif",
+      "role": "asset",
+      "size": 233,
+      "sha256": "7dae4dab10ffd55d21eff7957947f2717fe250687f729e74ca0fd42d1ebae1e4",
+      "media_type": "image/gif",
+      "source_url": "https://www.planetarypinball.com/mm5/Williams/pinball2000/images/about_dot.gif"
+    },
+    {
+      "path": "assets/bally_will_logos.gif",
+      "role": "asset",
+      "size": 1885,
+      "sha256": "1b206cf1cd804689c5277e4bcf98944659852096340a15b1fa90461546f2a5d8",
+      "media_type": "image/gif",
+      "source_url": "https://www.planetarypinball.com/mm5/Williams/pinball2000/images/bally_will_logos.gif"
+    },
+    {
+      "path": "assets/corner.gif",
+      "role": "asset",
+      "size": 71,
+      "sha256": "9419c9028b2969f545e353bc7f7b90bacaf1d8d9e0d40403f7a03f4bb807c81a",
+      "media_type": "image/gif",
+      "source_url": "https://www.planetarypinball.com/mm5/Williams/pinball2000/images/corner.gif"
+    },
+    {
+      "path": "assets/home.gif",
+      "role": "asset",
+      "size": 393,
+      "sha256": "54b05980019a30d5fd37ca65e9f2cf5c5d84548b7f77fcc0ef6806daa4e5af04",
+      "media_type": "image/gif",
+      "source_url": "https://www.planetarypinball.com/mm5/Williams/pinball2000/images/home.gif"
+    },
+    {
+      "path": "assets/logo_btm.gif",
+      "role": "asset",
+      "size": 622,
+      "sha256": "b51e6acbc354188660c44ca7e6dc7f8be3b162ad88b0f634df0e2cc1ca6ca84e",
+      "media_type": "image/gif",
+      "source_url": "https://www.planetarypinball.com/mm5/Williams/pinball2000/images/logo_btm.gif"
+    },
+    {
+      "path": "assets/logo_left.gif",
+      "role": "asset",
+      "size": 6358,
+      "sha256": "4521ee44ba29cc9cac78b56dcacd980e5b9cc7febd017236966c3a8c1a09db7c",
+      "media_type": "image/gif",
+      "source_url": "https://www.planetarypinball.com/mm5/Williams/pinball2000/images/logo_left.gif"
+    },
+    {
+      "path": "assets/logo_rt.gif",
+      "role": "asset",
+      "size": 2978,
+      "sha256": "f6413e789819ffd4fe53560ed12c8ce8b6170f45591250fad1d67c7eb0b58e03",
+      "media_type": "image/gif",
+      "source_url": "https://www.planetarypinball.com/mm5/Williams/pinball2000/images/logo_rt.gif"
+    },
+    {
+      "path": "assets/navigation.gif",
+      "role": "asset",
+      "size": 2138,
+      "sha256": "5be463e7584144b801df6de28405995113e7692ad94d32109efca5c6ea2c98ef",
+      "media_type": "image/gif",
+      "source_url": "https://www.planetarypinball.com/mm5/Williams/pinball2000/images/navigation.gif"
+    },
+    {
+      "path": "assets/pin2000_game.jpg",
+      "role": "asset",
+      "size": 25303,
+      "sha256": "35534904c90328182751f86015621a85b59427335171ef6a429611bd7cd53681",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.planetarypinball.com/mm5/Williams/pinball2000/images/pin2000_game.jpg"
+    },
+    {
+      "path": "assets/pin2000_screen.jpg",
+      "role": "asset",
+      "size": 19540,
+      "sha256": "8da814871dd5c40b644d1348bf91883c30a5f0c0e33f32cae4f49cf2944065b7",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.planetarypinball.com/mm5/Williams/pinball2000/images/pin2000_screen.jpg"
+    },
+    {
+      "path": "assets/title.gif",
+      "role": "asset",
+      "size": 2105,
+      "sha256": "f435093607b5f9babd7a7d71854cb421bcbeb0d1f439c9a8eee2aa6d317ac3fb",
+      "media_type": "image/gif",
+      "source_url": "https://www.planetarypinball.com/mm5/Williams/pinball2000/images/title.gif"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 16143,
+      "sha256": "920d9da7d9f84c916f93b5993c07afeb119c26795ce4636380885aa166273035",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

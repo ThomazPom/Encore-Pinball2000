@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "myPinballs Revenge From Mars code update log",
+    "kind": "html",
+    "source_url": "https://www.mypinballs.com/software/rfm/code_updates.jsp",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 14944,
+      "sha256": "9ab126733a607620d356f44ed016b5ad6da5a443df2af2954fade5bdfaaf8cd9",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/pixel.gif",
+      "role": "asset",
+      "size": 43,
+      "sha256": "2dfe28cbdb83f01c940de6a88ab86200154fd772d568035ac568664e52068363",
+      "media_type": "image/gif",
+      "source_url": "https://www.paypalobjects.com/en_GB/i/scr/pixel.gif"
+    },
+    {
+      "path": "assets/resistor-icon.png",
+      "role": "asset",
+      "size": 4827,
+      "sha256": "0e3c441aacb67f3897bf08488308d160f0e2651d84381720f5b5347c1374776c",
+      "media_type": "image/png",
+      "source_url": "https://www.mypinballs.com/pics/resistor-icon.png"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 18330,
+      "sha256": "2ee567612cdca8902c65885daa656673c54035481c0b876cc9772c75310a72b3",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "XINA and Pinball 2000",
+    "kind": "dokuwiki",
+    "source_url": "https://www.gerwiki.de/xina/p2k",
+    "captured_at": "2026-04-20",
+    "capture_mode": "local-import",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 29965,
+      "sha256": "d3a2a0c95c76fdbed9c1faa26b0d59d9b7a8841535bdae4aa1e1705154aa9548",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/pub_card_user_guide.odt",
+      "role": "asset",
+      "size": 23074,
+      "sha256": "ce53973e0b5135ff7d065d727c1bde69eb0cc96c0de4b1d52576da0386f24524",
+      "media_type": "application/vnd.oasis.opendocument.text",
+      "source_url": ""
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 45601,
+      "sha256": "394477f01a523bc49a335479bb5f6ac273c1a36e842107de74b2d3221c80c7bf",
+      "media_type": "text/html",
+      "source_url": ""
+    },
+    {
+      "path": "raw/source.dokuwiki",
+      "role": "raw",
+      "size": 32132,
+      "sha256": "48e6709a87c9612dc825956ef5479c6ece5c8a68229864000c8ce07a61ea1562",
+      "media_type": "application/octet-stream",
+      "source_url": ""
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Williams Revenge From Mars revision history",
+    "kind": "html",
+    "source_url": "https://www.planetarypinball.com/mm5/Williams/tech/pin2000/software/rfm_history.html",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 4854,
+      "sha256": "ae06f1f9a4173b535621d48b99b5e7a173879e677d11daee48b1900b746601b8",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/cart.jpg",
+      "role": "asset",
+      "size": 846,
+      "sha256": "01ed6ead56b3b02a923dac9b39094abf9ecf5618c461949d9d83062929efe2ac",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.planetarypinball.com/mm5/images/cart.jpg"
+    },
+    {
+      "path": "assets/logo.jpg",
+      "role": "asset",
+      "size": 12573,
+      "sha256": "140ed607ad90e21e9a5dd63240a73429816967931ee7c8c6ddc418d31a7ac4e1",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.planetarypinball.com/mm5/images/logo.jpg"
+    },
+    {
+      "path": "assets/mailbox.jpg",
+      "role": "asset",
+      "size": 919,
+      "sha256": "ad9fe8795523d36c3a8a140ef20f3c2fa65514078d0c86add92b5517175c5d7b",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.planetarypinball.com/mm5/images/mailbox.jpg"
+    },
+    {
+      "path": "assets/phone.jpg",
+      "role": "asset",
+      "size": 1116,
+      "sha256": "b1b80aa155075a77c9798706153493a186d7ebf1deb8c94d4e782194bd82cae4",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.planetarypinball.com/mm5/images/phone.jpg"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 17170,
+      "sha256": "f143acf23bf83a6e49a9a1b2d376b1b0f62ed371f6f48b7acba6c6f3b9f87965",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

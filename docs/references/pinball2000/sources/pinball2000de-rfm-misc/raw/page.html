@@ -1,0 +1,263 @@
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<html>
+<head>
+   <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+   <meta name="Author" content="Hans-Martin Wiest">
+   <meta name="Description" content="Collectors pages for Revenge from Mars amd Starwars Episode 1">
+   <meta name="KeyWords" content="RFM,pinball,flipper,Revenge,pinball2000,starwars">
+   <title>Pinball 2000 Collectors Pages</title>
+   <link href="/p2k.css" rel="stylesheet" type="text/css" media="screen,projection,tv">
+
+</head>
+<body background="/layout/p2k-background.jpg" leftmargin=0 topmargin=0>
+<div align="center"><table width="850" border="0" cellspacing="5" cellpadding="0" bgcolor="#FFFFFF">
+<tr>
+	<td><img SRC="/images/rfm_small.gif" NOSAVE height=126 width=200 align=CENTER>
+Hint: Scroll down to find all RFM infos or use the Tags!
+<p><font size=+3>Misc. Information about RFM:</font>
+<p>Version 3.01&nbsp;&nbsp; -&nbsp; add tags, add action buttons
+<p>&nbsp;<a href="#Easter Egg">1) Easter Egg</a>
+<br>&nbsp;<a href="#Ethernet 1">2) Ethernet</a>
+<br>&nbsp;<a href="#Attack Mars Points">3) Attack Mars Points</a>
+<br>&nbsp;<a href="#Slow Animations">4) Slow Animations</a>
+<br>&nbsp;<a href="#Game swap Problems">5) Game Swap Problems</a>
+<br>&nbsp;<a href="#Playfield buy">6) Playfield Buy</a>
+<br>&nbsp;<a href="#1.4 and 1.5 differences">7) SW Version 1.4 and 1.5
+Differences</a>
+<br>&nbsp;<a href="#Martin Bombs">8) Martian Bombs</a>
+<br>&nbsp;<a href="#Motherships">9) The Motherships</a>
+<br>&nbsp;<a href="#Action BUTTONS">10) Action Button Use on RFM</a>
+<br>&nbsp;<a href="#Relabelled MEL Game">11) Relabelled MEL Game</a>
+<br>&nbsp;<a href="#RFM_SW_VERSIONS">12) General Information about RFM SW Versions</a>
+<br>&nbsp;
+<br>&nbsp;
+<p><b><font size=+2>1) Easter Egg &amp; Co</font></b><a NAME="Easter Egg"></a>
+<p>Easter Egg:&nbsp; Try&nbsp;&nbsp;&nbsp; B R L RR L RRR L L&nbsp;&nbsp;
+, it shows up the whole PIN2000 crew.
+<p>Great: The action buttons allow to flip pages (last score, high score,
+...)&nbsp; in standby mode.
+<br>&nbsp;
+<br>&nbsp;
+<p><b><font size=+2>2) Work on Ethernet:</font></b><a NAME="Ethernet 1"></a>
+<br>By Larry Scott
+<p>This weekend, I got my RFM up and running on our LAN using the
+<br>information at http://members.home.net/ratherplaypinball/rfmnotes.htm
+<br>(great site!).&nbsp; We're now attempting to write a frontend for the
+shell
+<br>commands, with the ultimate goal being a frontend that can start a
+game,
+<br>launch balls and use the flippers.&nbsp; This would be combined with
+a good
+<br>webcam and MS Media Server stream to facilitate someone playing my
+RFM
+<br>over the Internet.
+<p>The practicality of this, of course, would be limited..&nbsp;&nbsp;
+broadband
+<br>would definitly be necessary (I have 408kbit upstream capability at
+<br>home) .. also a good cam and fast streaming server.&nbsp; Also probably
+have
+<br>to lower the playfield angle a bit..&nbsp; we'll see.&nbsp; It's more
+a simple
+<br>project just to see if it can be done, and how well it works.
+<p>Anyway, the sticking points are game starting and ball launching.&nbsp;
+It
+<br>seems like all the pinevents commands are ignored, as well as the
+<br>"start" command.&nbsp; Therefore, while we can use the "flip" shell
+command
+<br>to toggle flipper status, we cannot start a game or launch a ball via
+<br>the shell.&nbsp; Are pinevents commands just toggles to enable/disable
+the
+<br>referenced item, or should that command trigger the argument
+<br>(game_start, ball_serve, etc)?&nbsp; If current/ex WMS employees know,
+and
+<br>NDA's would prevent a direct answer to these questions, would it be
+<br>possible to at least confirm/deny that game start and ball launching
+are
+<br>possible thru shell commands in RFM 1.4?
+<p>Regardless of the outcome of this project, the ability to telnet into
+<br>the game while it's being played is great, if only for the world of
+<br>opportunities one has to mess with their (unsuspecting) friends while
+<br>they're playing &lt;Very evil grin>.&nbsp; The game tilt, scenemgr
+and flip
+<br>commands alone can wreak havok on an unsuspecting player :)&nbsp; "Hey!
+These
+<br>flippers are possessed!!&nbsp;&nbsp; Tilt?!?!&nbsp; I never touched
+it!&nbsp; And why is it
+<br>starting Attack Mars already??"&nbsp; Muhahahaa&nbsp; :)
+<p>A screenshot from that action can be found under&nbsp; <a href="http://www.frpg.org/p2k.gif">larrys
+RFM online shot.</a>
+<p><b><font size=+2>3) Points for Attack Mars (RFM):</font></b><a NAME="Attack Mars Points"></a>
+<p>From RGP 24.5.2000 keith Jonson
+<p>On 24 May 2000 20:48:19 GMT, revengefrommars@aol.com (RevengeFromMars)
+<br>wrote:
+<br>>RFM players,&nbsp; what is the best score you have seen on the Attack
+Mars mode?
+<p>I think my best was 500-525M, but that was when I was testing it, not
+<br>necessarily during a real game.&nbsp; I've heard of close to 600M,
+which
+<br>would be getting close to the easily-attainable upper limit.&nbsp;
+There
+<br>isn't really an upper limit, because you could add-a-ball forever and
+<br>get piddly points, but you can figure out a reasonable limit as
+<br>follows:
+<p>Hurryups cap at 25M, 50M, and 250M.&nbsp; Optimally, you'll get 4.5M
+for
+<br>saucers, 25M for attack sattelites, 50M for boss hits, and 150M more
+<br>(max) if you quadruple the 2nd stage bonus at its maxed value.&nbsp;
+So
+<br>that gives us:
+<p>25M + 200M + 250M + 4.5M + 25M + 50M = 554.5M or so.&nbsp; Switches
+score
+<br>25K, and completing a bank scores 2.5M, so that's where other points
+<br>would come from.
+<br>&nbsp;
+<p><b><font size=+2>4) Animations get slow when bumping:</font></b><a NAME="Slow Animations"></a>
+<p>From RGP 6.6.2000
+<p>Any one with a revenge from mars notice that the anamations get jerky
+when
+<br>the ball is in the pop bumpers?&nbsp; Or is it just mine?&nbsp; I'll
+be going down to
+<br>the bowling alley to see if the one down there does the same thing
+too.&nbsp; But
+<br>if anyone knows if this is normal please let me know.... (<b>Brad Kreisler)</b>
+<br>Correct Answer:
+<p>The simple fact of the matter is that rendering the screen takes a LOT
+<br>of CPU time.&nbsp; By FAR most of the cpu time in p2k is spent drawing
+and
+<br>managing screen objects.&nbsp; The 1 (or 2 if you have 1.3+) effect(s)
+that
+<br>can show up in the jets (bonus X and/or the jet rule) also have a
+<br>transparent aspect, so that takes even more cpu time to deal with.&nbsp;
+I
+<br>think I'm pretty safe in saying no mode runs at 60fps, so anything
+<br>else you throw up there will just bog it a bit more.
+<br>keith Johnson
+<br>&nbsp;
+<p><b><font size=+2>5) Problems after RFM->Ep1 Upgrade:</font></b><a NAME="Game swap Problems"></a>
+<p>See&nbsp; <a href="pin2000_rfm_ep1_swap.html">RFM / Ep1 Swap</a>
+<p><b><font size=+2>6) Buying a complete playfield:</font></b><a NAME="Playfield buy"></a>
+<p>&nbsp;If you intend to manage an Ep1->Ep1 upgrade you might get the
+idea to
+<br>buy a new wired playfield. The order-No. is 50070-PL and the price
+is (was)
+<br>$2500, but I do not think this a good idea nor do I think that playfields
+are
+<br>still available. Used ones sell for about 1100$.
+<p><b><font size=+2>7) Differences between SW 1.4 and 1.5:</font></b><a NAME="1.4 and 1.5 differences"></a>
+<p>Reported by Jim Hicks at 7.8.2000:
+<p>XINA version is now 1.18 - Mon Jun 26 13:01:18 2000 (RFM 1.4 was 1.17,
+<br>SW:E1 1.3 was 1.16)
+<p>There is a new "Disable Service Credits" adjustment under Game Pricing.
+<p>Some defaults in Advanced Pricing have changed:
+<p>All Slot X Credit values default to 0.&nbsp; Slots 1,2,3,7,8 formally
+<br>defaulted to 25.
+<br>The Bill Validator slot default is "None" - was 7.
+<br>Coin Meter units default is "Off" was "25".
+<br>Slot 1/2/3/4 Credit values now default to 0 (was 25) and are no longer
+<br>shown unless "Edit Credit Values" is set to yes.
+<p><b><font size=+2>8) Martian Bombs:</font></b><a NAME="Martin Bombs"></a>
+<p>When you're in Martian Attack (not the multiball), you can tap the launch
+<br>button to kill a Martian, if you have a Martian bomb.&nbsp; This is most useful if
+<br>you have one Martian left (the big one) and you drain before killing him -- hit
+<br>the launch button quickly to kill the Martian and start Martian Multiball!
+<p>In general, I've developed the habit of hitting the launch button when I drain
+<br>on RFM, AFM, MM, etc, just in case there's a bomb available to start a
+<br>multiball.&nbsp; (Jow Schober, 11 2000)
+<p><b><font size=+2>9) Motherships:</font></b><a NAME="Motherships"></a>
+<p>What are the different motherships you go up against in RFM?&nbsp; I think
+<br>I've seen these:
+<p>&nbsp;&nbsp; Mothership
+<br>&nbsp;&nbsp; Grandmothership
+<br>&nbsp;&nbsp; WickedStepmothership
+<br>&nbsp;&nbsp; MotherInlawship
+<br>(Jim Swenson)
+<p><b><font size=+2>10) Action Buttons during RFM gameplay:</font></b><a NAME="Action BUTTONS"></a>
+<p>The question arises very often - what function do the action buttons have during RFM gameplay.
+<br>They can be used for:
+<p>- Selecting Start mode (one out of possible six)
+<br>- Selecting a film during Mars Kneads Women - or pressing all buttons to suppress a film
+<br>- Selecting an object to be 'beamed' on Alien Abduction - e.g. sportscars have higher values
+<br>- In bonus wave mulitball they move the cursor with the multiplier (2x, 3x etc).
+<br>- In Martian Bowling you aim with these when&nbsp; you try to pick up a spare.
+<br>- very important you need them to select the targets on Attack Mars!!
+<br>
+<br>
+<b><font size=+2>10) Action Buttons during RFM gameplay:</font></b><a NAME="Action BUTTONS"></a>
+<p>The question arises very often - what function do the action buttons have during RFM gameplay.
+<br>They can be used for:
+<p>- Selecting Start mode (one out of possible six)
+<br>- Selecting a film during Mars Kneads Women - or pressing all buttons to suppress a film
+<br>- Selecting an object to be 'beamed' on Alien Abduction - e.g. sportscars have higher values
+<br>- In bonus wave mulitball they move the cursor with the multiplier (2x, 3x etc).
+<br>- In Martian Bowling you aim with these when&nbsp; you try to pick up a spare.
+<br>- very important you need them to select the targets on Attack Mars!!
+<br>
+<br>
+<b><font size=+2>11) Relabelled MEL Game Found:</font></b><a NAME="Relabelled MEL Game"></a>
+<p>In January 2024 René Klaris contacted me and told me, that he got an RFM early MEL Game.
+<br>The game was very much used up as it seems to have done tons of plays on location in Italy.
+<br>Major Playfield Usage on this game:
+<p><img SRC="localimages/Klaris_PF_Usage.png" NOSAVE height=300 width=310 align=CENTER>
+<br> I scanned some areas of my MEL game for René so he could restore his game.
+<br>
+<br>An amazing fact of this game is, that it seems to have been relabelled by NOVA Games, the European Importer
+<br>The early MEL label was found inside the cabinet, the later label on the outside back 
+<br>
+<br>Early Label of this game as German Version MEL Game 0013 inside the cabinet</a>
+<p><img SRC="localimages/Klaris_early_Label.jpg" NOSAVE height=400 width=450 align=CENTER>
+<br>
+<br> Later Label of this game as Italian 2-Slot Version 1071 outside the cabinet
+<p><img SRC="localimages/Klaris_later_Label.jpg" NOSAVE height=400 width=450 align=CENTER>
+<br>
+<br> I have no idea what is behind this strange thing of relabelling games. My MEL game was scrapped by NOVA Games.
+<br>&nbsp;
+<br>
+<br>
+<b><font size=+2>12) General Information about the RFM SW Versions:</font></b><a NAME="RFM_SW_VERSIONS"></a>
+<p>As there are multiple RFM SW versions available please find a short overview here 
+<br>
+<br> RFM SW Version 1.5: Last version officially released by WMS  
+<br> RFM SW Version 1.6: Version released post the WMS closedown by the WMS SW team, has bug fixes   
+<br> RFM SW Version 1.7: Version released post the WMS closedown by the WMS SW team, needs more RAM (for tournament usage) 
+<br> RFM SW Version 2.5: Version released by <a href="https://www.mypinballs.com/">Mypinballs Homepage</a> Last version that works with regular HW.
+<br> RFM SW Version >=2.6: Version released by <a href="https://www.mypinballs.com/">Mypinballs Homepage</a> Needs HW changes (for more balls) to work 
+<br> 
+<br>&nbsp;
+
+</td>
+
+
+
+
+<tr>
+<td><br>&nbsp;
+<br><div align="center"><table width="850" cellspacing="0" cellpadding="0" border="0">
+<tr>
+    <td rowspan="3"><img src="/layout/borde-left.gif" width=14 height=44 border=0 alt=""></td>
+    <td height="11"><img src="/layout/borde-top.gif" width=815 height=11 border=0 alt=""></td>
+    <td rowspan="3"><img src="/layout/borde-right.gif" width=21 height=44 border=0 alt=""></td>
+</tr>
+<tr>
+    <td height="20" align="left" valign="top"><span class="footer"><!-- text --><a href="mailto:mr.startrek@gmx.de" class="footer">Martin Wiest</a> - Started: 08.03.2000 - 
+ 								<SCRIPT LANGUAGE="JavaScript">
+									<!--
+									  var date=new Date(document.lastModified);
+									  var dd=date.getDate();
+									  var mm=date.getMonth() + 1;
+									  var yy=date.getYear();
+									  if(dd<10)dd="0"+dd;
+									  if(mm<10)mm="0"+mm;
+  									document.write("Last update: " + dd+"."+mm+"."+yy );
+									// -->
+								</SCRIPT>  (German date format)&nbsp;&nbsp;</span></td>
+</tr>
+<tr>
+    <td height="13"><img src="/layout/borde-bottom.gif" width=815 height=13 border=0 alt=""></td>
+</tr>
+
+</table></div></td>
+</tr>
+</table></div>
+<br>&nbsp;<br>
+</body>
+</html>

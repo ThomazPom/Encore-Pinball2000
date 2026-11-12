@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Pinball2000.de monitor information",
+    "kind": "html",
+    "source_url": "https://www.pinball2000.de/pin2000_monitor.htm",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 14875,
+      "sha256": "2097f952daf3975bae47d3668c17f7306673b1134105c5c442cd97785cb44ba4",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/WG19K7302_Pautz_1.jpg",
+      "role": "asset",
+      "size": 171547,
+      "sha256": "51c55f05e164cee5029adc4f1fd2403435ce14b483dfbf3a420b21ea18e20508",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.pinball2000.de/local_images/WG19K7302_Pautz_1.jpg"
+    },
+    {
+      "path": "assets/WG19K7302_Pautz_2.jpg",
+      "role": "asset",
+      "size": 234865,
+      "sha256": "a1199380f64b9aeb481fd1c788188c97e2546f8d922381e115a83592eee44f57",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.pinball2000.de/local_images/WG19K7302_Pautz_2.jpg"
+    },
+    {
+      "path": "assets/WG19K7302_Pautz_3.jpg",
+      "role": "asset",
+      "size": 133107,
+      "sha256": "0198ba53b7b301eafddcdf513b436615fb2b47f1eb461c343652d481638612ed",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.pinball2000.de/local_images/WG19K7302_Pautz_3.jpg"
+    },
+    {
+      "path": "assets/WG19K7302_Pautz_4.jpg",
+      "role": "asset",
+      "size": 15891,
+      "sha256": "f47002532529ab82dd8e825192b83d197ec8bd0973e7107c1cfc400918e28814",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.pinball2000.de/local_images/WG19K7302_Pautz_4.jpg"
+    },
+    {
+      "path": "assets/WG19K7302_Pautz_6.jpg",
+      "role": "asset",
+      "size": 268537,
+      "sha256": "3a7f51182eb669e9a2483a02975a34eea0a941f51e7e4e4f2751e274928285c2",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.pinball2000.de/local_images/WG19K7302_Pautz_6.jpg"
+    },
+    {
+      "path": "assets/borde-bottom.gif",
+      "role": "asset",
+      "size": 84,
+      "sha256": "bf84d423167406a53d3fe9c4b6e7585b19d0748af5fcb3baea10a061bfdf2df0",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-bottom.gif"
+    },
+    {
+      "path": "assets/borde-left.gif",
+      "role": "asset",
+      "size": 11379,
+      "sha256": "2d08a04d94427e1ef0f1fc7e4adaf87be9b54157d3dc642b89a84bdd9c7d8b3f",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-left.gif"
+    },
+    {
+      "path": "assets/borde-right.gif",
+      "role": "asset",
+      "size": 1162,
+      "sha256": "3fa9f7bf8f89c637b96146d795e599fc73439e9e6f59d01e21ad746243ffc621",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-right.gif"
+    },
+    {
+      "path": "assets/borde-top.gif",
+      "role": "asset",
+      "size": 95,
+      "sha256": "7bdbc6ea20a5474f6662953aad3d1374d3a3cb449f146d88d23abfbb5945f577",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-top.gif"
+    },
+    {
+      "path": "assets/duck_sca.jpg",
+      "role": "asset",
+      "size": 111118,
+      "sha256": "d69676517aadf3feb536ecf021b188144900c5b144e5f56d687d553ab435c647",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/duck_sca.jpg"
+    },
+    {
+      "path": "assets/ducksan01.pdf",
+      "role": "asset",
+      "size": 61129,
+      "sha256": "1b549b4cb4d7772be712dcfa7349387d1098e9181d3c7b8826a6939e824ffcab",
+      "media_type": "application/pdf",
+      "source_url": "https://www.pinball2000.de/scans/ducksan01.pdf"
+    },
+    {
+      "path": "assets/ducksan02.pdf",
+      "role": "asset",
+      "size": 56320,
+      "sha256": "8bd781a654dde94294544e0b48ef2acb58fd7ad471346db61705eda270700664",
+      "media_type": "application/pdf",
+      "source_url": "https://www.pinball2000.de/scans/ducksan02.pdf"
+    },
+    {
+      "path": "assets/ducksan03.pdf",
+      "role": "asset",
+      "size": 66145,
+      "sha256": "97d5317beca464068019afacae9f59951688e0e63bc8ce6ca09323af0a90e508",
+      "media_type": "application/pdf",
+      "source_url": "https://www.pinball2000.de/scans/ducksan03.pdf"
+    },
+    {
+      "path": "assets/shunt_hpos_apres.jpg",
+      "role": "asset",
+      "size": 242400,
+      "sha256": "7070f6945383185e4b582f146cb091aee790d499c3bcddb20c628c55da3c8d11",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.pinball2000.de/local_images/shunt_hpos%20_apres.jpg"
+    },
+    {
+      "path": "assets/shunt_hpos_avant.jpg",
+      "role": "asset",
+      "size": 237538,
+      "sha256": "d8e29b1ac7c4d33d410b88066028cc913c7f80ca94984ab035f0d4addf3ae182",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.pinball2000.de/local_images/shunt_hpos_avant.jpg"
+    },
+    {
+      "path": "assets/wells_g.jpg",
+      "role": "asset",
+      "size": 137406,
+      "sha256": "07083aa667e3eff70d718d192ea806a89564fc4fff8fb96048258f7833ff69c9",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/wells_g.jpg"
+    },
+    {
+      "path": "assets/wellsg01.pdf",
+      "role": "asset",
+      "size": 26188,
+      "sha256": "34e650e31a3e69b2c5c2ee767e362645d2375ae73f5b76f6dcff2b950a093a35",
+      "media_type": "application/pdf",
+      "source_url": "https://www.pinball2000.de/scans/wellsg01.pdf"
+    },
+    {
+      "path": "assets/wellsg02.pdf",
+      "role": "asset",
+      "size": 81693,
+      "sha256": "960425ff301419632d75ef045d7983ee82bd899ae4c9881021c8862ab365544e",
+      "media_type": "application/pdf",
+      "source_url": "https://www.pinball2000.de/scans/wellsg02.pdf"
+    },
+    {
+      "path": "assets/wellsg03.pdf",
+      "role": "asset",
+      "size": 23388,
+      "sha256": "a0b243c650c0002a460ce6f426a376aa883718a33009ca1d66d2f61bb31d3383",
+      "media_type": "application/pdf",
+      "source_url": "https://www.pinball2000.de/scans/wellsg03.pdf"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 20907,
+      "sha256": "3fbba4ce305b7dcdad8f56566a6622a208725684e0258f6f2d9b3ae25f29116d",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

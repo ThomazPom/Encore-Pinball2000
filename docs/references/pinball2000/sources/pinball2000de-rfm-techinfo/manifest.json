@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Pinball2000.de RFM technical information",
+    "kind": "html",
+    "source_url": "https://www.pinball2000.de/rfm_techinfo.htm",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 12867,
+      "sha256": "024a2aaa1572fbfa6e19a9b719c164eb3b1ac082125911250373cf2548201271",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/borde-bottom.gif",
+      "role": "asset",
+      "size": 84,
+      "sha256": "bf84d423167406a53d3fe9c4b6e7585b19d0748af5fcb3baea10a061bfdf2df0",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-bottom.gif"
+    },
+    {
+      "path": "assets/borde-left.gif",
+      "role": "asset",
+      "size": 11379,
+      "sha256": "2d08a04d94427e1ef0f1fc7e4adaf87be9b54157d3dc642b89a84bdd9c7d8b3f",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-left.gif"
+    },
+    {
+      "path": "assets/borde-right.gif",
+      "role": "asset",
+      "size": 1162,
+      "sha256": "3fa9f7bf8f89c637b96146d795e599fc73439e9e6f59d01e21ad746243ffc621",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-right.gif"
+    },
+    {
+      "path": "assets/borde-top.gif",
+      "role": "asset",
+      "size": 95,
+      "sha256": "7bdbc6ea20a5474f6662953aad3d1374d3a3cb449f146d88d23abfbb5945f577",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-top.gif"
+    },
+    {
+      "path": "assets/crack_attack_mars_normal.jpg",
+      "role": "asset",
+      "size": 22705,
+      "sha256": "fc9f2bc632009ab43e3aed6e4b8a7517ced658238eec6d5fa2a64585bb4b875c",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/crack_attack_mars_normal.jpg"
+    },
+    {
+      "path": "assets/crack_attack_mars_zoom.jpg",
+      "role": "asset",
+      "size": 22278,
+      "sha256": "666627207a0d105a2863b070853f8e76d8a8746fe2818295d53b246673f16765",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/crack_attack_mars_zoom.jpg"
+    },
+    {
+      "path": "assets/crack_central_targets.jpg",
+      "role": "asset",
+      "size": 243549,
+      "sha256": "be4e7688b1d271e9499ca8d3bc1d1985a082bb5059153bcc0fc296c4ffd12ed2",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/crack_central_targets.jpg"
+    },
+    {
+      "path": "assets/crack_martian_2.jpg",
+      "role": "asset",
+      "size": 197573,
+      "sha256": "c4267b13e86f7b3892dd88f3754105a8c0b042c56468103e0569be171684a66a",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/crack_martian_2.jpg"
+    },
+    {
+      "path": "assets/crack_martian_3.jpg",
+      "role": "asset",
+      "size": 113106,
+      "sha256": "180bd9fca22eef6a4dd8f16bc0870543a0641e0e26bd6644e7b7ec2d24462633",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/crack_martian_3.jpg"
+    },
+    {
+      "path": "assets/crack_martian_4.jpg",
+      "role": "asset",
+      "size": 204254,
+      "sha256": "ef891b262cb46cdcabe8964eb5aea15f032a9c1e2fd699680ba38c7c2932767d",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/crack_martian_4.jpg"
+    },
+    {
+      "path": "assets/crack_martian_5.jpg",
+      "role": "asset",
+      "size": 190497,
+      "sha256": "bc00281f92f25ee0fd9a5706198d603660b7413f7547975dda7d66c29dfb330a",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/crack_martian_5.jpg"
+    },
+    {
+      "path": "assets/crack_martian_left.jpg",
+      "role": "asset",
+      "size": 114382,
+      "sha256": "24443b2a3c37366481b907330f0e08c2d725f291481d580cbf46ecb44211bd41",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/crack_martian_left.jpg"
+    },
+    {
+      "path": "assets/crack_martian_right.jpg",
+      "role": "asset",
+      "size": 169814,
+      "sha256": "741934f0e81159ef6f6d9f04c6f980ca5f85f626a3490183cf93deced3b03f29",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/crack_martian_right.jpg"
+    },
+    {
+      "path": "assets/crack_saucer_normal.jpg",
+      "role": "asset",
+      "size": 28672,
+      "sha256": "67225786dfb42bb98199b57508ea56df50b6765dd3f65d57751dff70c4343339",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/crack_saucer_normal.jpg"
+    },
+    {
+      "path": "assets/crack_saucer_zooml.jpg",
+      "role": "asset",
+      "size": 26463,
+      "sha256": "34493122f768de386638a837d6f4217c6c55600d8f37dda69cb153945a612c31",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/crack_saucer_zooml.jpg"
+    },
+    {
+      "path": "assets/crack_sol_2.jpg",
+      "role": "asset",
+      "size": 169607,
+      "sha256": "71005b4cdf8b08a4d1c18bd7a637ed6e7300a3782b85988d533a6c7511910a0a",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/crack_sol_2.jpg"
+    },
+    {
+      "path": "assets/crack_stroke_of_luck_beginning.jpg",
+      "role": "asset",
+      "size": 23246,
+      "sha256": "8137b29ba93f501ad0391e89b829f50023921fcf9d9fde5d9a112a3906ba1542",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/crack_stroke_of_luck_beginning.jpg"
+    },
+    {
+      "path": "assets/martian.jpg",
+      "role": "asset",
+      "size": 11253,
+      "sha256": "18e319c1a7b70bdb30bb41f3d49ac36592f014188df02a4ce93ea9b03cf836ec",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/martian.jpg"
+    },
+    {
+      "path": "assets/rfm_small.gif",
+      "role": "asset",
+      "size": 24902,
+      "sha256": "a52d1e3a312ed297f35c3f8f091db33a6986be5f8393b10e00155989f6b72dbd",
+      "media_type": "image/gif",
+      "source_url": "http://www.silverball.net/images_martin/rfm_small.gif"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 17226,
+      "sha256": "9168d47fa87bf08ab705bc72e27cbeb0ba9ab4d1e8ec75f8798ad928a8b05e21",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

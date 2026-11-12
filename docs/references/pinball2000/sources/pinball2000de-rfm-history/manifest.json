@@ -1,0 +1,215 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Pinball2000.de Revenge From Mars history",
+    "kind": "html",
+    "source_url": "https://www.pinball2000.de/rfm_his.htm",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 4160,
+      "sha256": "910266248ed5e9896e3dd2e260891afe900edbafabc563e5eff7a30e7c3db508",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/borde-bottom.gif",
+      "role": "asset",
+      "size": 84,
+      "sha256": "bf84d423167406a53d3fe9c4b6e7585b19d0748af5fcb3baea10a061bfdf2df0",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-bottom.gif"
+    },
+    {
+      "path": "assets/borde-left.gif",
+      "role": "asset",
+      "size": 11379,
+      "sha256": "2d08a04d94427e1ef0f1fc7e4adaf87be9b54157d3dc642b89a84bdd9c7d8b3f",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-left.gif"
+    },
+    {
+      "path": "assets/borde-right.gif",
+      "role": "asset",
+      "size": 1162,
+      "sha256": "3fa9f7bf8f89c637b96146d795e599fc73439e9e6f59d01e21ad746243ffc621",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-right.gif"
+    },
+    {
+      "path": "assets/borde-top.gif",
+      "role": "asset",
+      "size": 95,
+      "sha256": "7bdbc6ea20a5474f6662953aad3d1374d3a3cb449f146d88d23abfbb5945f577",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-top.gif"
+    },
+    {
+      "path": "assets/gomez.jpg",
+      "role": "asset",
+      "size": 15606,
+      "sha256": "8ba889bf4610c6fc758e7719559979247e5e6e0deb3b8df6b01e2c80b9710045",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/gomez.jpg"
+    },
+    {
+      "path": "assets/holo_pin.jpg",
+      "role": "asset",
+      "size": 8871,
+      "sha256": "01a3cde8878bd153f92cc442f98b6b169343d78b893929865abb3074d3202c90",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/holo_pin.jpg"
+    },
+    {
+      "path": "assets/minimodl.jpg",
+      "role": "asset",
+      "size": 22419,
+      "sha256": "7216b85873e6c6bded401947f02ba36b31dec0cc2594efc52f85e91d03cc8e95",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/minimodl.jpg"
+    },
+    {
+      "path": "assets/pin2000g.jpg",
+      "role": "asset",
+      "size": 27840,
+      "sha256": "52feb5f907b910454e14008ec5374490997f6001ae48c269856d3e33d455ac24",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/pin2000g.jpg"
+    },
+    {
+      "path": "assets/playflds.jpg",
+      "role": "asset",
+      "size": 22202,
+      "sha256": "c9f397c9b06e0d4e961ad7301fc8852c40095165f65ec5f2aa3d780d959d5151",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/playflds.jpg"
+    },
+    {
+      "path": "assets/rfm_fly.jpg",
+      "role": "asset",
+      "size": 29406,
+      "sha256": "926c9638905c519c171fadc20743055392fe34a9a594bdeff27e2dd016ccdac9",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/rfm_fly.jpg"
+    },
+    {
+      "path": "assets/rfm_sketch2_big.jpg",
+      "role": "asset",
+      "size": 415015,
+      "sha256": "2624560b6cffbb29f4dd717429108018be8df2a683010a13feb037c6f5f79e7b",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/rfm_sketch2_big.jpg"
+    },
+    {
+      "path": "assets/rfm_sketch3_big.jpg",
+      "role": "asset",
+      "size": 335697,
+      "sha256": "c95a2f8128658dfe28a4b81cee558322e845f481ec9c00fd36dc0809d377cc9f",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/rfm_sketch3_big.jpg"
+    },
+    {
+      "path": "assets/rfm_sketch_big.jpg",
+      "role": "asset",
+      "size": 418967,
+      "sha256": "0710b5fcf39b0f4ab46c502a69b2a1f73e39e7075d58c7bb2ea10491cd17f084",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/rfm_sketch_big.jpg"
+    },
+    {
+      "path": "assets/rfm_sketch_bigobeam.jpg",
+      "role": "asset",
+      "size": 20002,
+      "sha256": "bf386bf048e8f2a052c6902d0de09d30fb742181efda88f9180d79b155654ede",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/rfm_sketch_bigobeam.jpg"
+    },
+    {
+      "path": "assets/rfm_sketch_drivin_d.jpg",
+      "role": "asset",
+      "size": 32590,
+      "sha256": "8475295edac4b1d4c66df53bbaa71bb57eccea62d8b442e31efe335c572b6914",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/rfm_sketch_drivin_d.jpg"
+    },
+    {
+      "path": "assets/rfm_sketch_martian.jpg",
+      "role": "asset",
+      "size": 48747,
+      "sha256": "8c8b56c579df5757dae0be34467a3263e08e7abf29ee03614d19adb737d57275",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/rfm_sketch_martian.jpg"
+    },
+    {
+      "path": "assets/rfm_sketch_mode.jpg",
+      "role": "asset",
+      "size": 64206,
+      "sha256": "5595ca560e3f9a39d459a11ec5b2e6cd790b698d9fd60b417d58752f56291b0d",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/rfm_sketch_mode.jpg"
+    },
+    {
+      "path": "assets/rfm_sketch_soldiers.jpg",
+      "role": "asset",
+      "size": 30536,
+      "sha256": "0ed75c0b6fdec115d0acf255b67777071d6dd432cf4df8e735162950b11acaf4",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/rfm_sketch_soldiers.jpg"
+    },
+    {
+      "path": "assets/rfm_sketch_weapon_envy.jpg",
+      "role": "asset",
+      "size": 26812,
+      "sha256": "2e49090319585ee7bd78c53aa8682433cf837b8abafc74e737f524a387187967",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/rfm_sketch_weapon_envy.jpg"
+    },
+    {
+      "path": "assets/skizze1.jpg",
+      "role": "asset",
+      "size": 9331,
+      "sha256": "ed1f64a980f6a2de9ee93abf665b62ebf77897f4646d3bf1f8259eebc72f01d3",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/skizze1.jpg"
+    },
+    {
+      "path": "assets/skizze2.jpg",
+      "role": "asset",
+      "size": 5919,
+      "sha256": "5186ea1844455b7f5f5aefafa6c2e850cb20fbadd180f4504ef191b59e673f46",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/skizze2.jpg"
+    },
+    {
+      "path": "assets/skizze3.jpg",
+      "role": "asset",
+      "size": 4026,
+      "sha256": "16c49a5f6ee0dac9fa84a55c4b140233093cee801f53a92064efc98a3270acd4",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/skizze3.jpg"
+    },
+    {
+      "path": "assets/speech.jpg",
+      "role": "asset",
+      "size": 14541,
+      "sha256": "c15c3912b0f5a228c6f062aaf7674721b4d12e37fc181e96879b3b5cb002cac2",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/speech.jpg"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 7574,
+      "sha256": "af107fa146e0a75de58422b0dd6e39ecfbdfcc46ea17eb415fa05f8c4800cb6b",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

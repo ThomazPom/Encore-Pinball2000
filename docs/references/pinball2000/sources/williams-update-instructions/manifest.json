@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Williams Pinball 2000 update instructions",
+    "kind": "html",
+    "source_url": "https://www.planetarypinball.com/mm5/Williams/tech/pin2000/notes/update.html",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "https://www.planetarypinball.com/mm5/",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 5393,
+      "sha256": "d0529ebc8e68c4b24c93ee4d570dab9f6a30fd3243505681a6e8adb82ff69b60",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/cart.jpg",
+      "role": "asset",
+      "size": 846,
+      "sha256": "01ed6ead56b3b02a923dac9b39094abf9ecf5618c461949d9d83062929efe2ac",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.planetarypinball.com/mm5/images/cart.jpg"
+    },
+    {
+      "path": "assets/icon.gif",
+      "role": "asset",
+      "size": 1564,
+      "sha256": "3e2718d60b35c4e092fd631a1fa8c300290c22c3e0c7283d34a100731671dbd1",
+      "media_type": "image/gif",
+      "source_url": "https://www.planetarypinball.com/mm5/Williams/tech/pin2000/notes/icon.gif"
+    },
+    {
+      "path": "assets/logo.jpg",
+      "role": "asset",
+      "size": 12573,
+      "sha256": "140ed607ad90e21e9a5dd63240a73429816967931ee7c8c6ddc418d31a7ac4e1",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.planetarypinball.com/mm5/images/logo.jpg"
+    },
+    {
+      "path": "assets/mailbox.jpg",
+      "role": "asset",
+      "size": 919,
+      "sha256": "ad9fe8795523d36c3a8a140ef20f3c2fa65514078d0c86add92b5517175c5d7b",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.planetarypinball.com/mm5/images/mailbox.jpg"
+    },
+    {
+      "path": "assets/mgr_1.gif",
+      "role": "asset",
+      "size": 41087,
+      "sha256": "50581c7ea1fb5cc756964a127a6805c6cfa64cd05f09131c4a83c5d5a624e174",
+      "media_type": "image/gif",
+      "source_url": "https://www.planetarypinball.com/mm5/Williams/tech/pin2000/notes/mgr_1.gif"
+    },
+    {
+      "path": "assets/mgr_2.gif",
+      "role": "asset",
+      "size": 41591,
+      "sha256": "e9f5e427d5545924624f2773bb59a5d79992c459e2389517f84e5eef534c2101",
+      "media_type": "image/gif",
+      "source_url": "https://www.planetarypinball.com/mm5/Williams/tech/pin2000/notes/mgr_2.gif"
+    },
+    {
+      "path": "assets/mgr_3.gif",
+      "role": "asset",
+      "size": 41975,
+      "sha256": "feb5d3cb636040f21ae1e77fc565fccc195d9c263b22ac0267a6bc938a29c729",
+      "media_type": "image/gif",
+      "source_url": "https://www.planetarypinball.com/mm5/Williams/tech/pin2000/notes/mgr_3.gif"
+    },
+    {
+      "path": "assets/phone.jpg",
+      "role": "asset",
+      "size": 1116,
+      "sha256": "b1b80aa155075a77c9798706153493a186d7ebf1deb8c94d4e782194bd82cae4",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.planetarypinball.com/mm5/images/phone.jpg"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 18819,
+      "sha256": "8df6ee11a0de711376c8658960d31d17a66a8ab1c2d31cbd091794f3fbd95797",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

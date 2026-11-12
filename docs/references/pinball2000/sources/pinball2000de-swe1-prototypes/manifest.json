@@ -1,0 +1,215 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Pinball2000.de SWE1 prototype differences",
+    "kind": "html",
+    "source_url": "https://www.pinball2000.de/ep1_proto.htm",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 3078,
+      "sha256": "a95ab2f5538c12192fedbef59331d658d65942089a7eae6d1c0c6860e9d8af9f",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/borde-bottom.gif",
+      "role": "asset",
+      "size": 84,
+      "sha256": "bf84d423167406a53d3fe9c4b6e7585b19d0748af5fcb3baea10a061bfdf2df0",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-bottom.gif"
+    },
+    {
+      "path": "assets/borde-left.gif",
+      "role": "asset",
+      "size": 11379,
+      "sha256": "2d08a04d94427e1ef0f1fc7e4adaf87be9b54157d3dc642b89a84bdd9c7d8b3f",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-left.gif"
+    },
+    {
+      "path": "assets/borde-right.gif",
+      "role": "asset",
+      "size": 1162,
+      "sha256": "3fa9f7bf8f89c637b96146d795e599fc73439e9e6f59d01e21ad746243ffc621",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-right.gif"
+    },
+    {
+      "path": "assets/borde-top.gif",
+      "role": "asset",
+      "size": 95,
+      "sha256": "7bdbc6ea20a5474f6662953aad3d1374d3a3cb449f146d88d23abfbb5945f577",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-top.gif"
+    },
+    {
+      "path": "assets/ep1_cab.gif",
+      "role": "asset",
+      "size": 10347,
+      "sha256": "fe586c874540ac069e009eddb3ea173fbe37cdaac1b63d73ddba821e45614a3a",
+      "media_type": "image/gif",
+      "source_url": "http://www.silverball.net/images_martin/ep1_cab.gif"
+    },
+    {
+      "path": "assets/ep1p_bcap_p.jpg",
+      "role": "asset",
+      "size": 18626,
+      "sha256": "0e33e02f06ca6f0eb6cc2d9da7ef12c05d40f775a014a56468e6956275bf58bb",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_bcap_p.jpg"
+    },
+    {
+      "path": "assets/ep1p_bcap_s.jpg",
+      "role": "asset",
+      "size": 22962,
+      "sha256": "64a6ccdca2c015b33d0c0e7f76ab7bcad41178f014f373fd43d775b994334435",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_bcap_s.jpg"
+    },
+    {
+      "path": "assets/ep1p_divert_p.jpg",
+      "role": "asset",
+      "size": 16184,
+      "sha256": "22bf2c073418fdfc734f8f97f8ce689ece9b007b2bc40488bcec97bf161cf2a3",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_divert_p.jpg"
+    },
+    {
+      "path": "assets/ep1p_divert_s.jpg",
+      "role": "asset",
+      "size": 16089,
+      "sha256": "e7be4cb2d44c3b78daf35cb6ad861f0d360fe0bdf64d73eabd1372ec14efa3ae",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_divert_s.jpg"
+    },
+    {
+      "path": "assets/ep1p_droid_p.jpg",
+      "role": "asset",
+      "size": 18082,
+      "sha256": "613e0851d40eec714dfff7e64ff3f52a35fe68c5841a53f01f815b5ee7c3f471",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_droid_p.jpg"
+    },
+    {
+      "path": "assets/ep1p_droid_s.jpg",
+      "role": "asset",
+      "size": 19812,
+      "sha256": "f7867c0b413409af4dbc37a957d4a7205caf6aff8a598c043f0fff4e1edbba73",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_droid_s.jpg"
+    },
+    {
+      "path": "assets/ep1p_gate_p.jpg",
+      "role": "asset",
+      "size": 22169,
+      "sha256": "97ff5ff06d5043ec7a8668cfdab8a1a7990e34f91e40faeb1a1a4f075dd20c80",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_gate_p.jpg"
+    },
+    {
+      "path": "assets/ep1p_gate_s.jpg",
+      "role": "asset",
+      "size": 15331,
+      "sha256": "73ef59f1404a647a341e7c62a3fa26045e79ddf73a1e2852147ae1a3a9b25ed4",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_gate_s.jpg"
+    },
+    {
+      "path": "assets/ep1p_hole_p.jpg",
+      "role": "asset",
+      "size": 27114,
+      "sha256": "35ba2b15f7b28edcd129b524ff49599e1d5c79e304f8f5d87f922d9af8271c15",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_hole_p.jpg"
+    },
+    {
+      "path": "assets/ep1p_hole_s.jpg",
+      "role": "asset",
+      "size": 26969,
+      "sha256": "4ceacb86b1716552870980d6a8913540bff534c49b63eedfc8660d79e026a8c0",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_hole_s.jpg"
+    },
+    {
+      "path": "assets/ep1p_outl_p.jpg",
+      "role": "asset",
+      "size": 14177,
+      "sha256": "0ed41e0e16bd2bca7a184347274488ae99017fd67d42c41897f20d9c36b8e3ab",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_outl_p.jpg"
+    },
+    {
+      "path": "assets/ep1p_outl_s.jpg",
+      "role": "asset",
+      "size": 11869,
+      "sha256": "05f3bd87ede05c31a77fa8c59a32ac17d9c64fa44527cfc30e855ef15020c8b4",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_outl_s.jpg"
+    },
+    {
+      "path": "assets/ep1p_post_p.jpg",
+      "role": "asset",
+      "size": 18590,
+      "sha256": "82c9c2d1d666621b7281539eff11d84e99fabf48c9881563449e45d46b7f0e81",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_post_p.jpg"
+    },
+    {
+      "path": "assets/ep1p_post_s.jpg",
+      "role": "asset",
+      "size": 21746,
+      "sha256": "12e3dd734bb04a9a97746e285ac87a83b41d0935e53bae3ee299523dd3296222",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_post_s.jpg"
+    },
+    {
+      "path": "assets/ep1p_targ_p.jpg",
+      "role": "asset",
+      "size": 18947,
+      "sha256": "dd1c2d8b7f6c30254bd7fafe5b2bda47a2dc63b66426641a6f36d0a9f80d6d1a",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_targ_p.jpg"
+    },
+    {
+      "path": "assets/ep1p_targ_s.jpg",
+      "role": "asset",
+      "size": 17720,
+      "sha256": "85874fdf8219f15e8fc04694dc5df253d0a1cda6af2bf0489d8052093cdc6d69",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_targ_s.jpg"
+    },
+    {
+      "path": "assets/ep1p_text_p.jpg",
+      "role": "asset",
+      "size": 16482,
+      "sha256": "2884afd01ba0dc5c271713119ffab109e969d8d385c4a78267221c8c6b107775",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_text_p.jpg"
+    },
+    {
+      "path": "assets/ep1p_text_s.jpg",
+      "role": "asset",
+      "size": 17088,
+      "sha256": "406fe9b611c3a10165ccaa62cab3892c6421c1ecaeddc5a6673516c5fed9c44d",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1p_text_s.jpg"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 6292,
+      "sha256": "ce03d823bbcddd8f4f6dd5349c542f9b7a985dccdba7921793751b370ef43759",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

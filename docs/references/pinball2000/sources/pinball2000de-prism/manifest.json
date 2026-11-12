@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Pinball2000.de PRISM information",
+    "kind": "html",
+    "source_url": "https://www.pinball2000.de/prism_infos.html",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 10575,
+      "sha256": "64032a8fc4759fb31a2e22a65e09c93b1b55942f7668efa5941591c927244e74",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/borde-bottom.gif",
+      "role": "asset",
+      "size": 84,
+      "sha256": "bf84d423167406a53d3fe9c4b6e7585b19d0748af5fcb3baea10a061bfdf2df0",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-bottom.gif"
+    },
+    {
+      "path": "assets/borde-left.gif",
+      "role": "asset",
+      "size": 11379,
+      "sha256": "2d08a04d94427e1ef0f1fc7e4adaf87be9b54157d3dc642b89a84bdd9c7d8b3f",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-left.gif"
+    },
+    {
+      "path": "assets/borde-right.gif",
+      "role": "asset",
+      "size": 1162,
+      "sha256": "3fa9f7bf8f89c637b96146d795e599fc73439e9e6f59d01e21ad746243ffc621",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-right.gif"
+    },
+    {
+      "path": "assets/borde-top.gif",
+      "role": "asset",
+      "size": 95,
+      "sha256": "7bdbc6ea20a5474f6662953aad3d1374d3a3cb449f146d88d23abfbb5945f577",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-top.gif"
+    },
+    {
+      "path": "assets/developer_pub_1.jpg",
+      "role": "asset",
+      "size": 479217,
+      "sha256": "77119b05b78a7e56f7b2b0c26e85bad99e68605f44a4c61f278cbc7741a27807",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.pinball2000.de/local_images/developer_pub_1.jpg"
+    },
+    {
+      "path": "assets/developer_pub_2.jpg",
+      "role": "asset",
+      "size": 200816,
+      "sha256": "b2550179340759c69e96194bf946e46f2b88f83f04508645ca9bc4ca73c72fae",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.pinball2000.de/local_images/developer_pub_2.jpg"
+    },
+    {
+      "path": "assets/developer_pub_3.jpg",
+      "role": "asset",
+      "size": 404196,
+      "sha256": "95beb77216eed12751900b3ee84f1f9f02223eb37a0438b05253389f5a9d4fd5",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.pinball2000.de/local_images/developer_pub_3.jpg"
+    },
+    {
+      "path": "assets/prism01.jpg",
+      "role": "asset",
+      "size": 23509,
+      "sha256": "07760d432d3ed287777abf14b286e67c20dac87d92f8ae7e504139ea8f51957e",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/prism01.jpg"
+    },
+    {
+      "path": "assets/prism02.jpg",
+      "role": "asset",
+      "size": 21134,
+      "sha256": "02fb805231653fd740e726b8a1f82cffeb7daa6f7937915f882d23b31dd98134",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/prism02.jpg"
+    },
+    {
+      "path": "assets/prism03.jpg",
+      "role": "asset",
+      "size": 25083,
+      "sha256": "58cf1399d824bd32cee9f086d8370d8b8044ec19930ada0f9bed985edc04f884",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/prism03.jpg"
+    },
+    {
+      "path": "assets/prism04.jpg",
+      "role": "asset",
+      "size": 33951,
+      "sha256": "99ebb0bcf67147f88cd31d5a8552e2124f93b143d104ac2dd9b69af006fa2843",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/prism04.jpg"
+    },
+    {
+      "path": "assets/prism05.jpg",
+      "role": "asset",
+      "size": 42495,
+      "sha256": "8045d673c1b1bcdea8faf89702918bce418b3468beca8ea345282c288355ad40",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/prism05.jpg"
+    },
+    {
+      "path": "assets/prism06.jpg",
+      "role": "asset",
+      "size": 39706,
+      "sha256": "7ae70e7f34526d89dfb4d1c11839c8b6546b4f632008f0764d2c137f1349e1eb",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/prism06.jpg"
+    },
+    {
+      "path": "assets/prism07.jpg",
+      "role": "asset",
+      "size": 39194,
+      "sha256": "e801e16b8c72001c0775d5e28def3f575e9c1d39da108cc62f5487208871bebb",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/prism07.jpg"
+    },
+    {
+      "path": "assets/prism08.jpg",
+      "role": "asset",
+      "size": 39264,
+      "sha256": "03ea0bcc38fcb94fadb2eb4fb92ba29adbea495a8facccb563e34673c11542ac",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/prism08.jpg"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 14854,
+      "sha256": "a7a1ded7f3e963e89dc93cb3f9a25d02223bcaf58ce1fab1f36609d3c7c3441c",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

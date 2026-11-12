@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Pinball2000.de miscellaneous technical notes",
+    "kind": "html",
+    "source_url": "https://www.pinball2000.de/pin2000_misc.htm",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": [
+      "http://www.frpg.org/p2k.gif"
+    ]
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 23183,
+      "sha256": "415615d9c3965fabb5e0c5bac0d42f0f2a0268086679093cccc924d85291fd7e",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/backbox_connector.jpg",
+      "role": "asset",
+      "size": 18903,
+      "sha256": "a6a59cf2712d1cd47bbb00377fa646d024643b43b659a7eda48258f6b9c0a7da",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/backbox_connector.jpg"
+    },
+    {
+      "path": "assets/borde-bottom.gif",
+      "role": "asset",
+      "size": 84,
+      "sha256": "bf84d423167406a53d3fe9c4b6e7585b19d0748af5fcb3baea10a061bfdf2df0",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-bottom.gif"
+    },
+    {
+      "path": "assets/borde-left.gif",
+      "role": "asset",
+      "size": 11379,
+      "sha256": "2d08a04d94427e1ef0f1fc7e4adaf87be9b54157d3dc642b89a84bdd9c7d8b3f",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-left.gif"
+    },
+    {
+      "path": "assets/borde-right.gif",
+      "role": "asset",
+      "size": 1162,
+      "sha256": "3fa9f7bf8f89c637b96146d795e599fc73439e9e6f59d01e21ad746243ffc621",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-right.gif"
+    },
+    {
+      "path": "assets/borde-top.gif",
+      "role": "asset",
+      "size": 95,
+      "sha256": "7bdbc6ea20a5474f6662953aad3d1374d3a3cb449f146d88d23abfbb5945f577",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-top.gif"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 32849,
+      "sha256": "42e2332be66f4da9206169b1ae0da31f4adeb33f83be90a6c81010206af3c5ec",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

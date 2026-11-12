@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Williams pinball software history: PERC, APPLE, and XINA",
+    "kind": "artifact",
+    "source_url": "https://github.com/lkoziarz/pinball/blob/main/wms_software_history.md",
+    "captured_at": "2026-11-11",
+    "capture_mode": "local-artifact-import",
+    "source_note": "Public first-person software history assembled by Louis Koziarz from contributions by Larry DeMar, Duncan Brown, Tom Uban, and Graham West; repository declares no licence.",
+    "generator": "reference-bundle.py/1.2",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 672,
+      "sha256": "7d81058c370f350d53d5074b0cfbc9e26e6db98898afb9a5fbf785ea6ae65a7e",
+      "media_type": "text/markdown",
+      "source_url": "https://github.com/lkoziarz/pinball/blob/main/wms_software_history.md"
+    },
+    {
+      "path": "raw/wms_software_history.md",
+      "role": "raw",
+      "size": 20943,
+      "sha256": "2e67683a300320ea7c50054142e7046045c0474bcac56ff4d6977f78334e780e",
+      "media_type": "text/markdown",
+      "source_url": "https://github.com/lkoziarz/pinball/blob/main/wms_software_history.md"
+    }
+  ]
+}

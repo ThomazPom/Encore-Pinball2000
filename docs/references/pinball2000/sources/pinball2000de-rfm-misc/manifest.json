@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Pinball2000.de RFM notes and FAQ",
+    "kind": "html",
+    "source_url": "https://www.pinball2000.de/rfm_misc.htm",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": [
+      "http://www.frpg.org/p2k.gif"
+    ]
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 10003,
+      "sha256": "8b6f9ed189c2117903a84f87d3ab230714f7b10b55f9293bb48d3c764ca90a44",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Klaris_PF_Usage.png",
+      "role": "asset",
+      "size": 677644,
+      "sha256": "22af1ce79bbdbba4d88520f65c95c56104ab482ede4f168c737f815971caffc4",
+      "media_type": "image/png",
+      "source_url": "https://www.pinball2000.de/local_images/Klaris_PF_Usage.png"
+    },
+    {
+      "path": "assets/Klaris_early_Label.jpg",
+      "role": "asset",
+      "size": 643007,
+      "sha256": "0066f5d62d6a1d401df7176e544b79ee8d99ec5ebd1bf1284d6e85614c0af462",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.pinball2000.de/local_images/Klaris_early_Label.jpg"
+    },
+    {
+      "path": "assets/Klaris_later_Label.jpg",
+      "role": "asset",
+      "size": 258989,
+      "sha256": "1806bd63a1ff1f0b48c808c2d6d6c81a47303aa9b6d065add32e9952a6c5a21a",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.pinball2000.de/local_images/Klaris_later_Label.jpg"
+    },
+    {
+      "path": "assets/borde-bottom.gif",
+      "role": "asset",
+      "size": 84,
+      "sha256": "bf84d423167406a53d3fe9c4b6e7585b19d0748af5fcb3baea10a061bfdf2df0",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-bottom.gif"
+    },
+    {
+      "path": "assets/borde-left.gif",
+      "role": "asset",
+      "size": 11379,
+      "sha256": "2d08a04d94427e1ef0f1fc7e4adaf87be9b54157d3dc642b89a84bdd9c7d8b3f",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-left.gif"
+    },
+    {
+      "path": "assets/borde-right.gif",
+      "role": "asset",
+      "size": 1162,
+      "sha256": "3fa9f7bf8f89c637b96146d795e599fc73439e9e6f59d01e21ad746243ffc621",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-right.gif"
+    },
+    {
+      "path": "assets/borde-top.gif",
+      "role": "asset",
+      "size": 95,
+      "sha256": "7bdbc6ea20a5474f6662953aad3d1374d3a3cb449f146d88d23abfbb5945f577",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-top.gif"
+    },
+    {
+      "path": "assets/rfm_small.gif",
+      "role": "asset",
+      "size": 24902,
+      "sha256": "a52d1e3a312ed297f35c3f8f091db33a6986be5f8393b10e00155989f6b72dbd",
+      "media_type": "image/gif",
+      "source_url": "http://www.silverball.net/images_martin/rfm_small.gif"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 13610,
+      "sha256": "c418ec454aaed7e7607ee6dc4195f8ff2f71e4c6837853a625a52ebf01a55fe5",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

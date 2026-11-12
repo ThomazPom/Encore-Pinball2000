@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Pinball 2000 development lore — part 3",
+    "kind": "html",
+    "source_url": "https://www.skling.fr/2025/07/30/pinball-2000-development-lore-part-3/",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 8334,
+      "sha256": "c65f7c720a4441bdaaa32448f01bb1e4181aad55dd100576389230c1852ebde0",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/cubes.gif",
+      "role": "asset",
+      "size": 1823,
+      "sha256": "aec5c3749814947ea392001ae9880d5d798e0f9586632cad4ae360cbe60b622b",
+      "media_type": "image/gif",
+      "source_url": "https://www.skling.fr/wp-content/themes/cloudy/img/cubes.gif"
+    },
+    {
+      "path": "assets/spacer.gif",
+      "role": "asset",
+      "size": 43,
+      "sha256": "b1442e85b03bdcaf66dc58c7abb98745dd2687d86350be9a298a1d9382ac849b",
+      "media_type": "image/gif",
+      "source_url": "https://www.skling.fr/wp-content/themes/cloudy/img/spacer.gif"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 40858,
+      "sha256": "ff86e51e5cdb660299e5d67e13f8133c2af937c91b27b61b03188cfe147d78b0",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

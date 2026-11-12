@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Pinball2000.de general technical information",
+    "kind": "html",
+    "source_url": "https://www.pinball2000.de/techinfo.htm",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 11260,
+      "sha256": "c2115336133cc9289b207c2ebe4ead58fa8f0fba045c9e1a52beb6381484f33f",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pinball2000 Update.pdf",
+      "role": "asset",
+      "size": 15804,
+      "sha256": "ce7d7c92fc7968bb51e7eda2e0abc44f2336054909548867c78a99755a813b36",
+      "media_type": "application/pdf",
+      "source_url": "https://www.pinball2000.de/local_images/Pinball2000%20Update.pdf"
+    },
+    {
+      "path": "assets/borde-bottom.gif",
+      "role": "asset",
+      "size": 84,
+      "sha256": "bf84d423167406a53d3fe9c4b6e7585b19d0748af5fcb3baea10a061bfdf2df0",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-bottom.gif"
+    },
+    {
+      "path": "assets/borde-left.gif",
+      "role": "asset",
+      "size": 11379,
+      "sha256": "2d08a04d94427e1ef0f1fc7e4adaf87be9b54157d3dc642b89a84bdd9c7d8b3f",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-left.gif"
+    },
+    {
+      "path": "assets/borde-right.gif",
+      "role": "asset",
+      "size": 1162,
+      "sha256": "3fa9f7bf8f89c637b96146d795e599fc73439e9e6f59d01e21ad746243ffc621",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-right.gif"
+    },
+    {
+      "path": "assets/borde-top.gif",
+      "role": "asset",
+      "size": 95,
+      "sha256": "7bdbc6ea20a5474f6662953aad3d1374d3a3cb449f146d88d23abfbb5945f577",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-top.gif"
+    },
+    {
+      "path": "assets/coin_ac.jpg",
+      "role": "asset",
+      "size": 55614,
+      "sha256": "aa2a9717089dd02f00ade091ab75e22c40cee8f922f9bd267bdacb5660699f0b",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/coin_ac.jpg"
+    },
+    {
+      "path": "assets/duck_sca.jpg",
+      "role": "asset",
+      "size": 111118,
+      "sha256": "d69676517aadf3feb536ecf021b188144900c5b144e5f56d687d553ab435c647",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/duck_sca.jpg"
+    },
+    {
+      "path": "assets/martian.jpg",
+      "role": "asset",
+      "size": 11253,
+      "sha256": "18e319c1a7b70bdb30bb41f3d49ac36592f014188df02a4ce93ea9b03cf836ec",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/martian.jpg"
+    },
+    {
+      "path": "assets/ps_cover.jpg",
+      "role": "asset",
+      "size": 23414,
+      "sha256": "adca2551c74a5890976a49c0c0dce1b4fd4fd34ba07945dd7e7b8f57e3867aff",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ps_cover.jpg"
+    },
+    {
+      "path": "assets/tech_gxboard_proto_back.jpg",
+      "role": "asset",
+      "size": 28098,
+      "sha256": "582d1a45248a623e42e5a1a78fd2b51dfc81e4d1fe751e20db464e52dc03597e",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/tech_gxboard_proto_back.jpg"
+    },
+    {
+      "path": "assets/tech_gxboard_proto_front.jpg",
+      "role": "asset",
+      "size": 29603,
+      "sha256": "14329325ea931440bc577a73f511fc8e57ab3895ca67322b9193929e6b5049e9",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/tech_gxboard_proto_front.jpg"
+    },
+    {
+      "path": "assets/tech_gxboard_series.jpg",
+      "role": "asset",
+      "size": 21717,
+      "sha256": "7eccdcbf3649522dd8ed68656cc3c5c78bdb39ab1327a6dedc9aa4dd66272cc9",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/tech_gxboard_series.jpg"
+    },
+    {
+      "path": "assets/tech_pc_case.jpg",
+      "role": "asset",
+      "size": 28753,
+      "sha256": "1f640de7f4ab12e3f136b9ed458dc426f124041d40e5a07f436740960beaab71",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/tech_pc_case.jpg"
+    },
+    {
+      "path": "assets/tech_pub_card.jpg",
+      "role": "asset",
+      "size": 14884,
+      "sha256": "c57739ba4d21eeaf783cab9824c028fe753b814a14ee90663454fdd0afe9e4dc",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/tech_pub_card.jpg"
+    },
+    {
+      "path": "assets/wells_g.jpg",
+      "role": "asset",
+      "size": 137406,
+      "sha256": "07083aa667e3eff70d718d192ea806a89564fc4fff8fb96048258f7833ff69c9",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/wells_g.jpg"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 15172,
+      "sha256": "fcc2200a02fa6f7f448d0dd2d26cdd9834a8fc0c8ea7d57de2d45271e03ebe0b",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

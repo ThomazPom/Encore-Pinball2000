@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Revenge From Mars operations manual — April 1999",
+    "kind": "artifact",
+    "source_url": "",
+    "captured_at": "2026-11-11",
+    "capture_mode": "local-artifact-import",
+    "source_note": "user-supplied browser download; original download URL was not retained; document identity independently cross-checked against the title page and surviving catalog records",
+    "generator": "reference-bundle.py/1.0",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 667,
+      "sha256": "16f42ca1ed70fec16cca879123a6c4656664ed1fa4dc1e390212d13fd2144887",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "raw/1072932404-revenge-from-mars-pinbal-2000.pdf",
+      "role": "raw",
+      "size": 7190962,
+      "sha256": "9fd2911aef5c7b444b708fd9600976298e3cab142ad686bc3772ac6fb84ce419",
+      "media_type": "application/pdf",
+      "source_url": ""
+    }
+  ]
+}

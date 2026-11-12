@@ -1,0 +1,249 @@
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<html>
+<head>
+   <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+   <meta name="Author" content="Hans-Martin Wiest">
+   <meta name="Description" content="Collectors pages for Revenge from Mars amd Starwars Episode 1">
+   <meta name="KeyWords" content="RFM,pinball,flipper,Revenge,pinball2000,starwars">
+   <title>Pinball 2000 Collectors Pages</title>
+   <link href="/p2k.css" rel="stylesheet" type="text/css" media="screen,projection,tv">
+
+</head>
+<body background="/layout/p2k-background.jpg" leftmargin=0 topmargin=0>
+<div align="center"><table width="850" border="0" cellspacing="5" cellpadding="0" bgcolor="#FFFFFF">
+<tr>
+        <td><font face="Arial"><font size=+2>Technical Information about Pinball2000:</font></font></b>
+<br><b>Version 3.09</b> Add Markus description of monitor
+<p>Here you find general technical information about Pinball2000.
+<br>General Troubleshooting infos can be found on&nbsp; <a href="troubleshooting.htm">the
+Pinball2000 troubleshooting pages.</a>
+<br>Specific items about RFM or EP1 can be found on the specific RFM/Ep1
+Techpages <a href="rfm_techinfo.htm">RFM</a> ,&nbsp; <a href="ep1_techinfo.htm">Ep1</a>
+<p>RFM and EP1&nbsp; use the new WMS Pinball2000 technologie, the successor
+of the famous Williams WPC system . The game main control is done by a
+BAT format PC mainboard with Cyrix MediaGX processor (onboard graphics
+used!!). The Software and the DCS-2 sound hardware is located on the so
+called PRISM board - a Williams development which is a PCI card located
+in the only used PCI slot of that mainboard. For a good HW picture see
+<a href="nov_juni.htm">Pin2000
+Programm Update in German .</a>&nbsp; The control functions of lamps, switches
+and Solenoids are located on a new power driver board, that is mounted
+in the cabinet and connected to the parallel port of the PC mainboard.
+Additional tech info in german can be found under&nbsp; <a href="nov_april.htm">Pinball2000
+Technische Informationen.</a> Many information about the PIN2000 operating
+system, XINA, can be found at&nbsp; <a href="http://members.home.net/ratherplaypinball/rfmnotes.htm">Jack
+A. Robinsons Revenge from Mars Notes</a>
+<br>&nbsp;
+<p><b><b><font face="Arial"><font size=+3>Technical Details:</font></font></b></b>
+<p>&nbsp;<a href="#PRISM">The PRISM Card</a>
+<br>&nbsp;<a href="#SW_Update">Game Software Update</a>
+<br>&nbsp;<a href="#Mainboard">The Media GX PC Mainbord and CPU</a>
+<br>&nbsp;<a href="#Monitor">The Pinball2000 Monitor</a>
+<br>&nbsp;<a href="#Powerdriver">The Pinball2000 Powerdriver</a>
+<br>&nbsp;<a href="#Coin_Acceptor">The Coin Acceptor</a>
+<br>&nbsp;<a href="#The_Service_Concept">The Service Concept</a>
+<br>&nbsp;<a href="#Gameswap">Pinball2000 Game Swap (RFM/Ep1)</a>
+<br>&nbsp;
+<a NAME="PRISM"></a></center>
+<center>
+<p><b><b><font face="Arial"><font size=+1>The PRISM Card:</font></font></b></b>
+
+<p><font size=-1>It includes 8 <b>game specific</b> WMS ROMs that contain
+the images and other fixed parts like a first code boot version&nbsp; You
+might read them out when you have an EPROM Programmer capable to read
+27C322 (32MBit) and even the double size of these EPROMs (64MBit).
+Unfortunately the biggest available EPROMs are 27C322 (42 pin EPROM) and they
+cost about 85$ each. On some SWE1 games one EPROM can be found
+as a ROM replacement, but only for the 32Mbit ROMs, not for the
+64MBit ones. There exists no replacement for 64MBit ROMs.
+Additionally the PRISM contains&nbsp; flash PROMs for
+the update sound and game code and several ASICs for the PCI-control, the
+DCS-2 Soundhardware (signal processor DSP) and some glue logic. There also
+houses a Li-battery (BR2325) on the PRISM card for a buffered RAM, storing the big
+amount of statistic data, adjustment data and date/time. To prevent from
+a total data loss when this battery becomes empty some of the data is also
+stored within theflash PROMs (e.g. the total earnings).</font>
+<br><font size=-1>More PRISM Card details can be found on</font> <a href="prism_infos.html">the
+PRISM info page.</a>
+<center>
+<a NAME="SW_Update"></a></center>
+<p><b><b><font face="Arial"><font size=+1>Game Software Update:</font></font></b></b>
+
+<p>There are 3 ways to update the Pinball2000 game software. I prefer the last one using a PUB Card:
+<br>
+<br>- Change the complete PRISM card to a one with newer Software on it
+<br>  This is nice but not many people have multiple PRISM Cards    
+<br>
+<br>- Update the game via Laptop, serial cable and Pinball2000 upgrade manager
+<br>  This option needs the P2K SW Update Manager (available in the web) and a PC with WINDOWS 98,
+<br>  which is barely to find these days. Markus Pautz in Munich tried to do it on a newer Windows
+<br>  PC using WINDOWS 7 - find his description text in the following PDF  
+<a href="local_images/Pinball2000 Update.pdf">P2K Update Help from Markus </a>
+<br> 
+<br>- program a&nbsp; <a href="/images/tech_pub_card.jpg">PUB (prism update)
+Card</a> in your PC and plug it into the Pinball2000 game
+<br>Details (in german) can be found <a href="nov_juni.htm">here</a>
+<br>For Problems with update see also&nbsp; <a href="pin2000_rfm_ep1_swap.html">RFM/ Ep1 Swap</a>
+<br>
+<br>
+German instruction how to do PUB Update.
+Anleitung zum Pinball2000 Software Update mit PUB Karte:
+The NOVA Games SW Update text <a href="nov_juni.htm">Pin2000 Programm Update in German  </a>&nbsp;
+<br>
+  My own instructions how to update Pinball2000 with a PUB card:
+- Flipper ausschalten <br>
+- Kopfscheibe rausnehmen <br>
+- Rechner nach vorne rausziehen soweit es geht ohne dass er rausfällt und runter hängen <br>
+- Deckel vom Rechner öffnen - ab nun eine Hand am Rechner so oft es geht, damit man geerdet ist so gut es geht <br>
+- Vorne im Rechner erkennt man die beiden schwarzen ISA Slots <br>
+- PUB Karte aus der Antistatik Tüte und mit den Bauteilen nach hinten in einen der ISA Slots stecken
+  die Karte muss ganz nach unten gehen in dem Slot <br>
+- Nun den Flipper einschalten - beim Hochfahren sollte er die PUB Update Karte erkennen und von
+  der Karte starten - es wird dann die Game-SW und dann die Sound SW aktualisieren <br>
+- Wenn der Flipper sagt dass das Update beendet ist dann den Rechner ausschalten mit dem roten Knopf
+  die PUB Karte rausziehen und wieder in die Antistatiktüte schieben <br>
+- Den Rechner wieder einschalten und checken ob der Flipper hochläuft - wenn alles OK ist Flipper ausschalten,
+  wenn nicht OC ausschalten und Update wiederholen. <br>
+- Wie gesagt bitte so oft wie möglich das Metallgehäuse des Rechners anfassen um Statik zu vermeiden <br>
+<br>
+<center>
+<a NAME="Mainboard"></a></center>
+<p><b><b><font face="Arial"><font size=+1>The PC mainboard and Media GX CPU:</font></font></b></b>
+
+<p>PB2K uses a PC mainboard in BAT formfactor with Cyrix Media GX processor
+on it. This cyrix processor and his cyrix bridge (CX5520) are obligatory for PB2K
+and not replaceable by any other PC mainboard or processor! Boards with a CX5510 bridge
+do start the P2K game code, but cannot display the P2K video output when the game
+has started. Boards with a CX5530 bridge don't work either.
+In 1999 these CX5520 boards (e.g. ST MGXM) did cost about
+120 USD on free market and costed 300 USD as original WMS part.
+<br>
+The Lithium Battery used on the mainboard is responsible for keeping date and time.
+On all boards I have seen a CR2032 standard cell is used (cheap, 1$). Replace it
+when time is stalled or lost.
+&nbsp; <a href="mailto:Jeff Arnold [jarnold@mainstream.net]">Jeff
+Arnold</a> sold some new boards to the community in 2001, but today you need to search long to find used ones.
+<br>See a P2000 prototype board, a gift from george gomez to michael voss
+and me at expo 99&nbsp;&nbsp; <a href="images/tech_gxboard_proto_front.jpg">front
+side</a> and&nbsp; <a href="images/tech_gxboard_proto_back.jpg">back side
+with 'reject' note by WMS.</a>
+<br>The boards used for Pinball2000 series production looks a little bit
+<a href="images/tech_gxboard_series.jpg">different.</a>
+I know that at least 3 different board types where used.
+<br>The PC mainboard, the PRISM card and the sound amplifier are located
+in an&nbsp; <a href="images/tech_pc_case.jpg">industrial PC case. </a>with
+a poor quality&nbsp; <a href="images/ps_cover.jpg">powersupply.</a>&nbsp;
+<br>
+<br><b>Hints for a longer and safe operation of P2K motherboard and CPU:</B>
+<br>All original P2K boards that I found so far were jumpered for 233 Mhz operation,
+that means a busclock of 33 Mhz and a multiplyer of 7. This was done, although many
+games I found used a 266 Mhz CPU. But is this speed really needed?
+<br>RFM works sufficent with 180 Mhz while SWE1 works fine with 200 Mhz. So it is
+a good idea to reduce the speed, which the causes board and CPU to stay cooler
+and longer alive. This can be done in the easiest way = reducing the
+busclock from 33 Mhz to 30 Mhz (that makes the CPU run with 7*30Mhz):
+<br>On the Board with version V2.0 inscript you have to change on JP4 from A0 B1 to A0 B0
+<br>On the Board named 586GXM-AV you have to change JP2 from 2-4 1-3 to  4-6 3-5
+<br>You could also reduce the multiplicator from 7 to 6, but I do not think that
+this is really necessary.
+<br> Cooooooler gets the CPU, when you reduce the CPU core voltage. Most of the used
+ Media GX CPUs 'need' 2,9V, what is printed on the CPU. In the meantime I
+ found 200 Mhz CPUs, that only need 2,2V. You may want to reduce the voltage
+ to the lowest value, where the CPU still runs stable. Try it!
+<br>There are 4 voltage jumpers on the mainboard. They work very simple:
+<br> To a base voltage of 2V the jumper adds 0,1V (=V1 or 1-2) ; 0,2V (=V2 or 3-4); 0,4V (=V3 or 5-6) and 0,8V (=V4 or 7-8).
+<br>So the lowest voltage you can have is 2,0V when all jumpers are open and 3,5V when all are set. If you set e.g.
+ V1 and V8, which is the default, you get 2,9V. Have fun with your trial.
+ Addon: When your P2K date no longer runs for shure, replace that CR2035 battery
+ on your motherboard (just 1$).
+<center>
+<a NAME="Monitor"> </a></center>
+<p><b><b><font face="Arial"><font size=+1>The Monitor:</font></font></b></b>
+
+<p>Pinball2000 uses a 19" CGA color monitor from&nbsp; <a href="images/duck_sca.jpg">ducksan
+(CGM-1901CW)</a> or&nbsp; <a href="images/wells_g.jpg">Wells Gardener (19K7302) in 2 variants</a> (click on links to see first page of monitor manual). <a href="http://208.170.203.97/wells/index.icl">Wells
+Gardener</a> has no longer PB2K monitors on stock!
+<br>For more monitor information and <b>replacement alternatives! </b> see the&nbsp; <a href="pin2000_monitor.htm">Pinball2000
+Monitor Infos.</a>
+<center>
+<a NAME="Powerdriver"></a></center>
+<p><b><b><font face="Arial"><font size=+1>The Powerdriver:</font></font></b></b>
+<p>The powerdriver looks similar to the formerly used WPC95 powerdriver, but it has multiple innovations:
+<br>- Most Coils are controlled with MOS-FET Transistors for more power
+<br>- No more GI. Instead of this the number of LAMP columns is doubled so 128 lamps are now switchable by CPU
+<br>- A lamp burnt + short circuit detection has been implemented in lamp matrix (capcom had a similar mechanism for good service)
+<br>- detection for power loss for several voltages - especially for coil voltage (door open)
+<br> The powerdriver is still assembled without SMD parts for easy maintenance, but an SMD variant had been developed shortly before the WMS pinball department closure.
+<br>
+<center>
+<a NAME="Coin_Acceptor"></a></center>
+<p><b><b><font size=+2>Coin Acceptor:</font></b></b>
+
+<p>As far as I know Pinball2000 was delivered to world market only with
+<a href="images/coin_ac.jpg">electronic coin acceptor (CASHFLOW 330)</a>&nbsp;
+(unlike WPC game, which came to germany mostly with 3 slot mechanical coin
+acceptors). Pinball2000 also may carry a bill acceptor or instead of this
+a barcode reader (expo 1999 tournament).
+<br>&nbsp;
+<br>&nbsp;
+<center>
+<a NAME="The_Service_Concept"></a></center>
+<p><b><b><font size=+2>Service concept:</font></b></b>
+
+<p>There were lots of improvements in the Pinball2000 service concept.
+<br>Details in german can be found&nbsp; <a href="nov_mai.htm">here</a>
+<br>All switches, lamps and coils were shown onn the monitor screen during tests.
+<br>More Details in english:&nbsp; coming soon
+<br>&nbsp;
+<br>&nbsp;
+<center>
+<a NAME="Gameswap"></a></center>
+<p><b><b><font size=+2>Swapping RFM with SWE1:</font></b></b>
+
+<p>The official sold SWE1 kit contained:
+<br>Manual
+<br>ROMs&nbsp;&nbsp; -&nbsp; no PRISM card!!!
+<br>Black plastic tool to split the PRISM card
+<br>Ball Shooter
+<br>Translite
+<br>Large Decals for Cabinet and TOP sides and for below coin door.
+<br>Playfield
+<br>For installation instructions and troubleshooting See&nbsp; <a href="pin2000_rfm_ep1_swap.html">The RFM / Ep1 Swap page</a>
+<p>An RFM kit was never sold by WMS, but used translites/playfields had been sold in Germany as result of RFM game conversions to Ep1.
+<br>&nbsp;<br>
+to be continued by&nbsp;<img SRC="images/martian.jpg" NOSAVE height=273 width=265>
+Wiest.</td>
+</tr>
+<tr>
+<td><br>&nbsp;
+<br><div align="center"><table width="850" cellspacing="0" cellpadding="0" border="0">
+<tr>
+    <td rowspan="3"><img src="/layout/borde-left.gif" width=14 height=44 border=0 alt=""></td>
+    <td height="11"><img src="/layout/borde-top.gif" width=815 height=11 border=0 alt=""></td>
+    <td rowspan="3"><img src="/layout/borde-right.gif" width=21 height=44 border=0 alt=""></td>
+</tr>
+<tr>
+    <td height="20" align="left" valign="top"><span class="footer"><!-- text --><a href="mailto:mr.startrek@gmx.de" class="footer">Martin Wiest</a> - Started: 08.03.2000 -
+                                                                <SCRIPT LANGUAGE="JavaScript">
+                                                                        <!--
+                                                                          var date=new Date(document.lastModified);
+                                                                          var dd=date.getDate();
+                                                                          var mm=date.getMonth() + 1;
+                                                                          var yy=date.getYear();
+                                                                          if(dd<10)dd="0"+dd;
+                                                                          if(mm<10)mm="0"+mm;
+                                                                        document.write("Last update: " + dd+"."+mm+"."+yy );
+                                                                        // -->
+                                                                </SCRIPT>  (German date format)&nbsp;&nbsp;</span></td>
+</tr>
+<tr>
+    <td height="13"><img src="/layout/borde-bottom.gif" width=815 height=13 border=0 alt=""></td>
+</tr>
+
+</table></div></td>
+</tr>
+</table></div>
+<br>&nbsp;<br>
+</body>
+</html>
+

@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Williams Star Wars Episode I revision history",
+    "kind": "html",
+    "source_url": "https://www.planetarypinball.com/mm5/Williams/tech/pin2000/software/sw_history.html",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 1517,
+      "sha256": "7efdc3e716c79b6591d1454109450812a13fe387b3a98cedb52e3f1f7d3885c5",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/cart.jpg",
+      "role": "asset",
+      "size": 846,
+      "sha256": "01ed6ead56b3b02a923dac9b39094abf9ecf5618c461949d9d83062929efe2ac",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.planetarypinball.com/mm5/images/cart.jpg"
+    },
+    {
+      "path": "assets/logo.jpg",
+      "role": "asset",
+      "size": 12573,
+      "sha256": "140ed607ad90e21e9a5dd63240a73429816967931ee7c8c6ddc418d31a7ac4e1",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.planetarypinball.com/mm5/images/logo.jpg"
+    },
+    {
+      "path": "assets/mailbox.jpg",
+      "role": "asset",
+      "size": 919,
+      "sha256": "ad9fe8795523d36c3a8a140ef20f3c2fa65514078d0c86add92b5517175c5d7b",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.planetarypinball.com/mm5/images/mailbox.jpg"
+    },
+    {
+      "path": "assets/phone.jpg",
+      "role": "asset",
+      "size": 1116,
+      "sha256": "b1b80aa155075a77c9798706153493a186d7ebf1deb8c94d4e782194bd82cae4",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.planetarypinball.com/mm5/images/phone.jpg"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 12857,
+      "sha256": "41c80551e030894ac1b333975d1cfec66d79bfe304b50b58db4728b5a045e578",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

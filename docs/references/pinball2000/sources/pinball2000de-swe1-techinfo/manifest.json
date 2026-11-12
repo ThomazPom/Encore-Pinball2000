@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Pinball2000.de SWE1 technical information",
+    "kind": "html",
+    "source_url": "https://www.pinball2000.de/ep1_techinfo.htm",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 1814,
+      "sha256": "e79721fd02cc6dd24cc66c0739831b4ef1b6c508288e06ee6f7309f2d144e22e",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/borde-bottom.gif",
+      "role": "asset",
+      "size": 84,
+      "sha256": "bf84d423167406a53d3fe9c4b6e7585b19d0748af5fcb3baea10a061bfdf2df0",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-bottom.gif"
+    },
+    {
+      "path": "assets/borde-left.gif",
+      "role": "asset",
+      "size": 11379,
+      "sha256": "2d08a04d94427e1ef0f1fc7e4adaf87be9b54157d3dc642b89a84bdd9c7d8b3f",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-left.gif"
+    },
+    {
+      "path": "assets/borde-right.gif",
+      "role": "asset",
+      "size": 1162,
+      "sha256": "3fa9f7bf8f89c637b96146d795e599fc73439e9e6f59d01e21ad746243ffc621",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-right.gif"
+    },
+    {
+      "path": "assets/borde-top.gif",
+      "role": "asset",
+      "size": 95,
+      "sha256": "7bdbc6ea20a5474f6662953aad3d1374d3a3cb449f146d88d23abfbb5945f577",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-top.gif"
+    },
+    {
+      "path": "assets/martian.jpg",
+      "role": "asset",
+      "size": 11253,
+      "sha256": "18e319c1a7b70bdb30bb41f3d49ac36592f014188df02a4ce93ea9b03cf836ec",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/martian.jpg"
+    },
+    {
+      "path": "assets/sw_glass.jpg",
+      "role": "asset",
+      "size": 21599,
+      "sha256": "5cba98898a6db4b2e3ff22ccc5d02530cde5eebfdb84b5e319a920b46c257390",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/sw_glass.jpg"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 4822,
+      "sha256": "f533e6af540278721c868c778397182c80eeaca6d28fcf0f8d2abc5a6d75672a",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

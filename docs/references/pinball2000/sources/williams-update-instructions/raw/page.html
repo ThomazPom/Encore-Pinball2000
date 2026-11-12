@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Planetary Pinball</title>
+<base href="https://www.planetarypinball.com/mm5/" />
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8" />
+<link type="text/css" rel="stylesheet" href="css/00000001/cssui.css" media="all" />
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8" />
+<link href="/mm5/style.css" rel="stylesheet" type="text/css">
+<link rel="stylesheet" type="text/css" href="/mm5/css/navigation.css">
+<link rel="stylesheet" href="/mm5/slider.css" type="text/css" media="screen" />
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+<script type="text/javascript" src="/mm5/js/jquery.nivo.slider.pack.js"></script>
+<script type="text/javascript" src="/mm5/js/superfish.js"></script>
+<script type="text/javascript" src="/mm5/js/default.js"></script>
+<script type="text/javascript">
+jQuery(document).ready(function() {
+//Default Action
+jQuery(".tab_content").hide();
+//Hide all content
+jQuery("ul.tabs li:first").addClass("active").show();
+//Activate first tab
+jQuery(".tab_content:first").show();
+//Show first tab content
+//On Click Event
+jQuery("ul.tabs li").click(function() {
+jQuery("ul.tabs li").removeClass("active");
+//Remove any "active" class
+jQuery(this).addClass("active");
+//Add "active" class to selected tab
+jQuery(".tab_content").hide();
+//Hide all tab content
+var activeTab = jQuery(this).find("a").attr("href");
+//Find the rel attribute value to identify the active tab + content
+jQuery(activeTab).fadeIn();
+//Fade in the active content
+return false;
+});
+});
+</script>
+<style>
+.navbar ul li {
+	padding: 0 24px;
+}
+</style>
+</head>
+
+<body class="SFNT">
+
+<!--Top Header-->
+<div class="top-head">
+  <div class="fix-width"> 
+    <ul class="nav-right">
+      <li> <a href="https://www.planetarypinball.com/mm5/merchant.mvc?Session_ID=63eeb1c7048f392bb00ce2656ce99eae&Screen=ACNT">My Account</a> </li>
+      <li> <a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=CTUS">Customer Service</a> </li>
+      <li> <a href="https://www.planetarypinball.com/mm5/merchant.mvc?Session_ID=63eeb1c7048f392bb00ce2656ce99eae&Screen=OINF">Checkout</a></li>
+    </ul>
+  </div>
+</div>
+<!--End Top Header--> <!--Header-->
+<div class="fix-width">
+  <ul class="head-top">
+    <li class="logo"> <a href="/"><img src="/mm5/images/logo.jpg"></a> </li>
+    <li class="search-box">
+      <form method="post" action="/mm5/merchant.mvc?Screen=SRCH">
+        <input type="hidden" name="Store_Code" value="PP" />
+        <div class="search">
+          <input type="text" name="Search" id="searchfield" placeholder="Enter Your Keywords">
+        </div>
+        <input type="image" name="Search" src="/mm5/images/search-btn.jpg" class="search-btn">
+      </form>
+    </li>
+    <li class="call-us"> <img src="/mm5/images/phone.jpg" align="left" class="lfalign">
+      <div class="cl-text"> <span>CALL US : 408-426-4510</span> <br>
+        <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="75060005051a0701350519141b100114070c051c1b171419195b161a18">[email&#160;protected]</a> </div>
+    </li>
+    <li class="cart"> <a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=BASK"><img src="/mm5/images/cart.jpg" align="left" class="lfalign"></a>
+      <div class="cl-text"> <span><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=BASK">MY CART</a></span> <br>
+        <i>0</i> item(s)-$00.00 </div>
+    </li>
+  </ul>
+</div>
+<!--End Header--> <!--Navbar-->
+<div class="navbar">
+  <ul id="menu">
+    <li> <a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=SFNT">Online Store</a> </li>
+    <li> <a>Community</a>
+      <ul>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=pinmap" title="">Pinmap (pinball map API / open source code?)</a></li>
+        <li><a href="/ifpa/" title="">IPFA rankings / Tournaments</a></li>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=event-calendar" title="">Event Calendar</a></li>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=club-directory" title="">Club Directory</a></li>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=community-links" title="">Community Links</a></li>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=game-price-info" title="">Game Price Info</a></li>
+      </ul>
+    </li>
+    <li> <a>Reference Material</a>
+      <ul>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=online-parts-books" title="">Online Parts Books</a> </li>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=BOOK" title="">Online manuals</a> </li>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=online-schematics" title="">Online Schematics</a> </li>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=WB_TECHSUPP" title="">W/B Technical Support</a> </li>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=WB_GALLERY" title="">Game Gallery</a> </li>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=WB_LICENSE" title="">License Info</a> </li>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=PARTS" title="">Parts Lookup</a> </li>
+      </ul>
+    </li>
+    <li> <a>Interact with Us</a>
+      <ul>
+        <li><a href="/forum/" title="">PPS Forum</a> </li>
+        <li><a href="/blog" title="">Blog</a> </li>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=TWITTER" title="">Twitter</a> </li>
+        <li><a href="https://www.facebook.com/planetarypinball?ref=tn_tnmn" target="new" title="">Facebook</a> </li>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=CTUS" title="">Helpdesk </a> </li>
+      </ul>
+    </li>
+    <li> <a>What we do</a>
+      <ul>
+        <li><a href="merchant.mvc?Screen=CTGY&Category_Code=Game" title="">Games</a> </li>
+        <li><a href="merchant.mvc?Screen=CTGY&Category_Code=TOC-PARTS" title="">Parts</a> </li>
+        <li><a href="merchant.mvc?Screen=CTGY&Category_Code=MDSE" title="">Merchandise</a> </li>
+      </ul>
+    </li>
+    <li> <a>Who "We" Are</a>
+      <ul>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=ABUS">About Us</a></li>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=WHEREBUY_US">Resellers</a></li>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=SUPPHIGH">Suppliers</a></li>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=ARTIST">Contributing Artists</a></li>
+      </ul>
+    </li>
+    <li class="st-hover"> <a href="https://www.planetarypinball.com/mm5/merchant.mvc?Session_ID=63eeb1c7048f392bb00ce2656ce99eae&Screen=ACNT">Account/Login</a>
+      <ul class="st-hover-ul">
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Session_ID=63eeb1c7048f392bb00ce2656ce99eae&Screen=ACAD">Create Account</a></li>
+        <li><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Session_ID=63eeb1c7048f392bb00ce2656ce99eae&Screen=LOGN">Login</a></li>
+      </ul>
+    </li>
+    <!--<li class="last"> <a href="http://www.planetarypinball.com/mm5/merchant.mvc?Screen=NEWPROD">Advertisers</a>
+<ul>
+<li><a href="http://www.planetarypinball.com/ifpa/">IFPA</a></li>
+</ul>
+</li>-->
+  </ul>
+</div>
+<!--End Header--> <!--Body-->
+<div class="container">
+	<table cellpadding=0 cellspacing=0 width=100%>
+<tr>
+<td colspan="2" class="copysub">
+
+<table width="95%" border="0" align="center">
+<table border="0">
+  <tr>
+    <td colspan="2" rowspan="2" valign="top"><p><p>&nbsp;</p><p>&nbsp;</p><p>&nbsp;</p><p>&nbsp;</p><p>&nbsp;</p></td>
+    <td valign="top"><h1 class="style4 style5">Pinball 2000 Technical Support</h1>
+    </td>
+  </tr>
+  <tr>
+    <td valign="top"><h2><span class="style6">Updating Pinball 2000</span></h2>
+    <p>A new system has been designed to update the game and sound software in your Pinball
+    2000 System.&nbsp; Software updates are now stored on the PRISM card in your CPU box, no
+    erasing and progamming of EPROM chips is necessary.<br>
+    <br>
+    The following is required to update your Pinball 2000 machine:</p>
+    <table border="0" width="100%">
+      <tr>
+        <td width="85%"><ul>
+          <li>A PC running Windows 95 or Windows 98 with approximately 10 megabytes of disk space.<br>
+            <br>
+          </li>
+          <li>A serial &quot;null-modem&quot; cable to connect the PC to the pinball machine:<br>
+            <br>
+            If your PC has a 9-Pin Serial port (DB-9 connector)<br>
+            you must use a Null Modem (sometimes called &quot;direct-connect&quot;)<br>
+            cable with 2 Female DB-9 connectors.<br>
+            <br>
+            If your PC has a 25-Pin Serial port (DB-25 connector)<br>
+            you must use a Null Modem (sometimes called &quot;direct-connect&quot;)<br>
+            cable with 1 Female DB-9 and 1 Female DB-25 connector.<br>
+            <br>
+            A &quot;Null Modem&quot; connector defines a connector that crosses<br>
+            the wires between pins 2 and 3 (i.e. Pin 2 of the first<br>
+            connector is connected to Pin 3 of the other connector).<br>
+          </li>
+        </ul>
+        </td>
+      </tr>
+    </table>
+    <p><strong>Step 1: Download the Update Manager from the website. <br>
+    <br>
+    </strong>The Update Manager handles the transfer of the game program from your PC to the
+    Pinball 2000 system.&nbsp; You only need one copy of the Update Manager for all Pinball
+    2000 machines.&nbsp; If you do not have the Pinball 2000 Update Manager, click on the link
+    below to download this to your PC.</p>
+    <p><strong>If you are attempting to install the update manager on PC different than the
+    one you will be using to download</strong>, please read <a href="Williams/tech/pin2000/notes/transfer.html">Transferring
+    Update Manager to Another Computer using a Floppy Drive</a> for help.<br>
+    <br>
+    <em>If you have downloaded the Revenge From Mars 0.70 update, this is not the same
+    program.&nbsp; You need to download the Update Manager as well.</em></p>
+    <table BORDER="1" CELLSPACING="0" CELLPADDING="2" WIDTH="100%" bgcolor="#CCCCCC"
+    bordercolorlight="#000000" bordercolordark="#C0C0C0">
+      <tr>
+        <td><table BORDER="1" CELLSPACING="0" CELLPADDING="6" bgcolor="#CCCCCC"
+        bordercolordark="#FFFFFF" bordercolorlight="#000000" bordercolor="#C0C0C0">
+          <tr>
+            <td WIDTH="33%"><h3><b><b><a
+            href="Williams/tech/rom2k40ee.html?rom=Pin2000_UpMgr_130.exe&amp;gm=Pinball_2000_Update_Manager">Pinball
+            2000 Update Manager</a> </b></h3>
+            </b></td>
+            <td width="66%">Download the Pinball 2000 Update Manager (V1.30) &nbsp;<br>
+            <br>
+            (Pin2000_UpMgr_130.exe)</td>
+          </tr>
+        </table>
+        </td>
+      </tr>
+    </table>
+    <p><strong>Step 2: Download the software update file from the website. </strong></p>
+    <p>Click on the link below and completely fill out the License Agreement form.&nbsp; When
+    the form has been completed you will be presented with another link to click on.&nbsp;
+    This link will start the download to your local PC.&nbsp; Save the file into a temporary
+    area on your PC.&nbsp; <strong>Do not change the filename when saving this to your PC!</strong></p>
+    <table BORDER="1" CELLSPACING="0" CELLPADDING="2" WIDTH="100%" bgcolor="#CCCCCC"
+    bordercolorlight="#000000" bordercolordark="#C0C0C0">
+      <tr>
+        <td><table BORDER="1" CELLSPACING="0" CELLPADDING="6" bgcolor="#CCCCCC"
+        bordercolordark="#FFFFFF" bordercolorlight="#000000" bordercolor="#C0C0C0">
+          <tr>
+            <td WIDTH="33%"><h3><b><a
+            href="Williams/tech/rom2ke3fb.html?rom=pin2000_50070_0120_06091999_B_10000000.exe&amp;gm=Revenge_From_Mars_Update_120"><b>Revenge
+            From Mars 1.20</b></a></h3>
+            </b></td>
+            <td width="66%">Download the Revenge From Mars 1.20 software update file. &nbsp;<br>
+            <br>
+            (pin2000_50070_0120_06091999_B_10000000.exe)</td>
+          </tr>
+        </table>
+        </td>
+      </tr>
+    </table>
+    <p><strong><br>
+    Step 3: Install the Update Manager, if you haven't already</strong></p>
+    <p>From the Windows Explorer, locate the Pin2000_UpMgr_130.exe file on your PC and
+    double-click to start the Setup program.&nbsp; Follow the instructions and prompts to
+    install the program on your PC.<br>
+    </p>
+    <p><strong>Step 4: Connect the PC to your Pinball 2000 System</strong></p>
+    <p>With your Pinball 2000 system turned off, connect the serial port
+    &quot;null-modem&quot; cable from your PC to the serial port inside the coin door. &nbsp;
+    If your cable has thumbscrews, tighten them to make sure the cable does not become
+    disconnected during the update process.&nbsp; Once the two machines are connected, power
+    up the Pinball 2000 system.<br>
+    </p>
+    <p><strong>Step 5: Run the Pinball 2000 Update Manager</strong></p>
+    <table border="0" width="100%">
+      <tr>
+        <td width="20%" align="center"><img src="Williams/tech/pin2000/notes/icon.gif" width="105" height="110"
+        alt="icon.gif (1564 bytes)"></td>
+        <td width="80%" align="center"><p align="left">Once you have installed the Pinball 2000
+        Update Manager, double-click the Pinball 2000 Update Manager icon on your desktop</td>
+      </tr>
+    </table>
+    <p><br>
+    <img src="Williams/tech/pin2000/notes/mgr_1.gif" width="636" height="452" alt="mgr_1.gif (41087 bytes)"></p>
+    <p>Under the 'Connection Port' box on the Update Manager window, select the serial port on
+    the PC that you will be using (COM1 or COM2.&nbsp; On most PCs, the external serial port
+    is COM1).<br>
+    <br>
+    Once you have selected the proper serial port, confirm that your Pinball 2000 system is
+    powered up.&nbsp; Click on the 'Connect to Game' button on the upper right of the Update
+    Manager window.&nbsp; The program will connect to the pinball machine and report back the
+    model number and software revision found.&nbsp; (Example: 50070 = Revenge From Mars, 0.82
+    = Software Revision 0.82).</p>
+    <p><img src="Williams/tech/pin2000/notes/mgr_2.gif" width="636" height="452" alt="mgr_2.gif (41591 bytes)"><dl>
+      <p>In the middle box on the upper right, select the drive letter that is holding the
+      software update file that you downloaded from the website.&nbsp; Click on 'Scan Drive for
+      Updates' to locate all the software updates related to this model number.<br>
+      <br>
+      Click and highlight the update version to upload to your Pinball 2000 system, then click
+      the Update button to begin the upload process.<br>
+      </p>
+      <p><strong>Step 6: Do not disturb!</strong></p>
+      <p><img src="Williams/tech/pin2000/notes/mgr_3.gif" width="636" height="452" alt="mgr_3.gif (41975 bytes)"></p>
+      <p>The update process may take up to 10 minutes to complete.&nbsp; A bar graph will be
+      shown on the pinball screen and in the Update Manager window to show approximate progress,
+      but do NOT disconnect once the bar has reached the end.&nbsp; The system needs to reset
+      itself before the update is considered complete.&nbsp; Once the machine is rebooted and
+      running in attract mode, the Update Manager will reconnect to verify that the update is
+      successful.<br>
+      </p>
+      <p><strong>Step 7: Disconnect Cables</strong></p>
+      <p>Congratulations, you're done!</p>
+      <p>&nbsp;</p>
+    </dl>
+    <p><br>
+    </p>
+
+    </td>
+  </tr>
+</table>
+
+<p>&nbsp;</p>
+</td></tr></table>
+	
+</div>
+<!--Footer -->
+<div class="footer">
+  <div class="signup">
+    <div class="signup_container">
+      <p> Sign up for Latest News and Exclusive Offers : </p>
+      <form target="_blank" action="https://www.planetarypinball.com/cgi-bin/dada/mail.cgi" method="post" accept-charset="UTF-8">
+        <input type="hidden" name="f" value="s" />
+        <input type="hidden" name="l" value="pinballnews" />
+        <div class="input_div"> <img src="/mm5/images/mailbox.jpg" align="left" class="imgalgn">
+          <input type="text" name="email" placeholder="Enter Your Email Address ...">
+          <input type="image" name="Subscribe" src="/mm5/images/subscribe.jpg">
+        </div>
+      </form>
+    </div>
+  </div>
+  <div class="footer-widget-area">
+    <div class="bottom-footer">
+      <div class="footerbar"> <a href="/">Home</a><span>|</span><a href="https://www.planetarypinball.com/mm5/merchant.mvc?">Online Store</a><span>|</span><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=SUPPHIGH">New Products</a><span>|</span><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=SUPPHIGH">Supplier Highlights</a><span>|</span><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=ARTIST">Artist Highlights</a><span>|</span><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=PRODHIGH">Product Highlights</a><span>|</span><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=WB_TECHSUPP">Williams/Bally Tech. Support</a>
+        <div class="second"><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=WB_GALLERY">Williams/Bally Game Gallery</a><span>|</span><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=WB_LICENSE">Williams/Bally License Info</a><span>|</span><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=FOLLOW">Follow Us</a><span>|</span><a target="_blank" href="/forum/">Forums</a><span>|</span><a href="/blog" target="_blank">Blog</a><span>|</span><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=TWITTER">Twitter</a> </div>
+        <div class="third"><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=WHEREBUY_US">Re-Sellers (US)</a><span>|</span><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=WHEREBUY_INTL">Re-Sellers (Intl)</a><span>|</span><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=LINKS">Links</a><span>|</span><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=FAQS">FAQ</a><span>|</span><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=ABUS">About Us</a><span>|</span><a href="https://www.planetarypinball.com/mm5/merchant.mvc?Screen=CTUS">Customer Service</a> </div>
+      </div>
+      <div class="copyright"> Copyright &reg; PlanetaryPinball.com </div>
+    </div>
+    <div class="clear"></div>
+  </div>
+</div>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script></body>
+</html>

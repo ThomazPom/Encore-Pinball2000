@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Pinball2000.de SWE1 notes and FAQ",
+    "kind": "html",
+    "source_url": "https://www.pinball2000.de/ep1_misc.htm",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": [
+      "https://www.pinball2000.de/images/swe1_plastics2.jpg"
+    ]
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 12492,
+      "sha256": "fe42b7d143d76fdb44cefd94b792eb384f3c4194f51f92edf096318685fe6341",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/borde-bottom.gif",
+      "role": "asset",
+      "size": 84,
+      "sha256": "bf84d423167406a53d3fe9c4b6e7585b19d0748af5fcb3baea10a061bfdf2df0",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-bottom.gif"
+    },
+    {
+      "path": "assets/borde-left.gif",
+      "role": "asset",
+      "size": 11379,
+      "sha256": "2d08a04d94427e1ef0f1fc7e4adaf87be9b54157d3dc642b89a84bdd9c7d8b3f",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-left.gif"
+    },
+    {
+      "path": "assets/borde-right.gif",
+      "role": "asset",
+      "size": 1162,
+      "sha256": "3fa9f7bf8f89c637b96146d795e599fc73439e9e6f59d01e21ad746243ffc621",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-right.gif"
+    },
+    {
+      "path": "assets/borde-top.gif",
+      "role": "asset",
+      "size": 95,
+      "sha256": "7bdbc6ea20a5474f6662953aad3d1374d3a3cb449f146d88d23abfbb5945f577",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinball2000.de/layout/borde-top.gif"
+    },
+    {
+      "path": "assets/ep1_997.jpg",
+      "role": "asset",
+      "size": 175631,
+      "sha256": "4bd75abea0326561074d9b8344e9705e816a26e37abf62387f2b8b996c5548cd",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1_997.jpg"
+    },
+    {
+      "path": "assets/ep1_fly_eu_d_h.jpg",
+      "role": "asset",
+      "size": 115391,
+      "sha256": "5fd98f81a7d9e55b86f50325632340a6d2fb7d4dda97c61357412393f541cdf5",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1_fly_eu_d_h.jpg"
+    },
+    {
+      "path": "assets/ep1_fly_eu_d_v.jpg",
+      "role": "asset",
+      "size": 109640,
+      "sha256": "2069901bccc251564bda125868ed74f00efaedc1ad09a385dc058e84fdd3753e",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1_fly_eu_d_v.jpg"
+    },
+    {
+      "path": "assets/ep1_fly_eu_e_h.jpg",
+      "role": "asset",
+      "size": 107810,
+      "sha256": "882a3b3263dfde4deec2f16297358af947906110095c832ea28d5b767c04a4e4",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1_fly_eu_e_h.jpg"
+    },
+    {
+      "path": "assets/ep1_fly_eu_e_v.jpg",
+      "role": "asset",
+      "size": 103159,
+      "sha256": "e42c96b4a053db5c2ca4f9225a158e25ca98b029c497a89d7cbfca4e2fc75fd9",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1_fly_eu_e_v.jpg"
+    },
+    {
+      "path": "assets/ep1_plastic_sheet.jpg",
+      "role": "asset",
+      "size": 86656,
+      "sha256": "32fa56d1a72e4bbc7e770d966adb3e9ad0647395069ca72763b5518f93dfc033",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/ep1_plastic_sheet.jpg"
+    },
+    {
+      "path": "assets/sw_gold_plague_clear.jpg",
+      "role": "asset",
+      "size": 37737,
+      "sha256": "3f5f2cb8cd0cbae08cf9f1a720cc5313a5c832759e532382f0b1bcea0fa60dc5",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/sw_gold_plague_clear.jpg"
+    },
+    {
+      "path": "assets/swe1_plastics1.jpg",
+      "role": "asset",
+      "size": 394988,
+      "sha256": "e0025fe0d06e1580fb4393f643195a2cdbaa9c078bb99096213909c83f96ee82",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/swe1_plastics1.jpg"
+    },
+    {
+      "path": "assets/swei_droid_starfighter.jpg",
+      "role": "asset",
+      "size": 117848,
+      "sha256": "9f5ffa2eb56f50be035158af6e11cf156a605cef297e3517f6f4f17b2a2190f3",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/swei_droid_starfighter.jpg"
+    },
+    {
+      "path": "assets/swgolden.jpg",
+      "role": "asset",
+      "size": 98733,
+      "sha256": "ac5506f120ff39c920f068acbb0a6a2d4aedd159d3f16fe39807bdfb862052fe",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/swgolden.jpg"
+    },
+    {
+      "path": "assets/swplaque1.jpg",
+      "role": "asset",
+      "size": 81077,
+      "sha256": "b073bc8125378759d14fea724e99b90ebf32669acb17bb80726970b9e2e54562",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/swplaque1.jpg"
+    },
+    {
+      "path": "assets/swplaque2.jpg",
+      "role": "asset",
+      "size": 112190,
+      "sha256": "836efa69de32737289a8714505fadf41e1bce93b6712f7c923d2a769cf446ba6",
+      "media_type": "image/jpeg",
+      "source_url": "http://www.silverball.net/images_martin/swplaque2.jpg"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 17045,
+      "sha256": "6b70112eee001c82f0259a23dcb64aae22eb5b433553e795da8fa36a4c6bab9c",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

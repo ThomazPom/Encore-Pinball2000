@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "myPinballs tournament technical setup",
+    "kind": "html",
+    "source_url": "https://www.mypinballs.com/tournament/core/techsetup.jsp",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 5095,
+      "sha256": "2ccc83ee58d177a4fe17b2b73fb01e30ab613633f4003ee326740764e1a825a4",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/barcode_5volt1.jpg",
+      "role": "asset",
+      "size": 84763,
+      "sha256": "4aa0e868f806eaf1d1c13a86b14af69849c9a29c81c30bcd6e1d932709acdf13",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.mypinballs.com/tournament/pics/tech_setup/barcode_5volt1.jpg"
+    },
+    {
+      "path": "assets/barcode_install1.jpg",
+      "role": "asset",
+      "size": 832506,
+      "sha256": "7b3092184bae1a8d184c858780e93440b9379c73164be91952d13337f3a8da77",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.mypinballs.com/tournament/pics/tech_setup/barcode_install1.jpg"
+    },
+    {
+      "path": "assets/inside_computer1.jpg",
+      "role": "asset",
+      "size": 119138,
+      "sha256": "771ab3d5dce351b341b442f94c72464f8d9a51ec3dcc4a3f2c029302e23569e0",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.mypinballs.com/tournament/pics/tech_setup/inside_computer1.jpg"
+    },
+    {
+      "path": "assets/linksys_wrt54gl.jpg",
+      "role": "asset",
+      "size": 113339,
+      "sha256": "e1a167972f939cee9d787a5bcb88eb3c0be887db23b5692389c649f3befe7582",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.mypinballs.com/tournament/pics/tech_setup/linksys_wrt54gl.jpg"
+    },
+    {
+      "path": "assets/manual.pdf",
+      "role": "asset",
+      "size": 204624,
+      "sha256": "fcedaf02f8779e16e3a95f122849c61f249b6dcf33d060e8f5f31cba0efae039",
+      "media_type": "application/pdf",
+      "source_url": "https://www.mypinballs.com/tournament/setup/barcode/cypherlab_1022r/manual.pdf"
+    },
+    {
+      "path": "assets/network_card1.jpg",
+      "role": "asset",
+      "size": 82634,
+      "sha256": "c0b9de27339e1dd74aba52b5e096d134849b28e3b6d7cbde4e916c23edd36488",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.mypinballs.com/tournament/pics/tech_setup/network_card1.jpg"
+    },
+    {
+      "path": "assets/system_card_side1.jpg",
+      "role": "asset",
+      "size": 346742,
+      "sha256": "af2d98527e925edba6b13abc1b3a5f1820112acb40e4f2017c4c925bf8eafde5",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.mypinballs.com/tournament/setup/barcode/cypherlab_1022r/system_card_side1.jpg"
+    },
+    {
+      "path": "assets/system_card_side2.jpg",
+      "role": "asset",
+      "size": 144153,
+      "sha256": "215b1d1117e727188e9d784ae158e6c4ed240b0bb55788f82334927526f72a2f",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.mypinballs.com/tournament/setup/barcode/cypherlab_1022r/system_card_side2.jpg"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 7311,
+      "sha256": "6e4d95553d0c57a19becdfa17049b9cc7a521ccb2bbdbae8230101e5ee0bf76e",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

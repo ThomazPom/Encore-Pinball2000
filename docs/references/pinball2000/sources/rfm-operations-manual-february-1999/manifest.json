@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Revenge From Mars operations manual — February 1999",
+    "kind": "artifact",
+    "source_url": "",
+    "captured_at": "2026-11-11",
+    "capture_mode": "local-artifact-import",
+    "source_note": "collector archive (raw scan) and FlipperFiles git corpus (searchable OCR derivative)",
+    "generator": "reference-bundle.py/1.0",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 847,
+      "sha256": "f1348cadffa60981cc5163957790c4f9cd0c4e0fdda75a1ec4793961bd97850e",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "raw/Bally - Revenge from Mars.pdf",
+      "role": "raw",
+      "size": 4636009,
+      "sha256": "6220179bd4056dfcca7d5c4670956c746b26df4d722a0d1da35351341abc20cc",
+      "media_type": "application/pdf",
+      "source_url": ""
+    },
+    {
+      "path": "raw/Bally_1999_Revenge_From_Mars_Operations_Manual_February_1999_OCR_searchable.pdf",
+      "role": "raw",
+      "size": 4468556,
+      "sha256": "6ba2c0728d26e379d1e1a0b2a2ff5eb40f61fce2d38c45e0e4f094166df0b9df",
+      "media_type": "application/pdf",
+      "source_url": ""
+    }
+  ]
+}

@@ -1,40 +1,34 @@
-# Encore — third-party reference material
+# Encore third-party references
 
-This folder vendors / mirrors external Pinball 2000 documentation and code
-that Encore relies on. Cited sources have a habit of disappearing
-(forum threads close, wikis move, personal sites lapse), so we keep a
-local copy under licence-compatible terms.
+This directory retains external evidence used to understand and verify Pinball
+2000. Provenance and upstream rights remain visible; inclusion does not imply
+that Encore owns or relicenses the material.
 
-| Path | Upstream | Licence | Mirrored | Why |
-|------|---------|--------|---------|----|
-| `PinballDiag/` | <https://github.com/boilerbots/PinballDiag> | BSD 3-Clause | 2026-04-24 | Working Linux C++ reference for the PB2K LPT protocol (ioperm + raw `inb`/`outb`, busy-wait strobes). Authoritative source for register map and bit polarities. |
-| `web_archive/flipprojets_p2000_driver_tester.md` | <https://www.flipprojets.fr/TestP2000Driver_EN.php> | Page text quoted under fair-use for technical preservation | 2026-04-24 | Independent confirmation that a 20 MHz PIC can drive the board — useful sanity check for host-side timing budgets. |
-| `web_archive/pinwiki_p2k_repair.md` | <https://pinwiki.com/wiki/index.php?title=Pinball_2000_Repair> | PinWiki community wiki — see source page | 2026-04-24 | Power Driver Board LED map (LED1 = blanking/watchdog), chipset compatibility (CX5520 only), system overview. |
+## Collections
 
-## Refetch / verify
+| Path | Purpose |
+|---|---|
+| [`pinball2000/`](pinball2000/README.md) | curated knowledge archive: manuals, historical pages, repair evidence, first-hand development accounts and topic guides |
+| `PinballDiag/` | BSD-licensed Linux C++ reference for the original cabinet parallel-port protocol |
+| `web_archive/` | small legacy captures retained before the structured archive existed |
 
-Each mirrored file carries a `Source:` URL and a `Mirrored on:` date in
-its header. To refetch and compare:
+The Pinball 2000 archive is the preferred home for new material. It requires a
+qualification decision, raw/readable evidence, provenance and SHA-256
+validation; it does not accept a file merely because it mentions the platform.
 
-```bash
-# Plain text mirrors:
-curl -sL <source-url> | diff - docs/references/web_archive/<file>.md
+> [!IMPORTANT]
+> ROMs, update executables and unrelated emulator packages are not documentation
+> artifacts. NuCore documentation and packages are explicitly outside Encore's
+> reference archive.
 
-# PinballDiag (whole repo):
-git clone https://github.com/boilerbots/PinballDiag /tmp/pd-upstream
-diff -ru docs/references/PinballDiag/ /tmp/pd-upstream/
-```
+## Adding or refreshing evidence
 
-## Adding a new mirror
+1. Apply the [qualification method](pinball2000/METHODOLOGY.md).
+2. Record whether the candidate is preserved, index-only, duplicated,
+   unverified or rejected.
+3. Build it with [`reference-bundle.py`](../../tools/reference-preservation/README.md).
+4. Validate the bundle and inspect its Markdown, assets and provenance.
+5. Link durable knowledge from a topic guide without hiding uncertainty.
 
-1. Choose the right subfolder:
-   - `web_archive/` for static pages (HTML / wiki / forum text).
-   - A new top-level subfolder for full source repos.
-2. Add a header to your mirror file with: `Source:`, `Mirrored on:`,
-   licence note, and a one-line `Why:` justifying preservation.
-3. If the upstream is a binary (PDF, image archive, large ROM tooling),
-   do **not** commit it here. Instead add an entry to the planned
-   `binary-sources.md` index with URL + suggested SHA-256 so users can
-   fetch it independently.
-4. Update this README's table.
-5. Run the project's forbidden-term scrub before committing.
+[Encore documentation](../README.md) ·
+[Pinball 2000 source catalog](pinball2000/CATALOG.md)

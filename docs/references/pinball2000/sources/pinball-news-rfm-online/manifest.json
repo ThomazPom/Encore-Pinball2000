@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Revenge from Mars goes online — Pinball News",
+    "kind": "html",
+    "source_url": "https://www.pinballnews.com/news/rfm.html",
+    "captured_at": "2026-11-11",
+    "capture_mode": "network-capture",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 6843,
+      "sha256": "aa6e5ee660cba83628afc996cab1623d927729d8f2043cb9ac7c491e83894817",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/back.gif",
+      "role": "asset",
+      "size": 192,
+      "sha256": "0d73b5593bb25b2242fea4ea06d98e90a49f41ee8be4d9a1e1a93279ed7bdd50",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinballnews.com/back.gif"
+    },
+    {
+      "path": "assets/banner.gif",
+      "role": "asset",
+      "size": 17292,
+      "sha256": "a7f9c4a361b4ce1e7db619704948bd51040d58a7528fda7515d52cc72d7e8d6d",
+      "media_type": "image/gif",
+      "source_url": "https://www.pinballnews.com/banner.gif"
+    },
+    {
+      "path": "assets/rfm1.jpg",
+      "role": "asset",
+      "size": 62005,
+      "sha256": "8e2d18b41733a902462d3065a840c765bb9749c11c82793c462b98414b066280",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.pinballnews.com/news/rfm1.jpg"
+    },
+    {
+      "path": "assets/rfm2.jpg",
+      "role": "asset",
+      "size": 66005,
+      "sha256": "6437cd83b63249f54cf3cccd6a4eed0e0d608ead034b8a8666cd922c4638a3e3",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.pinballnews.com/news/rfm2.jpg"
+    },
+    {
+      "path": "assets/rfm3.jpg",
+      "role": "asset",
+      "size": 32430,
+      "sha256": "d59c67b047dc86bd6b43217d8cf3fa9733a003ccf90fcf6f69e706ccdc4c004f",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.pinballnews.com/news/rfm3.jpg"
+    },
+    {
+      "path": "assets/rfm4.jpg",
+      "role": "asset",
+      "size": 64415,
+      "sha256": "e3f9b6b9bfbfefae924c2c3dbff41ef167a4327d65ca14d204f71520449cd19e",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.pinballnews.com/news/rfm4.jpg"
+    },
+    {
+      "path": "assets/rfm5.jpg",
+      "role": "asset",
+      "size": 41985,
+      "sha256": "ed664b053b7ea9092f35ec8d1f73140c1ff2dcd41030024c74c3c5e6dd276907",
+      "media_type": "image/jpeg",
+      "source_url": "https://www.pinballnews.com/news/rfm5.jpg"
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 12714,
+      "sha256": "b606e0cbffe0da09b511de6b8459dff330e238942b7fd0bdbff367e42187a804",
+      "media_type": "text/html",
+      "source_url": ""
+    }
+  ]
+}

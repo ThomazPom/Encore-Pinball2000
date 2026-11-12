@@ -1,0 +1,463 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Pinball 2000 Repair",
+    "kind": "mediawiki",
+    "source_url": "https://pinwiki.com/wiki/index.php/Pinball_2000_Repair",
+    "captured_at": "2026-03-28",
+    "capture_mode": "local-import",
+    "generator": "reference-bundle.py/1.2",
+    "render_base_url": "",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 53377,
+      "sha256": "78ea1a6b21062fddd380776dfdcc2a3ca0c832dedb60aea02114b062b6da67b6",
+      "media_type": "text/markdown",
+      "source_url": ""
+    },
+    {
+      "path": "assets/586-GXM+.png",
+      "role": "asset",
+      "size": 32470,
+      "sha256": "93e1c7e258a5e8f268fab3660cb024525aea0e75df0a7c249c9c6c3b55d1640c",
+      "media_type": "image/png",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Amp_mounted_RFM.JPG",
+      "role": "asset",
+      "size": 1080745,
+      "sha256": "e27903b2dcebb75381e312658614eb21da1b376c4f6b14d8703658326761d181",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Atx-20+4pin-connector.jpg",
+      "role": "asset",
+      "size": 21790,
+      "sha256": "bd986c58d53557a5cfcf694fe5c431d4d7aba5c1145cc5902c70fa9279828353",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Atx-20-pin-connector-pinout.jpg",
+      "role": "asset",
+      "size": 57782,
+      "sha256": "1a298014ac7a9d91d50adbdc254a5ed66f1471682246acb97401b11b842b4c99",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Atx-to-at-adapter.jpg",
+      "role": "asset",
+      "size": 66296,
+      "sha256": "7e012991e0f901677f9cb558719031ab0d471dd6f738c26cae515e8ca7b668b2",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Bad_idea_if_charged.JPG",
+      "role": "asset",
+      "size": 1106880,
+      "sha256": "6378fc63b8c4ece3b5be5b9a270a7c683cfc629b9eb2be35f8937b740d6c9a2b",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Bally_Pinball_2000_Schematic_Manual_16-10882_OCR_searchable.pdf",
+      "role": "asset",
+      "size": 1010349,
+      "sha256": "219e85cf37b42d76d48efcf9995f01d06db362f71e90861b60bb0088fdfed220",
+      "media_type": "application/pdf",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Bigguys-pin2000-audio-amp-schematic.pdf",
+      "role": "asset",
+      "size": 59504,
+      "sha256": "158365d8d87dfc9b44eb348f317fa135eeeb61ac17624991123dfc9068880923",
+      "media_type": "application/pdf",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Bigguys-pin2000-audio-amp.jpg",
+      "role": "asset",
+      "size": 91773,
+      "sha256": "94d3237aa679d520297f93f4172b58bc0d081cd002fa09150b83e092244a0e3a",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Cyrix-Motherboard-gxm-av.pdf",
+      "role": "asset",
+      "size": 151556,
+      "sha256": "d0a0787dfb0886cd4eb312c0bcc25dd50c5e809d894fb5c0527d7229f8670ce5",
+      "media_type": "application/pdf",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Cyrix-Motherboard-it-596-gxm.pdf",
+      "role": "asset",
+      "size": 406558,
+      "sha256": "3eb6539f7ef6e4594e16ff54b2137b4939792758fbec6786a69495c5a99c146e",
+      "media_type": "application/pdf",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Dataexpert_MGX7520_A_motherboard_manual.pdf",
+      "role": "asset",
+      "size": 401085,
+      "sha256": "7ecf3797096cf6913db14bd73d258b7ed1e67eec741c409a331cb83a7c0b0d4f",
+      "media_type": "application/pdf",
+      "source_url": ""
+    },
+    {
+      "path": "assets/DuckScanCap.pdf",
+      "role": "asset",
+      "size": 71247,
+      "sha256": "c6782a78dbff10a71155088b43f46910da91c6ecf2c21b1c56d89b9cc7e0dc7b",
+      "media_type": "application/pdf",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Mediagxboard.jpg",
+      "role": "asset",
+      "size": 979154,
+      "sha256": "be528496e293a623ea51cb43b3b7cefdab7b204daed2906c51599ee52712dc6d",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Mgx7520-baby-at-motherboard-layout.png",
+      "role": "asset",
+      "size": 3778,
+      "sha256": "b4e6e934a10baa31edf7caa4d796d65d0c490f06df6e9ca3b817ed20ace2d9eb",
+      "media_type": "image/png",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Mgx7520-motherboard.jpg",
+      "role": "asset",
+      "size": 187641,
+      "sha256": "4d27f2a8ba71deeb8ab9a89d0d27731da031841ff337643d75599e5ef948d11d",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pin2000-network-card.jpg",
+      "role": "asset",
+      "size": 1671442,
+      "sha256": "04d85d8f03c8f88b88431a191598625eeaecf7451146b5b16e6f01ba9049970c",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pin2KCaps.jpg",
+      "role": "asset",
+      "size": 2182912,
+      "sha256": "efc0d0515af56456025ebdda38fe942b083b8c56466a98f3462ecd79586719bd",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pin2KCapsCloseUp.jpg",
+      "role": "asset",
+      "size": 1047100,
+      "sha256": "0326d23c3a4cc7a798ac46146b4a1c016e81dc3f1fb939c72e8a89d8ad17f3c9",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pin2KMotherboard.jpg",
+      "role": "asset",
+      "size": 4129114,
+      "sha256": "cd5de1404bce8a8e3d7fe8433dcb46d808e135be10146fa29d18afbd4f5a13b7",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pin2KOriginalCap.jpg",
+      "role": "asset",
+      "size": 757264,
+      "sha256": "0e3f42a09f263330acf42b6b1983600c485e143e5c37cf6686e8beb3d6eb9be3",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pin2KPCB.jpg",
+      "role": "asset",
+      "size": 2532213,
+      "sha256": "abd63577cd809b43b25e02c9bb474e01e05230846d8d902ea0f2080d3964598d",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pin2K_Foam.png",
+      "role": "asset",
+      "size": 864648,
+      "sha256": "92d24545317f86a99691bb1473d9991404195393fbf78486041240e669393abb",
+      "media_type": "image/png",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pin2K_Lamp_Test.png",
+      "role": "asset",
+      "size": 929731,
+      "sha256": "a3de0e385cdf3322db465bdfcbbbe633bbb2544fda251aa48ecf06bbbbb75b57",
+      "media_type": "image/png",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pin2K_PC.png",
+      "role": "asset",
+      "size": 912234,
+      "sha256": "dce751a5728f4356bbdc4f90a4287bc5f5200acab40d4e3fc0f9103ede2e87d1",
+      "media_type": "image/png",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pin2K_PC_Inside.png",
+      "role": "asset",
+      "size": 988488,
+      "sha256": "d20666f3fa3cec7e6ec5426a718b4a5be17fe327e6e7c94f44b31b6ceb948fcf",
+      "media_type": "image/png",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pin2K_PDB.png",
+      "role": "asset",
+      "size": 1063221,
+      "sha256": "5b5f98ca4af9d701fc7022cb1bcf838644363133ca58b8308d446b727493734d",
+      "media_type": "image/png",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pin2K_PRISM_Card.jpg",
+      "role": "asset",
+      "size": 344005,
+      "sha256": "39d0e07da9ab6fa5bf9d210a19370860e887fda12ed8cef0dd841e3e535fcd78",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pin2K_ROM_Card.jpg",
+      "role": "asset",
+      "size": 341938,
+      "sha256": "46687f2c5bc6f5a7e35003a7f4f9daa98714b3575fa663c28c45123d542a23a2",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pin2K_Test_Report.png",
+      "role": "asset",
+      "size": 898235,
+      "sha256": "70e2bc9972e2164df782ff459803fb23f9060dbc768097b8b0eb35fa461c01fc",
+      "media_type": "image/png",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pin2k_Audio_Amp.png",
+      "role": "asset",
+      "size": 1037861,
+      "sha256": "267948989ac99bba90d301980a8e6089ed8cb9ce67431800ef6d0bc555b3f076",
+      "media_type": "image/png",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pinball-2000-safety-manual-cover.jpg",
+      "role": "asset",
+      "size": 63858,
+      "sha256": "80832c59a63e31001a5900aec2d53c5f448720d181d6eb51d1ce4f8ad527361e",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pinball-2000-schematic-manual-cover.jpg",
+      "role": "asset",
+      "size": 99981,
+      "sha256": "dbb5df72ec6a04f051256d538e61de5c0c289978d3c03cb2e704e8fbf0f719db",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Pinball_2000_Safety_Manual_16-10878_Feburary_1999.pdf",
+      "role": "asset",
+      "size": 2767419,
+      "sha256": "05d67d7ac44c72fea7cb2cc020df5fa1adde1949dcb1204858b0f5ff7b67078d",
+      "media_type": "application/pdf",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Placeholder.jpg",
+      "role": "asset",
+      "size": 42400,
+      "sha256": "926281a9ec1036aeb8f71ee7a85a803f118d1ff0b9e66ae7158048161c94541b",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/RFM-mod-board-opt.jpg",
+      "role": "asset",
+      "size": 668269,
+      "sha256": "74f1c20dba96e70f5b12a32eedfafc9d97ffbedb7d43e02839d68821e60c382a",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/RFM-mod-connect-opt.jpg",
+      "role": "asset",
+      "size": 1122404,
+      "sha256": "cb3c23539c6276d248b0b6b97690a6e48d327bae37af067fa821db0515ba2097",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/RFM-mod-parts.JPG",
+      "role": "asset",
+      "size": 516013,
+      "sha256": "6f23bfd0994a351774e492039531a577565eab5372fab02147abd6ebef894e2a",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/RFM_AMP.jpg",
+      "role": "asset",
+      "size": 929666,
+      "sha256": "a2e636fe887138002ecd6ca3ae6521023bd4b3f5c095765c71736d226f620901",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/RFM_Diag.JPG",
+      "role": "asset",
+      "size": 5681890,
+      "sha256": "2ff40f8ee2e5efae94f8d837ad132fbea181d3a2c88457ced2e6452b992d8309",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/RFM_Menu.JPG",
+      "role": "asset",
+      "size": 6155070,
+      "sha256": "29b178abbef54e59bb5212b80e7328ffb9577c3155d7be210bf6b7045d45ff3c",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/RFM_Service_buttons.JPG",
+      "role": "asset",
+      "size": 5183502,
+      "sha256": "9b87272c403af1f3d226178b72cdd1fb05dbcbc03d7e16431ec564be37fb7de3",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/RFM_Service_buttons_2.JPG",
+      "role": "asset",
+      "size": 4568282,
+      "sha256": "faa0c3cf746fd7f938e21264c7d88ba140056109b97c581934656185b8b912b5",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/RFM_Service_buttons_3.JPG",
+      "role": "asset",
+      "size": 4956742,
+      "sha256": "d20bdce42f65d06ff24e7c61cccf61c34b1679c0a350fd87d18ec54224dfa6e2",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/RJ45-4-port-eth.JPG",
+      "role": "asset",
+      "size": 36911,
+      "sha256": "1d91b1973800eea568d74dbcadb36da61a20d8e4b1ba35911019c64a63df6cad",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/ReedSwitch1.jpg",
+      "role": "asset",
+      "size": 77358,
+      "sha256": "2e249fe338b359eace7a00e7722c55b27b79aaf286c63f2ddb67f269303d1a01",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/ReedSwitch2.jpg",
+      "role": "asset",
+      "size": 52190,
+      "sha256": "38a6b4858c00e6266f5f2af2af46d3f648a3755182903c6052890afaeb437d23",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/ReedSwitch3.jpg",
+      "role": "asset",
+      "size": 36960,
+      "sha256": "9dc2404f4516ed1055d93f569e27d753b968deed440b33f26c0abdfe5b6537d4",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/ReedSwitch5.jpg",
+      "role": "asset",
+      "size": 28145,
+      "sha256": "41c3eaf656f63528f13343652e506151f3a78d8c55ca8423d96ac79821c024e0",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/ReedSwitch6.jpg",
+      "role": "asset",
+      "size": 30526,
+      "sha256": "f9fb2f75f2ad9e479ec34113b8502f866833dbd40674eef30c572d018bdbf0dc",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/ReedSwitch_Orientation.gif",
+      "role": "asset",
+      "size": 70898,
+      "sha256": "7c4123044e5c6d670c5da654ca5f3fc8954853844a21b6609a03aeba4e826766",
+      "media_type": "image/gif",
+      "source_url": ""
+    },
+    {
+      "path": "assets/ST-MGXM_motherboard_manual.pdf",
+      "role": "asset",
+      "size": 8689978,
+      "sha256": "22bb23e1da8f38ceff9bb938661ec9940208cae70d4c885272177ffceb354f4f",
+      "media_type": "application/pdf",
+      "source_url": ""
+    },
+    {
+      "path": "assets/Vidampconn.jpg",
+      "role": "asset",
+      "size": 24019,
+      "sha256": "7c7889ddf50d172121d6b9f486637776a3ec91daab9a5b7930b11e4373be8cbf",
+      "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "raw/page.html",
+      "role": "raw",
+      "size": 117931,
+      "sha256": "c2542a8ba2ce5e4030665fed57f8d40de8f33fe429f1d241296ba8a71103136d",
+      "media_type": "text/html",
+      "source_url": ""
+    },
+    {
+      "path": "raw/source.mediawiki",
+      "role": "raw",
+      "size": 56481,
+      "sha256": "0b9fe191d1774a78ba2fed9562d49fa71e3c4e4789391a41b2982463a0f99590",
+      "media_type": "application/octet-stream",
+      "source_url": ""
+    }
+  ]
+}

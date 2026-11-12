@@ -1,0 +1,110 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<tdc:doctype/>
+<html lang="en">
+<head>
+<title>myPinballs | Revenge From Mars Software Update Help</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<link href="/styles.css" rel="stylesheet" type="text/css">
+</head>
+
+<body bgcolor="#FFFFFF" text="#000000" leftmargin="10" topmargin="10" marginwidth="10" marginheight="10">
+<div align="center">
+
+  
+ 
+
+        <table width="100%" border="0" cellspacing="0" cellpadding="2">
+          <tr>
+            <td class="breadcrumb">You are currently in: <b><a href="/">myPinballs Home</a></b> | <b>Revenge From Mars Software Update Help</b></td>
+          </tr>
+          <tr>
+            <td height="5"></td>
+          </tr>
+          <tr>
+            <td class="standard">
+              <table border="0" cellpadding="0" cellspacing="0" class='box'>
+               <tr><td id='pagebody'>This is the update help page for our Revenge From Mars Software update. This update is an unofficial fan made update and is given for free to the community. Install at your own risk. No warranty is given or implied. We hope you like the changes.
+              <p>If you would like to support future software updates and mypinballs electronics in general, please consider donating :|) Thanks
+              
+              <form action="https://www.paypal.com/cgi-bin/webscr" method="post" target="_top">
+<input type="hidden" name="cmd" value="_s-xclick" />
+<input type="hidden" name="hosted_button_id" value="73PMLK2HKMCWE" />
+<input type="image" src="/pics/donate-button.png" border="0" name="submit" title="PayPal - The safer, easier way to pay online!" alt="Donate with PayPal button" />
+<img alt="" border="0" src="https://www.paypal.com/en_GB/i/scr/pixel.gif" width="1" height="1" />
+</form>
+
+  </td><tr>
+               <tr>
+            <td height="50"></td>
+          </tr>
+          
+           <tr><td id='pagehead'><li><span style='color:#FFFFFF'>Update Help</span></td><tr>               
+  <tr><td id='pagebody'><br>
+<b>Notes for updating pinbox systems</b><br>
+
+	<p>To get to the terminal and or desktop of the system from a running game (and not wanting to use ssh,sftp) do this first:
+	<ol>
+	<li>Press F1
+	<li>Log in from the command prompt (if its a system i setup contact me via email for the details). Use your own details if not
+	<li>for gui desktop type sudo lxdm , or use the terminal
+    </ol>
+    <p>Otherwise start here:
+    <ol>
+    <li>On a computer of your choice extract the files within the update exe (This is a basic zip file)
+	 There are 6 files:
+     <ol>
+	 <li>pin2000_50070_0200_bootdata.rom
+	 <li>pin2000_50070_0200_game.rom
+	 <li>pin2000_50070_0200_im_flsh0.rom
+	 <li>pin2000_50070_0200_pubboot.rom
+	 <li>pin2000_50070_0200_sf.rom
+	 <li>pin2000_50070_0200_symbols.rom
+     </ol>
+	<li>	Copy the files to a spare usb drive
+	<li>	On your rfm pinbox computer, Navigate to folder <b>/root/pinbox/update/rfm_15/</b> (either by logging into lxdm, or from command line, or using ssh/sftp etc) 
+	<li>	Delete or move ALL the existing files within this folder
+	<li>	Copy the new files to this folder. Only the files, no additional folders.
+	<li>	Make sure the update.bin file from the original installation of pinbox is deleted/moved. This will be recreated from the new update files
+	<li>	Move/delete rfm_15.nvram* files from <b>/root/pinbox/roms/savedata/</b> These files store the settings and high score data but may stop the update if not deleted first.
+	<li>	Reboot the rfm computer
+	<li>	Enjoy v2.0 game code on pinbox
+	</ol>
+</td></tr>
+           
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      
+
+
+<div id='resistor' style='text-align:left'>
+<a href="/"><img src="/pics/resistor-icon.png" alt="myPinballs Resistor Icon" border='0' style='padding-left:2;padding-bottom:5;padding-top:10'></a>
+</div>
+<div id="footer" style="width:100%">
+<P>myPinballs v1.0 | Contact Us at <a href="mailto:info@mypinballs.co.uk">info@mypinballs.co.uk</a></p>
+</div>
+
+
+</div>
+</body>
+</html>
+ 
