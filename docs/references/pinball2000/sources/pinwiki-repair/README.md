@@ -573,7 +573,7 @@ The middle connector is the **Female to Female 12-way** going to the underside o
 The connections between the headers are simple and wired in in parallel 1:1 (meaning pin 1 to pin 1, pin 2 to pin 2, etc...). Pin 5 is the "Key" and doesn't need to be connected, so only 11 wires are used.
 On the LH side the 4 black squares are the RJ45 sockets and connections. On my board, two face up and two down - but the layout could be different if it makes the wiring easier.
 
-The RJ45 sockets are all wired to each other in parallel 1:1. Then wired to the header pins and and so connected through to the LEDs to as per [ the instructions here](https://pinwiki.com/wiki/index.php/‎media:RFM-RH-Direct-Saucer-Mod.pdf) (**NOTE:** IMHO the linked document is not fully correct. The orientation of the LEDs in the Levi schematics is wrong. They all have to be inverted in orientation to work. The table on the bottom right of the document is correct).
+The RJ45 sockets are all wired to each other in parallel 1:1. Then wired to the header pins and and so connected through to the LEDs to as per [the instructions here](assets/RFM-RH-Direct-Saucer-Mod.pdf) (**NOTE:** IMHO the linked document is not fully correct. The orientation of the LEDs in the Levi schematics is wrong. They all have to be inverted in orientation to work. The table on the bottom right of the document is correct).
 
 Lamp 9 (Row 3B) at pin 10 on the underside of the lamp board is not used for the mini-saucer LEDs, as there are only 8 LEDs on each saucer. Pins 3,4,10,11,12 must all "pass through" the headers/connectors so the playfield lights all continue to work but they don't connect to the RJ-45 sockets.
 

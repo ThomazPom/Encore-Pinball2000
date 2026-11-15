@@ -17,6 +17,7 @@ small sites that carry them disappear.
 | understand a subject without opening every capture | [Topic guides](#topic-guides) |
 | understand what is accepted and why | [Preservation method](METHODOLOGY.md) |
 | see accepted, queued and rejected sources | [Source catalog](CATALOG.md) |
+| see every retained PDF and the audited omissions | [PDF coverage](PDF-COVERAGE.md) |
 | inspect the original evidence | [Preserved source bundles](sources/README.md) |
 
 ## Topic guides
@@ -42,9 +43,9 @@ pinball2000/
 
 The topic layer reconciles sources but never silently turns a community
 recollection into a fact. The source layer retains the evidence needed to
-revisit that judgement. As of the 2026-11-11 pass, the archive contains 39
-validated bundles selected from the local collections and thematic English,
-German and French web searches.
+revisit that judgement. As of the 2026-11-15 pass, the archive contains 41
+validated bundles and 23 preserved PDF files selected from the local
+collections and thematic English, German and French web searches.
 
 > [!NOTE]
 > Encore does not vendor NuCore documentation, binaries or packages. Historical

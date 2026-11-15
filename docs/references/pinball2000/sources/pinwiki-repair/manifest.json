@@ -6,7 +6,7 @@
     "source_url": "https://pinwiki.com/wiki/index.php/Pinball_2000_Repair",
     "captured_at": "2026-03-28",
     "capture_mode": "local-import",
-    "generator": "reference-bundle.py/1.2",
+    "generator": "reference-bundle.py/1.4",
     "render_base_url": "",
     "missing_assets": []
   },
@@ -14,8 +14,8 @@
     {
       "path": "README.md",
       "role": "readable",
-      "size": 53377,
-      "sha256": "78ea1a6b21062fddd380776dfdcc2a3ca0c832dedb60aea02114b062b6da67b6",
+      "size": 53339,
+      "sha256": "74d8cb3a691ebe57ed3453756e5de9a6baf4fcb0c5a004b29772650741a2cd2e",
       "media_type": "text/markdown",
       "source_url": ""
     },
@@ -297,6 +297,14 @@
       "size": 42400,
       "sha256": "926281a9ec1036aeb8f71ee7a85a803f118d1ff0b9e66ae7158048161c94541b",
       "media_type": "image/jpeg",
+      "source_url": ""
+    },
+    {
+      "path": "assets/RFM-RH-Direct-Saucer-Mod.pdf",
+      "role": "asset",
+      "size": 404659,
+      "sha256": "bd8d49a9a5e342b3da72ed23067b9c88ef4fb332f4fbfaf3f072d51a22ea2e50",
+      "media_type": "application/pdf",
       "source_url": ""
     },
     {

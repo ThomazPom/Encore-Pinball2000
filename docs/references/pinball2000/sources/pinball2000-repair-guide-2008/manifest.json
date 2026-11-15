@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Repairing Williams/Bally Pinball 2000 — 2008 revision",
+    "kind": "artifact",
+    "source_url": "http://pinballs.ashstadt.org/pinrepair/pin2000/index.htm",
+    "captured_at": "2026-11-15",
+    "capture_mode": "local-artifact-import",
+    "source_note": "local FlipperFiles collector corpus; 2008 English revision, exported to PDF in 2018; the historical source URL is printed in the artifact",
+    "generator": "reference-bundle.py/1.4",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 835,
+      "sha256": "e63203f185cdb4e25289b74cf2b26ef944cc940341b0ae337219a915aa79fdfa",
+      "media_type": "text/markdown",
+      "source_url": "http://pinballs.ashstadt.org/pinrepair/pin2000/index.htm"
+    },
+    {
+      "path": "raw/PINBALL_ EN Repairing Williams, Bally Pinball 2000, Revenge from Mars.pdf",
+      "role": "raw",
+      "size": 2973151,
+      "sha256": "089796e70196ff75deb5fe6de35c29c404c68bcac85afd10ed16e0b1cc8f4f67",
+      "media_type": "application/pdf",
+      "source_url": "http://pinballs.ashstadt.org/pinrepair/pin2000/index.htm"
+    }
+  ]
+}

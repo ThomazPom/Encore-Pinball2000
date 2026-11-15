@@ -89,6 +89,7 @@ class ReferenceBundleTests(unittest.TestCase):
             (assets / "Pin2KCaps.jpg").write_bytes(b"caps")
             (assets / "Mediagxboard.jpg").write_bytes(b"board")
             (assets / "Pin2K_Lamp_Test.png").write_bytes(b"lamp")
+            (assets / "RFM-RH-Direct-Saucer-Mod.pdf").write_bytes(b"pdf")
             source = root / "source.wiki"
             source.write_text(
                 "\r\n= Overview =\r\n"
@@ -97,6 +98,7 @@ class ReferenceBundleTests(unittest.TestCase):
                 "[[File:Pin2KCaps.jpg_\u200e|thumb|Capacitors]]\n"
                 "[[File:mediagxboard.jpg|Motherboard]]\n"
                 "[[File:Pin2K Lamp Test.png|Lamp test]]\n"
+                "[[\u200emedia:RFM-RH-Direct-Saucer-Mod.pdf|Instructions]]\n"
                 "[https://example.test/old| Historical link]\n",
                 encoding="utf-8",
             )
@@ -114,6 +116,10 @@ class ReferenceBundleTests(unittest.TestCase):
             self.assertIn("![Capacitors](assets/Pin2KCaps.jpg)", readme)
             self.assertIn("![Motherboard](assets/Mediagxboard.jpg)", readme)
             self.assertIn("![Lamp test](assets/Pin2K_Lamp_Test.png)", readme)
+            self.assertIn(
+                "[Instructions](assets/RFM-RH-Direct-Saucer-Mod.pdf)",
+                readme,
+            )
             self.assertIn("[Historical link](https://example.test/old)", readme)
             BUNDLE.validate_bundle(output)
 

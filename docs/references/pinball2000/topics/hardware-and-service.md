@@ -33,8 +33,16 @@ inside [PinWiki repair](../sources/pinwiki-repair/README.md).
 
 Start with the [factory FAQ](../sources/williams-faq/README.md), then use
 [PinWiki](../sources/pinwiki-repair/README.md), the
+[2008 repair guide](../sources/pinball2000-repair-guide-2008/README.md), the
 [general technical page](../sources/pinball2000de-techinfo/README.md) and the
 [PRISM deep dive](../sources/pinball2000de-prism/README.md).
+
+For CRT work, the historical monitor page retains the original Ducksan and
+Wells-Gardner sheets. The separate
+[K7300 repair guide](../sources/wells-gardner-k7300-repair-guide/README.md)
+adds `19K7302` chassis identifiers, common component failures, capacitor values
+and remote-control-board settings. The complete document inventory and the
+duplicate/rejection decisions are in [PDF coverage](../PDF-COVERAGE.md).
 
 ## Service claims that need care
 

@@ -9,6 +9,9 @@ its provenance and byte-level checksums.
 > answer. Come here when you need the original wording, drawings, photographs
 > or provenance behind it.
 
+For a file-by-file view of manuals and embedded documents, use the
+[PDF coverage matrix](../PDF-COVERAGE.md).
+
 ## Factory and contemporary Williams material
 
 | Source | Class | What it contributes |
@@ -47,6 +50,8 @@ because no similarly clean, independent static source was found.
 | Source | Class | What it contributes |
 |---|---:|---|
 | [PinWiki repair](pinwiki-repair/README.md) | C | the broadest repair synthesis, board photographs, manuals, compatible motherboards and diagnostics |
+| [Pinball 2000 repair guide, 2008 revision](pinball2000-repair-guide-2008/README.md) | C | 81-page PC, PRISM, driver, monitor, cabinet, update, XINA and networking repair synthesis |
+| [Wells-Gardner K7300 repair guide](wells-gardner-k7300-repair-guide/README.md) | C | failures, parts, capacitor list and controls for the P2K `19K7302` monitor family |
 | [General technical information](pinball2000de-techinfo/README.md) | C/B | platform overview plus quoted developer details |
 | [PRISM information](pinball2000de-prism/README.md) | C/B | board separation, ROM/flash organization and first-hand failure discussion |
 | [Troubleshooting](pinball2000de-troubleshooting/README.md) | C | boot, board, video and field-repair observations |

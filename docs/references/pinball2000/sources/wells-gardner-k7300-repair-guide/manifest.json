@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "bundle": {
+    "title": "Wells-Gardner K7300 series monitor repair guide",
+    "kind": "artifact",
+    "source_url": "https://www.arcade-museum.com/manuals-monitors/Wells-Gardner_K7300_series_repair.pdf",
+    "captured_at": "2026-11-15",
+    "capture_mode": "local-artifact-import",
+    "source_note": "live specialist repair-guide download; compiled by Ken Layton on 2005-02-01",
+    "generator": "reference-bundle.py/1.4",
+    "missing_assets": []
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "role": "readable",
+      "size": 649,
+      "sha256": "e7b9eae586d189722561ffe74f63185d9cc5f3a78fa7ce0a776c31ac0c7e88a5",
+      "media_type": "text/markdown",
+      "source_url": "https://www.arcade-museum.com/manuals-monitors/Wells-Gardner_K7300_series_repair.pdf"
+    },
+    {
+      "path": "raw/wells-gardner-k7300-series-repair.pdf",
+      "role": "raw",
+      "size": 93797,
+      "sha256": "cefbe8e4beeffdf12d4829239b4228013ad5fd65f438513fbe500857a9177ed0",
+      "media_type": "application/pdf",
+      "source_url": "https://www.arcade-museum.com/manuals-monitors/Wells-Gardner_K7300_series_repair.pdf"
+    }
+  ]
+}

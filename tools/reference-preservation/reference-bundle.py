@@ -24,7 +24,7 @@ from urllib.parse import quote, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 
-VERSION = "1.3"
+VERSION = "1.4"
 KINDS = ("mediawiki", "dokuwiki", "html")
 VOID_TAGS = {
     "area", "base", "br", "col", "embed", "hr", "img", "input",
@@ -434,6 +434,13 @@ def html_to_markdown(data: str, base_url: str,
 
 
 def mediawiki_asset_refs(source: str) -> list[str]:
+    # Some historical MediaWiki source contains invisible directional marks
+    # between ``[[`` and ``Media:``.  MediaWiki ignores them, so our asset
+    # inventory must do the same or a referenced document can disappear while
+    # the bundle incorrectly reports no missing assets.
+    source = "".join(
+        ch for ch in unicodedata.normalize("NFC", source)
+        if unicodedata.category(ch) != "Cf")
     refs = [m.group(1).strip() for m in re.finditer(
         r"\[\[(?:File|Image|Media):\s*([^|\]]+)", source, re.I)]
     for gallery in re.finditer(r"<gallery[^>]*>(.*?)</gallery>", source,
@@ -498,6 +505,10 @@ def convert_mediawiki(source: str, source_url: str,
         return "\n".join(lines)
 
     text = source.replace("\r\n", "\n").replace("\r", "\n")
+    # Formatting controls affect visual direction, not MediaWiki syntax.  Old
+    # edited pages can contain one inside a link token (for example
+    # ``[[\u200emedia:manual.pdf]]``), which MediaWiki still resolves.
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
     text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
     text = re.sub(r"<gallery[^>]*>(.*?)</gallery>", gallery, text, flags=re.I | re.S)
     text = re.sub(r"\[\[(File|Image|Media):\s*([^|\]]+)(?:\|([^\]]+))?\]\]",

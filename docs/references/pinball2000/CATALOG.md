@@ -10,7 +10,9 @@ this page records why candidates were accepted, indexed or rejected.
 |---|---:|---|---|
 | Williams platform overview, FAQ, updater and revision histories | A | contemporary product, service, flash and release claims | captured and validated |
 | RFM February/April and SWE1 operations manuals | A | operation, adjustments, diagnostics, wiring and edition differences | artifacts captured and validated |
-| PinWiki Pinball 2000 Repair | C with A artifacts | broad repair synthesis, board photos, schematics, safety and motherboard manuals | historical capture rebuilt; 53 referenced assets validated |
+| PinWiki Pinball 2000 Repair | C with A artifacts | broad repair synthesis, board photos, schematics, safety and motherboard manuals | historical capture rebuilt; 54 referenced assets validated after recovering one Unicode-hidden PDF |
+| Pinball 2000 repair guide, 2008 revision | C | broad PC, PRISM, driver-board, monitor, cabinet, update, XINA and network repair coverage | 81-page artifact captured and validated; supersedes the surviving 61-page 2003 PDF |
+| Wells-Gardner K7300 repair guide | C | model identification, common failures, parts and controls for the P2K `19K7302` family | specialist two-page artifact captured and validated |
 | Pinball2000.de selected technical/game pages | C with quoted B material | PRISM, motherboard, driver board, monitor, swap, troubleshooting, prototypes and game history | 18 substantive pages captured; wrappers and owner lists excluded |
 | GerWiki XINA/P2K | C/D | command inventory, networking, PUB and historical community notes | historical capture rebuilt and validated |
 | myPinballs tournament/update pages | C | network and game configuration, barcode reader, RAM, ports and community update practice | four pages captured and validated |
@@ -27,6 +29,11 @@ this page records why candidates were accepted, indexed or rejected.
 | downloaded April 1999 RFM operations manual | official revised manual | preserve | distinct `16-50070.2-101` edition, 132 pages |
 | SWE1 operations manual | official operation/service evidence | preserve | byte-identical copies collapsed to one artifact |
 | platform schematic, safety and motherboard manuals | exact hardware data | preserve through PinWiki | directly referenced and necessary for offline repair context |
+| 2008 English Pinball 2000 repair guide | later community repair synthesis | preserve | 81 pages; materially broader than the live 61-page 2003 mirror |
+| French translation of the 2008 repair guide | language-only derivative | duplicate | useful translation but no independent technical evidence |
+| Wells-Gardner K7300 series repair guide | monitor repair detail | preserve | explicitly covers `19K7302`; adds failures, component references, cap list and controls |
+| old 18-page PinWiki PDF export | older repair snapshot | duplicate | current self-contained PinWiki bundle is broader and retains original assets |
+| third-party updater instruction/revision PDFs | updater UI and application history | reject here | no unique original-hardware or serial-protocol knowledge |
 | branded RFM PDF derivative | none beyond retained scan | duplicate | decorative cover only |
 | collector archive owner lists | none needed | reject | personal data and no technical value |
 | saved commercial listings | weak identification clues | reject | commercial residue superseded by manuals and board photographs |
