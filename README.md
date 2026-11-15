@@ -85,6 +85,7 @@ Useful maintainer entry points are:
 - [Testing and validation](docs/26-testing-validation-matrix.md)
 - [Development guidelines](docs/05-development-guidelines.md)
 - [Release process](docs/47-release-process.md)
+- [Pinball 2000 knowledge archive](docs/references/pinball2000/README.md)
 - [`qemu/` source map](qemu/README.md)
 
 ## Releases and assets

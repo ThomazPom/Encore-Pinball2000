@@ -59,9 +59,26 @@ guide](../qemu/README.md) and [guest-extension guide](../guest-extensions/README
 
 Retained measurement tooling lives under `measurements/`; it is narrower than
 the support contract. The [DCS comparison harness](measurements/dcs-engines/README.md)
-compares engine timing under a controlled workload. Historical reference code
-and archived pages under [`references/`](references/README.md) are evidence,
-not current implementation authority.
+compares engine timing under a controlled workload.
+
+## Historical Pinball 2000 knowledge
+
+The [Pinball 2000 knowledge archive](references/pinball2000/README.md) preserves
+factory manuals, vanished or fragile web pages, repair material and first-hand
+development accounts in readable, checksummed bundles.
+
+| Subject | Shortcut |
+|---|---|
+| XINU/XINA, graphics, threading and development tools | [Architecture and development](references/pinball2000/topics/architecture-and-development.md) |
+| PC, PRISM, power driver, display and repair | [Hardware and service](references/pinball2000/topics/hardware-and-service.md) |
+| serial/PUB updates, flash and version evidence | [Software updates](references/pinball2000/topics/software-updates.md) |
+| Ethernet, XINA services, barcode reader and tournament play | [Networking and tournament](references/pinball2000/topics/network-and-tournament.md) |
+| Holopin, production games and unfinished projects | [Prototypes and history](references/pinball2000/topics/prototypes-and-history.md) |
+| original wording, scans, images and provenance | [Preserved source bundles](references/pinball2000/sources/README.md) |
+
+These historical sources are evidence, not current implementation authority.
+The [catalog](references/pinball2000/CATALOG.md) records what was preserved,
+indexed, rejected or left explicitly uncertain.
 
 ## Game code and preservation
 
