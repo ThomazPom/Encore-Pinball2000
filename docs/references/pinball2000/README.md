@@ -17,6 +17,7 @@ small sites that carry them disappear.
 | understand a subject without opening every capture | [Topic guides](#topic-guides) |
 | understand what is accepted and why | [Preservation method](METHODOLOGY.md) |
 | see accepted, queued and rejected sources | [Source catalog](CATALOG.md) |
+| verify that preserved knowledge is not buried | [Knowledge coverage ledger](KNOWLEDGE-COVERAGE.md) |
 | see every retained PDF and the audited omissions | [PDF coverage](PDF-COVERAGE.md) |
 | inspect the original evidence | [Preserved source bundles](sources/README.md) |
 
@@ -26,6 +27,7 @@ small sites that carry them disappear.
 |---|---|
 | XINU/XINA, graphics, threading and development tools | [Architecture and development](topics/architecture-and-development.md) |
 | PC, PRISM, power driver, display, conversion and repair | [Hardware and service](topics/hardware-and-service.md) |
+| operate a game, enter diagnostics or trace a symptom | [Operation and diagnostics](topics/operation-and-diagnostics.md) |
 | serial/PUB paths, flash and version evidence | [Software updates](topics/software-updates.md) |
 | Ethernet, XINA services, barcode reader and tournament server | [Networking and tournament operation](topics/network-and-tournament.md) |
 | Holopin, shipped games and unfinished projects | [Prototypes and history](topics/prototypes-and-history.md) |
@@ -37,15 +39,17 @@ pinball2000/
 ├── README.md
 ├── METHODOLOGY.md
 ├── CATALOG.md
+├── KNOWLEDGE-COVERAGE.md
 ├── topics/       concise fact-checked knowledge by subject
 └── sources/      readable source bundles plus their raw evidence
 ```
 
 The topic layer reconciles sources but never silently turns a community
-recollection into a fact. The source layer retains the evidence needed to
-revisit that judgement. As of the 2026-11-15 pass, the archive contains 41
-validated bundles and 23 preserved PDF files selected from the local
-collections and thematic English, German and French web searches.
+recollection into a fact. The coverage ledger makes the route from every
+accepted bundle into that layer auditable, while the source layer retains the
+evidence needed to revisit each judgement. As of the 2026-11-15 pass, the
+archive contains 41 validated bundles and 23 preserved PDF files selected from
+the local collections and thematic English, German and French web searches.
 
 > [!NOTE]
 > Encore does not vendor NuCore documentation, binaries or packages. Historical

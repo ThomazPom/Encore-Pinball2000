@@ -79,7 +79,8 @@ Research is thematic rather than domain-limited:
 6. generate and validate the bundle;
 7. inspect the Markdown for hierarchy, tables, links and navigation;
 8. extract durable knowledge into a topic page only after source review;
-9. record conflicts and unknowns instead of smoothing them over.
+9. add the bundle to the knowledge-coverage ledger with an explicit route;
+10. record conflicts and unknowns instead of smoothing them over.
 
 Periodic refreshes compare new captures with the retained manifest. A changed
 page is a new piece of evidence, not a reason to silently replace history.
@@ -95,5 +96,6 @@ page is a new piece of evidence, not a reason to silently replace history.
 - entire forum threads when one qualified post or attached artifact contains
   the durable knowledge.
 
-[Knowledge archive](README.md) · [Source catalog](CATALOG.md) ·
+[Knowledge archive](README.md) · [Knowledge coverage](KNOWLEDGE-COVERAGE.md) ·
+[Source catalog](CATALOG.md) ·
 [Preservation tooling](../../../tools/reference-preservation/README.md)

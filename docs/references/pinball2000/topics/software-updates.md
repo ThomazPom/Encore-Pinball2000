@@ -36,6 +36,26 @@ The factory [RFM](../sources/williams-rfm-revision-history/README.md) and
 released change claims. The [community update log](../sources/mypinballs-rfm-code-updates/README.md)
 is a separate evidence class.
 
+## Overlay, fallback and game swaps
+
+The best preserved architectural testimony resolves an apparent contradiction:
+an update can contain the complete current executable while still depending on
+the masked ROMs. Flash overlays the updateable program region; it does not
+become a second copy of every large art/sound bank. The masked program image
+also provides a recovery fallback when flash cannot be accepted.
+
+This division has a concrete service consequence. Swapping the socketed RFM
+and SWE1 ROM set does not automatically replace the flash already on the main
+PRISM board. The [field swap procedure](../sources/pinball2000de-game-swap/README.md)
+records permanent reboot, sound failure and checksum symptoms when old flash
+and new masked ROMs are mixed. Its safe sequence is to disable update code
+before the ROM change, then apply matching game-and-sound software and reset
+cross-game settings afterwards.
+
+That evidence also explains why a reported masked-ROM checksum failure is not
+proof that the newly transferred update bytes were corrupt: the post-flash
+compatibility check is testing another integrity domain.
+
 > [!NOTE]
 > Encore's supported CLI, serial exposure, captured-flash pinning and fresh-run
 > semantics belong to the main Encore documentation. These preserved pages
@@ -50,6 +70,17 @@ simple progress indication. That path explains why development and field-update
 material sometimes refers to an “update board” even though serial update is the
 normal owner workflow.
 
+A preserved field report says a PUB that fails to take control may need the
+motherboard BIOS to reserve ISA memory block `C800`. This is a qualified lead,
+not a generic BIOS prescription. The exact PUB, motherboard and existing
+resource map must be established first.
+
+For period-PC updater problems—file discovery, a serial port held by another
+driver, cable selection and `FUPDATE` diagnostics—use the preserved
+[RFM update-help page](../sources/mypinballs-rfm-update-help/README.md). Those
+instructions explain the old tools; they are not Encore CLI instructions.
+
 [Architecture](architecture-and-development.md) ·
 [Hardware](hardware-and-service.md) ·
+[Operation and diagnostics](operation-and-diagnostics.md) ·
 [All preserved sources](../sources/README.md)

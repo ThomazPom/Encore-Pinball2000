@@ -19,6 +19,23 @@ and networking reference. The [game setup](../sources/mypinballs-tournament-game
 and [technical setup](../sources/mypinballs-tournament-technical-setup/README.md)
 record a later Internet deployment.
 
+## Hardware identity and configuration boundaries
+
+The sources agree most strongly at the **SMC EtherEZ 8416 family** level. The
+GerWiki page often names `8416T`, while PinWiki also lists `8416BT` and
+`8416BTA`. That is a real difference in source specificity, so this archive
+does not collapse it into a claim that every 8416 variant is interchangeable.
+
+These are ISA resources, not self-describing modern network devices. Preserved
+field reports include fixed IRQ configuration and a case where motherboard
+onboard audio conflicted with the EtherEZ IRQ. Disabling onboard audio is a
+diagnostic response to an observed conflict, not a mandatory setup step.
+
+Once configured, networking exposes more than tournament traffic: the XINA
+environment includes remote shell/telnet and a small HTTP service. Their
+presence explains historical references to ports 23 and 8080, but does not
+mean either service should be exposed to an untrusted network.
+
 ## What the 2008 system demonstrated
 
 The contemporary [Pinball News report](../sources/pinball-news-rfm-online/README.md)
@@ -50,5 +67,6 @@ on the original LAN.
   version-specific.
 
 [Architecture](architecture-and-development.md) ·
+[Operation and diagnostics](operation-and-diagnostics.md) ·
 [Software updates](software-updates.md) ·
 [All preserved sources](../sources/README.md)

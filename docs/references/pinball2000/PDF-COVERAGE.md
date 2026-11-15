@@ -19,7 +19,7 @@ levels down in a captured web page must not disappear from the human index.
 | Revenge From Mars operations manual, February 1999, searchable OCR | 120 | A derivative | [PDF](sources/rfm-operations-manual-february-1999/raw/Bally_1999_Revenge_From_Mars_Operations_Manual_February_1999_OCR_searchable.pdf) | readable derivative kept beside the raw scan, not independent evidence |
 | Revenge From Mars operations manual, April 1999 (`16-50070.2-101`) | 132 | A | [PDF](sources/rfm-operations-manual-april-1999/raw/1072932404-revenge-from-mars-pinbal-2000.pdf) | distinct later manual edition |
 | Star Wars Episode I operations manual, July 1999 (`16-50069.1-101`) | 136 | A | [PDF](sources/swe1-operations-manual/raw/Williams_1999_Star_Wars_Episode_I_Manual.pdf) | production game manual |
-| Pinball 2000 schematic manual (`16-10882`) | 15 | A | [PDF](sources/pinwiki-repair/assets/Bally_Pinball_2000_Schematic_Manual_16-10882_OCR_searchable.pdf) | shared cabinet, PRISM, audio and power-driver schematics |
+| Pinball 2000 schematic manual (`16-10882`) | 15 | A | [PDF](sources/pinwiki-repair/assets/Bally_Pinball_2000_Schematic_Manual_16-10882_OCR_searchable.pdf) | shared cabinet, PRISM, original Williams audio-amplifier and power-driver schematics |
 | Pinball 2000 safety manual (`16-10878`) | 229 | A | [PDF](sources/pinwiki-repair/assets/Pinball_2000_Safety_Manual_16-10878_Feburary_1999.pdf) | multilingual factory safety manual |
 
 There is no separate game-specific SWE1 schematic manual in the audited corpus:
@@ -37,7 +37,7 @@ manual. They are therefore duplicates, not missing coverage.
 | Dataexpert MGX7520 motherboard manual | 57 | component manual | [PDF](sources/pinwiki-repair/assets/Dataexpert_MGX7520_A_motherboard_manual.pdf) | board variants, layout and configuration |
 | GCT ST-MGXM motherboard manual | 27 | component manual | [PDF](sources/pinwiki-repair/assets/ST-MGXM_motherboard_manual.pdf) | board layout and setup |
 | Duckscan CGM-1901CW capacitor list | 2 | C | [PDF](sources/pinwiki-repair/assets/DuckScanCap.pdf) | monitor-specific service aid |
-| Big Guys replacement audio-amplifier schematic | 1 | C | [PDF](sources/pinwiki-repair/assets/Bigguys-pin2000-audio-amp-schematic.pdf) | aftermarket replacement schematic, not the factory board |
+| Big Guys replacement audio-amplifier schematic | 1 | C | [PDF](sources/pinwiki-repair/assets/Bigguys-pin2000-audio-amp-schematic.pdf) | complete analogue-input replacement for using the P2K speakers with a modern PC; not the factory board |
 | RFM direct saucer-light modification drawing | 1 | C | [PDF](sources/pinwiki-repair/assets/RFM-RH-Direct-Saucer-Mod.pdf) | **recovered** after an invisible Unicode mark hid the reference; PinWiki explicitly warns that LED orientation in the drawing is wrong |
 
 ## Original monitor sheets

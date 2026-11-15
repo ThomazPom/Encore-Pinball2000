@@ -12,6 +12,9 @@ its provenance and byte-level checksums.
 For a file-by-file view of manuals and embedded documents, use the
 [PDF coverage matrix](../PDF-COVERAGE.md).
 
+For proof that every bundle has been reviewed and routed into the readable
+topic layer, use the [knowledge coverage ledger](../KNOWLEDGE-COVERAGE.md).
+
 ## Factory and contemporary Williams material
 
 | Source | Class | What it contributes |
@@ -49,7 +52,7 @@ because no similarly clean, independent static source was found.
 
 | Source | Class | What it contributes |
 |---|---:|---|
-| [PinWiki repair](pinwiki-repair/README.md) | C | the broadest repair synthesis, board photographs, manuals, compatible motherboards and diagnostics |
+| [PinWiki repair](pinwiki-repair/README.md) | C | the broadest repair synthesis, board photographs, manuals, compatible motherboards, diagnostics and original-amplifier `J1`/`J4` conversion |
 | [Pinball 2000 repair guide, 2008 revision](pinball2000-repair-guide-2008/README.md) | C | 81-page PC, PRISM, driver, monitor, cabinet, update, XINA and networking repair synthesis |
 | [Wells-Gardner K7300 repair guide](wells-gardner-k7300-repair-guide/README.md) | C | failures, parts, capacitor list and controls for the P2K `19K7302` monitor family |
 | [General technical information](pinball2000de-techinfo/README.md) | C/B | platform overview plus quoted developer details |
@@ -102,5 +105,6 @@ corpus or live-web searches. Their exact URLs remain in each manifest:
 No text is missing from those bundles. The gaps are visible rather than being
 silently replaced by guessed media.
 
-[Knowledge archive](../README.md) · [Source catalog](../CATALOG.md) ·
+[Knowledge archive](../README.md) · [Knowledge coverage](../KNOWLEDGE-COVERAGE.md) ·
+[Source catalog](../CATALOG.md) ·
 [Preservation method](../METHODOLOGY.md)

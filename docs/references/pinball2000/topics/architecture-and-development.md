@@ -57,6 +57,44 @@ This distinction matters when interpreting Encore failures: a symptom involving
 interrupt delivery or process starvation must not be simplified into “the game
 is single-threaded.” See [part 4](../sources/pinball2000-development-lore-part-4/README.md).
 
+## Observability built into XINA
+
+The shipped environment retained unusually deep engineering access for an
+arcade game. The preserved XINA reference describes:
+
+- a local keyboard shell and a serial console captured as `9600 8N1`;
+- remote shell access over telnet when networking is configured;
+- commands for processes, memory, stacks, ROM/flash, boot data, PDB, RTC and
+  network state;
+- a small built-in HTTP service;
+- function-key shortcuts whose meanings depend on the loaded game/version.
+
+The [GerWiki XINA reference](../sources/gerwiki-xina/README.md) indexes roughly
+one hundred commands, but it is a community reconstruction across versions,
+not a promise that every command exists or is safe in every release.
+
+> [!CAUTION]
+> The XINA shell is an engineering interface, not just a read-only diagnostic
+> screen. Commands that alter CMOS, flash, memory or persistent data must be
+> treated as destructive until their behavior is verified on the exact build.
+
+This observability is why guest-side stack, process and timer evidence can be
+more useful than an emulator-only symptom. It is also why a missing shell
+command must not be interpreted as proof that the underlying facility is
+absent from another game version.
+
+## Compatibility sometimes included preserving a bug
+
+[Development lore part 6](../sources/pinball2000-development-lore-part-6/README.md)
+records a subtle build-system lesson. Fixing an art conversion bug changed the
+bytes produced when rebuilding an older SWE1 image. The team added a switch to
+retain the old faulty conversion for that historical build, allowing its
+checksum to remain reproducible while newer work used the corrected behavior.
+
+That is stronger than a generic “old tools were quirky” claim: deterministic
+reproduction sometimes requires compatibility with the old tool's defect, not
+just the old source inputs.
+
 ## What remains testimony rather than specification
 
 Exact implementation details remembered decades later—library versions,
@@ -65,5 +103,6 @@ Encore should prefer observed guest behavior, schematics and decompiled bytes
 when a recollection conflicts with them.
 
 [Hardware and service](hardware-and-service.md) ·
+[Operation and diagnostics](operation-and-diagnostics.md) ·
 [Software updates](software-updates.md) ·
 [All preserved sources](../sources/README.md)

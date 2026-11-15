@@ -29,6 +29,21 @@ adds a programmer's view of the software team's formation and constraints.
 | [Wizard Blocks](../sources/pinball2000de-wizard-blocks/README.md) | surviving photographs and collector/development record of the third game |
 | [Playboy](../sources/pinball2000de-playboy/README.md) | surviving references to another proposed platform title |
 
+For the two production games, the archive deliberately separates three kinds
+of record that are often mixed together:
+
+| Record | Use it for |
+|---|---|
+| [RFM production history](../sources/pinball2000de-rfm-history/README.md) | chronology and production context |
+| [RFM notes](../sources/pinball2000de-rfm-misc/README.md) / [SWE1 notes](../sources/pinball2000de-swe1-misc/README.md) | qualified MEL, version, cabinet and gameplay observations |
+| factory [RFM](../sources/williams-rfm-revision-history/README.md) / [SWE1](../sources/williams-swe1-revision-history/README.md) revision histories | official claims about released software changes |
+
+`MEL` in the preserved first-hand explanation means Manufacturing Excellence
+Lab: hand-built machines using early production parts to validate assembly and
+support testing, photography and demonstrations. A MEL label establishes that
+manufacturing context; it does not automatically make every component on a
+surviving machine an untouched prototype part.
+
 > [!NOTE]
 > A prototype page proves that the pictured or described object existed in that
 > state. It does not by itself establish a final ruleset, planned production
@@ -44,4 +59,5 @@ on-site or reproduction-request research lead.
 
 [Architecture](architecture-and-development.md) ·
 [Hardware](hardware-and-service.md) ·
+[Operation and diagnostics](operation-and-diagnostics.md) ·
 [All preserved sources](../sources/README.md)
