@@ -35,10 +35,10 @@ layer.
 | [pinball2000-development-lore-part-4](sources/pinball2000-development-lore-part-4/README.md) | first-hand testimony | distilled | pre-emptive/co-operative execution and allocation ownership in [architecture](topics/architecture-and-development.md) |
 | [pinball2000-development-lore-part-5](sources/pinball2000-development-lore-part-5/README.md) | first-hand testimony | distilled | display effects, priority and sprite behavior in [architecture](topics/architecture-and-development.md) |
 | [pinball2000-development-lore-part-6](sources/pinball2000-development-lore-part-6/README.md) | first-hand testimony | distilled | deliberate compatibility mode for byte-reproducible old builds in [architecture](topics/architecture-and-development.md) |
-| [pinball2000-repair-guide-2008](sources/pinball2000-repair-guide-2008/README.md) | repair synthesis | routed | broad PC, PRISM, driver, monitor, update, XINA and network reference from [operation and diagnostics](topics/operation-and-diagnostics.md) |
+| [pinball2000-repair-guide-2008](sources/pinball2000-repair-guide-2008/README.md) | repair synthesis | distilled | captured invalid-RTC diagnostic reboot, ATX `PS_ON`, cold-start degauss and `fb flip` behavior in [operation](topics/operation-and-diagnostics.md) and [hardware](topics/hardware-and-service.md) |
 | [pinball2000de-game-swap](sources/pinball2000de-game-swap/README.md) | field procedure | distilled | conversion order, update/ROM interaction and post-swap reset in [hardware](topics/hardware-and-service.md) and [software updates](topics/software-updates.md) |
 | [pinball2000de-making-of](sources/pinball2000de-making-of/README.md) | first-person seminar transcript | distilled | Holopin concept and production design goals in [history](topics/prototypes-and-history.md) |
-| [pinball2000de-misc](sources/pinball2000de-misc/README.md) | mixed archive | qualified | early Ethernet observations, serial-update leads, country variants and machine differences routed from [operation and diagnostics](topics/operation-and-diagnostics.md) |
+| [pinball2000de-misc](sources/pinball2000de-misc/README.md) | mixed archive | qualified | early Ethernet observations, serial-update leads, country variants, machine differences and the wireless-headphone field report routed from [operation](topics/operation-and-diagnostics.md) and [hardware](topics/hardware-and-service.md) |
 | [pinball2000de-monitor](sources/pinball2000de-monitor/README.md) | specialist technical page | distilled | original CRT signal, chassis and qualified replacement paths in [hardware](topics/hardware-and-service.md) |
 | [pinball2000de-playboy](sources/pinball2000de-playboy/README.md) | historical archive | routed | surviving proposed-game material in [history](topics/prototypes-and-history.md) |
 | [pinball2000de-prism](sources/pinball2000de-prism/README.md) | technical synthesis / testimony | distilled | PRISM separation, masked-ROM daughterboard and flash overlay/fallback in [hardware](topics/hardware-and-service.md) and [software updates](topics/software-updates.md) |
@@ -53,7 +53,7 @@ layer.
 | [pinball2000de-techinfo](sources/pinball2000de-techinfo/README.md) | technical synthesis / testimony | distilled | chipset compatibility, PRISM layout and power-driver behavior in [hardware](topics/hardware-and-service.md) |
 | [pinball2000de-troubleshooting](sources/pinball2000de-troubleshooting/README.md) | field repair page | distilled | safety-critical power/switch warnings and discriminating fault symptoms in [operation and diagnostics](topics/operation-and-diagnostics.md) |
 | [pinball2000de-wizard-blocks](sources/pinball2000de-wizard-blocks/README.md) | historical archive | routed | surviving third-game evidence in [history](topics/prototypes-and-history.md) |
-| [pinwiki-repair](sources/pinwiki-repair/README.md) | repair synthesis / document carrier | distilled | broad service map, factory schematics and original-amplifier conversion in [hardware](topics/hardware-and-service.md) and [operation](topics/operation-and-diagnostics.md) |
+| [pinwiki-repair](sources/pinwiki-repair/README.md) | repair synthesis / document carrier | distilled | broad service map, factory schematics, ATX replacement/auto-power and original-amplifier conversion in [hardware](topics/hardware-and-service.md) and [operation](topics/operation-and-diagnostics.md) |
 | [rfm-operations-manual-april-1999](sources/rfm-operations-manual-april-1999/README.md) | factory manual | primary artifact | later RFM operation, adjustment, diagnostic and wiring reference from [operation and diagnostics](topics/operation-and-diagnostics.md) |
 | [rfm-operations-manual-february-1999](sources/rfm-operations-manual-february-1999/README.md) | factory manual | primary artifact | early RFM manual retained for revision comparison from [operation and diagnostics](topics/operation-and-diagnostics.md) |
 | [swe1-operations-manual](sources/swe1-operations-manual/README.md) | factory manual | primary artifact | SWE1 operation, adjustment, diagnostics and wiring from [operation and diagnostics](topics/operation-and-diagnostics.md) |
@@ -74,6 +74,23 @@ layer.
   manuals; duplicating them would create a second, drifting manual.
 - Raw captures remain the authority for exact wording, dates, pinouts and
   photographs.
+
+## Deep extraction checkpoints
+
+The largest synthesis pages need section-level review in addition to their row
+above. The current promoted examples make that review visible:
+
+| Broad source area | Promoted into topics | Detail deliberately left at source |
+|---|---|---|
+| PinWiki power and PC | ATX `PS_ON` auto-power, cabinet/bench voltage distinction, fan/foam obstruction, capacitor and mounting-post symptoms | illustrated rewiring sequence, component dimensions and supplier part numbers |
+| PinWiki display | chassis identity, replacement limits, sync and video-amplifier `+5 V` caveat | chassis pin moves and component-level repair tables |
+| PinWiki audio | original `J1` path, `J4` analogue-input conversion and replacement-amplifier route | solder-point photographs and the full amplifier schematic |
+| PinWiki lamps/coils/switches | LED diagnostic/fade trade-off, loose coil-lug hazard and replacement-board false coin-door symptom | exact matrices, connectors, fuse values and individual part tables |
+| 2008 repair guide | invalid-timestamp reboot on entering diagnostics, ATX `PS_ON`, cold-start degauss and `fb flip` | full board-level troubleshooting sequences and component tables |
+| Pinball2000.de miscellaneous | wireless-headphone field experiment explicitly distinguished from Bluetooth, country variants and early Ethernet/update observations | dated correspondence and collection trivia |
+
+This table is expanded when another multi-section source yields a new promoted
+fact; it is not a substitute for the source-to-topic matrix.
 
 This matrix was reconciled against the bundle directories on `2026-11-15`.
 Future preservation passes must add a row and a topic route for every accepted

@@ -52,7 +52,7 @@ because no similarly clean, independent static source was found.
 
 | Source | Class | What it contributes |
 |---|---:|---|
-| [PinWiki repair](pinwiki-repair/README.md) | C | the broadest repair synthesis, board photographs, manuals, compatible motherboards, diagnostics and original-amplifier `J1`/`J4` conversion |
+| [PinWiki repair](pinwiki-repair/README.md) | C | the broadest repair synthesis, board photographs, manuals, compatible motherboards, diagnostics, ATX replacement/auto-power and original-amplifier `J1`/`J4` conversion |
 | [Pinball 2000 repair guide, 2008 revision](pinball2000-repair-guide-2008/README.md) | C | 81-page PC, PRISM, driver, monitor, cabinet, update, XINA and networking repair synthesis |
 | [Wells-Gardner K7300 repair guide](wells-gardner-k7300-repair-guide/README.md) | C | failures, parts, capacitor list and controls for the P2K `19K7302` monitor family |
 | [General technical information](pinball2000de-techinfo/README.md) | C/B | platform overview plus quoted developer details |
@@ -63,6 +63,10 @@ because no similarly clean, independent static source was found.
 | [RFM technical information](pinball2000de-rfm-techinfo/README.md) | C | game-specific switches, lamps, coils and known issues |
 | [SWE1 technical information](pinball2000de-swe1-techinfo/README.md) | C | game-specific technical notes |
 | [SWE1 conversion kit](pinball2000de-swe1-conversion-kit/README.md) | C | documented kit contents and conversion context |
+
+The qualified [miscellaneous platform archive](pinball2000de-misc/README.md)
+also retains a 2000-era wireless-headphone experiment. The hardware guide
+surfaces it explicitly without mislabelling it as native Bluetooth support.
 
 ## Networking, tournament play and community updates
 

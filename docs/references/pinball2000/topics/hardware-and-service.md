@@ -101,6 +101,42 @@ Use the factory drawing plus the exact chassis manual before moving conductors.
 The [K7300 repair guide](../sources/wells-gardner-k7300-repair-guide/README.md)
 is the retained component-level reference.
 
+A community video-amplifier procedure adds two non-obvious checks. The
+Wells-Gardner and Ducksan chassis do not use the sync inputs identically, and
+the P2K video connector may not provide the `+5 V` on pin 9 expected by the
+aftermarket amplifier. A board that produces no picture may therefore be
+unpowered rather than incompatible. This remains a chassis-specific field
+procedure; follow the illustrated [PinWiki video-amplifier section](../sources/pinwiki-repair/README.md#video-amplifier)
+instead of copying a pin move from another monitor.
+
+The 2008 repair guide also records two useful behavioral facts: the CRT
+degausses on a true cold start, and an upside-down replacement display can be
+corrected in XINA with `fb flip` (the source is unsure whether that command must
+be repeated after reboot). Neither observation fixes left/right mirroring.
+
+## Replacing the original AT power supply with ATX
+
+The original PC supply is an ageing AT unit. PinWiki preserves two ways to use
+a modern ATX supply while keeping cabinet power-up behavior:
+
+1. use a 20-pin ATX-to-AT `P8/P9` adapter with provision for a power switch; or
+2. adapt the ATX `PS_ON` control, normally the green wire, so it is pulled to
+   ground when the computer is meant to run.
+
+Permanently grounding `PS_ON` makes the ATX supply start whenever cabinet AC
+is applied and the supply's rear switch is on. Routing `PS_ON` through the
+original computer-case switch instead preserves the ability to restart only
+the PC. This is electrical control of the supply, not a BIOS “restore after
+power loss” setting. Both the [2008 repair guide](../sources/pinball2000-repair-guide-2008/README.md)
+and PinWiki describe the active-low green-wire behavior. See the illustrated
+[PinWiki ATX procedure](../sources/pinwiki-repair/README.md#installing-an-atx-power-supply).
+
+> [!WARNING]
+> The Pinball 2000 computer is normally fed approximately 120 V by the cabinet
+> transformer even in a 230/240 V country. A supply removed for bench testing
+> instead sees local mains. Verify the actual input and selector before every
+> bench/cabinet transition; do not blindly retain the last voltage setting.
+
 ## Audio amplifier and a modern PC
 
 The cabinet speakers are passive and still need a power amplifier. In the
@@ -129,6 +165,21 @@ Two preserved paths support a modern PC:
 > conversion is a community repair procedure, not a Williams modification
 > bulletin. Confirm the board revision, capacitor polarity and connector
 > orientation on the physical board before soldering.
+
+### Wireless audio is not native Bluetooth
+
+The [miscellaneous platform archive](../sources/pinball2000de-misc/README.md)
+records a successful 2000-era field experiment with Sennheiser **wireless
+headphones** connected in parallel at the amplifier/speaker outputs. The author
+suggested `50 Ω` protection across each speaker, but supplied no schematic or
+measured loading data; that value remains a qualified field report.
+
+> [!NOTE]
+> This does not establish Bluetooth support in PRISM or the Williams amplifier.
+> A present-day Bluetooth receiver can only be added as an external source: its
+> analogue line output may feed the modified `J4` input or a replacement
+> amplifier. The radio protocol then belongs to that external receiver, not to
+> Pinball 2000.
 
 ## Service claims that need care
 

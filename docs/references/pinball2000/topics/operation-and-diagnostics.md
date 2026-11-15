@@ -58,6 +58,7 @@ before treating the shell as an operator menu.
 | balls recycle at every power-up or coin-door cycle | the RFM trough-eject opto has produced exactly this symptom; verify it in switch diagnostics |
 | no sound after an RFM/SWE1 ROM swap | stale or mismatched sound flash can look like a hardware fault; apply the matching game-and-sound update |
 | `U109`/sound-ROM complaint after a game swap | first rule out an update/ROM mismatch before replacing hardware |
+| entering diagnostics/bookkeeping immediately reboots | the 2008 repair guide captured `Fatal: Got invalid time stamp!`; inspect the RTC through the `9600 8N1` serial shell, check the motherboard/PRISM batteries and correct the clock with XINA `time set` before blaming the coin-door controls |
 | static or inter-channel audio leakage | a direct developer field report found crosstalk in tightly bundled PRISM-to-amplifier conductors; separating them is a reversible diagnostic test |
 | PUB board does not take control during boot | a historical field fix reserves ISA memory block `C800` in BIOS; confirm the board and BIOS before changing it |
 | game video absent on a replacement motherboard | a board that boots DOS is not necessarily P2K-compatible; the CX5520 companion chipset is the strongly supported baseline |
@@ -67,6 +68,30 @@ before treating the shell as an operator menu.
 > drawing, while another battery reference disagrees between `BR2325` and
 > `BR2335`. These remain visible source conflicts. Inspect the actual board,
 > connector orientation and battery marking before ordering or wiring parts.
+
+## Preventive inspection with high diagnostic value
+
+The broad [PinWiki repair source](../sources/pinwiki-repair/README.md) contains
+several checks worth surfacing before a failure is misdiagnosed:
+
+- the lid foam can detach and sag onto the CPU fan; loss of that fan can
+  overheat the MediaGX system, so inspect clearance and fan rotation;
+- five motherboard electrolytics are a documented source of erratic behavior
+  and no-boot failures, particularly visibly bulged or leaking green Tayeh
+  parts; replacement requires low-ESR parts of suitable physical size and care
+  around the multilayer board;
+- a mounting post beneath a replacement motherboard can touch a location where
+  that board has no mounting hole and produce a permanent “coin door open”
+  symptom; verify isolation before chasing the switch matrix;
+- vibration can loosen uninsulated coil spade connectors, causing heat or a
+  short to the adjacent lug; inspect the mechanical connection before blaming
+  the driver MOSFET;
+- LED playfield lamps draw too little current for the original burnt-lamp
+  detector and may alter strobing and fade effects, so lamp-test failures after
+  an LED conversion do not necessarily identify an open circuit.
+
+These are discriminating observations, not a mandate to recap, trim, solder or
+replace every surviving machine pre-emptively.
 
 ## Game-specific wear and failure routes
 

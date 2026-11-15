@@ -85,6 +85,25 @@ Research is thematic rather than domain-limited:
 Periodic refreshes compare new captures with the retained manifest. A changed
 page is a new piece of evidence, not a reason to silently replace history.
 
+## Deep-source extraction rule
+
+A coverage-ledger row is necessary but not sufficient for a long repair guide,
+manual or mixed archive. Each substantive section must be classified as one of:
+
+- **promote** — a fact that changes understanding, operation, diagnosis,
+  compatibility or preservation is stated in a topic guide;
+- **route** — exact tables, pinouts or lengthy procedures remain authoritative
+  in the source, and the topic explains when to open them;
+- **qualify** — a useful field observation is surfaced with its uncertainty;
+- **duplicate** — a stronger source already supports the same conclusion;
+- **exclude** — trivia, unsafe residue or out-of-scope content adds no durable
+  knowledge.
+
+Simply linking a 9,000-word source from a topic does not count as extracting
+it. Details such as ATX `PS_ON`, unexpected connector behavior or a diagnostic
+symptom are promoted when they let a reader make a materially better decision;
+component tables stay routed to avoid creating a drifting second manual.
+
 ## Explicit exclusions
 
 - NuCore documentation, installers, packages and ROM sets;
