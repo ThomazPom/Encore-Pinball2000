@@ -1,9 +1,8 @@
 # Web archive: FlipProjets — Tester for P2000 driver board
 
-> **Mirror policy:** External pages may disappear without notice. This file
-> reproduces the technically relevant text of the source page below for the
-> sole purpose of preserving Pinball 2000 hardware-test know-how that
-> Encore relies on. Original copyright remains with the page authors.
+> **Mirror policy:** External pages may disappear without notice. This legacy
+> extract reproduces the technically relevant text of the source page below.
+> Original copyright remains with the page authors.
 >
 > - **Source:** <https://www.flipprojets.fr/TestP2000Driver_EN.php>
 > - **Mirrored on:** 2026-04-24
@@ -25,19 +24,26 @@ outputs and control the various inputs (flippers, coins, contacts).
 Distribution: currently unavailable; the authors mention possible future
 free or paid distribution.
 
----
+> [!CAUTION]
+> This is descriptive evidence, not a reproducible design. The page did not
+> publish firmware, a schematic, PCB files or a protocol description. A
+> 2026-11-15 check of the site's download catalogue, the local preservation
+> corpora and the authors' discoverable public GitHub repositories found no
+> accompanying P2000 tester files. The controller therefore existed, but its
+> implementation is not preserved here.
 
-## Why this is preserved here
+## What this establishes
 
-Encore's `--lpt-device` raw I/O backend talks the parallel-port protocol
-to the Power Driver Board. The FlipProjets tester is independent evidence
-that:
+The page is independent evidence that its authors built an autonomous fixture
+around a 20 MHz PIC 16F452, an LCD and connector-specific LED/button panels to
+exercise a Pinball 2000 power-driver board. It is useful as a historical design
+lead and as evidence that the original PC was not required for a bench test.
 
-- A 20 MHz PIC microcontroller is sufficient hardware to drive the board
-  in a useful way — exotic real-time silicon is not required.
-- The board's external interface (DB25-style ribbon, fixed connector
-  pinout) is stable enough that an MCU-side implementation can talk to it
-  without the original Cyrix MediaGX PC.
+It does **not** establish the exact bus timings, control-bit polarity, register
+semantics or safety behavior. For those details, the BSD-licensed
+[PinballDiag source](../PinballDiag/NOTICE.md) is the stronger reference: its
+code exposes the parallel-port transactions, register accesses and watchdog
+keepalive used against a real board.
 
-Both facts support the design choices documented in
-the current [LPT driver-board guide](../../26-lpt-board.md).
+Encore's current interpretation remains in the
+[LPT driver-board guide](../../26-lpt-board.md).

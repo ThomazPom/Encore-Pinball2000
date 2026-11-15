@@ -24,7 +24,7 @@ from urllib.parse import quote, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 
-VERSION = "1.2"
+VERSION = "1.3"
 KINDS = ("mediawiki", "dokuwiki", "html")
 VOID_TAGS = {
     "area", "base", "br", "col", "embed", "hr", "img", "input",
@@ -214,6 +214,21 @@ def render_html_node(node: Node | str, base_url: str, asset_names: dict[str, str
         alt = clean_inline(node.attrs.get("alt", "")) or safe_filename(src, "image")
         target = asset_names.get(urljoin(base_url, src), urljoin(base_url, src))
         return f"![{alt}]({target})"
+    if tag in {"video", "audio"}:
+        source_nodes = list(walk_nodes(node, "source"))
+        src = node.attrs.get("src", "") or next(
+            (item.attrs.get("src", "") for item in source_nodes
+             if item.attrs.get("src")), "")
+        if not src:
+            return ""
+        target = asset_names.get(urljoin(base_url, src), urljoin(base_url, src))
+        label = "Preserved video" if tag == "video" else "Preserved audio"
+        poster = node.attrs.get("poster", "")
+        if poster:
+            poster_target = asset_names.get(
+                urljoin(base_url, poster), urljoin(base_url, poster))
+            return f"[![{label}]({poster_target})]({target})"
+        return f"[{label}]({target})"
     if tag == "br":
         return "  \n"
     if tag == "hr":
@@ -438,18 +453,23 @@ def html_asset_refs(source: str, base_url: str,
                     asset_base_url: str | None = None) -> list[str]:
     parser = LooseHTMLTree()
     parser.feed(source)
+    body_nodes = list(walk_nodes(parser.root, "body"))
+    root = content_root(body_nodes[0] if body_nodes else parser.root)
+    asset_base = asset_base_url or base_url
     refs = []
-    for node in walk_nodes(parser.root, "img"):
+    for node in walk_nodes(root, "img"):
         if node.attrs.get("src"):
-            refs.append(urljoin(asset_base_url or base_url, node.attrs["src"]))
+            refs.append(urljoin(asset_base, node.attrs["src"]))
     for tag in ("source", "video", "audio"):
-        for node in walk_nodes(parser.root, tag):
+        for node in walk_nodes(root, tag):
             if node.attrs.get("src"):
-                refs.append(urljoin(asset_base_url or base_url, node.attrs["src"]))
-    for node in walk_nodes(parser.root, "a"):
+                refs.append(urljoin(asset_base, node.attrs["src"]))
+            if tag == "video" and node.attrs.get("poster"):
+                refs.append(urljoin(asset_base, node.attrs["poster"]))
+    for node in walk_nodes(root, "a"):
         href = node.attrs.get("href", "")
         if Path(urlparse(href).path).suffix.lower() in ASSET_EXTENSIONS:
-            refs.append(urljoin(asset_base_url or base_url, href))
+            refs.append(urljoin(asset_base, href))
     return refs
 
 
@@ -792,8 +812,12 @@ def request_url(url: str) -> str:
     return parsed._replace(path=path, query=query).geturl()
 
 
-def fetch(url: str, user_agent: str) -> tuple[bytes, str, str]:
-    request = Request(request_url(url), headers={"User-Agent": user_agent})
+def fetch(url: str, user_agent: str,
+          referer: str | None = None) -> tuple[bytes, str, str]:
+    headers = {"User-Agent": user_agent}
+    if referer:
+        headers["Referer"] = referer
+    request = Request(request_url(url), headers=headers)
     with urlopen(request, timeout=45) as response:
         return response.read(), response.geturl(), response.headers.get_content_type()
 
@@ -844,7 +868,7 @@ def capture(args):
             url = (media_download_url(args.kind, final_url, ref)
                    if args.kind != "html" else ref)
             try:
-                data, asset_url, _ = fetch(url, args.user_agent)
+                data, asset_url, _ = fetch(url, args.user_agent, final_url)
             except Exception as error:
                 if args.allow_missing_assets:
                     print(f"warning: failed to fetch {url}: {error}", file=sys.stderr)

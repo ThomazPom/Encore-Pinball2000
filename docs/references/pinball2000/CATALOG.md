@@ -47,6 +47,7 @@ or most authoritative surviving page before a decision was made.
 | Williams Pinball 2000 patent family | index-only | durable public primary records; topic guides extract the design relevance without vendoring a redundant PDF set |
 | development lore parts 7–14 and 9a/9b on Reddit | index-only | unique first-person continuation, but no clean static mirror or redistributable bundle found |
 | Pinball News 2009 tournament update | index-only | useful tournament corroboration shares one page with substantial out-of-scope NuCore coverage |
+| [FlipProjets P2000 driver-board tester](../web_archive/flipprojets_p2000_driver_tester.md) | legacy extract only | documents a working autonomous PIC fixture, but no firmware, schematic or board files were published or recovered; PinballDiag is the stronger reproducible protocol source |
 | Robert Winter Williams-site mirror | duplicate | Planetary Pinball retains cleaner copies of the selected factory pages |
 | alternative schematic/manual hosts | duplicate | byte/content-equivalent material already retained with better provenance |
 | product pages, storefront scans and current auction listings | reject | no unique durable technical knowledge |

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +26,52 @@ BUNDLE = load_module()
 
 
 class ReferenceBundleTests(unittest.TestCase):
+    def test_asset_fetch_can_send_source_page_as_referer(self):
+        seen = {}
+
+        class Headers:
+            @staticmethod
+            def get_content_type():
+                return "image/png"
+
+        class Response:
+            headers = Headers()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            @staticmethod
+            def read():
+                return b"asset"
+
+            @staticmethod
+            def geturl():
+                return "https://example.test/asset.png"
+
+        def fake_urlopen(request, timeout):
+            seen["request"] = request
+            seen["timeout"] = timeout
+            return Response()
+
+        with patch.object(BUNDLE, "urlopen", fake_urlopen):
+            data, final_url, media_type = BUNDLE.fetch(
+                "https://example.test/asset.png",
+                "Preserver/1.0",
+                "https://example.test/article.html",
+            )
+
+        self.assertEqual(data, b"asset")
+        self.assertEqual(final_url, "https://example.test/asset.png")
+        self.assertEqual(media_type, "image/png")
+        self.assertEqual(seen["timeout"], 45)
+        self.assertEqual(
+            seen["request"].get_header("Referer"),
+            "https://example.test/article.html",
+        )
+
     def test_legacy_request_url_quotes_spaces_without_double_encoding(self):
         expected = "https://example.test/manuals/Pinball%202000.pdf?q=a%20b"
         self.assertEqual(
@@ -96,12 +143,15 @@ class ReferenceBundleTests(unittest.TestCase):
             assets = root / "assets"
             assets.mkdir()
             (assets / "board.png").write_bytes(b"png")
+            (assets / "poster.png").write_bytes(b"poster")
+            (assets / "demo.mp4").write_bytes(b"video")
             (assets / "noise.png").write_bytes(b"noise")
             page = (
                 "<html><head><title>P2K board</title></head><body>"
                 "<h1>Board</h1><p>Evidence <strong>here</strong>.</p>"
                 "<p>First line<br><br>Second paragraph</p>"
                 "<img src='board.png' alt='board'>"
+                "<video poster='poster.png'><source src='demo.mp4'></video>"
                 "</body></html>"
             )
             output = root / "bundle"
@@ -110,10 +160,16 @@ class ReferenceBundleTests(unittest.TestCase):
                 BUNDLE.gather_files(assets), output, "2026-11-11",
             )
             self.assertTrue((output / "assets" / "board.png").is_file())
+            self.assertTrue((output / "assets" / "poster.png").is_file())
+            self.assertTrue((output / "assets" / "demo.mp4").is_file())
             self.assertFalse((output / "assets" / "noise.png").exists())
             self.assertIn("**here**", (output / "README.md").read_text())
             self.assertIn("First line\n\nSecond paragraph",
                           (output / "README.md").read_text())
+            self.assertIn(
+                "[![Preserved video](assets/poster.png)](assets/demo.mp4)",
+                (output / "README.md").read_text(),
+            )
             BUNDLE.validate_bundle(output)
 
     def test_static_html_honors_legacy_declared_encoding(self):
@@ -144,7 +200,7 @@ class ReferenceBundleTests(unittest.TestCase):
         navigation = " ".join(
             f"<a href='/menu/{index}'>Navigation item {index}</a>"
             for index in range(30)
-        )
+        ) + "<img src='/menu/logo.png'>"
         prose = "Technical evidence about Pinball 2000. " * 30
         page = (
             "<html><body><table><tr>"
@@ -164,6 +220,10 @@ class ReferenceBundleTests(unittest.TestCase):
         self.assertEqual(markdown.count("| IRQ | 5 |"), 1)
         self.assertNotIn(
             "https://example.test/reference/software.zip",
+            BUNDLE.html_asset_refs(page, "https://example.test/reference/"),
+        )
+        self.assertNotIn(
+            "https://example.test/menu/logo.png",
             BUNDLE.html_asset_refs(page, "https://example.test/reference/"),
         )
         malformed = (

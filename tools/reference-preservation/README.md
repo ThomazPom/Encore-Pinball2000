@@ -36,9 +36,12 @@ python3 tools/reference-preservation/reference-bundle.py capture \
 
 `mediawiki` and `dokuwiki` derive their raw-source endpoint automatically.
 Use `--raw-url` when a site has a nonstandard layout. `html` captures the page
-plus directly referenced images and downloadable documents; it does not crawl
-an entire site. ZIP/executable links are deliberately not downloaded by the
-HTML collector.
+plus directly referenced images, full-size image links, video/audio media and
+downloadable documents from the detected article body; site-wide navigation
+and decoration are excluded. Asset requests carry the source page as their
+referrer for legacy hosts that reject direct media requests. The collector does
+not crawl an entire site, and ZIP/executable links are deliberately not
+downloaded.
 
 Legacy pages frequently declare the wrong charset or use table-based layout.
 The converter prefers valid UTF-8 bytes over a conflicting declaration, closes
