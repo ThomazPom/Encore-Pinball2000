@@ -166,7 +166,7 @@ Two preserved paths support a modern PC:
 > bulletin. Confirm the board revision, capacitor polarity and connector
 > orientation on the physical board before soldering.
 
-### Bluetooth on a modernized cabinet
+### Wireless audio is not native Bluetooth
 
 The [miscellaneous platform archive](../sources/pinball2000de-misc/README.md)
 records a successful 2000-era field experiment with Sennheiser **wireless
@@ -174,23 +174,12 @@ headphones** connected in parallel at the amplifier/speaker outputs. The author
 suggested `50 Ω` protection across each speaker, but supplied no schematic or
 measured loading data; that value remains a qualified field report.
 
-A separate 2026 cabinet report provides direct evidence for the modern case.
-Fedelep wrote that his wife's phone accidentally took control of the **external
-amplifier via Bluetooth**: its auxiliary input paused and phone notification
-sounds played through the cabinet. See the
-[original Encore issue](https://github.com/ThomazPom/Encore-Pinball2000/issues/2).
-
-```text
-phone ── Bluetooth ──> external replacement amplifier ──> P2K speakers
-PC ───── analogue AUX ────────────────────────────────┘
-```
-
-> [!IMPORTANT]
-> This proves that a modernized cabinet fitted with a Bluetooth amplifier can
-> behave as a discoverable Bluetooth speaker. It does **not** establish
-> Bluetooth hardware in PRISM or the original Williams amplifier. If Bluetooth
-> is unwanted, disable pairing/radio support on the external amplifier or use
-> an analogue-only unit; otherwise a paired phone may pre-empt game audio.
+> [!NOTE]
+> This does not establish Bluetooth support in PRISM or the Williams amplifier.
+> A present-day Bluetooth receiver can only be added as an external source: its
+> analogue line output may feed the modified `J4` input or a replacement
+> amplifier. The radio protocol then belongs to that external receiver, not to
+> Pinball 2000.
 
 ## Service claims that need care
 
