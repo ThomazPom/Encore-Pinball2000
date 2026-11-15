@@ -10,7 +10,6 @@ that Encore owns or relicenses the material.
 |---|---|
 | [`pinball2000/`](pinball2000/README.md) | curated knowledge archive: manuals, historical pages, repair evidence, first-hand development accounts and topic guides |
 | `PinballDiag/` | BSD-licensed Linux C++ reference for the original cabinet parallel-port protocol |
-| `web_archive/` | small legacy captures retained before the structured archive existed |
 
 The Pinball 2000 archive is the preferred home for new material. It requires a
 qualification decision, raw/readable evidence, provenance and SHA-256
