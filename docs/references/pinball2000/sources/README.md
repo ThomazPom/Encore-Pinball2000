@@ -64,10 +64,6 @@ because no similarly clean, independent static source was found.
 | [SWE1 technical information](pinball2000de-swe1-techinfo/README.md) | C | game-specific technical notes |
 | [SWE1 conversion kit](pinball2000de-swe1-conversion-kit/README.md) | C | documented kit contents and conversion context |
 
-The qualified [miscellaneous platform archive](pinball2000de-misc/README.md)
-also retains a 2000-era wireless-headphone experiment. The hardware guide
-surfaces it explicitly without mislabelling it as native Bluetooth support.
-
 ## Networking, tournament play and community updates
 
 | Source | Class | What it contributes |

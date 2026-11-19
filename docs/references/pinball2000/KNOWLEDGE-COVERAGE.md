@@ -38,7 +38,7 @@ layer.
 | [pinball2000-repair-guide-2008](sources/pinball2000-repair-guide-2008/README.md) | repair synthesis | distilled | captured invalid-RTC diagnostic reboot, ATX `PS_ON`, cold-start degauss and `fb flip` behavior in [operation](topics/operation-and-diagnostics.md) and [hardware](topics/hardware-and-service.md) |
 | [pinball2000de-game-swap](sources/pinball2000de-game-swap/README.md) | field procedure | distilled | conversion order, update/ROM interaction and post-swap reset in [hardware](topics/hardware-and-service.md) and [software updates](topics/software-updates.md) |
 | [pinball2000de-making-of](sources/pinball2000de-making-of/README.md) | first-person seminar transcript | distilled | Holopin concept and production design goals in [history](topics/prototypes-and-history.md) |
-| [pinball2000de-misc](sources/pinball2000de-misc/README.md) | mixed archive | qualified | early Ethernet observations, serial-update leads, country variants, machine differences and the wireless-headphone field report routed from [operation](topics/operation-and-diagnostics.md) and [hardware](topics/hardware-and-service.md) |
+| [pinball2000de-misc](sources/pinball2000de-misc/README.md) | mixed archive | qualified | early Ethernet observations, serial-update leads, country variants and machine differences routed from [operation](topics/operation-and-diagnostics.md) and [history](topics/prototypes-and-history.md) |
 | [pinball2000de-monitor](sources/pinball2000de-monitor/README.md) | specialist technical page | distilled | original CRT signal, chassis and qualified replacement paths in [hardware](topics/hardware-and-service.md) |
 | [pinball2000de-playboy](sources/pinball2000de-playboy/README.md) | historical archive | routed | surviving proposed-game material in [history](topics/prototypes-and-history.md) |
 | [pinball2000de-prism](sources/pinball2000de-prism/README.md) | technical synthesis / testimony | distilled | PRISM separation, masked-ROM daughterboard and flash overlay/fallback in [hardware](topics/hardware-and-service.md) and [software updates](topics/software-updates.md) |
@@ -87,7 +87,7 @@ above. The current promoted examples make that review visible:
 | PinWiki audio | original `J1` path, `J4` analogue-input conversion and replacement-amplifier route | solder-point photographs and the full amplifier schematic |
 | PinWiki lamps/coils/switches | LED diagnostic/fade trade-off, loose coil-lug hazard and replacement-board false coin-door symptom | exact matrices, connectors, fuse values and individual part tables |
 | 2008 repair guide | invalid-timestamp reboot on entering diagnostics, ATX `PS_ON`, cold-start degauss and `fb flip` | full board-level troubleshooting sequences and component tables |
-| Pinball2000.de miscellaneous | wireless-headphone field experiment explicitly distinguished from Bluetooth, country variants and early Ethernet/update observations | dated correspondence and collection trivia |
+| Pinball2000.de miscellaneous | country variants and early Ethernet/update observations | dated correspondence, peripheral experiments and collection trivia |
 
 This table is expanded when another multi-section source yields a new promoted
 fact; it is not a substitute for the source-to-topic matrix.

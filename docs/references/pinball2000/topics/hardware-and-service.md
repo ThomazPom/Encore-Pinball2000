@@ -166,21 +166,6 @@ Two preserved paths support a modern PC:
 > bulletin. Confirm the board revision, capacitor polarity and connector
 > orientation on the physical board before soldering.
 
-### Wireless audio is not native Bluetooth
-
-The [miscellaneous platform archive](../sources/pinball2000de-misc/README.md)
-records a successful 2000-era field experiment with Sennheiser **wireless
-headphones** connected in parallel at the amplifier/speaker outputs. The author
-suggested `50 Ω` protection across each speaker, but supplied no schematic or
-measured loading data; that value remains a qualified field report.
-
-> [!NOTE]
-> This does not establish Bluetooth support in PRISM or the Williams amplifier.
-> A present-day Bluetooth receiver can only be added as an external source: its
-> analogue line output may feed the modified `J4` input or a replacement
-> amplifier. The radio protocol then belongs to that external receiver, not to
-> Pinball 2000.
-
 ## Service claims that need care
 
 Clock-reduction advice, power-supply quality judgements and some compatible
